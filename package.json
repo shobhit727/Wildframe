@@ -1,0 +1,25 @@
+{
+  "name": "wildframe-monorepo",
+  "version": "1.0.0",
+  "description": "Production-grade OTT streaming platform monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "format": "turbo run format",
+    "type-check": "turbo run type-check",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "web:dev": "npm run dev --workspace=apps/web",
+    "web:build": "npm run build --workspace=apps/web",
+    "web:test": "npm run test --workspace=apps/web"
+  },
+  "devDependencies": {
+    "turbo": "latest"
+  }
+}

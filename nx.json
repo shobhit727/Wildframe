@@ -1,0 +1,1 @@
+{"version": 3, "isRoot": true, "projects": {"apps/web": {"root": "apps/web", "projectType": "application"}, "packages/shared-types": {"root": "packages/shared-types", "projectType": "library"}}, "cli": {"packageManager": "npm", "defaultCollection": "@nx/next", "nx": {}}, "defaultProject": "apps/web"}
