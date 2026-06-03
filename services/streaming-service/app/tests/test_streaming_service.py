@@ -1,0 +1,54 @@
+"""Streaming service tests."""
+import pytest
+from uuid import uuid4, UUID
+from datetime import datetime
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.models.streaming import StreamingSession, VideoManifest, WatchHistory, StreamingMetrics
+from app.services import StreamingService
+from app.repositories import StreamingSessionRepository
+
+@pytest.mark.asyncio
+async def test_start_streaming_session(db: AsyncSession):
+    """Test starting a streaming session."""
+    user_id = uuid4()
+    content_id = uuid4()
+    device_id = "device-001"
+    
+    repo = StreamingSessionRepository(db)
+    service = StreamingService(repo, None, None, None)
+    
+    session = await service.start_session(user_id, content_id, device_id)
+    assert session.user_id == user_id
+    assert session.content_id == content_id
+    assert session.device_id == device_id
+    assert session.status == "active"
+
+@pytest.mark.asyncio
+async def test_get_watch_history(db: AsyncSession):
+    """Test retrieving watch history."""
+    user_id = uuid4()
+    repo = StreamingSessionRepository(db)
+    service = StreamingService(repo, None, None, None)
+    
+    history = await service.get_watch_history(user_id, 10)
+    assert isinstance(history, list)
+
+@pytest.mark.asyncio
+async def test_update_watch_position(db: AsyncSession):
+    """Test updating watch position."""
+    session_id = uuid4()
+    position = 1200
+    
+    repo = StreamingSessionRepository(db)
+    service = StreamingService(repo, None, None, None)
+    
+    await service.update_position(session_id, position)
+
+@pytest.mark.asyncio
+async def test_end_session(db: AsyncSession):
+    """Test ending streaming session."""
+    session_id = uuid4()
+    repo = StreamingSessionRepository(db)
+    service = StreamingService(repo, None, None, None)
+    
+    await service.end_session(session_id)
