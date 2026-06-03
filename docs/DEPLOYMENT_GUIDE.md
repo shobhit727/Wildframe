@@ -1,552 +1,549 @@
-# Deployment Guide - Wildframe Platform
+# 🚀 Deployment Guide
 
-Complete guide for deploying Wildframe from development to production.
+**Version**: 1.0.0  
+**Last Updated**: May 28, 2026  
+**Stability**: Production-Ready
+
+## Overview
+
+This guide covers deploying Wildframe to production environments. It includes infrastructure setup, database migrations, service deployment, and post-deployment verification.
+
+**Time to read**: 30 minutes  
+**Prerequisites**: Docker, Kubernetes 1.28+, Terraform, kubectl, AWS CLI credentials
 
 ## Table of Contents
 
 1. [Pre-Deployment Checklist](#pre-deployment-checklist)
-2. [Database Migrations](#database-migrations)
-3. [Backend Deployment](#backend-deployment)
-4. [Frontend Deployment](#frontend-deployment)
-5. [Infrastructure Setup](#infrastructure-setup)
-6. [Monitoring & Logging](#monitoring--logging)
-7. [Rollback Procedures](#rollback-procedures)
-8. [Troubleshooting](#troubleshooting)
+2. [Infrastructure Setup](#infrastructure-setup)
+3. [Database Setup](#database-setup)
+4. [Service Deployment](#service-deployment)
+5. [Verification](#verification)
+6. [Troubleshooting](#troubleshooting)
+
+---
 
 ## Pre-Deployment Checklist
 
-### Code Quality
+Before deploying to production:
 
-```bash
-# Run all tests
-cd netflix_backend
-pytest tests/ --cov
+- [ ] All tests pass locally and in CI/CD
+- [ ] Code review completed and approved
+- [ ] Security scan completed (no critical vulnerabilities)
+- [ ] Performance testing completed
+- [ ] Database migrations tested on staging
+- [ ] Infrastructure capacity verified
+- [ ] Monitoring and alerting configured
+- [ ] Backup strategy in place
+- [ ] Disaster recovery tested
+- [ ] Team notified of deployment window
+- [ ] Rollback plan documented
 
-# Type checking
-mypy app/
-
-# Linting
-pylint app/
-black --check app/
-isort --check app/
-
-# Frontend
-cd ../apps/web
-npm run build
-npm run type-check
-npm run lint
-```
-
-### Security Checks
-
-```bash
-# Check for vulnerabilities
-safety check  # Python
-npm audit     # JavaScript
-
-# SAST scanning
-bandit -r app/  # Python code security
-
-# Dependency scanning
-pip install pip-audit
-pip-audit
-```
-
-### Documentation
-
-- [ ] API documentation updated
-- [ ] Changelog updated
-- [ ] Architecture changes documented
-- [ ] Runbooks created/updated
-- [ ] Database changes documented
-
-## Database Migrations
-
-### PostgreSQL Migrations
-
-```bash
-# Create migration
-cd netflix_backend
-alembic revision --autogenerate -m "description"
-
-# Review migration
-cat alembic/versions/xxxxx_description.py
-
-# Apply migration (local)
-alembic upgrade head
-
-# Apply migration (production)
-kubectl exec -it deployment/api-gateway -n wildframe-prod \
-  -- alembic upgrade head
-
-# Rollback if needed
-alembic downgrade -1
-```
-
-### Backup Strategy
-
-```bash
-# Full backup before major deployment
-pg_dump -U postgres postgres_db > backup_$(date +%Y%m%d_%H%M%S).sql
-
-# Automated backups
-AWS RDS automated backups (7-35 days retention)
-```
-
-## Backend Deployment
-
-### Local Development
-
-```bash
-# Activate environment
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set environment variables
-export ENVIRONMENT=development
-export DEBUG=False
-export DATABASE_URL=postgresql://...
-
-# Run migrations
-python manage.py migrate
-
-# Start server
-python manage.py runserver
-```
-
-### Docker Build
-
-```bash
-# Build image
-docker build \
-  -t wildframe-backend:v1.0.0 \
-  -f netflix_backend/Dockerfile \
-  .
-
-# Tag for registry
-docker tag wildframe-backend:v1.0.0 \
-  123456789.dkr.ecr.us-east-1.amazonaws.com/wildframe-backend:v1.0.0
-
-# Push to ECR
-aws ecr get-login-password --region us-east-1 | \
-  docker login --username AWS --password-stdin 123456789.dkr.ecr.us-east-1.amazonaws.com
-
-docker push \
-  123456789.dkr.ecr.us-east-1.amazonaws.com/wildframe-backend:v1.0.0
-```
-
-### Kubernetes Deployment
-
-```bash
-# Update image in deployment
-kubectl set image deployment/api-gateway \
-  api-gateway=123456789.dkr.ecr.us-east-1.amazonaws.com/wildframe-backend:v1.0.0 \
-  -n wildframe-prod
-
-# Check rollout status
-kubectl rollout status deployment/api-gateway -n wildframe-prod
-
-# Monitor pods
-kubectl get pods -n wildframe-prod -w
-
-# View logs
-kubectl logs -f deployment/api-gateway -n wildframe-prod
-
-# Describe deployment
-kubectl describe deployment api-gateway -n wildframe-prod
-```
-
-### Helm Deployment (Alternative)
-
-```bash
-# Create/update Helm values
-cat > values-prod.yaml <<EOF
-image:
-  repository: 123456789.dkr.ecr.us-east-1.amazonaws.com/wildframe-backend
-  tag: v1.0.0
-replicas: 3
-environment: production
-database:
-  url: postgresql://user:pass@db.xxx.rds.amazonaws.com:5432/db
-EOF
-
-# Deploy with Helm
-helm upgrade --install wildframe \
-  ./helm/wildframe \
-  -f values-prod.yaml \
-  -n wildframe-prod
-
-# Check deployment
-helm status wildframe -n wildframe-prod
-
-# Rollback if needed
-helm rollback wildframe 1 -n wildframe-prod
-```
-
-## Frontend Deployment
-
-### Build Optimization
-
-```bash
-# Create optimized build
-cd apps/web
-npm run build
-
-# Verify build size
-du -sh .next/
-
-# Analyze bundle
-npm run build -- --analyze
-```
-
-### Vercel Deployment
-
-```bash
-# Set up Vercel project
-vercel link
-
-# Add environment variables
-vercel env add NEXT_PUBLIC_API_URL=https://api.wildframe.com
-
-# Deploy
-vercel deploy --prod
-
-# Check deployment
-vercel env list
-vercel logs
-```
-
-### S3 + CloudFront Deployment
-
-```bash
-# Build
-npm run build
-npm run export  # If using static export
-
-# Deploy to S3
-aws s3 sync out/ s3://wildframe-web \
-  --delete \
-  --cache-control "public, max-age=3600"
-
-# Invalidate CloudFront
-aws cloudfront create-invalidation \
-  --distribution-id E123ABC \
-  --paths "/*"
-
-# Monitor
-aws s3 ls s3://wildframe-web/
-aws cloudfront get-distribution-config --id E123ABC
-```
-
-### Docker Frontend
-
-```bash
-# Build image
-docker build \
-  -t wildframe-web:v1.0.0 \
-  -f apps/web/Dockerfile \
-  .
-
-# Run container
-docker run -p 3000:3000 \
-  -e NEXT_PUBLIC_API_URL=https://api.wildframe.com \
-  wildframe-web:v1.0.0
-```
+---
 
 ## Infrastructure Setup
 
-### AWS Resources
+### Using Terraform
+
+#### 1. Initialize Terraform
 
 ```bash
-# Initialize Terraform
 cd infrastructure/terraform
+
+# Initialize Terraform (downloads providers)
 terraform init
 
-# Plan changes
-terraform plan -var-file=prod.tfvars
-
-# Apply changes
-terraform apply -var-file=prod.tfvars
-
-# Get outputs
-terraform output
+# Verify configuration
+terraform validate
 ```
 
-### Kubernetes Cluster
+#### 2. Plan Deployment
 
 ```bash
-# Create cluster
-eksctl create cluster \
-  --name wildframe-prod \
-  --version 1.28 \
-  --region us-east-1 \
-  --nodes 3 \
-  --node-type t3.xlarge
+# Review what will be created
+terraform plan -out=tfplan
 
-# Configure kubectl
-aws eks update-kubeconfig \
-  --region us-east-1 \
-  --name wildframe-prod
-
-# Install necessary operators
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm install prometheus prometheus-community/kube-prometheus-stack
+# Example output:
+# + aws_db_instance.postgres
+# + aws_elasticache_cluster.redis
+# + aws_msk_cluster.kafka
+# + aws_elasticsearch_domain.elasticsearch
+# + aws_eks_cluster.wildframe
+# ...
 ```
 
-### Database Setup
+#### 3. Apply Configuration
 
 ```bash
-# Create RDS instance
-aws rds create-db-instance \
-  --db-instance-identifier wildframe-prod \
-  --db-instance-class db.t3.medium \
-  --engine postgres \
-  --allocated-storage 100 \
-  --storage-type gp3
+# Deploy infrastructure
+terraform apply tfplan
 
-# Create read replica
-aws rds create-db-instance-read-replica \
-  --db-instance-identifier wildframe-prod-replica \
-  --source-db-instance-identifier wildframe-prod
+# Wait for completion (typically 15-20 minutes)
+# Output will show resource endpoints
 
-# Setup backup
-aws rds modify-db-instance \
-  --db-instance-identifier wildframe-prod \
-  --backup-retention-period 30 \
-  --preferred-backup-window "03:00-04:00"
+# Example outputs:
+# database_endpoint = "wildframe-db.c9akciq32.us-east-1.rds.amazonaws.com"
+# redis_endpoint = "wildframe-redis.12345.cache.amazonaws.com"
+# eks_cluster_endpoint = "https://abc123.eks.amazonaws.com"
 ```
 
-### Cache Setup
-
-```bash
-# Create ElastiCache cluster
-aws elasticache create-cache-cluster \
-  --cache-cluster-id wildframe-cache \
-  --cache-node-type cache.t3.medium \
-  --engine redis \
-  --num-cache-nodes 1
-
-# Enable multi-AZ
-aws elasticache create-replication-group \
-  --replication-group-description "Wildframe Cache" \
-  --replication-group-id wildframe-cache \
-  --engine redis \
-  --cache-node-type cache.t3.medium \
-  --num-cache-clusters 2
-```
-
-## Monitoring & Logging
-
-### Prometheus
-
-```bash
-# Port forward to local
-kubectl port-forward svc/prometheus 9090:9090 -n monitoring
-
-# Access at http://localhost:9090
-
-# Add recording rules
-kubectl apply -f monitoring/recording-rules.yaml
-```
-
-### Grafana
-
-```bash
-# Port forward to local
-kubectl port-forward svc/grafana 3000:3000 -n monitoring
-
-# Access at http://localhost:3000
-# Default: admin/admin
-
-# Import dashboards
-curl https://grafana.com/api/dashboards/12114 | \
-  jq .json.dashboard | kubectl create configmap grafana-dashboard --from-file=/dev/stdin
-```
-
-### Loki
-
-```bash
-# View logs
-kubectl logs -f deployment/api-gateway -n wildframe-prod
-
-# With label filtering
-kubectl logs -f deployment/api-gateway -n wildframe-prod --selector app=api-gateway
-```
-
-### Jaeger Tracing
-
-```bash
-# Port forward
-kubectl port-forward svc/jaeger 16686:16686 -n monitoring
-
-# Access at http://localhost:16686
-
-# Search traces by service
-# Filter by operation, tags, or duration
-```
-
-## Rollback Procedures
-
-### Kubernetes Rollback
-
-```bash
-# Check rollout history
-kubectl rollout history deployment/api-gateway -n wildframe-prod
-
-# Rollback to previous version
-kubectl rollout undo deployment/api-gateway -n wildframe-prod
-
-# Rollback to specific revision
-kubectl rollout undo deployment/api-gateway \
-  --to-revision=3 \
-  -n wildframe-prod
-
-# Monitor rollback
-kubectl rollout status deployment/api-gateway -n wildframe-prod
-```
-
-### Helm Rollback
-
-```bash
-# Check release history
-helm history wildframe -n wildframe-prod
-
-# Rollback
-helm rollback wildframe 1 -n wildframe-prod
-
-# Rollback with cleanup
-helm rollback wildframe 1 --cleanup-on-fail -n wildframe-prod
-```
-
-### Database Rollback
-
-```bash
-# Restore from backup
-psql -U postgres -d postgres < backup.sql
-
-# Or using RDS Backtrack
-aws rds restore-db-instance-from-db-snapshot \
-  --db-instance-identifier wildframe-restore \
-  --db-snapshot-identifier wildframe-snapshot
-
-# Verify data integrity
-SELECT COUNT(*) FROM users;
-```
-
-## Troubleshooting
-
-### Common Issues
-
-#### Pods Not Starting
-
-```bash
-# Check pod status
-kubectl describe pod <pod-name> -n wildframe-prod
-
-# Check logs
-kubectl logs <pod-name> -n wildframe-prod
-
-# Check events
-kubectl get events -n wildframe-prod --sort-by='.lastTimestamp'
-```
-
-#### High Memory Usage
-
-```bash
-# Check resource usage
-kubectl top pods -n wildframe-prod
-
-# Scale up if needed
-kubectl scale deployment api-gateway --replicas=5 -n wildframe-prod
-
-# Check memory limits
-kubectl describe node
-```
-
-#### Database Connection Issues
-
-```bash
-# Check connectivity
-telnet db.xxx.rds.amazonaws.com 5432
-
-# Check security groups
-aws ec2 describe-security-groups --filter Name=group-name,Values=wildframe-db
-
-# Check RDS status
-aws rds describe-db-instances --db-instance-identifier wildframe-prod
-```
-
-#### API Rate Limiting
-
-```bash
-# Check rate limit status
-curl -I https://api.wildframe.com/health
-
-# Adjust rate limits
-kubectl set env deployment/api-gateway \
-  RATE_LIMIT_REQUESTS=100 \
-  -n wildframe-prod
-```
-
-### Health Checks
-
-```bash
-# Application health
-curl https://api.wildframe.com/health
-
-# Database
-kubectl exec -it <pod-name> -n wildframe-prod -- psql -c "SELECT 1"
-
-# Cache
-kubectl exec -it <pod-name> -n wildframe-prod -- redis-cli ping
-
-# External API
-curl -I https://api.wildframe.com/api/content
-```
-
-### Performance Debugging
-
-```bash
-# Profile application
-kubectl exec -it <pod-name> -n wildframe-prod -- python -m cProfile -s cumtime
-
-# Check slow queries
-kubectl logs <pod-name> -n wildframe-prod | grep "duration:"
-
-# Database query analysis
-EXPLAIN ANALYZE SELECT * FROM users WHERE email = 'user@example.com';
-```
-
-## Deployment Scripts
-
-### Automated Deployment
-
-```bash
-#!/bin/bash
-set -e
-
-VERSION=$1
-ENVIRONMENT=${2:-staging}
-
-# Build
-docker build -t wildframe:$VERSION .
-
-# Push
-docker push 123456789.dkr.ecr.us-east-1.amazonaws.com/wildframe:$VERSION
-
-# Deploy
-kubectl set image deployment/api-gateway \
-  api-gateway=123456789.dkr.ecr.us-east-1.amazonaws.com/wildframe:$VERSION \
-  -n wildframe-$ENVIRONMENT
-
-# Wait for rollout
-kubectl rollout status deployment/api-gateway -n wildframe-$ENVIRONMENT
-
-echo "Deployment of v$VERSION to $ENVIRONMENT completed"
+### Terraform Configuration Summary
+
+```hcl
+# infrastructure/terraform/main.tf
+
+resource "aws_db_instance" "postgres" {
+  identifier           = "wildframe-db"
+  engine               = "postgres"
+  engine_version       = "15"
+  instance_class       = "db.m5.large"
+  allocated_storage    = 100
+  multi_az             = true  # High availability
+  backup_retention     = 30    # 30-day retention
+}
+
+resource "aws_elasticache_cluster" "redis" {
+  cluster_id    = "wildframe-redis"
+  engine        = "redis"
+  node_type     = "cache.r6g.xlarge"
+  num_cache_nodes = 3  # Cluster mode with replicas
+}
+
+resource "aws_msk_cluster" "kafka" {
+  cluster_name = "wildframe-kafka"
+  kafka_version = "3.4"
+  number_of_broker_nodes = 3
+}
+
+resource "aws_eks_cluster" "wildframe" {
+  name = "wildframe"
+  version = "1.28"
+  
+  vpc_config {
+    subnet_ids = aws_subnet.private[*].id
+  }
+}
 ```
 
 ---
 
-Last Updated: 2026-05-12
+## Database Setup
+
+### 1. Create Databases
+
+Connect to the PostgreSQL instance and run:
+
+```bash
+# SSH to bastion host or use AWS RDS proxy
+psql -h wildframe-db.c9akciq32.us-east-1.rds.amazonaws.com \
+     -U postgres \
+     -f infrastructure/database/init-databases.sql
+```
+
+This creates:
+
+```sql
+-- Creates 7 service databases
+CREATE DATABASE auth_db;
+CREATE DATABASE user_db;
+CREATE DATABASE content_db;
+CREATE DATABASE admin_db;
+CREATE DATABASE streaming_db;
+CREATE DATABASE billing_db;
+CREATE DATABASE analytics_db;
+
+-- Creates service users with limited privileges
+CREATE USER auth_user WITH PASSWORD '...';
+GRANT ALL PRIVILEGES ON auth_db TO auth_user;
+
+-- ... (repeat for other services)
+```
+
+### 2. Run Migrations
+
+```bash
+# For each service
+cd services/auth-service
+
+# Set database URL
+export DATABASE_URL="postgresql://auth_user:password@wildframe-db.us-east-1.rds.amazonaws.com:5432/auth_db"
+
+# Run migrations
+alembic upgrade head
+```
+
+### 3. Verify Databases
+
+```bash
+psql -h wildframe-db.c9akciq32.us-east-1.rds.amazonaws.com \
+     -U postgres \
+     -c "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname;"
+```
+
+Expected output:
+
+```
+     datname     
+-----------------
+ admin_db
+ analytics_db
+ auth_db
+ billing_db
+ content_db
+ streaming_db
+ user_db
+```
+
+---
+
+## Service Deployment
+
+### Using Kubernetes
+
+#### 1. Build Docker Images
+
+```bash
+# Build all service images
+docker build -t wildframe/auth-service:latest services/auth-service
+docker build -t wildframe/user-service:latest services/user-service
+docker build -t wildframe/content-service:latest services/content-service
+# ... (repeat for other services)
+
+# Tag for ECR
+docker tag wildframe/auth-service:latest 123456789.dkr.ecr.us-east-1.amazonaws.com/wildframe/auth-service:latest
+
+# Push to ECR
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 123456789.dkr.ecr.us-east-1.amazonaws.com
+
+docker push 123456789.dkr.ecr.us-east-1.amazonaws.com/wildframe/auth-service:latest
+```
+
+#### 2. Deploy Services
+
+```bash
+# Authenticate with Kubernetes cluster
+aws eks update-kubeconfig --name wildframe --region us-east-1
+
+# Deploy namespace and services
+kubectl apply -f infrastructure/kubernetes/
+
+# Verify deployment
+kubectl get pods -n wildframe
+kubectl get svc -n wildframe
+```
+
+Example deployment manifest:
+
+```yaml
+# infrastructure/kubernetes/auth-service.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: wildframe
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      containers:
+      - name: auth-service
+        image: 123456789.dkr.ecr.us-east-1.amazonaws.com/wildframe/auth-service:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: auth-secrets
+              key: database_url
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1024Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: wildframe
+spec:
+  selector:
+    app: auth-service
+  ports:
+  - port: 80
+    targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: autoscaling.k8s.io/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: auth-service-hpa
+  namespace: wildframe
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: auth-service
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+```
+
+#### 3. Configure Secrets
+
+```bash
+# Create secrets for database credentials
+kubectl create secret generic auth-secrets \
+  --from-literal=database_url="postgresql://auth_user:password@wildframe-db.us-east-1.rds.amazonaws.com:5432/auth_db" \
+  -n wildframe
+
+# Create secrets for JWT key
+kubectl create secret generic jwt-secrets \
+  --from-literal=jwt_secret_key="$(openssl rand -hex 32)" \
+  -n wildframe
+
+# Verify secrets created
+kubectl get secrets -n wildframe
+```
+
+---
+
+## Verification
+
+### 1. Service Health Checks
+
+```bash
+# Check service readiness
+kubectl get pods -n wildframe
+
+# Example healthy output:
+# NAME                              READY   STATUS    RESTARTS
+# auth-service-5f4d8c9b7-abc12      1/1     Running   0
+# user-service-5f4d8c9b7-def45      1/1     Running   0
+# content-service-5f4d8c9b7-ghi78   1/1     Running   0
+```
+
+### 2. API Connectivity Test
+
+```bash
+# Get API Gateway URL
+kubectl get service api-gateway -n wildframe
+
+# Test endpoint
+curl -X GET https://api.wildframe.com/health \
+  -H "Content-Type: application/json"
+
+# Expected response:
+# {"status": "healthy", "timestamp": "2026-05-28T15:00:00Z"}
+```
+
+### 3. Database Connectivity
+
+```bash
+# Check database connections
+kubectl exec -it auth-service-pod -n wildframe -- \
+  psql -h wildframe-db.us-east-1.rds.amazonaws.com \
+       -U auth_user \
+       -d auth_db \
+       -c "SELECT version();"
+```
+
+### 4. Cache Connectivity
+
+```bash
+# Test Redis connection
+kubectl exec -it auth-service-pod -n wildframe -- \
+  redis-cli -h wildframe-redis.us-east-1.cache.amazonaws.com ping
+
+# Expected response: PONG
+```
+
+### 5. End-to-End Test
+
+```bash
+# Register a test user
+curl -X POST https://api.wildframe.com/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "TestPass123!",
+    "first_name": "Test",
+    "last_name": "User"
+  }'
+
+# Expected response: 201 Created with user data
+```
+
+---
+
+## Post-Deployment
+
+### 1. Enable Monitoring
+
+```bash
+# Deploy Prometheus
+kubectl apply -f infrastructure/kubernetes/prometheus.yaml
+
+# Deploy Grafana
+kubectl apply -f infrastructure/kubernetes/grafana.yaml
+
+# Access Grafana dashboard
+kubectl port-forward svc/grafana 3000:3000 -n wildframe
+# Open http://localhost:3000
+```
+
+### 2. Configure Alerting
+
+```bash
+# Deploy AlertManager
+kubectl apply -f infrastructure/kubernetes/alertmanager.yaml
+
+# Configure notification channels (email, Slack, PagerDuty)
+# in Alertmanager configuration
+```
+
+### 3. Setup Logging
+
+```bash
+# Deploy Loki for log aggregation
+kubectl apply -f infrastructure/kubernetes/loki.yaml
+
+# Deploy Promtail for log collection
+kubectl apply -f infrastructure/kubernetes/promtail.yaml
+```
+
+### 4. Enable Tracing
+
+```bash
+# Deploy Jaeger for distributed tracing
+kubectl apply -f infrastructure/kubernetes/jaeger.yaml
+
+# Services will automatically send traces to Jaeger
+```
+
+---
+
+## Scaling
+
+### Horizontal Scaling
+
+```bash
+# Increase number of replicas
+kubectl scale deployment auth-service --replicas=5 -n wildframe
+
+# Or edit deployment
+kubectl edit deployment auth-service -n wildframe
+# Change spec.replicas to desired number
+```
+
+### Vertical Scaling
+
+```bash
+# Increase resource allocation
+kubectl set resources deployment auth-service \
+  --limits=cpu=2000m,memory=2048Mi \
+  --requests=cpu=1000m,memory=1024Mi \
+  -n wildframe
+```
+
+---
+
+## Troubleshooting
+
+### Service Not Starting
+
+```bash
+# Check pod events
+kubectl describe pod auth-service-5f4d8c9b7-abc12 -n wildframe
+
+# View logs
+kubectl logs auth-service-5f4d8c9b7-abc12 -n wildframe
+
+# Check resource constraints
+kubectl top pods -n wildframe
+```
+
+### Database Connection Issues
+
+```bash
+# Verify database is reachable
+kubectl exec -it auth-service-pod -n wildframe -- \
+  nc -zv wildframe-db.us-east-1.rds.amazonaws.com 5432
+
+# Test with psql
+kubectl exec -it auth-service-pod -n wildframe -- \
+  psql -h wildframe-db.us-east-1.rds.amazonaws.com -U auth_user -d auth_db -c "SELECT 1;"
+```
+
+### High Memory Usage
+
+```bash
+# Check memory metrics
+kubectl top pods -n wildframe --sort-by=memory
+
+# Increase memory limit
+kubectl set resources deployment auth-service \
+  --limits=memory=2048Mi \
+  -n wildframe
+
+# Restart pods to apply changes
+kubectl rollout restart deployment auth-service -n wildframe
+```
+
+---
+
+## Rollback
+
+If issues occur after deployment:
+
+```bash
+# Check rollout history
+kubectl rollout history deployment auth-service -n wildframe
+
+# Rollback to previous version
+kubectl rollout undo deployment auth-service -n wildframe
+
+# Verify rollback
+kubectl get pods -n wildframe
+```
+
+---
+
+## See Also
+
+- [Operations Guide](OPERATIONS.md)
+- [Kubernetes Documentation](https://kubernetes.io/docs/)
+- [Terraform Documentation](https://www.terraform.io/docs/)

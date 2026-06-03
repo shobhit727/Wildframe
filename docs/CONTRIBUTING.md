@@ -1,372 +1,632 @@
-# Production-Grade OTT Platform - Contribution Guide
+# 🔨 Contributing to Wildframe
 
-## Code of Conduct
+**Version**: 2.0.0  
+**Last Updated**: May 27, 2026  
 
-We are committed to providing a welcoming and inclusive environment for all contributors.
+## Overview
 
-## Getting Started
+Welcome to Wildframe development! This guide covers code conventions, development workflow, testing standards, and our git workflow.
 
-### Prerequisites
-- Python 3.11+
-- Node.js 18+
-- PostgreSQL 14+
-- Redis 7+
-- Docker & Docker Compose
+**Time to read**: 10 minutes  
+**Prerequisites**: Python 3.14+, Docker, Git
 
-### Development Setup
+## Table of Contents
 
-```bash
-# Clone repository
-git clone https://github.com/wildframe/platform.git
-cd platform
+1. [Code Conventions](#code-conventions)
+2. [Development Workflow](#development-workflow)
+3. [Testing Requirements](#testing-requirements)
+4. [Git Workflow](#git-workflow)
+5. [Pull Request Process](#pull-request-process)
+6. [Security Guidelines](#security-guidelines)
 
-# Install backend dependencies
-pip install -r requirements.txt
-pre-commit install
-
-# Install frontend dependencies
-npm install
-
-# Start development environment
-docker-compose -f deployments/docker-compose.dev.yml up -d
-
-# Run migrations
-docker-compose exec auth-service alembic upgrade head
-
-# Start frontend
-npm run dev --workspace=apps/web
-
-# Start backend services (in separate terminals)
-python -m uvicorn services/auth-service/app/main:app --reload --port 8001
-python -m uvicorn services/user-service/app/main:app --reload --port 8002
-python -m uvicorn services/content-service/app/main:app --reload --port 8003
-```
-
-## Development Workflow
-
-### 1. Create Feature Branch
-```bash
-git checkout -b feature/description
-```
-
-### 2. Make Changes
-Follow the code conventions below.
-
-### 3. Test Your Changes
-```bash
-# Run tests
-pytest services/auth-service/tests
-
-# Run linting
-black services/auth-service/app
-isort services/auth-service/app
-pylint services/auth-service/app
-mypy services/auth-service/app
-
-# Frontend tests
-npm run test --workspace=apps/web
-npm run lint --workspace=apps/web
-```
-
-### 4. Commit Your Changes
-```bash
-git add .
-git commit -m "feat(auth-service): add user registration endpoint"
-```
-
-Use conventional commits:
-- `feat:` New feature
-- `fix:` Bug fix
-- `docs:` Documentation
-- `style:` Code style
-- `refactor:` Code refactoring
-- `perf:` Performance improvement
-- `test:` Test addition
-- `ci:` CI/CD changes
-
-### 5. Push and Create Pull Request
-```bash
-git push origin feature/description
-```
+---
 
 ## Code Conventions
 
-### Python (Backend)
+### Python Code Style
 
-#### Style
-- Use Black for formatting (line length: 100)
-- Use isort for imports
-- Use type hints for all functions
+We follow PEP 8 with Black formatter (100 character line length).
 
-#### Example
+**✅ Good Example**:
 ```python
-"""Module docstring."""
 from typing import Optional
+from fastapi import FastAPI, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+app = FastAPI()
+
+
+class UserService:
+    """Service for user profile management."""
+    
+    def __init__(self, db: AsyncSession):
+        """Initialize user service.
+        
+        Args:
+            db: Database session
+        """
+        self.db = db
+    
+    async def get_user(self, user_id: str) -> Optional[dict]:
+        """Get user by ID.
+        
+        Args:
+            user_id: User ID to retrieve
+            
+        Returns:
+            User dict or None if not found
+            
+        Raises:
+            ValueError: If user_id is invalid
+        """
+        if not user_id:
+            raise ValueError("user_id cannot be empty")
+        
+        return await self.db.get_user(user_id)
+```
+
+**❌ Bad Example**:
+```python
+# Too many things in one function
+def getUser(id,session,cache,logger):
+    # Do lots of stuff
+    user = session.query(User).filter(User.id==id).first()
+    if not user:return None
+    cache.set(f"user:{id}",user)
+    logger.info(f"Got user {id}")
+    return user
+```
+
+### File Structure
+
+```
+services/auth-service/
+├── app/
+│   ├── __init__.py
+│   ├── main.py                    # FastAPI app creation
+│   ├── api/
+│   │   ├── __init__.py
+│   │   └── routes/
+│   │       ├── __init__.py
+│   │       └── auth.py            # Auth endpoints
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── settings.py            # Configuration
+│   │   ├── database.py            # DB connection
+│   │   └── logging.py             # Logging setup
+│   ├── models/
+│   │   ├── __init__.py
+│   │   └── user.py                # SQLAlchemy models
+│   ├── repositories/
+│   │   ├── __init__.py
+│   │   └── user_repository.py     # Data access
+│   ├── schemas/
+│   │   ├── __init__.py
+│   │   └── auth.py                # Pydantic schemas
+│   ├── services/
+│   │   ├── __init__.py
+│   │   └── auth_service.py        # Business logic
+│   └── security/
+│       ├── __init__.py
+│       └── manager.py             # Auth utilities
+├── tests/
+│   ├── __init__.py
+│   └── test_auth_service.py
+├── migrations/                    # Alembic migrations
+├── Dockerfile
+├── pyproject.toml
+└── README.md
+```
+
+### Naming Conventions
+
+| Element | Convention | Example |
+|---------|-----------|---------|
+| **Classes** | PascalCase | `UserService`, `AuthRepository` |
+| **Functions/Methods** | snake_case | `get_user()`, `create_token()` |
+| **Constants** | UPPER_SNAKE_CASE | `MAX_RETRIES`, `JWT_EXPIRATION` |
+| **Variables** | snake_case | `user_id`, `auth_token` |
+| **Database Tables** | snake_case | `user_profiles`, `refresh_tokens` |
+| **API Routes** | /kebab-case | `/api/v1/auth/login` |
+| **Files** | snake_case | `user_repository.py` |
+
+### Type Hints
+
+Always use type hints for functions and classes:
+
+```python
+from typing import Optional, List, Dict
 from uuid import UUID
-import logging
+from datetime import datetime
 
-logger = logging.getLogger(__name__)
+async def get_users(
+    limit: int = 50,
+    offset: int = 0,
+    status: Optional[str] = None
+) -> List[Dict[str, str]]:
+    """Get paginated users."""
+    pass
 
+def create_token(user_id: UUID, expires_in: int) -> str:
+    """Create JWT token."""
+    pass
+```
 
-async def get_user(user_id: UUID) -> Optional[User]:
-    """Get user by ID.
+### Documentation Strings
+
+Use Google-style docstrings:
+
+```python
+def authenticate_user(email: str, password: str) -> Optional[User]:
+    """Authenticate user with email and password.
+    
+    This function validates credentials against the database
+    and checks for account lockouts.
     
     Args:
-        user_id: The user ID
-    
+        email: User's email address
+        password: User's password (plaintext)
+        
     Returns:
-        User if found, None otherwise
+        User object if authentication succeeds, None otherwise
+        
+    Raises:
+        ValueError: If email format is invalid
+        AccountLockedError: If user account is locked
+        
+    Example:
+        >>> user = authenticate_user("user@example.com", "pass123")
+        >>> if user:
+        ...     print(f"Welcome {user.first_name}")
     """
-    return await repository.get(user_id)
+    pass
 ```
 
-#### Naming Conventions
-- Classes: `PascalCase` (e.g., `UserService`)
-- Functions: `snake_case` (e.g., `get_user`)
-- Constants: `UPPER_CASE` (e.g., `MAX_RETRY_ATTEMPTS`)
-- Private: `_leading_underscore`
+---
 
-#### Structure
+## Development Workflow
+
+### 1. Setup Local Environment
+
+```bash
+# Clone repository
+git clone https://github.com/wildframe/wildframe.git
+cd wildframe
+
+# Create feature branch
+git checkout -b feature/new-feature
+
+# Start services
+docker-compose -f deployments/docker-compose.dev.yml up -d
+```
+
+### 2. Make Changes
+
+```bash
+# Edit files in your favorite editor
+vim services/auth-service/app/api/routes/auth.py
+
+# Changes auto-reload in container due to hot reload
+# No need to restart
+```
+
+### 3. Write Tests
+
+```bash
+# Add tests as you code
+vim services/auth-service/tests/test_auth_service.py
+
+# Run tests frequently
+cd services/auth-service
+python3 -m pytest tests/ -v
+
+# Run specific test
+python3 -m pytest tests/test_auth_service.py::TestUserLogin -v
+```
+
+### 4. Check Code Quality
+
+```bash
+# Format code
+black app/
+isort app/
+
+# Run type checker
+mypy app/
+
+# Run linter
+pylint app/
+
+# Check coverage
+pytest tests/ --cov=app --cov-report=html
+```
+
+### 5. Commit Changes
+
+```bash
+# Stage changes
+git add services/auth-service/
+
+# Commit with descriptive message
+git commit -m "feat: add MFA support to login endpoint
+
+- Add TOTP-based second factor authentication
+- Update user model with mfa_enabled field
+- Create MFA verification service
+- Add 10+ tests for MFA flow
+
+Fixes #123"
+```
+
+---
+
+## Testing Requirements
+
+### Unit Tests (Required)
+
+Test individual functions/classes in isolation:
+
 ```python
-# 1. Module docstring
-# 2. Imports (stdlib, third-party, local)
-# 3. Constants
-# 4. Functions/Classes
-# 5. Main block
+@pytest.mark.asyncio
+async def test_create_user_success():
+    """Test successful user creation."""
+    service = UserService(mock_db)
+    user = await service.create_user("user@example.com", "pass123")
+    
+    assert user.email == "user@example.com"
+    assert user.id is not None
+    mock_db.add.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_create_user_invalid_email():
+    """Test user creation with invalid email."""
+    service = UserService(mock_db)
+    
+    with pytest.raises(ValueError, match="Invalid email"):
+        await service.create_user("invalid-email", "pass123")
 ```
 
-### TypeScript (Frontend)
+### Integration Tests (Required)
 
-#### Style
-- Use ESLint and Prettier
-- Use strict TypeScript settings
-- Use type hints for all functions
+Test services working together:
 
-#### Example
-```typescript
-/**
- * Get user by ID
- * @param userId - The user ID
- * @returns User promise
- */
-export async function getUser(userId: string): Promise<User | null> {
-  return await api.get(`/users/${userId}`);
-}
+```python
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_user_registration_flow(client, db):
+    """Test complete user registration flow."""
+    # Register user
+    response = client.post("/api/v1/auth/register", json={
+        "email": "newuser@example.com",
+        "password": "SecurePass123!"
+    })
+    
+    assert response.status_code == 201
+    assert response.json()["email"] == "newuser@example.com"
+    
+    # Verify user was created in database
+    user = await db.get_user_by_email("newuser@example.com")
+    assert user is not None
 ```
 
-#### Naming Conventions
-- Interfaces: `IPascalCase` or `PascalCase`
-- Functions: `camelCase`
-- Constants: `UPPER_CASE`
-- Components: `PascalCase`
+### Test Coverage
 
-### Database
+**Minimum Coverage by Service**:
 
-#### Naming Conventions
-- Tables: `snake_case` (e.g., `user_profiles`)
-- Columns: `snake_case` (e.g., `created_at`)
-- Indexes: `idx_table_columns` (e.g., `idx_users_email`)
+| Service | Coverage Target | Path |
+|---------|-----------------|------|
+| Auth | 85%+ | services/auth-service/app |
+| User | 80%+ | services/user-service/app |
+| Content | 75%+ | services/content-service/app |
+| Admin | 80%+ | services/admin-service/app |
 
-#### Standards
-- Use UUID for primary keys
-- Include `created_at` and `updated_at` timestamps
-- Use `is_active` for soft deletes
-- Add indexes for foreign keys and frequently queried columns
+### Running Tests
 
-### Git Commits
+```bash
+# Run all tests
+cd services/auth-service
+python3 -m pytest tests/ -v
 
-#### Message Format
+# Run with coverage
+python3 -m pytest tests/ --cov=app --cov-report=html
+
+# Run only fast tests
+python3 -m pytest tests/ -m "not slow" -v
+
+# Run specific test file
+python3 -m pytest tests/test_auth_service.py -v
+
+# Run with detailed output
+python3 -m pytest tests/ -vv --tb=long
 ```
-<type>(<scope>): <subject>
+
+---
+
+## Git Workflow
+
+### Branch Naming
+
+```
+feature/                    New feature
+bugfix/                     Bug fix
+refactor/                   Code refactoring
+docs/                       Documentation
+test/                       Test improvements
+chore/                      Build, CI, dependencies
+
+Example:
+  feature/user-mfa
+  bugfix/password-reset-email
+  refactor/service-factory
+  docs/api-reference
+```
+
+### Commit Message Format
+
+```
+<type>: <subject>
 
 <body>
 
 <footer>
+
+Types: feat, fix, refactor, test, docs, chore
+Subject: Max 50 characters, lowercase, imperative
+Body: Why and what, not how (max 72 chars per line)
+Footer: Issue references, breaking changes
 ```
 
-#### Example
+**Examples**:
+
 ```
-feat(auth): implement JWT token refresh
+feat: add email verification to registration
 
-- Add refresh token endpoint
-- Implement token rotation
-- Add rate limiting
+Users must now verify their email before accessing the platform.
+Sends verification link via email, expires in 24 hours.
 
-Fixes #123
-```
+Fixes #456
 
-## Testing
-
-### Backend Testing
-```bash
-# Unit tests
-pytest services/auth-service/tests/unit -v
-
-# Integration tests
-pytest services/auth-service/tests/integration -v
-
-# Coverage
-pytest services/auth-service/tests --cov=app --cov-report=html
-
-# Specific test
-pytest services/auth-service/tests::test_user_registration -v
+Breaking Change: new email field in user creation response
 ```
 
-### Frontend Testing
-```bash
-# Run tests
-npm run test --workspace=apps/web
-
-# Watch mode
-npm run test:watch --workspace=apps/web
-
-# Coverage
-npm run test:coverage --workspace=apps/web
 ```
+fix: handle null values in watch history query
 
-### Test Naming
-```python
-def test_function_with_condition_returns_expected_result():
-    """Test naming convention for clarity."""
-    # Arrange
-    expected = ...
-    
-    # Act
-    result = function_under_test()
-    
-    # Assert
-    assert result == expected
+Previously would crash if user had null progress_percentage.
+Now defaults to 0 when calculating completion percentage.
+
+Fixes #789
 ```
-
-## Documentation
-
-### Code Documentation
-- Write docstrings for all public functions/classes
-- Include type hints
-- Provide examples for complex logic
-- Document exceptions
-
-### Pull Request Description
-```markdown
-## Description
-Brief description of changes
-
-## Changes
-- Change 1
-- Change 2
-
-## Testing
-- [ ] Unit tests added
-- [ ] Integration tests added
-- [ ] Manual testing done
-
-## Related Issues
-Fixes #123
-
-## Checklist
-- [ ] Code follows conventions
-- [ ] Tests pass
-- [ ] No console errors
-- [ ] Documentation updated
-```
-
-## Performance Guidelines
-
-### Backend
-- API endpoints: < 100ms (p95)
-- Database queries: < 50ms
-- Cache hit rate: > 80%
-- Error rate: < 0.1%
-
-### Frontend
-- Page load: < 3s
-- First Contentful Paint: < 1.5s
-- Time to Interactive: < 3s
-- Cumulative Layout Shift: < 0.1
-
-## Security Guidelines
-
-### Code Review
-- All code must be reviewed before merging
-- Security review for any auth/payment code
-- Dependency scanning for vulnerabilities
-
-### Secrets
-- Never commit secrets or API keys
-- Use environment variables
-- Use `.env.example` for documentation
-- Rotate secrets regularly
-
-### Dependencies
-```bash
-# Check for vulnerabilities
-npm audit
-safety check  # Python
-
-# Update dependencies
-npm update
-pip list --outdated
-```
-
-## Deployment
-
-### Staging Deployment
-```bash
-git push origin feature/branch
-# GitHub Actions will auto-deploy to staging
-# Run smoke tests
-kubectl rollout status deployment/api-gateway -n wildframe-staging
-```
-
-### Production Deployment
-- Create pull request
-- Wait for all tests to pass
-- Get code review approval
-- Merge to main
-- GitHub Actions will deploy to production
-- Verify deployment
-
-## Troubleshooting
-
-### Common Issues
-
-#### Database Connection Failed
-```bash
-# Check PostgreSQL
-docker-compose ps postgres
-docker-compose logs postgres
-
-# Check connection
-psql -h localhost -U wildframe -d auth_db
-```
-
-#### Port Already in Use
-```bash
-# Find and kill process
-lsof -i :8000
-kill -9 <PID>
-```
-
-#### Redis Connection Failed
-```bash
-# Check Redis
-redis-cli ping
-
-# Clear Redis
-redis-cli FLUSHDB
-```
-
-## Support
-
-- **Documentation**: https://docs.wildframe.com
-- **Issues**: https://github.com/wildframe/platform/issues
-- **Discussions**: https://github.com/wildframe/platform/discussions
-- **Slack**: #engineering channel in Wildframe workspace
-
-## License
-
-All contributions are licensed under the Proprietary Wildframe License.
 
 ---
 
-Thank you for contributing to Wildframe! 🚀
+## Pull Request Process
+
+### Before Creating PR
+
+- [ ] Code follows style guide (black, isort formatted)
+- [ ] All tests pass locally
+- [ ] New tests added for new functionality
+- [ ] Test coverage ≥ target percentage
+- [ ] No security vulnerabilities (run bandit)
+- [ ] Documentation updated
+- [ ] Commit messages follow format
+
+### Creating PR
+
+```bash
+# Push branch
+git push origin feature/new-feature
+
+# Create PR via GitHub UI
+# Title: Clear, descriptive summary
+# Description: Use template below
+```
+
+### PR Description Template
+
+```markdown
+## Description
+Brief summary of changes
+
+## Type of Change
+- [ ] New feature
+- [ ] Bug fix
+- [ ] Breaking change
+- [ ] Documentation update
+
+## Changes Made
+- Change 1
+- Change 2
+- Change 3
+
+## How to Test
+1. Step 1
+2. Step 2
+3. Expected result
+
+## Screenshots (if applicable)
+[Add screenshots for UI changes]
+
+## Checklist
+- [ ] Tests pass
+- [ ] Code coverage maintained/improved
+- [ ] Documentation updated
+- [ ] No breaking changes (or documented)
+- [ ] Ready for production
+```
+
+### PR Review Process
+
+1. **Automated Checks**:
+   - ✅ Tests pass
+   - ✅ Code coverage maintained
+   - ✅ Linting passes
+   - ✅ Type checking passes
+
+2. **Code Review**:
+   - At least 1 approval required
+   - Maintainers check design decisions
+   - Security review for auth/data changes
+
+3. **Merge**:
+   - Squash commits for cleaner history
+   - Delete branch after merge
+   - Deploy to staging automatically (CI/CD)
+
+---
+
+## Security Guidelines
+
+### Authentication
+
+❌ **Never**:
+```python
+# Store passwords in plain text
+user.password = password
+
+# Log sensitive data
+logger.info(f"User password: {password}")
+
+# Return tokens in response headers
+return {"token": access_token}
+```
+
+✅ **Always**:
+```python
+# Hash passwords
+user.password_hash = hash_password(password)
+
+# Don't log secrets
+logger.info(f"User {user_id} authenticated")
+
+# Return tokens in body with secure headers
+response = {"access_token": token}
+response.headers["Set-Cookie"] = f"token={token}; HttpOnly; Secure"
+```
+
+### Authorization
+
+```python
+# Check permissions on every protected endpoint
+@router.get("/admin/users")
+async def list_all_users(current_user: User = Depends(get_current_user)):
+    # Verify user is admin
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    
+    return await get_users()
+```
+
+### Input Validation
+
+```python
+# Always validate user input
+from pydantic import BaseModel, EmailStr, Field
+
+class UserRegisterRequest(BaseModel):
+    email: EmailStr  # Validates email format
+    password: str = Field(min_length=8, max_length=128)
+    
+# Pydantic automatically validates before your code runs
+```
+
+### SQL Injection Prevention
+
+```python
+# ❌ Never use string concatenation
+query = f"SELECT * FROM users WHERE email = '{email}'"
+
+# ✅ Always use parameterized queries
+query = select(User).where(User.email == email)
+```
+
+### Secrets Management
+
+```bash
+# ❌ Never commit secrets
+# DO NOT add to git:
+DATABASE_PASSWORD=secret123
+JWT_SECRET_KEY=my-secret-key
+
+# ✅ Use environment variables or AWS Secrets Manager
+DATABASE_PASSWORD=${DATABASE_PASSWORD}
+JWT_SECRET_KEY=${JWT_SECRET_KEY}
+```
+
+---
+
+## Code Review Checklist
+
+When reviewing PRs, check:
+
+- [ ] **Functionality**: Does it do what it's supposed to?
+- [ ] **Testing**: Are tests adequate and passing?
+- [ ] **Style**: Does code follow conventions?
+- [ ] **Performance**: Any obvious inefficiencies?
+- [ ] **Security**: Are there security issues?
+- [ ] **Error Handling**: Are errors handled gracefully?
+- [ ] **Documentation**: Is it clear and complete?
+- [ ] **Dependencies**: Any unnecessary or vulnerable deps?
+
+---
+
+## Common Issues
+
+### Issue: "Black format check failed"
+
+**Solution**:
+```bash
+# Format automatically
+black app/
+isort app/
+
+# Then commit
+git add app/
+git commit -m "style: format code"
+```
+
+### Issue: "Test coverage below 80%"
+
+**Solution**:
+```bash
+# Check which lines are uncovered
+pytest tests/ --cov=app --cov-report=html
+# Open htmlcov/index.html in browser
+
+# Add tests for those lines
+# Aim for high coverage on critical paths
+```
+
+### Issue: "Type checker failed"
+
+**Solution**:
+```bash
+# Run mypy to see issues
+mypy app/
+
+# Fix type hints
+# If legitimate false positive, add: # type: ignore
+```
+
+---
+
+## Resources
+
+- [FastAPI Docs](https://fastapi.tiangolo.com/)
+- [SQLAlchemy Async](https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html)
+- [Pydantic V2](https://docs.pydantic.dev/latest/)
+- [Pytest Docs](https://docs.pytest.org/)
+- [Python PEP 8](https://www.python.org/dev/peps/pep-0008/)
+
+---
+
+## Questions?
+
+- Check existing documentation
+- Review similar code in the codebase
+- Ask in pull request comments
+- Create an issue for clarification
+
+**Thank you for contributing!** 🙏

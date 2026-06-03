@@ -6,17 +6,26 @@ CREATE DATABASE auth_db;
 CREATE DATABASE users_db;
 CREATE DATABASE content_db;
 CREATE DATABASE streaming_db;
+CREATE DATABASE search_db;
+CREATE DATABASE recommendation_db;
 CREATE DATABASE billing_db;
 CREATE DATABASE analytics_db;
+CREATE DATABASE notification_db;
+CREATE DATABASE media_db;
 CREATE DATABASE admin_db;
+CREATE DATABASE wildframe_db;
 
 -- Create service users with limited privileges
 CREATE USER auth_user WITH PASSWORD 'auth_service_secure_password';
 CREATE USER users_user WITH PASSWORD 'users_service_secure_password';
 CREATE USER content_user WITH PASSWORD 'content_service_secure_password';
 CREATE USER streaming_user WITH PASSWORD 'streaming_service_secure_password';
+CREATE USER search_user WITH PASSWORD 'search_service_secure_password';
+CREATE USER recommendation_user WITH PASSWORD 'recommendation_service_secure_password';
 CREATE USER billing_user WITH PASSWORD 'billing_service_secure_password';
 CREATE USER analytics_user WITH PASSWORD 'analytics_service_secure_password';
+CREATE USER notification_user WITH PASSWORD 'notification_service_secure_password';
+CREATE USER media_user WITH PASSWORD 'media_service_secure_password';
 CREATE USER admin_user WITH PASSWORD 'admin_service_secure_password';
 
 -- Grant privileges to service users on their respective databases
@@ -24,9 +33,14 @@ GRANT ALL PRIVILEGES ON DATABASE auth_db TO auth_user;
 GRANT ALL PRIVILEGES ON DATABASE users_db TO users_user;
 GRANT ALL PRIVILEGES ON DATABASE content_db TO content_user;
 GRANT ALL PRIVILEGES ON DATABASE streaming_db TO streaming_user;
+GRANT ALL PRIVILEGES ON DATABASE search_db TO search_user;
+GRANT ALL PRIVILEGES ON DATABASE recommendation_db TO recommendation_user;
 GRANT ALL PRIVILEGES ON DATABASE billing_db TO billing_user;
 GRANT ALL PRIVILEGES ON DATABASE analytics_db TO analytics_user;
+GRANT ALL PRIVILEGES ON DATABASE notification_db TO notification_user;
+GRANT ALL PRIVILEGES ON DATABASE media_db TO media_user;
 GRANT ALL PRIVILEGES ON DATABASE admin_db TO admin_user;
+GRANT ALL PRIVILEGES ON DATABASE wildframe_db TO auth_user;
 
 -- Connect to each database and set schema privileges
 \c auth_db
