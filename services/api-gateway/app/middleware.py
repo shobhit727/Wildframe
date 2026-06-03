@@ -1,0 +1,145 @@
+"""API Gateway - routing, load balancing, authentication."""
+import logging
+import httpx
+from typing import Optional
+from fastapi import Request, HTTPException, Depends, status
+from datetime import datetime, timezone, timedelta
+import redis.asyncio as redis
+import jwt
+
+logger = logging.getLogger(__name__)
+
+class ServiceRegistry:
+    """Registry of backend services."""
+    
+    SERVICES = {
+        "auth": "http://auth-service:8000",
+        "users": "http://user-service:8001",
+        "content": "http://content-service:8002",
+        "streaming": "http://streaming-service:8003",
+        "search": "http://search-service:8004",
+        "recommendations": "http://recommendation-service:8005",
+        "billing": "http://billing-service:8006",
+        "analytics": "http://analytics-service:8007",
+        "notifications": "http://notification-service:8008",
+        "media": "http://media-pipeline-service:8009",
+        "admin": "http://admin-service:8010",
+    }
+    
+    @classmethod
+    def get_service_url(cls, service: str) -> Optional[str]:
+        """Get service URL by name."""
+        return cls.SERVICES.get(service)
+    
+    @classmethod
+    def route_request(cls, path: str) -> tuple[Optional[str], str]:
+        """Route request path to appropriate service."""
+        parts = path.strip("/").split("/")
+        if not parts:
+            return None, ""
+        
+        service = parts[0]
+        remaining_path = "/" + "/".join(parts[1:]) if len(parts) > 1 else "/"
+        url = cls.get_service_url(service)
+        
+        return url, remaining_path
+
+class AuthenticationMiddleware:
+    """Authentication middleware for API Gateway."""
+    
+    PUBLIC_PATHS = {
+        "/auth/register",
+        "/auth/login",
+        "/health",
+        "/docs",
+        "/openapi.json",
+    }
+    
+    def __init__(self, jwt_secret: str):
+        self.jwt_secret = jwt_secret
+    
+    async def verify_token(self, request: Request) -> Optional[dict]:
+        """Verify JWT token from Authorization header."""
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return None
+        
+        try:
+            scheme, token = auth_header.split()
+            if scheme.lower() != "bearer":
+                return None
+            
+            payload = jwt.decode(token, self.jwt_secret, algorithms=["HS256"])
+            return payload
+        except Exception as e:
+            logger.warning(f"Token verification failed: {e}")
+            return None
+    
+    async def __call__(self, request: Request) -> Optional[dict]:
+        """Middleware to check authentication on protected routes."""
+        # Check if path is public
+        if any(request.url.path.startswith(path) for path in self.PUBLIC_PATHS):
+            return None
+        
+        # Verify token for protected routes
+        token_payload = await self.verify_token(request)
+        if not token_payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or missing authentication token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        return token_payload
+
+class RateLimiter:
+    """Rate limiting middleware."""
+    
+    def __init__(self, redis_client: redis.Redis):
+        self.redis = redis_client
+        self.limits = {
+            "auth": 5,      # 5 requests per minute
+            "search": 100,  # 100 requests per minute
+            "default": 1000  # 1000 requests per minute
+        }
+    
+    async def check_rate_limit(self, user_id: str, service: str) -> bool:
+        """Check if user has exceeded rate limit for service."""
+        key = f"rate_limit:{user_id}:{service}"
+        limit = self.limits.get(service, self.limits["default"])
+        
+        count = await self.redis.incr(key)
+        if count == 1:
+            await self.redis.expire(key, 60)  # 1 minute window
+        
+        return count <= limit
+
+class LoadBalancer:
+    """Simple load balancer for service replicas."""
+    
+    async def get_healthy_instance(self, service: str) -> Optional[str]:
+        """Get healthy instance of a service."""
+        url = ServiceRegistry.get_service_url(service)
+        if not url:
+            return None
+        
+        # Check health
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            try:
+                response = await client.get(f"{url}/health")
+                if response.status_code == 200:
+                    return url
+            except Exception:
+                logger.warning(f"Health check failed for {service}")
+        
+        return None
+
+async def get_current_user(request: Request, auth: AuthenticationMiddleware = Depends()) -> dict:
+    """Dependency to get current authenticated user."""
+    user_info = await auth(request)
+    if not user_info:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
+        )
+    return user_info

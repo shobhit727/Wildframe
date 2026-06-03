@@ -1,0 +1,14 @@
+"""Tests for Api Gateway Service."""
+import pytest
+from unittest.mock import AsyncMock
+
+@pytest.mark.asyncio
+async def test_health_check():
+    """Test health check endpoint."""
+    from app.main import app
+    from fastapi.testclient import TestClient
+    
+    client = TestClient(app)
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
