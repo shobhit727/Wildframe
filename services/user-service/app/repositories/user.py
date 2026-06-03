@@ -5,7 +5,7 @@ from uuid import UUID
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
-from sqlalchemy import select, and_, desc, asc
+from sqlalchemy import select, and_, desc, asc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import UserProfile, Device, UserSession, WatchHistory, UserPreference
