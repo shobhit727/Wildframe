@@ -2,13 +2,13 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import get_db_session
+from app.core.database import get_db
 from app.repositories import UserPreferencesRepository, RecommendationRepository
 from app.services import RecommendationService
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
-async def get_rec_service(db: AsyncSession = Depends(get_db_session)) -> RecommendationService:
+async def get_rec_service(db: AsyncSession = Depends(get_db)) -> RecommendationService:
     return RecommendationService(UserPreferencesRepository(db), RecommendationRepository(db))
 
 @router.get("/for-user/{user_id}")

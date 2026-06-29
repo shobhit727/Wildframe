@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from app.core.settings import settings
 from app.core.database import DatabaseManager
 from app.core.logging import setup_logging
+from app.api.media_pipeline_routes import router as media_router
 
 logger = logging.getLogger(__name__)
 

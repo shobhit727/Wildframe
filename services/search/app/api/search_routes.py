@@ -2,14 +2,14 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import get_db_session
+from app.core.database import get_db
 from app.repositories import SearchQueryRepository, SearchIndexRepository
 from app.services import SearchService
 from elasticsearch import AsyncElasticsearch
 
 router = APIRouter(prefix="/search", tags=["search"])
 
-async def get_search_service(db: AsyncSession = Depends(get_db_session)) -> SearchService:
+async def get_search_service(db: AsyncSession = Depends(get_db)) -> SearchService:
     es = AsyncElasticsearch(hosts=["elasticsearch:9200"])
     return SearchService(es, SearchQueryRepository(db), SearchIndexRepository(db))
 

@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from app.core.settings import settings
 from app.core.database import DatabaseManager
 from app.core.logging import setup_logging
+from app.api.analytics_routes import router as analytics_router
 
 logger = logging.getLogger(__name__)
 

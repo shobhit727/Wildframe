@@ -2,13 +2,13 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, Body, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import get_db_session
+from app.core.database import get_db
 from app.repositories import TranscodingJobRepository
 from app.services import MediaPipelineService
 
 router = APIRouter(prefix="/media", tags=["media"])
 
-async def get_media_service(db: AsyncSession = Depends(get_db_session)) -> MediaPipelineService:
+async def get_media_service(db: AsyncSession = Depends(get_db)) -> MediaPipelineService:
     return MediaPipelineService(TranscodingJobRepository(db))
 
 @router.post("/transcode")

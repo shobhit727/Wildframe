@@ -81,3 +81,16 @@ class DatabaseManager:
 
 # Global database manager instance
 db_manager = DatabaseManager()
+
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Get database session for API dependency injection.
+
+    Wraps ``db_manager.get_session`` so route handlers can use
+    ``Depends(get_db)``.
+
+    Yields:
+        AsyncSession: Database session
+    """
+    async for session in db_manager.get_session():
+        yield session

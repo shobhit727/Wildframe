@@ -2,7 +2,7 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import get_db_session
+from app.core.database import get_db
 from app.repositories import EventRepository
 from app.services import AnalyticsService
 

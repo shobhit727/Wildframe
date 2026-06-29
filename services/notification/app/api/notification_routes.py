@@ -2,13 +2,13 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, Body
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import get_db_session
+from app.core.database import get_db
 from app.repositories import NotificationRepository
 from app.services import NotificationService
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
-async def get_notif_service(db: AsyncSession = Depends(get_db_session)) -> NotificationService:
+async def get_notif_service(db: AsyncSession = Depends(get_db)) -> NotificationService:
     return NotificationService(NotificationRepository(db))
 
 @router.post("/send")
