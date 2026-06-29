@@ -73,3 +73,24 @@ class DatabaseManager:
 
 
 db_manager = DatabaseManager()
+
+
+async def get_db_session() -> AsyncSession:
+    """Get database session for dependency injection.
+
+    Yields:
+        AsyncSession: Database session
+    """
+    factory = db_manager.get_session_factory()
+    async with factory() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+# Alias kept for API routes, which declare ``Depends(get_db)``.
+get_db = get_db_session

@@ -1,7 +1,7 @@
 """Streaming service main application."""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.config import settings
+from app.core.settings import settings
 from app.api.streaming_routes import router as streaming_router
 import logging
 
@@ -15,7 +15,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=settings.CORS_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,4 +40,6 @@ async def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8006)
+    # Bind the port declared in settings so ``python -m app`` matches the
+    # Docker ``CMD``/gunicorn (both honor ``settings.SERVER_PORT``).
+    uvicorn.run(app, host=settings.SERVER_HOST, port=settings.SERVER_PORT)
