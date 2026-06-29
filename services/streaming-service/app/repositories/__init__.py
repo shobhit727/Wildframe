@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, desc
 from uuid import UUID
 from typing import List, Optional
+from datetime import datetime
 import logging
 
 from app.models import (
@@ -209,6 +210,31 @@ class CDNRegionRepository(BaseRepository):
         return result.scalars().all()
 
 
+class StreamingMetricsRepository(BaseRepository):
+    """Repository for streaming quality metrics operations."""
+
+    async def create(self, session_id: UUID, bandwidth_mbps: float, resolution: str,
+                     bitrate_kbps: int, buffer_seconds: float, stalls: int) -> StreamingStatistics:
+        """Record a metrics sample as an aggregated statistics row."""
+        stats = StreamingStatistics(
+            content_id=session_id,
+            period_start=datetime.utcnow().replace(minute=0, second=0, microsecond=0),
+            period_end=datetime.utcnow(),
+            period_type="hourly",
+            total_streams=1,
+            average_bitrate_kbps=bitrate_kbps,
+            average_buffer_ratio=buffer_seconds,
+            stalls_per_session=float(stalls),
+        )
+        self.session.add(stats)
+        await self.flush()
+        return stats
+
+    async def get_by_id(self, stats_id: UUID) -> Optional[StreamingStatistics]:
+        """Get statistics by ID."""
+        return await self.session.get(StreamingStatistics, stats_id)
+
+
 class DownloadSessionRepository(BaseRepository):
     """Repository for download session operations."""
     
@@ -243,3 +269,10 @@ class DownloadSessionRepository(BaseRepository):
                     setattr(download, key, value)
             await self.flush()
         return download
+
+
+# The streaming API routes construct the service with these canonical names.
+# Keep them as aliases onto the existing repository classes.
+StreamingSessionRepository = PlaybackSessionRepository
+VideoManifestRepository = VideoManifestRepository
+WatchHistoryRepository = DownloadSessionRepository

@@ -151,7 +151,7 @@ class AudioTrack(Base):
 class CDNEdge(Base):
     """CDN edge server status."""
     __tablename__ = "cdn_edges"
-    
+
     id: Mapped[uuid4] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     edge_name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
     region: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -161,3 +161,39 @@ class CDNEdge(Base):
     last_health_check: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Compatibility re-exports.
+#
+# The streaming service has two model layers: the modern Mapped-style models in
+# this file (StreamingSession, ManifestCache, StreamingMetrics, ...) and the
+# legacy Column-style models in app/models/__init__.py (PlaybackSession,
+# VideoManifest, TranscodingJob, ...). The repositories layer consumes the
+# legacy models, while the service layer consumes the modern ones. Tests import
+# a mix, so re-export the names they expect here to keep both worlds working
+# without duplicating ORM definitions.
+# ---------------------------------------------------------------------------
+
+from app.models import VideoManifest as VideoManifest  # noqa: F401
+
+
+class WatchHistory(Base):
+    """A user's watch-history entry (resume points + completed plays)."""
+    __tablename__ = "watch_history"
+
+    id: Mapped[uuid4] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[uuid4] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    content_id: Mapped[uuid4] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    episode_id: Mapped[uuid4] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    position_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    watched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        Index("idx_watch_history_user", "user_id", "watched_at"),
+        Index("idx_watch_history_content", "content_id"),
+    )
