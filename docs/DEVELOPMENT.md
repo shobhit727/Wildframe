@@ -28,9 +28,9 @@ Complete guide to developing for Wildframe: setup, conventions, implementation r
 git clone https://github.com/wildframe/platform.git
 cd platform
 
-# Install backend dependencies
-pip install -r requirements.txt
-pre-commit install
+# Install backend dependencies (pyproject.toml / Poetry)
+pip install poetry && poetry install
+# optional: pre-commit install   # (no .pre-commit-config.yaml provided yet)
 
 # Install frontend dependencies
 npm install
@@ -396,7 +396,7 @@ docker-compose ps postgres
 docker-compose logs postgres
 
 # Check connection
-psql -h localhost -U wildframe -d auth_db
+PGPASSWORD=wildframe_dev_password psql -h localhost -p 5432 -U wildframe -d auth_db
 ```
 
 ## Quick Local Setup Checklist

@@ -79,7 +79,7 @@ Token lifetime:
 
 ## Services
 
-### 1. Auth Service (Port 8000)
+### 1. Auth Service (Host port 8001)
 
 #### Register User
 
@@ -172,7 +172,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 2. User Service (Port 8001)
+### 2. User Service (Host port 8002)
 
 #### Get Current User Profile
 
@@ -315,7 +315,7 @@ Content-Type: application/json
 
 ---
 
-### 3. Content Service (Port 8002)
+### 3. Content Service (Host port 8003)
 
 #### List Movies
 
@@ -409,7 +409,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 4. Streaming Service (Port 8003)
+### 4. Streaming Service (Host port 8004)
 
 #### Start Streaming Session
 

@@ -10,7 +10,7 @@ Wildframe is a production-grade OTT (Over-The-Top) streaming platform built on a
 
 **Key Stats**:
 - 12 microservices
-- 7 databases (database-per-service pattern)
+- 12 databases (database-per-service pattern)
 - 5 infrastructure services (caching, messaging, search)
 - 4 observability services (metrics, logs, tracing, profiling)
 
@@ -47,7 +47,7 @@ Wildframe is a production-grade OTT (Over-The-Top) streaming platform built on a
          │              │             │
     ┌────▼──────────────▼─────────────▼────┐
     │    Shared Infrastructure              │
-    │  ├─ PostgreSQL (7 databases)         │
+    │  ├─ PostgreSQL (12 databases)        │
     │  ├─ Redis (caching & sessions)       │
     │  ├─ Kafka (event streaming)          │
     │  ├─ Elasticsearch (full-text search) │

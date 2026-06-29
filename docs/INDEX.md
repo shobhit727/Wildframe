@@ -83,24 +83,29 @@ For issues or questions:
 
 ## 🆕 What's New
 
-**Last Updated**: May 28, 2026
+**Last Updated**: June 4, 2026
 
 ### Recent Changes
 - ✅ All 12 microservices scaffolded
 - ✅ Docker Compose environment configured
-- ✅ 51+ tests implemented
+- ✅ 70+ tests implemented
 - ✅ CI/CD pipeline set up
 - ✅ Monitoring dashboards configured
-- ✅ **Complete documentation suite created** (13 files, 150+ KB)
+- ✅ **Complete documentation suite created** (19 files, 200+ KB)
   - API_DOCUMENTATION.md - Complete API reference with examples
   - DEPLOYMENT_GUIDE.md - Production deployment procedures
   - MONITORING.md - Metrics, logging, tracing, and alerting
   - GLOSSARY.md - Technical terminology (80+ terms)
   - ARCHITECTURE.md - System design and patterns
+  - QUICKSTART.md - 10-minute local setup
+  - TEST_GUIDE.md - Testing playbook
+  - SERVICE_ARCHITECTURE_PATTERN.md - Per-service layout
+  - FRONTEND_ARCHITECTURE.md - Frontend structure
+  - WHATS_INCLUDED.md - Feature inventory
 
 ### Documentation Coverage
 
-**Total**: 13 comprehensive documentation files covering:
+**Total**: 19 comprehensive documentation files covering:
 - ✅ System architecture and design patterns
 - ✅ API reference with all endpoints
 - ✅ Database schema and relationships
@@ -110,7 +115,10 @@ For issues or questions:
 - ✅ Operations and monitoring
 - ✅ Contributing guidelines
 - ✅ Technical glossary
+- ✅ Per-service architecture pattern
+- ✅ Frontend architecture and conventions
+- ✅ Quick-start, testing, and feature inventory
 
 ---
 
-**Next Step**: Start with [QUICKSTART.md](../QUICKSTART.md) to get up and running!
+**Next Step**: Start with [QUICKSTART.md](QUICKSTART.md) to get up and running!
