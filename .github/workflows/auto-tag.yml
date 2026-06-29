@@ -1,0 +1,29 @@
+# Auto-tag: when a v* tag is pushed, create a matching GitHub Release.
+# This keeps the release surface in sync with version tags without requiring
+# manual release creation. The workflow is intentionally minimal — it does
+# not build or publish artifacts, only drafts a release from the tag.
+
+name: Auto Tag Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release from Tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          tag_name: ${{ github.ref_name }}

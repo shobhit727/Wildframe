@@ -1,5 +1,7 @@
 # Wildframe OTT Streaming Platform
 
+[![CI](https://github.com/shobhit727/Wildframe/actions/workflows/ci.yml/badge.svg)](https://github.com/shobhit727/Wildframe/actions/workflows/ci.yml)
+
 A production-grade, enterprise-level Over-The-Top (OTT) streaming platform engineered for scale, reliability, and developer experience.
 
 ## 🎯 Vision

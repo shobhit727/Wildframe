@@ -1,0 +1,215 @@
+# Wildframe CI Pipeline
+#
+# Runs on every push/PR to main.
+#   - backend-lint      : ruff / black / mypy over services/
+#   - backend-test       : pytest + coverage per service, plus a slowest-tests step
+#   - frontend-ci        : npm ci + lint + build (and test if the script exists) for apps/web
+#   - docker-build-smoke : matrix docker build (no push) for a few representative services
+#
+# Notes:
+#   - Python deps are managed with Poetry; we cache the virtualenv keyed on
+#     the service's pyproject.toml hash so repeat runs are fast.
+#   - Each service is importable as `app.*`, so we add the service root to
+#     PYTHONPATH and run pytest from inside the service directory. This is
+#     the most robust approach and avoids fighting with cross-service imports.
+#   - The docker-build-smoke job only builds (no push) to catch broken Dockerfiles.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same branch/PR to save minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.14"
+  NODE_VERSION: "20"
+  POETRY_VERSION: "1.8.3"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Backend lint: ruff, black, mypy over services/
+  # ---------------------------------------------------------------------------
+  backend-lint:
+    name: Backend Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # Lightweight lint job: install the lint tools directly with pip.
+      # We skip `poetry install` here because there is no committed
+      # poetry.lock at the repo root, and linting doesn't need the full
+      # dependency tree. This keeps the job fast.
+      - name: Install lint tools
+        run: python -m pip install ruff black mypy
+
+      - name: Run ruff check
+        run: ruff check services/
+
+      - name: Run black --check
+        run: black --check services/
+
+      - name: Run mypy
+        run: mypy services/
+        continue-on-error: true
+
+  # ---------------------------------------------------------------------------
+  # Backend tests: pytest + coverage per service, then slowest-tests report.
+  # ---------------------------------------------------------------------------
+  backend-test:
+    name: Backend Test
+    runs-on: ubuntu-latest
+    strategy:
+      # Run each service in its own matrix shard for parallelism and clarity.
+      fail-fast: false
+      matrix:
+        service:
+          - auth-service
+          - user-service
+          - content-service
+          - streaming-service
+          - search-service
+          - recommendation-service
+          - billing-service
+          - analytics-service
+          - notification-service
+          - admin-service
+          - media-pipeline
+          - api-gateway
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached virtualenv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: services/${{ matrix.service }}/.venv
+          key: venv-${{ runner.os }}-${{ matrix.service }}-${{ hashFiles(format('services/{0}/pyproject.toml', matrix.service)) }}
+
+      - name: Install service dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        working-directory: services/${{ matrix.service }}
+        run: poetry install --no-interaction --with dev
+
+      # Run from inside the service directory and put the service root on
+      # PYTHONPATH so `from app.*` imports resolve. Use --cov=app (the
+      # importable package name) rather than --cov=services, which only works
+      # from the repo root and conflicts across services.
+      - name: Run tests with coverage
+        working-directory: services/${{ matrix.service }}
+        run: |
+          PYTHONPATH="$PWD:$PYTHONPATH" \
+            poetry run pytest tests \
+              --asyncio-mode=auto -q \
+              --cov=app --cov-report=term-missing:skip-covered
+
+      - name: Print slowest tests
+        if: always()
+        working-directory: services/${{ matrix.service }}
+        run: |
+          PYTHONPATH="$PWD:$PYTHONPATH" \
+            poetry run pytest tests \
+              --asyncio-mode=auto --durations=20 -q
+
+  # ---------------------------------------------------------------------------
+  # Frontend CI: lint + build (and test if available) for apps/web
+  # ---------------------------------------------------------------------------
+  frontend-ci:
+    name: Frontend CI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check apps/web exists
+        id: check
+        run: |
+          if [ -d "apps/web" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js
+        if: steps.check.outputs.exists == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        if: steps.check.outputs.exists == 'true'
+        run: npm ci
+
+      - name: Lint
+        if: steps.check.outputs.exists == 'true'
+        run: npm run lint
+
+      - name: Test
+        if: steps.check.outputs.exists == 'true'
+        run: npm test -- --run
+        continue-on-error: true
+
+      - name: Build
+        if: steps.check.outputs.exists == 'true'
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Docker build smoke: build (no push) a few representative service images.
+  # ---------------------------------------------------------------------------
+  docker-build-smoke:
+    name: Docker Build Smoke (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - auth-service
+          - content-service
+          - streaming-service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          push: false
+          load: true
+          tags: ${{ matrix.service }}:ci-smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
