@@ -1,5 +1,6 @@
 """Database configuration and session management for User Service."""
 from typing import AsyncGenerator
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     create_async_engine,
@@ -74,8 +75,8 @@ class DatabaseManager:
         """Check database connectivity."""
         try:
             engine = cls.get_engine()
-            async with engine.connect() as conn:
-                await conn.execute(lambda: "SELECT 1")
+            async with engine.begin() as conn:
+                await conn.execute(text("SELECT 1"))
             return True
         except Exception as e:
             logger.error(f"Database health check failed: {e}")
@@ -94,3 +95,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """Get database session for dependency injection."""
     async for session in DatabaseManager.get_session():
         yield session
+
+
+# Alias kept for API routes, which declare ``Depends(get_db)``.
+get_db = get_db_session

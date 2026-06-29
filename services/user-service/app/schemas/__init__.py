@@ -222,3 +222,13 @@ class ErrorResponse(BaseModel):
     error: str
     message: str
     details: Optional[dict] = None
+
+
+class HealthCheckResponse(BaseModel):
+    """Health check response."""
+
+    status: str
+    service: str
+    version: str
+    timestamp: datetime
+    checks: Optional[dict[str, dict]] = None

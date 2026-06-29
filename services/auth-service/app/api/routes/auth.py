@@ -433,12 +433,17 @@ async def verify_email(
                 detail="User not found"
             )
         
-        # TODO: Implement actual code verification with Redis storage
-        # For now, just mark as verified
-        await user_repo.verify_email(user)
-        await db.commit()
-        logger.info(f"Email verified for user: {user.id}")
-        
+        # NOTE: A real flow generates a one-time code, stores it in Redis
+        # (TTL'd to EMAIL_VERIFICATION_EXPIRATION_HOURS), and emails it. The
+        # caller then resubmits here for validation. That Redis-backed
+        # storage is not wired yet, so to avoid flagging emails as verified
+        # without proof, this endpoint returns 501 until the flow is complete.
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Email verification code flow is not implemented; "
+                   "verification codes are not yet generated or stored."
+        )
+
     except HTTPException:
         await db.rollback()
         raise
@@ -480,15 +485,16 @@ async def setup_mfa(
                 detail="User not found"
             )
         
-        # TODO: Implement actual MFA setup (TOTP QR code generation, etc.)
-        logger.info(f"MFA setup initiated for user: {user_id}")
-        
-        return {
-            "status": "setup_initiated",
-            "method": request.method,
-            # In production: include QR code, backup codes, etc.
-        }
-        
+        # NOTE: Full setup generates a TOTP secret, renders a provisioning QR
+        # code (otpauth://...), returns backup codes, and waits for the user
+        # to submit a TOTP code to /mfa/verify before enabling. The TOTP/QR
+        # pipeline is not implemented, so to avoid enabling MFA with no
+        # secret, this endpoint returns 501 until the flow is complete.
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="MFA setup (TOTP secret + QR provisioning) is not implemented."
+        )
+
     except HTTPException:
         raise
     except Exception as e:
@@ -525,14 +531,15 @@ async def verify_mfa(
                 detail="User not found"
             )
         
-        # TODO: Implement actual MFA verification (TOTP code check)
-        # Enable MFA
-        user.mfa_enabled = True
-        await db.flush()
-        await db.commit()
-        
-        logger.info(f"MFA enabled for user: {user_id}")
-        
+        # NOTE: Full verification checks the submitted TOTP code against the
+        # user's stored secret before flipping mfa_enabled. Neither secret
+        # storage nor the TOTP checker is implemented, so to avoid enabling
+        # MFA without actual 2FA proof, this endpoint returns 501.
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="MFA verification (TOTP code check) is not implemented."
+        )
+
     except HTTPException:
         await db.rollback()
         raise

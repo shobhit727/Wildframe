@@ -11,8 +11,8 @@ import hmac
 import logging
 
 import jwt
+import redis.asyncio as redis
 from passlib.context import CryptContext
-import aioredis
 from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -163,23 +163,30 @@ class TokenManager:
 class RateLimiter:
     """Redis-backed rate limiting using sliding window algorithm."""
     
-    def __init__(self, redis_url: str = settings.REDIS_URL):
+    def __init__(self, client: redis.Redis | None = None):
         """Initialize rate limiter.
-        
+
         Args:
-            redis_url: Redis connection URL
+            client: An optional pre-built async Redis client. When omitted, a
+                client is lazily created from ``settings.REDIS_URL``. Accepting
+                an injected client keeps the limiter testable and avoids
+                opening multiple connections per worker.
         """
-        self.redis_url = redis_url
-        self._redis = None
-    
-    async def get_redis(self) -> aioredis.Redis:
-        """Get or create Redis connection.
-        
+        self._redis = client
+        self._owns_client = client is None
+
+    async def get_redis(self) -> redis.Redis:
+        """Get or create an async Redis connection.
+
+        Uses the official ``redis.asyncio`` client (the ``redis`` package
+        already declares it — do **not** fall back to the unmaintained
+        ``aioredis`` fork, which is not a project dependency).
+
         Returns:
             Redis client instance
         """
         if self._redis is None:
-            self._redis = await aioredis.from_url(self.redis_url)
+            self._redis = await redis.asyncio.from_url(settings.REDIS_URL)
         return self._redis
     
     async def is_allowed(
@@ -252,6 +259,7 @@ class RateLimiter:
             logger.error(f"Error resetting rate limit: {e}")
     
     async def close(self) -> None:
-        """Close Redis connection."""
-        if self._redis:
+        """Close the Redis connection if this limiter created it."""
+        if self._redis and self._owns_client:
             await self._redis.close()
+            self._redis = None

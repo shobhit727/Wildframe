@@ -18,7 +18,7 @@ from app.core.settings import settings
 from app.core.database import DatabaseManager
 from app.core.logging import setup_logging, set_request_id, set_correlation_id
 from app.schemas import ErrorResponse, HealthCheckResponse
-from app.telemetry.tracing import setup_tracing
+from app.telemetry import setup_tracing
 
 logger = logging.getLogger(__name__)
 
