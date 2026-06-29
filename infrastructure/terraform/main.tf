@@ -19,6 +19,14 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 2.10"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.5"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 
   backend "s3" {
@@ -58,13 +66,207 @@ provider "helm" {
 }
 
 # VPC for Wildframe
-module "vpc" {
-  source = "./modules/vpc"
+resource "aws_vpc" "main" {
+  cidr_block           = var.vpc_cidr_block
+  enable_dns_support   = true
+  enable_dns_hostnames = true
 
-  name_prefix        = "wildframe"
-  cidr_block         = var.vpc_cidr_block
-  availability_zones = var.availability_zones
-  environment        = var.environment
+  tags = {
+    Name = "wildframe-${var.environment}"
+  }
+}
+
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "wildframe-${var.environment}"
+  }
+}
+
+resource "aws_subnet" "public" {
+  count = length(var.availability_zones)
+
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = var.public_subnet_cidrs[count.index]
+  availability_zone       = var.availability_zones[count.index]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "wildframe-${var.environment}-public-${count.index + 1}"
+    Tier = "public"
+  }
+}
+
+resource "aws_subnet" "private" {
+  count = length(var.availability_zones)
+
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.private_subnet_cidrs[count.index]
+  availability_zone = var.availability_zones[count.index]
+
+  tags = {
+    Name = "wildframe-${var.environment}-private-${count.index + 1}"
+    Tier = "private"
+  }
+}
+
+resource "aws_eip" "nat" {
+  count = length(var.availability_zones)
+
+  domain = "vpc"
+
+  tags = {
+    Name = "wildframe-${var.environment}-nat-${count.index + 1}"
+  }
+
+  depends_on = [aws_internet_gateway.main]
+}
+
+resource "aws_nat_gateway" "main" {
+  count = length(var.availability_zones)
+
+  allocation_id = aws_eip.nat[count.index].id
+  subnet_id     = aws_subnet.public[count.index].id
+
+  tags = {
+    Name = "wildframe-${var.environment}-${count.index + 1}"
+  }
+
+  depends_on = [aws_internet_gateway.main]
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+
+  tags = {
+    Name = "wildframe-${var.environment}-public"
+  }
+}
+
+resource "aws_route_table_association" "public" {
+  count = length(var.availability_zones)
+
+  subnet_id      = aws_subnet.public[count.index].id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table" "private" {
+  count = length(var.availability_zones)
+
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.main[count.index].id
+  }
+
+  tags = {
+    Name = "wildframe-${var.environment}-private-${count.index + 1}"
+  }
+}
+
+resource "aws_route_table_association" "private" {
+  count = length(var.availability_zones)
+
+  subnet_id      = aws_subnet.private[count.index].id
+  route_table_id = aws_route_table.private[count.index].id
+}
+
+locals {
+  public_subnet_ids  = aws_subnet.public[*].id
+  private_subnet_ids = aws_subnet.private[*].id
+}
+
+# EKS IAM Roles
+resource "aws_iam_role" "eks_cluster_role" {
+  name = "wildframe-${var.environment}-eks-cluster"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "eks.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "wildframe-${var.environment}-eks-cluster"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
+  role       = aws_iam_role.eks_cluster_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "eks_service_policy" {
+  role       = aws_iam_role.eks_cluster_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
+}
+
+resource "aws_iam_role" "eks_node_role" {
+  name = "wildframe-${var.environment}-eks-node"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "wildframe-${var.environment}-eks-node"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "eks_node_policy" {
+  role       = aws_iam_role.eks_node_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "eks_cni_policy" {
+  role       = aws_iam_role.eks_node_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+}
+
+resource "aws_iam_role_policy_attachment" "eks_ecr_read_only_policy" {
+  role       = aws_iam_role.eks_node_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+# EKS Cluster security group
+resource "aws_security_group" "eks_cluster" {
+  name        = "wildframe-${var.environment}-eks-cluster"
+  description = "Security group for EKS cluster control plane"
+  vpc_id      = aws_vpc.main.id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "wildframe-${var.environment}-eks-cluster"
+  }
 }
 
 # EKS Cluster
@@ -73,14 +275,15 @@ resource "aws_eks_cluster" "main" {
   role_arn        = aws_iam_role.eks_cluster_role.arn
   version         = var.kubernetes_version
   vpc_config {
-    subnet_ids              = module.vpc.private_subnet_ids
-    security_groups         = [aws_security_group.eks_cluster.id]
+    subnet_ids              = local.private_subnet_ids
+    security_group_ids      = [aws_security_group.eks_cluster.id]
     endpoint_private_access = true
     endpoint_public_access  = true
   }
 
   depends_on = [
     aws_iam_role_policy_attachment.eks_cluster_policy,
+    aws_iam_role_policy_attachment.eks_service_policy,
   ]
 }
 
@@ -89,7 +292,7 @@ resource "aws_eks_node_group" "general" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "wildframe-general-${var.environment}"
   node_role_arn   = aws_iam_role.eks_node_role.arn
-  subnet_ids      = module.vpc.private_subnet_ids
+  subnet_ids      = local.private_subnet_ids
   version         = var.kubernetes_version
 
   scaling_config {
@@ -103,10 +306,92 @@ resource "aws_eks_node_group" "general" {
 
   depends_on = [
     aws_iam_role_policy_attachment.eks_node_policy,
+    aws_iam_role_policy_attachment.eks_cni_policy,
+    aws_iam_role_policy_attachment.eks_ecr_read_only_policy,
   ]
 
   tags = {
     Name = "wildframe-general-${var.environment}"
+  }
+}
+
+# RDS KMS key
+resource "aws_kms_key" "rds" {
+  description             = "KMS key for RDS encryption"
+  deletion_window_in_days = 10
+  enable_key_rotation     = true
+
+  tags = {
+    Name = "wildframe-${var.environment}-rds"
+  }
+}
+
+resource "aws_kms_alias" "rds" {
+  name          = "alias/wildframe-${var.environment}-rds"
+  target_key_id = aws_kms_key.rds.key_id
+}
+
+# RDS master password
+resource "random_password" "db_master_password" {
+  length           = var.db_master_password_length
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
+}
+
+# RDS subnet group
+resource "aws_db_subnet_group" "postgres" {
+  name       = "wildframe-${var.environment}"
+  subnet_ids = local.private_subnet_ids
+
+  tags = {
+    Name = "wildframe-${var.environment}"
+  }
+}
+
+# RDS cluster parameter group
+resource "aws_rds_cluster_parameter_group" "postgres" {
+  name        = "wildframe-${var.environment}"
+  family      = "aurora-postgresql14"
+  description = "Wildframe Aurora PostgreSQL cluster parameter group"
+
+  parameter {
+    name  = "log_min_duration_statement"
+    value = "1000"
+  }
+
+  parameter {
+    name  = "rds.force_ssl"
+    value = "1"
+  }
+
+  tags = {
+    Name = "wildframe-${var.environment}"
+  }
+}
+
+# RDS security group
+resource "aws_security_group" "postgres" {
+  name        = "wildframe-${var.environment}-postgres"
+  description = "Security group for Aurora PostgreSQL"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_cluster.id]
+    description     = "Allow PostgreSQL access from EKS cluster"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "wildframe-${var.environment}-postgres"
   }
 }
 
@@ -150,21 +435,87 @@ resource "aws_rds_cluster_instance" "postgres" {
   }
 }
 
-# ElastiCache Redis
-resource "aws_elasticache_cluster" "redis" {
-  cluster_id           = "wildframe-${var.environment}"
+# ElastiCache subnet group
+resource "aws_elasticache_subnet_group" "redis" {
+  name       = "wildframe-${var.environment}"
+  subnet_ids = local.private_subnet_ids
+
+  tags = {
+    Name = "wildframe-${var.environment}"
+  }
+}
+
+# ElastiCache parameter group
+resource "aws_elasticache_parameter_group" "redis" {
+  name        = "wildframe-${var.environment}"
+  family      = "redis7"
+  description = "Wildframe Redis parameter group"
+
+  parameter {
+    name  = "maxmemory-policy"
+    value = "allkeys-lru"
+  }
+
+  tags = {
+    Name = "wildframe-${var.environment}"
+  }
+}
+
+# ElastiCache security group
+resource "aws_security_group" "redis" {
+  name        = "wildframe-${var.environment}-redis"
+  description = "Security group for ElastiCache Redis"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port       = 6379
+    to_port         = 6379
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_cluster.id]
+    description     = "Allow Redis access from EKS cluster"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "wildframe-${var.environment}-redis"
+  }
+}
+
+# ElastiCache slow log group
+resource "aws_cloudwatch_log_group" "redis_slow_log" {
+  name              = "/aws/elasticache/wildframe-${var.environment}/slow-log"
+  retention_in_days = 7
+
+  tags = {
+    Name = "wildframe-${var.environment}-redis-slow-log"
+  }
+}
+
+# ElastiCache Redis replication group
+resource "aws_elasticache_replication_group" "redis" {
+  replication_group_id = "wildframe-${var.environment}"
+  description          = "Wildframe Redis cluster"
   engine               = "redis"
-  node_type            = var.redis_node_type
-  num_cache_nodes      = var.redis_num_nodes
-  parameter_group_name = aws_elasticache_parameter_group.redis.name
   engine_version       = var.redis_version
+  node_type            = var.redis_node_type
   port                 = 6379
 
-  subnet_group_name = aws_elasticache_subnet_group.redis.name
-  security_group_ids = [aws_security_group.redis.id]
+  parameter_group_name = aws_elasticache_parameter_group.redis.name
+  subnet_group_name    = aws_elasticache_subnet_group.redis.name
+  security_group_ids   = [aws_security_group.redis.id]
 
+  num_cache_clusters         = var.redis_num_nodes
+  multi_az_enabled           = var.redis_multi_az
   automatic_failover_enabled = true
-  multi_az_enabled          = var.redis_multi_az
+
+  at_rest_encryption_enabled = true
+  transit_encryption_enabled = true
 
   log_delivery_configuration {
     destination      = aws_cloudwatch_log_group.redis_slow_log.name
@@ -204,6 +555,27 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "videos" {
       kms_master_key_id = aws_kms_key.s3.arn
     }
   }
+}
+
+# S3 KMS key
+resource "aws_kms_key" "s3" {
+  description             = "KMS key for S3 bucket encryption"
+  deletion_window_in_days = 10
+  enable_key_rotation     = true
+
+  tags = {
+    Name = "wildframe-${var.environment}-s3"
+  }
+}
+
+resource "aws_kms_alias" "s3" {
+  name          = "alias/wildframe-${var.environment}-s3"
+  target_key_id = aws_kms_key.s3.key_id
+}
+
+# CloudFront Origin Access Identity for video bucket
+resource "aws_cloudfront_origin_access_identity" "videos" {
+  comment = "OAI for wildframe-${var.environment} videos"
 }
 
 # CloudFront distribution for video delivery
