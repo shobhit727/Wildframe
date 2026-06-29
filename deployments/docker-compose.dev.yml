@@ -340,7 +340,7 @@ services:
   search-service:
     build:
       context: .
-      dockerfile: services/search-service/Dockerfile
+      dockerfile: services/search/Dockerfile
       target: development
     ports:
       - "8005:8000"
@@ -355,7 +355,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./services/search-service:/app
+      - ./services/search:/app
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
       - wildframe-network
@@ -364,7 +364,7 @@ services:
   recommendation-service:
     build:
       context: .
-      dockerfile: services/recommendation-service/Dockerfile
+      dockerfile: services/recommendation/Dockerfile
       target: development
     ports:
       - "8007:8000"
@@ -380,7 +380,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./services/recommendation-service:/app
+      - ./services/recommendation:/app
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
       - wildframe-network
@@ -389,7 +389,7 @@ services:
   billing-service:
     build:
       context: .
-      dockerfile: services/billing-service/Dockerfile
+      dockerfile: services/billing/Dockerfile
       target: development
     ports:
       - "8008:8000"
@@ -405,7 +405,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./services/billing-service:/app
+      - ./services/billing:/app
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
       - wildframe-network
@@ -414,7 +414,7 @@ services:
   analytics-service:
     build:
       context: .
-      dockerfile: services/analytics-service/Dockerfile
+      dockerfile: services/analytics/Dockerfile
       target: development
     ports:
       - "8009:8000"
@@ -430,7 +430,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./services/analytics-service:/app
+      - ./services/analytics:/app
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
       - wildframe-network
@@ -439,7 +439,7 @@ services:
   notification-service:
     build:
       context: .
-      dockerfile: services/notification-service/Dockerfile
+      dockerfile: services/notification/Dockerfile
       target: development
     ports:
       - "8010:8000"
@@ -455,7 +455,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./services/notification-service:/app
+      - ./services/notification:/app
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
       - wildframe-network

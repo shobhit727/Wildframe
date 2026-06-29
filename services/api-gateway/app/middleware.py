@@ -12,18 +12,23 @@ logger = logging.getLogger(__name__)
 class ServiceRegistry:
     """Registry of backend services."""
     
+    # Inside the Docker network each service is reachable on the port its
+    # container actually listens on. Most bind 8000; content binds 8003 and
+    # streaming binds 8004 (their settings.SERVER_PORT). The hostnames are the
+    # stable TLS/DNS names docker-compose assigns; keep them, but fix the ports
+    # so the gateway stops sending proxied requests to the wrong port.
     SERVICES = {
         "auth": "http://auth-service:8000",
-        "users": "http://user-service:8001",
-        "content": "http://content-service:8002",
-        "streaming": "http://streaming-service:8003",
-        "search": "http://search-service:8004",
-        "recommendations": "http://recommendation-service:8005",
-        "billing": "http://billing-service:8006",
-        "analytics": "http://analytics-service:8007",
-        "notifications": "http://notification-service:8008",
-        "media": "http://media-pipeline-service:8009",
-        "admin": "http://admin-service:8010",
+        "users": "http://user-service:8000",
+        "content": "http://content-service:8003",
+        "streaming": "http://streaming-service:8004",
+        "search": "http://search-service:8000",
+        "recommendations": "http://recommendation-service:8000",
+        "billing": "http://billing-service:8000",
+        "analytics": "http://analytics-service:8000",
+        "notifications": "http://notification-service:8000",
+        "media": "http://media-pipeline:8000",
+        "admin": "http://admin-service:8000",
     }
     
     @classmethod
