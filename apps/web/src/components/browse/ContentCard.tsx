@@ -4,11 +4,12 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Content } from '@/types';
 
+// Legacy wrapper - prefer MediaCard for new code
 export function ContentCard({ content }: { content: Content }) {
   return (
     <Link href={`/watch/${content.id}`}>
       <div className="group cursor-pointer">
-        <div className="relative h-64 w-full overflow-hidden rounded-lg mb-2 bg-gray-800">
+        <div className="relative h-64 w-full overflow-hidden rounded-md mb-2 bg-dark-800">
           <Image
             src={content.poster}
             alt={content.title}
@@ -17,7 +18,7 @@ export function ContentCard({ content }: { content: Content }) {
           />
           <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
             <button className="bg-white text-black px-8 py-3 rounded font-semibold hover:bg-gray-300 transition">
-              ▶ Play
+              Play
             </button>
           </div>
         </div>

@@ -1,10 +1,12 @@
-"""Frontend TypeScript types."""
+/** Frontend TypeScript types. */
 export interface User {
   id: string;
   email: string;
   firstName: string;
   lastName: string;
   avatar?: string;
+  /** Admin gating. Absent on regular users. */
+  role?: 'admin' | 'moderator' | 'user';
 }
 
 export interface AuthResponse {

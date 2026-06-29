@@ -14,7 +14,7 @@ export function Badge({ children, variant = 'default' }: BadgeProps) {
   };
 
   return (
-    <span className={`px-3 py-1 rounded-full text-xs font-medium \${variants[variant]}`}>
+    <span className={`px-3 py-1 rounded-full text-xs font-medium ${variants[variant]}`}>
       {children}
     </span>
   );

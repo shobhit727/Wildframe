@@ -1,4 +1,4 @@
-"""API client for backend services."""
+// API client for backend services.
 import axios, { AxiosInstance } from 'axios';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -17,7 +17,7 @@ class APIClient {
 
     // Add token to requests
     this.client.interceptors.request.use((config) => {
-      const token = localStorage.getItem('accessToken');
+      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
@@ -29,8 +29,10 @@ class APIClient {
       (response) => response,
       (error) => {
         if (error.response?.status === 401) {
-          localStorage.removeItem('accessToken');
-          window.location.href = '/login';
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('accessToken');
+            window.location.href = '/login';
+          }
         }
         return Promise.reject(error);
       }
@@ -64,7 +66,7 @@ class APIClient {
     return this.client.get('/users/me');
   }
 
-  updateProfile(data: Record<string, any>) {
+  updateProfile(data: Record<string, unknown>) {
     return this.client.put('/users/me', data);
   }
 
@@ -134,7 +136,7 @@ class APIClient {
   }
 
   // Analytics
-  logEvent(userId: string, eventType: string, eventData?: Record<string, any>, contentId?: string) {
+  logEvent(userId: string, eventType: string, eventData?: Record<string, unknown>, contentId?: string) {
     return this.client.post('/analytics/events', {
       user_id: userId,
       event_type: eventType,

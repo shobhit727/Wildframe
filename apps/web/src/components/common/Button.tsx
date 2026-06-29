@@ -10,10 +10,11 @@ export function Button({
   variant = 'primary',
   size = 'md',
   className = '',
+  children,
   ...props
 }: ButtonProps) {
   const baseStyles = 'font-medium rounded-lg transition hover:scale-105';
-  
+
   const variants = {
     primary: 'bg-gray-900 text-white hover:bg-gray-800',
     secondary: 'border-2 border-gray-900 text-gray-900 hover:bg-gray-50',
@@ -28,8 +29,10 @@ export function Button({
 
   return (
     <button
-      className={`\${baseStyles} \${variants[variant]} \${sizes[size]} \${className}`}
+      className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
       {...props}
-    />
+    >
+      {children}
+    </button>
   );
 }
