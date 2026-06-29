@@ -28,9 +28,9 @@ COPY services/streaming-service /app
 RUN mkdir -p logs
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8004/health || exit 1
 
-EXPOSE 8000
+EXPOSE 8004
 
 # Stage 3: Production
 FROM python:3.14-slim as production
@@ -51,11 +51,11 @@ RUN mkdir -p logs && \
 USER appuser
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8004/health || exit 1
 
-EXPOSE 8000
+EXPOSE 8004
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8004"]

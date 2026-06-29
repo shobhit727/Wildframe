@@ -23,9 +23,10 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY services/content-service /app
 RUN mkdir -p logs
 
-HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3     CMD curl -f http://localhost:8000/health || exit 1
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8003/health || exit 1
 
-EXPOSE 8000
+EXPOSE 8003
 
 # Stage 3: Production
 FROM python:3.14-slim as production
@@ -42,11 +43,12 @@ RUN mkdir -p logs &&     adduser --disabled-password --gecos '' appuser &&     c
 
 USER appuser
 
-HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3     CMD curl -f http://localhost:8000/health || exit 1
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8003/health || exit 1
 
-EXPOSE 8000
+EXPOSE 8003
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003"]
