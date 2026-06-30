@@ -1,0 +1,183 @@
+"""Creators service models."""
+from datetime import datetime, timezone
+from uuid import uuid4
+from enum import Enum
+from sqlalchemy import (
+    Column, String, Integer, Float, Boolean, DateTime, Enum as SQLEnum,
+    ForeignKey, Index, UniqueConstraint, CheckConstraint
+)
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import declarative_base
+
+Base = declarative_base()
+
+
+class KYCStatus(str, Enum):
+    """KYC verification status for a creator account."""
+    PENDING = "pending"
+    VERIFIED = "verified"
+    REJECTED = "rejected"
+    SUSPENDED = "suspended"
+
+
+class MilestoneStatus(str, Enum):
+    """Lifecycle status of a milestone."""
+    DRAFT = "draft"
+    FUNDING = "funding"
+    COMPLETED = "completed"
+    KILLED = "killed"
+
+
+class TrancheStatus(str, Enum):
+    """Lifecycle status of a milestone tranche."""
+    LOCKED = "locked"
+    RELEASED = "released"
+    ROLLED_BACK = "rolled_back"
+
+
+class PayoutStatus(str, Enum):
+    """Lifecycle status of a payout ledger entry."""
+    ACCRUED = "accrued"
+    TRANSFERRED = "transferred"
+    FAILED = "failed"
+
+
+class CreatorAccount(Base):
+    """A creator's onboarding + KYC + Stripe Connect link.
+
+    One row per onboarded creator. user_id is the API-gateway identity id.
+    """
+    __tablename__ = "creator_accounts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    display_name = Column(String(255), nullable=False, default="")
+    bio = Column(String(2000), nullable=False, default="")
+    region_code = Column(String(8), nullable=False, default="US")
+    currency = Column(String(8), nullable=False, default="USD")
+    stripe_connect_account_id = Column(String(255), nullable=True)
+    kyc_status = Column(SQLEnum(KYCStatus), default=KYCStatus.PENDING, nullable=False)
+    kyc_verified_at = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
+class EffectiveFloor(Base):
+    """Per-creator living-wage floor (per finished minute, in payout currency).
+
+    One active row per creator (enforced via unique creator_id). History is
+    preserved because each adjustment inserts a new row with a later
+    effective_from; get_floor_for_creator returns the latest by effective_from.
+    """
+    __tablename__ = "effective_floors"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    creator_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    per_minute_amount = Column(Float, nullable=False)
+    currency = Column(String(8), nullable=False, default="USD")
+    effective_from = Column(DateTime, nullable=False,
+                            default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_adjusted_at = Column(DateTime, nullable=True)
+    reason = Column(String(500), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("per_minute_amount >= 0", name="ck_floor_non_negative"),
+    )
+
+
+class CreatorPoolBalance(Base):
+    """Running balance of a creator's accrued + contributed pool cents.
+
+    accrued_cents: pool top-ups the creator has received (below-floor support).
+    contributed_cents: creator's contributions into the pool (when above floor).
+    """
+    __tablename__ = "creator_pool_balances"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    creator_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    accrued_cents = Column(Integer, nullable=False, default=0)
+    contributed_cents = Column(Integer, nullable=False, default=0)
+    last_payout_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("accrued_cents >= 0", name="ck_pool_accrued_non_negative"),
+        CheckConstraint("contributed_cents >= 0", name="ck_pool_contrib_non_negative"),
+    )
+
+
+class Milestone(Base):
+    """A funded creator commitment with a kill clause.
+
+    Tranches release 10/20/30/40 (see MilestoneTranche). Killing a milestone
+    rolls back every non-released tranche in one transaction; released tranches
+    stay released — that is the capital protection guarantee.
+    """
+    __tablename__ = "milestones"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    title = Column(String(255), nullable=False)
+    creator_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    status = Column(SQLEnum(MilestoneStatus), default=MilestoneStatus.DRAFT, nullable=False)
+    total_cents = Column(Integer, nullable=False, default=0)
+    currency = Column(String(8), nullable=False, default="USD")
+    goal = Column(String(1000), nullable=True)
+    kill_reason = Column(String(1000), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+
+class MilestoneTranche(Base):
+    """A single funding tranche of a milestone.
+
+    threshold is the percentage gate (10/20/30/40). Unique per milestone so a
+    milestone cannot have two tranches at the same threshold.
+    """
+    __tablename__ = "milestone_tranches"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    milestone_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    threshold = Column(Integer, nullable=False)
+    amount_cents = Column(Integer, nullable=False, default=0)
+    status = Column(SQLEnum(TrancheStatus), default=TrancheStatus.LOCKED, nullable=False)
+    release_condition = Column(String(1000), nullable=True)
+    released_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("milestone_id", "threshold", name="uq_tranche_milestone_threshold"),
+    )
+
+
+class PayoutLedger(Base):
+    """Idempotent payout ledger.
+
+    One row per (creator, period) keyed by a unique idempotency_key. A retried
+    payout / retried webhook must never double-pay; the unique constraint is the
+    last line of defense.
+    """
+    __tablename__ = "payout_ledger"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    creator_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    idempotency_key = Column(String(255), nullable=False, unique=True)
+    period_start = Column(DateTime, nullable=False)
+    period_end = Column(DateTime, nullable=False)
+    view_minutes = Column(Integer, nullable=False, default=0)
+    floor_cents = Column(Integer, nullable=False, default=0)
+    pool_topup_cents = Column(Integer, nullable=False, default=0)
+    share_cents = Column(Integer, nullable=False, default=0)
+    stripe_fee_cents = Column(Integer, nullable=False, default=0)
+    net_cents = Column(Integer, nullable=False, default=0)
+    stripe_transfer_id = Column(String(255), nullable=True)
+    status = Column(SQLEnum(PayoutStatus), default=PayoutStatus.ACCRUED, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        CheckConstraint("floor_cents >= 0", name="ck_ledger_floor_non_negative"),
+        CheckConstraint("pool_topup_cents >= 0", name="ck_ledger_pool_non_negative"),
+        CheckConstraint("share_cents >= 0", name="ck_ledger_share_non_negative"),
+        Index("ix_ledger_creator_period", "creator_id", "period_start", "period_end"),
+    )

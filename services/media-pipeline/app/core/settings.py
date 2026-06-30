@@ -26,7 +26,16 @@ class Settings(BaseSettings):
     # CORS
     CORS_ALLOWED_ORIGINS: List[str] = ["*"]
     CORS_ALLOW_CREDENTIALS: bool = True
-    
+
+    # Event bus: "memory" (default, no-op + log) or "kafka".
+    EVENT_PUBLISHER: str = "memory"
+    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
+
+    # Pipeline retry / DLQ tuning.
+    PIPELINE_MAX_STAGE_ATTEMPTS: int = 3
+    PIPELINE_BACKOFF_BASE_SECONDS: float = 1.0
+    PIPELINE_BACKOFF_CAP_SECONDS: float = 30.0
+
     class Config:
         env_file = ".env"
 

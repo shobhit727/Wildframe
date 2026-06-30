@@ -3,14 +3,14 @@ requires = ["poetry-core>=1.7.0"]
 build-backend = "poetry.core.masonry.api"
 
 [project]
-name = "wildframe-media-pipeline-service"
+name = "wildframe-creators-service"
 version = "1.0.0"
-description = "Media Pipeline service for Wildframe platform"
+description = "Creators service for Wildframe platform"
 
 [tool.poetry]
-name = "wildframe-media-pipeline-service"
+name = "wildframe-creators-service"
 version = "1.0.0"
-description = "Media Pipeline service for Wildframe platform"
+description = "Creators service for Wildframe platform"
 authors = ["Wildframe Team <engineering@wildframe.com>"]
 license = "Proprietary"
 packages = [{include = "app"}]
@@ -27,7 +27,7 @@ redis = "^5.0.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 httpx = "^0.25.0"
 prometheus-client = "^0.18.0"
-aiokafka = "^0.10.0"
+stripe = "^7.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
