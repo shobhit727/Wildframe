@@ -15,6 +15,7 @@ from app.core.settings import settings
 from app.core.database import DatabaseManager
 from app.core.logging import setup_logging
 from app.api.billing_routes import router as billing_router
+from app.api.webhook_routes import router as webhook_router
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
         }
 
     app.include_router(billing_router)
+    app.include_router(webhook_router)
 
     @app.on_event("startup")
     async def startup() -> None:

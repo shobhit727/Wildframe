@@ -64,6 +64,23 @@ class Settings(BaseSettings):
     # Default currency for payouts.
     DEFAULT_CURRENCY: str = "USD"
 
+    # -----------------------------------------------------------------------
+    # Stripe Connect integration
+    # -----------------------------------------------------------------------
+
+    # Stripe secret key (sk_live_... or sk_test_...).
+    STRIPE_API_KEY: str = "sk_test_default_change_me"
+
+    # Stripe webhook signing secret (whsec_...).
+    STRIPE_WEBHOOK_SECRET: str = "whsec_default_change_me"
+
+    # Stripe Price ID for the SVOD $7.99/mo subscription.
+    STRIPE_SVOD_PRICE_ID: str = "price_default_svod"
+
+    # Redirect URLs after Stripe Checkout completes or is cancelled.
+    STRIPE_SUCCESS_URL: str = "https://wildframe.com/billing/success"
+    STRIPE_CANCEL_URL: str = "https://wildframe.com/billing/cancel"
+
     class Config:
         env_file = ".env"
 
