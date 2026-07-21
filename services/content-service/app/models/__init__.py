@@ -1,6 +1,6 @@
 """
 SQLAlchemy ORM models for Content Service.
-Manages content, episodes, seasons, genres, and recommendations.
+Manages animation content, episodes, seasons, genres, series, and recommendations.
 """
 
 from sqlalchemy import (
@@ -40,6 +40,22 @@ class ContentType(str, enum.Enum):
     MOVIE = "movie"
     SERIES = "series"
     DOCUMENTARY = "documentary"
+    # Animation-specific content types
+    SHORT_FILM = "short_film"
+    FEATURE_FILM = "feature_film"
+    EPISODE = "episode"
+    ANIMATIC = "animatic"
+    STORYBOARD = "storyboard"
+
+
+class AnimationStyle(str, enum.Enum):
+    """Animation style enumeration."""
+    TRADITIONAL_2D = "traditional_2d"
+    CGI_3D = "cgi_3d"
+    STOP_MOTION = "stop_motion"
+    MOTION_GRAPHICS = "motion_graphics"
+    HYBRID = "hybrid"
+    PIXEL_ART = "pixel_art"
 
 
 class ContentStatus(str, enum.Enum):
@@ -49,8 +65,15 @@ class ContentStatus(str, enum.Enum):
     ARCHIVED = "archived"
 
 
+class SeriesStatus(str, enum.Enum):
+    """Series status enumeration."""
+    ONGOING = "ongoing"
+    COMPLETED = "completed"
+    HIATUS = "hiatus"
+
+
 class Content(Base):
-    """Represents movies, series, and other content."""
+    """Represents movies, series, episodes, and other animation content."""
     __tablename__ = 'content'
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -59,37 +82,51 @@ class Content(Base):
     description = Column(Text, nullable=False)
     content_type = Column(Enum(ContentType), nullable=False, index=True)
     status = Column(Enum(ContentStatus), nullable=False, default=ContentStatus.DRAFT)
-    
+
+    # Animation-specific fields
+    animation_style = Column(Enum(AnimationStyle), nullable=True, index=True)
+    maturity_rating = Column(String(20), nullable=True)  # G, PG, PG-13, R, TV-Y, TV-Y7, TV-PG, TV-14, TV-MA
+    dub_languages = Column(JSONB, default=[])  # List of language codes available for dubbing
+    subtitle_languages = Column(JSONB, default=[])  # List of language codes available for subtitles
+    creator_id = Column(UUID(as_uuid=True), nullable=True, index=True)  # FK to creators-service (external)
+    is_original = Column(Boolean, default=False, nullable=False)  # True if original IP, False if licensed
+    premiere_date = Column(DateTime, nullable=True)  # Festival or platform premiere date
+
+    # Series/episode hierarchy (nullable for non-episodic content)
+    episode_number = Column(Integer, nullable=True)
+    season_number = Column(Integer, nullable=True)
+    series_id = Column(UUID(as_uuid=True), ForeignKey('content_series.id', ondelete='SET NULL'), nullable=True, index=True)
+
     # Metadata
     release_date = Column(DateTime, nullable=True, index=True)
-    duration_minutes = Column(Integer, nullable=True)  # For movies
+    duration_minutes = Column(Integer, nullable=True)  # For movies/episodes
     original_language = Column(String(10), nullable=False, default='en')
     country = Column(String(100), nullable=True)
-    
+
     # Media references
     poster_url = Column(String(500), nullable=True)
     backdrop_url = Column(String(500), nullable=True)
     trailer_url = Column(String(500), nullable=True)
-    
+
     # Ratings and engagement
     imdb_rating = Column(Float, nullable=True)
     audience_score = Column(Float, default=0.0)  # 0-100 from user ratings
     total_votes = Column(Integer, default=0)
-    
+
     # Content info
     content_rating = Column(String(20), nullable=True)  # G, PG, PG-13, R, etc.
     is_premium = Column(Boolean, default=False)
     can_download = Column(Boolean, default=True)
     can_stream = Column(Boolean, default=True)
-    
+
     # Metadata tags
     tags = Column(JSONB, default={})  # {"production_company": "...", "director": "..."}
-    
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     published_at = Column(DateTime, nullable=True)
-    
+
     # Relationships
     genres = relationship(
         'Genre',
@@ -110,10 +147,16 @@ class Content(Base):
         cascade='all, delete-orphan',
         foreign_keys='ContentRecommendation.content_id'
     )
-    
+    series = relationship('ContentSeries', back_populates='episodes', foreign_keys=[series_id])
+    creators = relationship('ContentCreator', back_populates='content', cascade='all, delete-orphan')
+
     __table_args__ = (
         Index('ix_content_type_status', 'content_type', 'status'),
         Index('ix_content_release_date', 'release_date'),
+        Index('ix_content_animation_style', 'animation_style'),
+        Index('ix_content_creator_id', 'creator_id'),
+        Index('ix_content_series_id', 'series_id'),
+        Index('ix_content_maturity_rating', 'maturity_rating'),
     )
 
 
@@ -254,20 +297,80 @@ class ContentRecommendation(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     content_id = Column(UUID(as_uuid=True), ForeignKey('content.id', ondelete='CASCADE'), nullable=False, index=True)
     recommended_content_id = Column(UUID(as_uuid=True), ForeignKey('content.id', ondelete='CASCADE'), nullable=False, index=True)
-    
+
     similarity_score = Column(Float, nullable=False)  # 0-1
     recommendation_type = Column(String(50), nullable=False)  # 'similar', 'sequel', 'prequel', etc.
-    
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    
+
     # Relationships
     content = relationship(
         'Content',
         back_populates='recommendations',
         foreign_keys=[content_id]
     )
-    
+
     __table_args__ = (
         UniqueConstraint('content_id', 'recommended_content_id', name='_content_recommendation_uc'),
         Index('ix_content_recommendation_score', 'content_id', 'similarity_score'),
+    )
+
+
+class ContentCreator(Base):
+    """Represents a creator credited on an animation content item.
+    Maps a creator (from creators-service) to a content item with a role.
+    """
+    __tablename__ = 'content_creator'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    content_id = Column(UUID(as_uuid=True), ForeignKey('content.id', ondelete='CASCADE'), nullable=False, index=True)
+    creator_id = Column(UUID(as_uuid=True), nullable=False, index=True)  # FK to creators-service (external)
+    role = Column(String(50), nullable=False)  # animator, director, writer, producer, etc.
+    credit_order = Column(Integer, default=0, nullable=False)  # Display order in credits
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    content = relationship('Content', back_populates='creators')
+
+    __table_args__ = (
+        UniqueConstraint('content_id', 'creator_id', 'role', name='_content_creator_uc'),
+        Index('ix_content_creator_creator_id', 'creator_id'),
+        Index('ix_content_creator_content_id', 'content_id'),
+    )
+
+
+class ContentSeries(Base):
+    """Represents an animation series with its metadata.
+    Episodes are linked to a series via Content.series_id.
+    """
+    __tablename__ = 'content_series'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String(255), nullable=False, index=True)
+    slug = Column(String(255), nullable=False, unique=True, index=True)
+    description = Column(Text, nullable=True)
+    animation_style = Column(Enum(AnimationStyle), nullable=True, index=True)
+
+    total_seasons = Column(Integer, default=0, nullable=False)
+    total_episodes = Column(Integer, default=0, nullable=False)
+    status = Column(String(20), nullable=False, default=SeriesStatus.ONGOING.value)
+
+    creator_id = Column(UUID(as_uuid=True), nullable=True, index=True)  # FK to creators-service (external)
+
+    # Media
+    poster_url = Column(String(500), nullable=True)
+    backdrop_url = Column(String(500), nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    episodes = relationship('Content', back_populates='series', foreign_keys='Content.series_id')
+
+    __table_args__ = (
+        Index('ix_content_series_animation_style', 'animation_style'),
+        Index('ix_content_series_status', 'status'),
+        Index('ix_content_series_creator_id', 'creator_id'),
     )

@@ -4,7 +4,7 @@ import logging
 from uuid import UUID
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -36,7 +36,7 @@ async def get_user_service(db: AsyncSession = Depends(get_db)) -> UserService:
 
 
 async def get_current_user(
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
 ) -> UUID:
     """Extract and verify current user from token."""
     if not authorization or not authorization.startswith("Bearer "):

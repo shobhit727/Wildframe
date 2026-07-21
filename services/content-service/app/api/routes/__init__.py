@@ -3,12 +3,15 @@ API routes for Content Service.
 Provides REST endpoints for content management operations.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Header, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from typing import List
+from typing import List, Optional
+import jwt
+from jwt.exceptions import PyJWTError
 
 from app.core.database import db_manager
+from app.core.settings import settings
 from app.services import ContentService
 from app.schemas import (
     ContentResponse, ContentListResponse, GenreResponse, CastMemberResponse,
@@ -25,6 +28,38 @@ router = APIRouter(prefix="/api/v1", tags=["content"])
 async def get_content_service(session: AsyncSession = Depends(db_manager.get_session)) -> ContentService:
     """Dependency injection for ContentService."""
     return ContentService(session)
+
+
+async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")) -> UUID:
+    """Extract and verify current user from JWT token.
+
+    Identity is read from the verified JWT ``sub`` claim, never from a
+    caller-supplied query parameter.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = authorization.removeprefix("Bearer ")
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    except PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    sub = payload.get("sub")
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token missing subject claim",
+        )
+    return UUID(sub)
 
 
 # Genre endpoints
@@ -314,11 +349,11 @@ async def update_episode(
 async def rate_content(
     content_id: UUID,
     request: ContentRatingCreateRequest,
-    user_id: UUID = Query(...),
+    current_user: UUID = Depends(get_current_user),
     service: ContentService = Depends(get_content_service)
 ):
     """Rate content."""
-    return await service.rate_content(content_id, user_id, request)
+    return await service.rate_content(content_id, current_user, request)
 
 
 @router.get("/content/{content_id}/ratings", response_model=List[ContentRatingResponse])

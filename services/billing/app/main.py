@@ -16,6 +16,7 @@ from app.core.database import DatabaseManager
 from app.core.logging import setup_logging
 from app.api.billing_routes import router as billing_router
 from app.api.webhook_routes import router as webhook_router
+from wildframe_observability.wire import wire_observability
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,9 @@ def create_app() -> FastAPI:
 
     app.include_router(billing_router)
     app.include_router(webhook_router)
+
+    # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
+    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
 
     @app.on_event("startup")
     async def startup() -> None:

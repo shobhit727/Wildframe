@@ -117,7 +117,7 @@ class RefreshToken(Base, BaseModel):
         nullable=False,
         index=True,
     )
-    token = Column(String(500), unique=True, nullable=False, index=True)
+    token_hash = Column(String(255), unique=True, nullable=False, index=True)
     device_id = Column(String(255), nullable=True, index=True)
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(Text, nullable=True)
@@ -143,7 +143,7 @@ class TokenBlacklist(Base, BaseModel):
 
     __tablename__ = "token_blacklist"
 
-    jti = Column(String(500), unique=True, nullable=False, index=True)
+    token_hash = Column(String(255), unique=True, nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     revoked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=False, index=True)
@@ -170,7 +170,7 @@ class LoginAudit(Base, BaseModel):
 
     user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     email = Column(String(255), nullable=False, index=True)
-    success = Column(Boolean, default=False, nullable=False, index=True)
+    status = Column(String(50), nullable=False, index=True)
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(Text, nullable=True)
     failure_reason = Column(String(255), nullable=True)

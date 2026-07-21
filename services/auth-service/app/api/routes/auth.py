@@ -7,7 +7,7 @@ import logging
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import DatabaseManager, get_db
@@ -60,7 +60,7 @@ async def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:
 
 
 async def get_current_user(
-    authorization: Optional[str] = None,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     db: AsyncSession = Depends(get_db)
 ) -> UUID:
     """Extract and verify current user from JWT token.

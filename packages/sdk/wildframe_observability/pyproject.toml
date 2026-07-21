@@ -1,0 +1,21 @@
+[build-system]
+requires = ["poetry-core>=1.7.0"]
+build-backend = "poetry.core.masonry.api"
+
+[project]
+name = "wildframe-observability"
+version = "1.0.0"
+description = "Shared observability SDK for Wildframe microservices"
+
+[tool.poetry]
+name = "wildframe-observability"
+version = "1.0.0"
+description = "Structured JSON logging, correlation IDs, Prometheus metrics middleware, health responses"
+authors = ["Wildframe Team <engineering@wildframe.com>"]
+license = "Proprietary"
+packages = [{include = "wildframe_observability"}]
+
+[tool.poetry.dependencies]
+python = "^3.14"
+prometheus-client = "^0.18.0"
+starlette = ">=0.27.0"

@@ -34,7 +34,10 @@ class Settings(BaseSettings):
     # Server
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8003
-    
+
+    # Logging
+    LOG_LEVEL: str = "INFO"
+
     # Database pool settings
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10

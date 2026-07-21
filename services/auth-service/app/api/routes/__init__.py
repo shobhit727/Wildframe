@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 # Create router
 router = APIRouter()
 
+from app.api.routes.auth import router as auth_router
+
+router.include_router(auth_router)
+
 # Dependencies
 async def get_auth_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],

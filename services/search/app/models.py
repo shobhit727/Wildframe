@@ -1,7 +1,7 @@
 """Search service models."""
 from datetime import datetime, timezone
 from uuid import uuid4
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Index, JSON, Text
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Index, JSON, Text, Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 
@@ -32,5 +32,11 @@ class SearchIndex(Base):
     director = Column(String(200))
     release_year = Column(Integer)
     rating = Column(Integer)
+    # Animation-specific fields
+    animation_style = Column(String(50), nullable=True)
+    duration_minutes = Column(Integer, nullable=True)
+    maturity_rating = Column(String(20), nullable=True)
+    dub_languages = Column(JSON, nullable=True)
+    subtitle_languages = Column(JSON, nullable=True)
     indexed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

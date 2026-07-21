@@ -14,7 +14,7 @@ class UserProfile(Base):
 
     __tablename__ = "user_profiles"
     __table_args__ = (
-        Index("idx_user_id", "user_id", unique=True),
+        Index("idx_user_profiles_user_id", "user_id", unique=True),
         Index("idx_created_at", "created_at"),
     )
 
@@ -52,7 +52,7 @@ class UserDevice(Base):
 
     __tablename__ = "user_devices"
     __table_args__ = (
-        Index("idx_user_id", "user_id"),
+        Index("idx_user_devices_user_id", "user_id"),
         Index("idx_device_id", "device_id", unique=True),
         Index("idx_last_active_at", "last_active_at"),
     )
@@ -96,7 +96,7 @@ class UserPreference(Base):
 
     __tablename__ = "user_preferences"
     __table_args__ = (
-        Index("idx_user_id", "user_id", unique=True),
+        Index("idx_user_preferences_user_id", "user_id", unique=True),
     )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -139,7 +139,7 @@ class UserSubscriptionProfile(Base):
 
     __tablename__ = "user_subscription_profiles"
     __table_args__ = (
-        Index("idx_user_id", "user_id", unique=True),
+        Index("idx_user_subscription_profiles_user_id", "user_id", unique=True),
         Index("idx_subscription_tier", "subscription_tier"),
     )
 

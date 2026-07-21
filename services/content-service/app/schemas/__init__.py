@@ -207,7 +207,7 @@ class ContentCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     slug: str = Field(..., min_length=1, max_length=255)
     description: str = Field(..., min_length=1)
-    content_type: str = Field(..., regex='^(movie|series|documentary)$')
+    content_type: str = Field(..., pattern='^(movie|series|documentary)$')
     release_date: Optional[datetime] = None
     duration_minutes: Optional[int] = Field(None, ge=1)
     original_language: str = Field(default='en', max_length=10)
@@ -250,7 +250,7 @@ class ContentUpdateRequest(BaseModel):
 
 class ContentPublishRequest(BaseModel):
     """Content publish request schema."""
-    status: str = Field(..., regex='^(published|archived|draft)$')
+    status: str = Field(..., pattern='^(published|archived|draft)$')
 
 
 class ContentRatingCreateRequest(BaseModel):

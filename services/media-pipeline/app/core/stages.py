@@ -25,6 +25,7 @@ on retry exhaustion, the ``content.pipeline.failed`` DLQ event.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import shutil
 from abc import ABC, abstractmethod
@@ -174,7 +175,7 @@ class ClamavScanner(VirusScanner):
         import clamd  # type: ignore
 
         cd = clamd.ClamdUnixSocket(self.socket_path)
-        result = cd.scan(path)
+        result = await asyncio.to_thread(cd.scan, path)
         if result is None:
             return True
         # result == {path: ('FOUND', 'Virus.Name')} when infected.

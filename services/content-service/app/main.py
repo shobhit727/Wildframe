@@ -17,6 +17,7 @@ from app.core.database import db_manager
 from app.core.logging import setup_logging, set_correlation_id, set_request_id
 from app.api.routes import router
 from app.schemas import ErrorResponse, HealthCheckResponse
+from wildframe_observability.wire import wire_observability
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,9 @@ def create_app() -> FastAPI:
     # Include API routes
     app.include_router(router)
     
+    # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
+    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
+
     return app
 
 

@@ -8,7 +8,7 @@ from uuid import UUID
 from typing import List, Optional
 import logging
 
-from app.models import ContentType, ContentStatus
+from app.models import ContentType, ContentStatus, AnimationStyle, ContentCreator, ContentSeries, SeriesStatus
 from app.repositories import (
     ContentRepository, GenreRepository, CastMemberRepository,
     SeasonRepository, EpisodeRepository, ContentRatingRepository,
@@ -369,3 +369,17 @@ class ContentService:
             await self.content_repo.rollback()
             logger.error(f"Failed to remove recommendation: {e}")
             raise
+
+    # Animation-specific queries
+
+    async def get_by_animation_style(self, animation_style: AnimationStyle, limit: int = 50, offset: int = 0):
+        """List content by animation style."""
+        return await self.content_repo.get_by_animation_style(animation_style, limit, offset)
+
+    async def get_series_episodes(self, series_id: UUID, limit: int = 50, offset: int = 0):
+        """List episodes belonging to a series."""
+        return await self.content_repo.get_series_episodes(series_id, limit, offset)
+
+    async def get_creator_filmography(self, creator_id: UUID, limit: int = 50, offset: int = 0):
+        """List content credited to a creator."""
+        return await self.content_repo.get_creator_filmography(creator_id, limit, offset)

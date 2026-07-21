@@ -6,9 +6,9 @@ from enum import Enum
 
 from sqlalchemy import String, Integer, Float, Boolean, DateTime, Enum as SQLEnum, ForeignKey, Index, Text, JSON
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import declarative_base, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
-Base = declarative_base()
+from app.models import Base
 
 
 class StreamQuality(str, Enum):
@@ -174,8 +174,6 @@ class CDNEdge(Base):
 # a mix, so re-export the names they expect here to keep both worlds working
 # without duplicating ORM definitions.
 # ---------------------------------------------------------------------------
-
-from app.models import VideoManifest as VideoManifest  # noqa: F401
 
 
 class WatchHistory(Base):

@@ -3,6 +3,8 @@ Database connection management for Content Service.
 Handles SQLAlchemy async engine and session factory.
 """
 
+from collections.abc import AsyncGenerator
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool, QueuePool
 import logging
@@ -65,7 +67,7 @@ class DatabaseManager:
         try:
             engine = self.get_engine()
             async with engine.begin() as conn:
-                await conn.execute("SELECT 1")
+                await conn.execute(text("SELECT 1"))
             return True
         except Exception as e:
             logger.error(f"Database health check failed: {e}")

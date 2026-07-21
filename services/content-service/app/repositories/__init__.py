@@ -11,7 +11,7 @@ from typing import List, Optional
 import logging
 
 from app.models import (
-    Content, ContentType, ContentStatus, Genre, Season, Episode, 
+    Content, ContentType, ContentStatus, AnimationStyle, Genre, Season, Episode,
     CastMember, ContentRating, ContentRecommendation
 )
 
@@ -235,6 +235,50 @@ class ContentRepository(BaseRepository):
             await self.flush()
             return True
         return False
+
+    # Animation-specific queries
+
+    async def get_by_animation_style(self, animation_style: AnimationStyle, limit: int = 50, offset: int = 0) -> List[Content]:
+        """Get content by animation style."""
+        result = await self.session.execute(
+            select(Content)
+            .where(and_(
+                Content.animation_style == animation_style,
+                Content.status == ContentStatus.PUBLISHED
+            ))
+            .order_by(Content.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return result.scalars().unique().all()
+
+    async def get_series_episodes(self, series_id: UUID, limit: int = 50, offset: int = 0) -> List[Content]:
+        """Get episodes belonging to a series."""
+        result = await self.session.execute(
+            select(Content)
+            .where(and_(
+                Content.series_id == series_id,
+                Content.content_type == ContentType.EPISODE
+            ))
+            .order_by(Content.season_number.asc(), Content.episode_number.asc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return result.scalars().unique().all()
+
+    async def get_creator_filmography(self, creator_id: UUID, limit: int = 50, offset: int = 0) -> List[Content]:
+        """Get content credited to a creator."""
+        result = await self.session.execute(
+            select(Content)
+            .where(and_(
+                Content.creator_id == creator_id,
+                Content.status == ContentStatus.PUBLISHED
+            ))
+            .order_by(Content.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return result.scalars().unique().all()
 
 
 class SeasonRepository(BaseRepository):

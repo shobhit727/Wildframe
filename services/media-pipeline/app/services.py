@@ -63,6 +63,79 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Context (de)serialization.
+#
+# ``PipelineJob.context`` is a JSONB column. The orchestrator must persist it
+# after every stage so ``advance()`` can resume across requests/workers.
+# Stage ports (VirusScanner, MetadataExtractor, ...) are not JSON-serializable,
+# so we strip them before save and re-inject stubs on load. This keeps the
+# persisted payload small and JSONB-safe.
+# ---------------------------------------------------------------------------
+
+
+def _is_port(value: Any) -> bool:
+    """True if ``value`` is a stage port instance (non-serializable)."""
+    from app.core.stages import (
+        VirusScanner,
+        MetadataExtractor,
+        ThumbnailGenerator,
+        MultiBitrateEncoder,
+        Packager,
+        ObjectStorage,
+        CDN,
+    )
+
+    return isinstance(
+        value,
+        (
+            VirusScanner,
+            MetadataExtractor,
+            ThumbnailGenerator,
+            MultiBitrateEncoder,
+            Packager,
+            ObjectStorage,
+            CDN,
+        ),
+    )
+
+
+def _rehydrate_context(job: PipelineJob, ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Re-inject stub ports into a deserialized context dict.
+
+    On a fresh start the orchestrator populates ports in ``_build_context``.
+    On resume, ``ctx`` came from JSONB and ports were stripped. Re-add stubs
+    so the same stage code works in both cases.
+    """
+    from app.core.stages import (
+        StubVirusScanner,
+        StubMetadataExtractor,
+        StubThumbnailGenerator,
+        StubMultiBitrateEncoder,
+        StubPackager,
+        StubObjectStorage,
+        StubCDN,
+    )
+
+    defaults = {
+        "virus_scanner": StubVirusScanner(),
+        "metadata_extractor": StubMetadataExtractor(),
+        "thumbnail_generator": StubThumbnailGenerator(),
+        "encoder": StubMultiBitrateEncoder(),
+        "packager": StubPackager(),
+        "object_storage": StubObjectStorage(),
+        "cdn": StubCDN(),
+    }
+    for k, v in defaults.items():
+        ctx.setdefault(k, v)
+    ctx.setdefault("job_id", str(job.id))
+    ctx.setdefault("content_id", str(job.content_id))
+    ctx.setdefault("upload_session_id", str(job.upload_session_id))
+    ctx.setdefault("quarantine_root", "/tmp/wildframe/quarantine")
+    ctx.setdefault("bitrates", [400, 800, 1200, 2400, 4800])
+    return ctx
+
+
+# ---------------------------------------------------------------------------
 # Retry / DLQ tuning (overridable via settings).
 # ---------------------------------------------------------------------------
 
@@ -140,6 +213,7 @@ class MediaPipelineService:
         if context:
             ctx.update(context)
         job.context = ctx  # type: ignore[attr-defined]
+        await self.job_repo.save(job)
 
         logger.info(
             "started pipeline job %s for content %s (upload %s)",
@@ -198,8 +272,11 @@ class MediaPipelineService:
             raise PipelineError(f"pipeline job {job_id} already failed")
 
         ctx = getattr(job, "context", None)
-        if ctx is None:
+        if not ctx:
             raise PipelineError(f"pipeline job {job_id} has no context")
+        # Strip non-serializable port objects before persisting. Ports are
+        # reconstructed from the registry on resume; see _rehydrate_context().
+        ctx = _rehydrate_context(job, dict(ctx))
 
         # Determine which stages are already done.
         done = set(job.stage_versions.keys())
@@ -215,6 +292,8 @@ class MediaPipelineService:
 
             stage = self.registry.get(stage_name)
             job.current_stage = stage_name
+            # Persist the (port-stripped) ctx so resume works mid-stage.
+            job.context = {k: v for k, v in ctx.items() if not _is_port(v)}  # type: ignore[attr-defined]
             await self.job_repo.save(job)
 
             try:
@@ -237,6 +316,8 @@ class MediaPipelineService:
                 stage_name: {"completed_at": datetime.now(timezone.utc).isoformat()},
             }
             job.retries = 0
+            # Persist ctx (without ports) so a later advance() can resume.
+            job.context = {k: v for k, v in ctx.items() if not _is_port(v)}  # type: ignore[attr-defined]
             await self.job_repo.save(job)
 
             # Emit the stage's success event, if any.

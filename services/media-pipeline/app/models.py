@@ -67,7 +67,15 @@ class PipelineJob(Base):
     # Number of attempts at ``current_stage`` so far (drives retry/backoff).
     retries = Column(Integer, default=0, nullable=False)
     error = Column(Text, nullable=True)
+    # Per-job mutable state passed between stages. Persisted as JSONB so the
+    # orchestrator can resume across requests (see app.services.advance()).
+    context = Column(JSONB, nullable=False, default=dict)
     started_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
     updated_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

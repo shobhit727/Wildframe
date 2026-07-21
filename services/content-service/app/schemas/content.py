@@ -80,7 +80,7 @@ class CreateMovieRequest(BaseModel):
     release_date: datetime
     duration_seconds: int = Field(..., gt=0)
     age_rating: AgeRatingEnum = AgeRatingEnum.NOT_RATED
-    genre_ids: List[UUID] = Field(..., min_items=1)
+    genre_ids: List[UUID] = Field(..., min_length=1)
     director: str = Field(..., min_length=1, max_length=255)
     cast: Optional[List[str]] = None
     budget: Optional[int] = None
@@ -153,7 +153,7 @@ class CreateShowRequest(BaseModel):
     first_air_date: datetime
     episode_runtime_seconds: int = Field(..., gt=0)
     age_rating: AgeRatingEnum = AgeRatingEnum.NOT_RATED
-    genre_ids: List[UUID] = Field(..., min_items=1)
+    genre_ids: List[UUID] = Field(..., min_length=1)
     creators: Optional[List[str]] = None
     cast: Optional[List[str]] = None
     language: str = Field(default="en", min_length=2, max_length=10)

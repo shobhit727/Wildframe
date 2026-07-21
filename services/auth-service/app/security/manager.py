@@ -186,7 +186,7 @@ class RateLimiter:
             Redis client instance
         """
         if self._redis is None:
-            self._redis = await redis.asyncio.from_url(settings.REDIS_URL)
+            self._redis = redis.asyncio.from_url(settings.REDIS_URL)
         return self._redis
     
     async def is_allowed(
