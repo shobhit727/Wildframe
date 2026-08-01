@@ -1,20 +1,26 @@
+from datetime import timezone
+
 """Service layer for Auth Service."""
-from typing import Optional, Tuple
-from uuid import UUID, uuid4
-from datetime import datetime, timedelta
+import json
 import logging
 import secrets
-import json
-from fastapi import HTTPException, status
+from datetime import UTC, datetime, timedelta
+from typing import Optional, Tuple
+from uuid import UUID, uuid4
 
-from app.repositories import UserRepository, RefreshTokenRepository, LoginAuditRepository
-from app.security import PasswordManager, TokenManager
+from app.repositories import (
+    LoginAuditRepository,
+    RefreshTokenRepository,
+    UserRepository,
+)
 from app.schemas import (
     TokenResponse,
-    UserRegisterRequest,
     UserLoginRequest,
+    UserRegisterRequest,
     UserResponse,
 )
+from app.security import PasswordManager, TokenManager
+from fastapi import HTTPException, status
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +73,7 @@ class AuthService:
             logger.info(f"User registered: {request.email}")
             return UserResponse.from_orm(user)
         except Exception as e:
-            logger.error(f"Registration error: {str(e)}")
+            logger.error(f"Registration error: {e!s}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create user",
@@ -96,7 +102,7 @@ class AuthService:
             )
 
         # Check if user is locked
-        if user.locked_until and user.locked_until > datetime.utcnow():
+        if user.locked_until and user.locked_until > datetime.now(UTC):
             logger.warning(f"Login failed: user locked: {user.email}")
             await self.audit_repo.create(
                 user_id=user.id,
@@ -120,7 +126,7 @@ class AuthService:
             
             # Lock user if too many attempts
             if user.login_attempts >= self.max_login_attempts:
-                locked_until = datetime.utcnow() + timedelta(minutes=self.lockout_minutes)
+                locked_until = datetime.now(UTC) + timedelta(minutes=self.lockout_minutes)
                 user = await self.user_repo.update(
                     user.id,
                     locked_until=locked_until
@@ -144,7 +150,7 @@ class AuthService:
         await self.user_repo.reset_login_attempts(user.id)
         user = await self.user_repo.update(
             user.id,
-            last_login_at=datetime.utcnow()
+            last_login_at=datetime.now(UTC)
         )
         await self.user_repo.commit()
 
@@ -245,7 +251,7 @@ class AuthService:
                 logger.info("User logged out")
             return success
         except Exception as e:
-            logger.error(f"Logout error: {str(e)}")
+            logger.error(f"Logout error: {e!s}")
             return False
 
     async def get_current_user(self, user_id: UUID) -> UserResponse:
@@ -304,7 +310,7 @@ class AuthService:
         
         # Generate verification code
         code = f"{secrets.randbelow(1000000):06d}"
-        expires_at = datetime.utcnow() + timedelta(hours=24)
+        expires_at = datetime.now(UTC) + timedelta(hours=24)
         
         # Store code in user record (in production, use Redis with TTL)
         user.mfa_secret = code  # Reusing mfa_secret field temporarily for email code
@@ -338,7 +344,7 @@ class AuthService:
                 detail="Invalid verification code",
             )
         
-        if datetime.utcnow() > expires_at:
+        if datetime.now(UTC) > expires_at:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Verification code expired",
@@ -346,7 +352,7 @@ class AuthService:
         
         # Mark email as verified
         user.email_verified = True
-        user.email_verified_at = datetime.utcnow()
+        user.email_verified_at = datetime.now(UTC)
         user.mfa_secret = None  # Clear code
         user.locked_until = None  # Clear expiry
         await self.user_repo.commit()

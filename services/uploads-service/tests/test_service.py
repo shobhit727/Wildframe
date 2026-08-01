@@ -1,6 +1,5 @@
 """Tests for Uploads Service."""
 import pytest
-from unittest.mock import AsyncMock
 
 
 @pytest.mark.asyncio

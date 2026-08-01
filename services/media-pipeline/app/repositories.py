@@ -1,14 +1,14 @@
 """Media pipeline service repositories."""
+from datetime import UTC, datetime
 from uuid import UUID
-from typing import Optional, List
-from datetime import datetime, timezone
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models import (
     PipelineJob,
     PipelineJobStatus,
     PipelineStageLog,
-    PipelineStageStatus,
 )
 
 
@@ -23,7 +23,7 @@ class PipelineJobRepository:
         await self.session.flush()
         return job
 
-    async def get(self, job_id: UUID) -> Optional[PipelineJob]:
+    async def get(self, job_id: UUID) -> PipelineJob | None:
         result = await self.session.execute(
             select(PipelineJob).where(PipelineJob.id == job_id)
         )
@@ -31,7 +31,7 @@ class PipelineJobRepository:
 
     async def get_by_upload_session(
         self, upload_session_id: UUID
-    ) -> Optional[PipelineJob]:
+    ) -> PipelineJob | None:
         result = await self.session.execute(
             select(PipelineJob).where(
                 PipelineJob.upload_session_id == upload_session_id
@@ -40,13 +40,13 @@ class PipelineJobRepository:
         return result.scalar_one_or_none()
 
     async def save(self, job: PipelineJob) -> PipelineJob:
-        job.updated_at = datetime.now(timezone.utc)
+        job.updated_at = datetime.now(UTC)
         await self.session.flush()
         return job
 
     async def list_by_status(
         self, status: PipelineJobStatus, limit: int = 50
-    ) -> List[PipelineJob]:
+    ) -> list[PipelineJob]:
         result = await self.session.execute(
             select(PipelineJob)
             .where(PipelineJob.status == status)
@@ -67,7 +67,7 @@ class PipelineStageLogRepository:
         await self.session.flush()
         return log
 
-    async def list_for_job(self, job_id: UUID) -> List[PipelineStageLog]:
+    async def list_for_job(self, job_id: UUID) -> list[PipelineStageLog]:
         result = await self.session.execute(
             select(PipelineStageLog)
             .where(PipelineStageLog.job_id == job_id)
@@ -96,7 +96,7 @@ class TranscodingJobRepository:
         await self.session.flush()
         return job
 
-    async def get_by_content_id(self, content_id: UUID) -> Optional[TranscodingJob]:
+    async def get_by_content_id(self, content_id: UUID) -> TranscodingJob | None:
         result = await self.session.execute(
             select(TranscodingJob).where(TranscodingJob.content_id == content_id)
         )

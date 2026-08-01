@@ -3,16 +3,15 @@ Repository layer for data access operations.
 Uses SQLAlchemy 2.0 async patterns with proper error handling.
 """
 
-from typing import Optional
-from uuid import UUID
 import logging
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError
-
-from app.models.user import User, RefreshToken, TokenBlacklist, LoginAudit
+from app.models.user import LoginAudit, RefreshToken, TokenBlacklist, User
 from app.security.manager import PasswordManager, TokenManager
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +60,7 @@ class UserRepository:
             logger.warning(f"Email already exists: {email}")
             raise ValueError(f"Email {email} already registered")
     
-    async def get_by_email(self, email: str) -> Optional[User]:
+    async def get_by_email(self, email: str) -> User | None:
         """Get user by email.
         
         Args:
@@ -74,7 +73,7 @@ class UserRepository:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
     
-    async def get_by_id(self, user_id: UUID) -> Optional[User]:
+    async def get_by_id(self, user_id: UUID) -> User | None:
         """Get user by ID.
         
         Args:
@@ -94,7 +93,7 @@ class UserRepository:
             user: User to update
         """
         user.login_attempts += 1
-        user.last_login_attempt_at = __import__('datetime').datetime.utcnow()
+        user.last_login_attempt_at = datetime.now(UTC)
         await self.db.flush()
     
     async def reset_login_attempts(self, user: User) -> None:
@@ -105,7 +104,7 @@ class UserRepository:
         """
         user.login_attempts = 0
         user.last_login_attempt_at = None
-        user.last_login_at = __import__('datetime').datetime.utcnow()
+        user.last_login_at = datetime.now(UTC)
         await self.db.flush()
     
     async def lock_account(self, user: User, hours: int = 1) -> None:
@@ -115,9 +114,9 @@ class UserRepository:
             user: User to lock
             hours: Lock duration in hours
         """
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
         user.is_locked = True
-        user.locked_until = datetime.now(timezone.utc) + timedelta(hours=hours)
+        user.locked_until = datetime.now(UTC) + timedelta(hours=hours)
         await self.db.flush()
     
     async def unlock_account(self, user: User) -> None:
@@ -136,9 +135,9 @@ class UserRepository:
         Args:
             user: User to verify
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
         user.email_verified = True
-        user.email_verified_at = datetime.now(timezone.utc)
+        user.email_verified_at = datetime.now(UTC)
         await self.db.flush()
 
 
@@ -157,9 +156,9 @@ class RefreshTokenRepository:
         self,
         user_id: UUID,
         token: str,
-        device_id: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        ip_address: Optional[str] = None
+        device_id: str | None = None,
+        user_agent: str | None = None,
+        ip_address: str | None = None
     ) -> RefreshToken:
         """Create a new refresh token.
         
@@ -174,12 +173,11 @@ class RefreshTokenRepository:
             Created RefreshToken instance
         """
         token_hash = TokenManager.hash_token(token)
-        from datetime import datetime, timedelta, timezone
         
         refresh_token = RefreshToken(
             user_id=user_id,
             token_hash=token_hash,
-            expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+            expires_at=datetime.now(UTC) + timedelta(days=7),
             device_id=device_id,
             user_agent=user_agent,
             ip_address=ip_address
@@ -190,7 +188,7 @@ class RefreshTokenRepository:
         logger.info(f"Refresh token created for user: {user_id}")
         return refresh_token
     
-    async def get_by_hash(self, token_hash: str) -> Optional[RefreshToken]:
+    async def get_by_hash(self, token_hash: str) -> RefreshToken | None:
         """Get refresh token by hash.
         
         Args:
@@ -209,8 +207,8 @@ class RefreshTokenRepository:
         Args:
             refresh_token: Token to revoke
         """
-        from datetime import datetime, timezone
-        refresh_token.revoked_at = datetime.now(timezone.utc)
+        from datetime import datetime
+        refresh_token.revoked_at = datetime.now(UTC)
         await self.db.flush()
         logger.info(f"Refresh token revoked: {refresh_token.id}")
     
@@ -220,7 +218,7 @@ class RefreshTokenRepository:
         Args:
             user_id: User ID
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
         stmt = select(RefreshToken).where(
             RefreshToken.user_id == user_id,
             RefreshToken.revoked_at == None
@@ -229,7 +227,7 @@ class RefreshTokenRepository:
         tokens = result.scalars().all()
         
         for token in tokens:
-            token.revoked_at = datetime.now(timezone.utc)
+            token.revoked_at = datetime.now(UTC)
         
         await self.db.flush()
         logger.info(f"All refresh tokens revoked for user: {user_id}")
@@ -251,7 +249,7 @@ class TokenBlacklistRepository:
         token: str,
         user_id: UUID,
         expires_at,
-        reason: Optional[str] = None
+        reason: str | None = None
     ) -> TokenBlacklist:
         """Add token to blacklist.
         
@@ -308,11 +306,11 @@ class LoginAuditRepository:
         self,
         email: str,
         status: str,
-        user_id: Optional[UUID] = None,
-        reason: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        ip_address: Optional[str] = None,
-        device_id: Optional[str] = None
+        user_id: UUID | None = None,
+        reason: str | None = None,
+        user_agent: str | None = None,
+        ip_address: str | None = None,
+        device_id: str | None = None
     ) -> LoginAudit:
         """Log a login attempt.
         

@@ -27,12 +27,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import shutil
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Dict, List, Optional
-
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +59,7 @@ class Stage(ABC):
     orchestrator may choose to skip and continue (best-effort stages)."""
 
     @abstractmethod
-    async def run(self, ctx: Dict[str, Any]) -> Dict[str, Any]:
+    async def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         """Execute the stage against ``ctx`` and return the updated ctx."""
         raise NotImplementedError
 
@@ -90,14 +88,14 @@ class _CallableStage(Stage):
         name: str,
         success_event: str,
         critical: bool,
-        fn: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]],
+        fn: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
     ) -> None:
         self.name = name
         self.success_event = success_event
         self.critical = critical
         self._fn = fn
 
-    async def run(self, ctx: Dict[str, Any]) -> Dict[str, Any]:
+    async def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         return await self._fn(ctx)
 
 
@@ -115,8 +113,8 @@ class StageRegistry:
     """
 
     def __init__(self) -> None:
-        self._stages: Dict[str, Stage] = {}
-        self.order: List[str] = []
+        self._stages: dict[str, Stage] = {}
+        self.order: list[str] = []
 
     def register(self, stage: Stage) -> None:
         if stage.name in self._stages:
@@ -189,12 +187,12 @@ class MetadataExtractor(ABC):
     """Port: extract media metadata (ffprobe-like)."""
 
     @abstractmethod
-    async def extract(self, path: str) -> Dict[str, Any]:
+    async def extract(self, path: str) -> dict[str, Any]:
         raise NotImplementedError
 
 
 class StubMetadataExtractor(MetadataExtractor):
-    async def extract(self, path: str) -> Dict[str, Any]:
+    async def extract(self, path: str) -> dict[str, Any]:
         return {
             "duration_seconds": 0,
             "width": 0,
@@ -209,12 +207,12 @@ class ThumbnailGenerator(ABC):
     """Port: generate poster/thumbnails (ffmpeg-like)."""
 
     @abstractmethod
-    async def generate(self, path: str, out_dir: str) -> List[str]:
+    async def generate(self, path: str, out_dir: str) -> list[str]:
         raise NotImplementedError
 
 
 class StubThumbnailGenerator(ThumbnailGenerator):
-    async def generate(self, path: str, out_dir: str) -> List[str]:
+    async def generate(self, path: str, out_dir: str) -> list[str]:
         return [f"{out_dir}/poster.jpg"]
 
 
@@ -223,16 +221,16 @@ class MultiBitrateEncoder(ABC):
 
     @abstractmethod
     async def encode(
-        self, path: str, out_dir: str, bitrates: List[int]
-    ) -> Dict[int, str]:
+        self, path: str, out_dir: str, bitrates: list[int]
+    ) -> dict[int, str]:
         """Return bitrate_kbps -> output path."""
         raise NotImplementedError
 
 
 class StubMultiBitrateEncoder(MultiBitrateEncoder):
     async def encode(
-        self, path: str, out_dir: str, bitrates: List[int]
-    ) -> Dict[int, str]:
+        self, path: str, out_dir: str, bitrates: list[int]
+    ) -> dict[int, str]:
         return {br: f"{out_dir}/v_{br}.mp4" for br in bitrates}
 
 
@@ -240,19 +238,19 @@ class Packager(ABC):
     """Port: package encoded outputs into HLS / DASH."""
 
     @abstractmethod
-    async def package_hls(self, inputs: Dict[int, str], out_dir: str) -> str:
+    async def package_hls(self, inputs: dict[int, str], out_dir: str) -> str:
         raise NotImplementedError
 
     @abstractmethod
-    async def package_dash(self, inputs: Dict[int, str], out_dir: str) -> str:
+    async def package_dash(self, inputs: dict[int, str], out_dir: str) -> str:
         raise NotImplementedError
 
 
 class StubPackager(Packager):
-    async def package_hls(self, inputs: Dict[int, str], out_dir: str) -> str:
+    async def package_hls(self, inputs: dict[int, str], out_dir: str) -> str:
         return f"{out_dir}/master.m3u8"
 
-    async def package_dash(self, inputs: Dict[int, str], out_dir: str) -> str:
+    async def package_dash(self, inputs: dict[int, str], out_dir: str) -> str:
         return f"{out_dir}/manifest.mpd"
 
 
@@ -294,11 +292,11 @@ class StubCDN(CDN):
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @as_stage(name="quarantine_store", success_event="content.quarantined")
-async def quarantine_store(ctx: Dict[str, Any]) -> Dict[str, Any]:
+async def quarantine_store(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 1: move the uploaded bytes into an isolated quarantine area.
 
     Input:  ctx["storage_key"]  — key the uploads-service stored the object at.
@@ -315,7 +313,7 @@ async def quarantine_store(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @as_stage(name="virus_scan", success_event="content.scanned")
-async def virus_scan(ctx: Dict[str, Any]) -> Dict[str, Any]:
+async def virus_scan(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 2: malware-scan the quarantined bytes.
 
     Uses the ``virus_scanner`` port from ctx. Raises if infected (which the
@@ -332,7 +330,7 @@ async def virus_scan(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @as_stage(name="metadata_extract", success_event="content.metadata_extracted")
-async def metadata_extract(ctx: Dict[str, Any]) -> Dict[str, Any]:
+async def metadata_extract(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 3: extract technical metadata (resolution, codecs, duration)."""
     extractor: MetadataExtractor = ctx["metadata_extractor"]
     ctx["metadata"] = await extractor.extract(ctx["quarantine_path"])
@@ -344,7 +342,7 @@ async def metadata_extract(ctx: Dict[str, Any]) -> Dict[str, Any]:
     success_event="content.thumbnailed",
     critical=False,
 )
-async def thumbnail_generate(ctx: Dict[str, Any]) -> Dict[str, Any]:
+async def thumbnail_generate(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 4: generate poster/thumbnails (best-effort)."""
     gen: ThumbnailGenerator = ctx["thumbnail_generator"]
     out_dir = f"/tmp/wildframe/work/{ctx['job_id']}/thumbs"
@@ -357,7 +355,7 @@ async def thumbnail_generate(ctx: Dict[str, Any]) -> Dict[str, Any]:
     success_event="content.audio_extracted",
     critical=False,
 )
-async def audio_extract(ctx: Dict[str, Any]) -> Dict[str, Any]:
+async def audio_extract(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 5: extract audio tracks (best-effort)."""
     ctx["audio_tracks"] = [f"/tmp/wildframe/work/{ctx['job_id']}/audio_en.m4a"]
     return ctx
@@ -368,14 +366,14 @@ async def audio_extract(ctx: Dict[str, Any]) -> Dict[str, Any]:
     success_event="content.subtitle_extracted",
     critical=False,
 )
-async def subtitle_extract(ctx: Dict[str, Any]) -> Dict[str, Any]:
+async def subtitle_extract(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 6: extract subtitle tracks (best-effort)."""
     ctx["subtitle_tracks"] = [f"/tmp/wildframe/work/{ctx['job_id']}/subs_en.vtt"]
     return ctx
 
 
 @as_stage(name="ffmpeg_multi_bitrate_encode", success_event="content.encoded")
-async def ffmpeg_multi_bitrate_encode(ctx: Dict[str, Any]) -> Dict[str, Any]:
+async def ffmpeg_multi_bitrate_encode(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 7: multi-bitrate encode via ffmpeg.
 
     Output: ctx["encoded"] = {bitrate_kbps: path}.
@@ -388,7 +386,7 @@ async def ffmpeg_multi_bitrate_encode(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @as_stage(name="hls_package", success_event="content.packaged")
-async def hls_package(ctx: Dict[str, Any]) -> Dict[str, Any]:
+async def hls_package(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 8a: package encoded outputs into HLS."""
     packager: Packager = ctx["packager"]
     out_dir = f"/tmp/wildframe/work/{ctx['job_id']}/hls"
@@ -397,7 +395,7 @@ async def hls_package(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @as_stage(name="dash_package", success_event="")
-async def dash_package(ctx: Dict[str, Any]) -> Dict[str, Any]:
+async def dash_package(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 8b: package encoded outputs into DASH.
 
     No separate success event — packaging is reported as a single
@@ -411,7 +409,7 @@ async def dash_package(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @as_stage(name="s3_upload", success_event="content.uploaded_to_storage")
-async def s3_upload(ctx: Dict[str, Any]) -> Dict[str, Any]:
+async def s3_upload(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 9: upload HLS + DASH artifacts to object storage."""
     storage: ObjectStorage = ctx["object_storage"]
     job_id = ctx["job_id"]
@@ -424,7 +422,7 @@ async def s3_upload(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @as_stage(name="cdn_invalidate", success_event="content.cdn_invalidated")
-async def cdn_invalidate(ctx: Dict[str, Any]) -> Dict[str, Any]:
+async def cdn_invalidate(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 10: purge CDN caches so the new media is served."""
     cdn: CDN = ctx["cdn"]
     await cdn.invalidate(f"/media/{ctx['job_id']}/*")
@@ -436,7 +434,7 @@ async def cdn_invalidate(ctx: Dict[str, Any]) -> Dict[str, Any]:
 # Default wiring: register the canonical stage order into the registry.
 # ---------------------------------------------------------------------------
 
-DEFAULT_STAGE_ORDER: List[str] = [
+DEFAULT_STAGE_ORDER: list[str] = [
     "quarantine_store",
     "virus_scan",
     "metadata_extract",

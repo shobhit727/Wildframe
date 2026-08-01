@@ -1,7 +1,8 @@
 """Search service models."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Index, JSON, Text, Float
+
+from sqlalchemy import JSON, Column, DateTime, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 
@@ -16,7 +17,7 @@ class SearchQuery(Base):
     result_count = Column(Integer, default=0)
     filters = Column(JSON, nullable=True)
     clicked_result_id = Column(UUID(as_uuid=True), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     __table_args__ = (Index("idx_search_user_date", "user_id", "created_at"),)
 
 class SearchIndex(Base):
@@ -38,5 +39,5 @@ class SearchIndex(Base):
     maturity_rating = Column(String(20), nullable=True)
     dub_languages = Column(JSON, nullable=True)
     subtitle_languages = Column(JSON, nullable=True)
-    indexed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    indexed_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))

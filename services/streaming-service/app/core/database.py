@@ -1,11 +1,11 @@
 """Database management for Streaming Service."""
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import NullPool, QueuePool
 import logging
 
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool, QueuePool
+
 from app.core.settings import settings
-from app.models import Base
 
 logger = logging.getLogger(__name__)
 

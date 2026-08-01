@@ -1,13 +1,16 @@
-"""Repository layer for User Service."""
-from typing import Optional, List
-from uuid import UUID
-from datetime import datetime
-from sqlalchemy import select, and_
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError
+from datetime import timezone
 
-from app.models import UserProfile, UserDevice, UserPreference, UserSubscriptionProfile
+"""Repository layer for User Service."""
 import logging
+from datetime import UTC, datetime
+from typing import List, Optional
+from uuid import UUID
+
+from sqlalchemy import and_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import UserDevice, UserPreference, UserProfile, UserSubscriptionProfile
 
 logger = logging.getLogger(__name__)
 
@@ -44,20 +47,20 @@ class UserProfileRepository(BaseRepository):
             return profile
         except IntegrityError as e:
             await self.rollback()
-            logger.error(f"Error creating user profile: {str(e)}")
+            logger.error(f"Error creating user profile: {e!s}")
             raise
 
-    async def get_by_user_id(self, user_id: UUID) -> Optional[UserProfile]:
+    async def get_by_user_id(self, user_id: UUID) -> UserProfile | None:
         """Get profile by user ID."""
         stmt = select(UserProfile).where(UserProfile.user_id == user_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_id(self, profile_id: UUID) -> Optional[UserProfile]:
+    async def get_by_id(self, profile_id: UUID) -> UserProfile | None:
         """Get profile by ID."""
         return await self.session.get(UserProfile, profile_id)
 
-    async def update(self, user_id: UUID, **kwargs) -> Optional[UserProfile]:
+    async def update(self, user_id: UUID, **kwargs) -> UserProfile | None:
         """Update user profile."""
         try:
             profile = await self.get_by_user_id(user_id)
@@ -73,10 +76,10 @@ class UserProfileRepository(BaseRepository):
             return profile
         except Exception as e:
             await self.rollback()
-            logger.error(f"Error updating profile: {str(e)}")
+            logger.error(f"Error updating profile: {e!s}")
             raise
 
-    async def mark_onboarding_complete(self, user_id: UUID) -> Optional[UserProfile]:
+    async def mark_onboarding_complete(self, user_id: UUID) -> UserProfile | None:
         """Mark onboarding as complete and update profile completeness."""
         return await self.update(
             user_id,
@@ -114,17 +117,17 @@ class UserDeviceRepository(BaseRepository):
             logger.error(f"Device already exists: {device_id}")
             raise
 
-    async def get_by_device_id(self, device_id: str) -> Optional[UserDevice]:
+    async def get_by_device_id(self, device_id: str) -> UserDevice | None:
         """Get device by device ID."""
         stmt = select(UserDevice).where(UserDevice.device_id == device_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_id(self, device_id: UUID) -> Optional[UserDevice]:
+    async def get_by_id(self, device_id: UUID) -> UserDevice | None:
         """Get device by database ID."""
         return await self.session.get(UserDevice, device_id)
 
-    async def get_user_devices(self, user_id: UUID, active_only: bool = True) -> List[UserDevice]:
+    async def get_user_devices(self, user_id: UUID, active_only: bool = True) -> list[UserDevice]:
         """Get all devices for a user."""
         stmt = select(UserDevice).where(UserDevice.user_id == user_id)
         if active_only:
@@ -133,7 +136,7 @@ class UserDeviceRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def update(self, device_id: UUID, **kwargs) -> Optional[UserDevice]:
+    async def update(self, device_id: UUID, **kwargs) -> UserDevice | None:
         """Update device."""
         try:
             device = await self.get_by_id(device_id)
@@ -146,17 +149,17 @@ class UserDeviceRepository(BaseRepository):
 
             # Update last_active_at if updating general device status
             if any(k in kwargs for k in ["is_active", "ip_address"]):
-                device.last_active_at = datetime.utcnow()
+                device.last_active_at = datetime.now(UTC)
 
             await self.flush()
             logger.info(f"Updated device: {device_id}")
             return device
         except Exception as e:
             await self.rollback()
-            logger.error(f"Error updating device: {str(e)}")
+            logger.error(f"Error updating device: {e!s}")
             raise
 
-    async def mark_device_inactive(self, device_id: UUID) -> Optional[UserDevice]:
+    async def mark_device_inactive(self, device_id: UUID) -> UserDevice | None:
         """Mark device as inactive."""
         return await self.update(device_id, is_active=False)
 
@@ -172,7 +175,7 @@ class UserDeviceRepository(BaseRepository):
             return False
         except Exception as e:
             await self.rollback()
-            logger.error(f"Error deleting device: {str(e)}")
+            logger.error(f"Error deleting device: {e!s}")
             raise
 
 
@@ -192,13 +195,13 @@ class UserPreferenceRepository(BaseRepository):
             logger.error(f"Preferences already exist for user: {user_id}")
             raise
 
-    async def get_by_user_id(self, user_id: UUID) -> Optional[UserPreference]:
+    async def get_by_user_id(self, user_id: UUID) -> UserPreference | None:
         """Get preferences by user ID."""
         stmt = select(UserPreference).where(UserPreference.user_id == user_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def update(self, user_id: UUID, **kwargs) -> Optional[UserPreference]:
+    async def update(self, user_id: UUID, **kwargs) -> UserPreference | None:
         """Update user preferences."""
         try:
             preference = await self.get_by_user_id(user_id)
@@ -214,7 +217,7 @@ class UserPreferenceRepository(BaseRepository):
             return preference
         except Exception as e:
             await self.rollback()
-            logger.error(f"Error updating preferences: {str(e)}")
+            logger.error(f"Error updating preferences: {e!s}")
             raise
 
 
@@ -241,13 +244,13 @@ class UserSubscriptionProfileRepository(BaseRepository):
             logger.error(f"Subscription already exists for user: {user_id}")
             raise
 
-    async def get_by_user_id(self, user_id: UUID) -> Optional[UserSubscriptionProfile]:
+    async def get_by_user_id(self, user_id: UUID) -> UserSubscriptionProfile | None:
         """Get subscription by user ID."""
         stmt = select(UserSubscriptionProfile).where(UserSubscriptionProfile.user_id == user_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def update_tier(self, user_id: UUID, new_tier: str) -> Optional[UserSubscriptionProfile]:
+    async def update_tier(self, user_id: UUID, new_tier: str) -> UserSubscriptionProfile | None:
         """Update subscription tier."""
         try:
             subscription = await self.get_by_user_id(user_id)
@@ -266,5 +269,5 @@ class UserSubscriptionProfileRepository(BaseRepository):
             return subscription
         except Exception as e:
             await self.rollback()
-            logger.error(f"Error updating subscription tier: {str(e)}")
+            logger.error(f"Error updating subscription tier: {e!s}")
             raise

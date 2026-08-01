@@ -3,11 +3,11 @@ Comprehensive unit tests for Auth Service.
 Tests cover registration, login, token refresh, and password management.
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
-from datetime import datetime, timedelta, timezone
 
+import pytest
 from app.security.manager import PasswordManager, TokenManager
 from app.services.auth_service import AuthService
 
@@ -104,16 +104,16 @@ class TestTokenManager:
         user_id = str(uuid4())
         
         # Create token with immediate expiration
-        expires = datetime.now(timezone.utc) - timedelta(seconds=1)
+        expires = datetime.now(UTC) - timedelta(seconds=1)
         payload = {
             "sub": user_id,
             "exp": expires,
-            "iat": datetime.now(timezone.utc),
+            "iat": datetime.now(UTC),
             "type": "access"
         }
         
-        from app.core.settings import settings
         import jwt
+        from app.core.settings import settings
         expired_token = jwt.encode(
             payload,
             settings.JWT_SECRET_KEY,
@@ -230,7 +230,7 @@ class TestAuthServiceTokenRefresh:
         """Test successful token refresh."""
         # Create valid refresh token
         refresh_token = TokenManager.create_refresh_token(str(user_id))
-        token_hash = TokenManager.hash_token(refresh_token)
+        TokenManager.hash_token(refresh_token)
         
         # Mock token retrieval
         mock_token = MagicMock()

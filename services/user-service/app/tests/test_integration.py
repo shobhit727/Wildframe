@@ -1,19 +1,17 @@
 """Integration tests for User Service."""
-import pytest
-import pytest_asyncio
-import json
 from uuid import UUID
+
+import pytest_asyncio
 from httpx import AsyncClient
+
 from app.main import app
-from app.services import UserService
 from app.repositories import (
-    UserProfileRepository, UserDeviceRepository,
-    UserPreferenceRepository, UserSubscriptionProfileRepository
+    UserDeviceRepository,
+    UserPreferenceRepository,
+    UserProfileRepository,
+    UserSubscriptionProfileRepository,
 )
-from app.schemas import (
-    UserProfileUpdateRequest, UserDeviceRegisterRequest,
-    UserPreferenceUpdateRequest
-)
+from app.services import UserService
 
 
 @pytest_asyncio.fixture
@@ -68,6 +66,7 @@ class TestUserProfileIntegration:
     async def test_update_user_profile(self, user_service, db_session):
         """Test updating user profile."""
         from uuid import uuid4
+
         from app.schemas import UserProfileUpdateRequest
         
         user_id = uuid4()
@@ -88,7 +87,6 @@ class TestUserProfileIntegration:
     async def test_get_complete_profile(self, user_service, db_session):
         """Test getting complete profile with all related data."""
         from uuid import uuid4
-        from app.schemas import UserProfileCompleteResponse
         
         user_id = uuid4()
         await user_service.create_user_profile(user_id)
@@ -107,6 +105,7 @@ class TestUserDeviceIntegration:
     async def test_register_device(self, user_service, db_session):
         """Test registering a device."""
         from uuid import uuid4
+
         from app.schemas import UserDeviceRegisterRequest
         
         user_id = uuid4()
@@ -130,6 +129,7 @@ class TestUserDeviceIntegration:
     async def test_get_user_devices(self, user_service, db_session):
         """Test getting user devices."""
         from uuid import uuid4
+
         from app.schemas import UserDeviceRegisterRequest
         
         user_id = uuid4()
@@ -167,6 +167,7 @@ class TestUserPreferenceIntegration:
     async def test_update_preferences(self, user_service, db_session):
         """Test updating preferences."""
         from uuid import uuid4
+
         from app.schemas import UserPreferenceUpdateRequest
         
         user_id = uuid4()

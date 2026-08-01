@@ -7,8 +7,8 @@ Key settings:
   - MAX_STAGE_ATTEMPTS: kill threshold for stalled milestones
 """
 from decimal import Decimal
+
 from pydantic_settings import BaseSettings
-from typing import List
 
 
 class Settings(BaseSettings):
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # CORS
-    CORS_ALLOWED_ORIGINS: List[str] = ["*"]
+    CORS_ALLOWED_ORIGINS: list[str] = ["*"]
     CORS_ALLOW_CREDENTIALS: bool = True
 
     # Server
@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     SVOD_MONTHLY_PRICE: Decimal = Decimal("7.99")
 
     # Milestone-tranched funding split (must sum to 100%).
-    MILESTONE_TRANCHE_PERCENTAGES: List[Decimal] = [
+    MILESTONE_TRANCHE_PERCENTAGES: list[Decimal] = [
         Decimal("10.00"),
         Decimal("20.00"),
         Decimal("30.00"),

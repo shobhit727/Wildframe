@@ -1,13 +1,11 @@
 """Integration tests for Media Pipeline Service."""
-import pytest
+from uuid import uuid4
+
 import pytest_asyncio
-from uuid import UUID, uuid4
-from datetime import datetime, timezone
-from httpx import AsyncClient
-from app.main import app
-from app.services import MediaPipelineService
+
+from app.models import PipelineJobStatus, PipelineStageStatus
 from app.repositories import PipelineJobRepository, PipelineStageLogRepository
-from app.models import PipelineJob, PipelineJobStatus, PipelineStageLog, PipelineStageStatus
+from app.services import MediaPipelineService
 
 
 @pytest_asyncio.fixture

@@ -3,24 +3,39 @@ API routes for Content Service.
 Provides REST endpoints for content management operations.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Header, status, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID
 from typing import List, Optional
+from uuid import UUID
+
 import jwt
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from jwt.exceptions import PyJWTError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import db_manager
 from app.core.settings import settings
-from app.services import ContentService
 from app.schemas import (
-    ContentResponse, ContentListResponse, GenreResponse, CastMemberResponse,
-    SeasonResponse, EpisodeResponse, ContentRatingResponse, ContentRecommendationResponse,
-    ContentCreateRequest, ContentUpdateRequest, ContentPublishRequest,
-    SeasonCreateRequest, SeasonUpdateRequest, EpisodeCreateRequest, EpisodeUpdateRequest,
-    GenreCreateRequest, CastMemberCreateRequest, ContentRatingCreateRequest,
-    ContentRecommendationCreateRequest, ErrorResponse
+    CastMemberCreateRequest,
+    CastMemberResponse,
+    ContentCreateRequest,
+    ContentListResponse,
+    ContentPublishRequest,
+    ContentRatingCreateRequest,
+    ContentRatingResponse,
+    ContentRecommendationCreateRequest,
+    ContentRecommendationResponse,
+    ContentResponse,
+    ContentUpdateRequest,
+    EpisodeCreateRequest,
+    EpisodeResponse,
+    EpisodeUpdateRequest,
+    ErrorResponse,
+    GenreCreateRequest,
+    GenreResponse,
+    SeasonCreateRequest,
+    SeasonResponse,
+    SeasonUpdateRequest,
 )
+from app.services import ContentService
 
 router = APIRouter(prefix="/api/v1", tags=["content"])
 
@@ -30,7 +45,7 @@ async def get_content_service(session: AsyncSession = Depends(db_manager.get_ses
     return ContentService(session)
 
 
-async def get_current_user(authorization: Optional[str] = Header(None, alias="Authorization")) -> UUID:
+async def get_current_user(authorization: str | None = Header(None, alias="Authorization")) -> UUID:
     """Extract and verify current user from JWT token.
 
     Identity is read from the verified JWT ``sub`` claim, never from a
@@ -73,7 +88,7 @@ async def create_genre(
     return await service.create_genre(request)
 
 
-@router.get("/genres", response_model=List[GenreResponse])
+@router.get("/genres", response_model=list[GenreResponse])
 async def list_genres(
     service: ContentService = Depends(get_content_service)
 ):
@@ -127,7 +142,7 @@ async def get_cast_member(
     return member
 
 
-@router.get("/cast-members/search", response_model=List[CastMemberResponse])
+@router.get("/cast-members/search", response_model=list[CastMemberResponse])
 async def search_cast_members(
     q: str = Query(..., min_length=1),
     service: ContentService = Depends(get_content_service)
@@ -147,7 +162,7 @@ async def create_content(
     return await service.create_content(request)
 
 
-@router.get("/content", response_model=List[ContentListResponse])
+@router.get("/content", response_model=list[ContentListResponse])
 async def list_content(
     service: ContentService = Depends(get_content_service)
 ):
@@ -155,7 +170,7 @@ async def list_content(
     return await service.content_repo.get_published()
 
 
-@router.get("/content/trending", response_model=List[ContentListResponse])
+@router.get("/content/trending", response_model=list[ContentListResponse])
 async def get_trending_content(
     limit: int = Query(10, ge=1, le=50),
     service: ContentService = Depends(get_content_service)
@@ -164,7 +179,7 @@ async def get_trending_content(
     return await service.get_trending_content(limit)
 
 
-@router.get("/content/premium", response_model=List[ContentListResponse])
+@router.get("/content/premium", response_model=list[ContentListResponse])
 async def get_premium_content(
     service: ContentService = Depends(get_content_service)
 ):
@@ -172,7 +187,7 @@ async def get_premium_content(
     return await service.get_premium_content()
 
 
-@router.get("/content/by-type/{content_type}", response_model=List[ContentListResponse])
+@router.get("/content/by-type/{content_type}", response_model=list[ContentListResponse])
 async def list_content_by_type(
     content_type: str,
     service: ContentService = Depends(get_content_service)
@@ -181,7 +196,7 @@ async def list_content_by_type(
     return await service.list_content_by_type(content_type)
 
 
-@router.get("/content/by-genre/{genre_id}", response_model=List[ContentListResponse])
+@router.get("/content/by-genre/{genre_id}", response_model=list[ContentListResponse])
 async def list_content_by_genre(
     genre_id: UUID,
     service: ContentService = Depends(get_content_service)
@@ -190,7 +205,7 @@ async def list_content_by_genre(
     return await service.list_content_by_genre(genre_id)
 
 
-@router.get("/content/search", response_model=List[ContentListResponse])
+@router.get("/content/search", response_model=list[ContentListResponse])
 async def search_content(
     q: str = Query(..., min_length=1),
     service: ContentService = Depends(get_content_service)
@@ -260,7 +275,7 @@ async def create_season(
     return await service.create_season(content_id, request)
 
 
-@router.get("/content/{content_id}/seasons", response_model=List[SeasonResponse])
+@router.get("/content/{content_id}/seasons", response_model=list[SeasonResponse])
 async def list_seasons(
     content_id: UUID,
     service: ContentService = Depends(get_content_service)
@@ -309,7 +324,7 @@ async def create_episode(
     return await service.create_episode(season.content_id, season_id, request)
 
 
-@router.get("/seasons/{season_id}/episodes", response_model=List[EpisodeResponse])
+@router.get("/seasons/{season_id}/episodes", response_model=list[EpisodeResponse])
 async def list_episodes(
     season_id: UUID,
     service: ContentService = Depends(get_content_service)
@@ -356,7 +371,7 @@ async def rate_content(
     return await service.rate_content(content_id, current_user, request)
 
 
-@router.get("/content/{content_id}/ratings", response_model=List[ContentRatingResponse])
+@router.get("/content/{content_id}/ratings", response_model=list[ContentRatingResponse])
 async def get_ratings(
     content_id: UUID,
     service: ContentService = Depends(get_content_service)
@@ -378,7 +393,7 @@ async def add_recommendation(
     return await service.add_recommendation(content_id, request)
 
 
-@router.get("/content/{content_id}/recommendations", response_model=List[ContentRecommendationResponse])
+@router.get("/content/{content_id}/recommendations", response_model=list[ContentRecommendationResponse])
 async def get_recommendations(
     content_id: UUID,
     limit: int = Query(10, ge=1, le=50),

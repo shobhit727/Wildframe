@@ -1,12 +1,12 @@
 """Analytics service business logic."""
+from datetime import datetime
 from uuid import UUID
-from typing import List, Optional, Dict
-from datetime import datetime, timezone
+
 from app.repositories import (
-    EventRepository,
+    ContentPerformanceMetricsRepository,
     ContentViewEventRepository,
     CreatorAnalyticsSnapshotRepository,
-    ContentPerformanceMetricsRepository,
+    EventRepository,
 )
 
 
@@ -25,7 +25,7 @@ class AnalyticsService:
 
     # Generic event logging (kept for backward compatibility)
 
-    async def log_event(self, user_id: UUID, event_type: str, event_data: dict = None, content_id: UUID = None):
+    async def log_event(self, user_id: UUID, event_type: str, event_data: dict | None = None, content_id: UUID | None = None):
         """Log analytics event."""
         return await self.event_repo.create(user_id, event_type, event_data, content_id)
 
@@ -43,9 +43,9 @@ class AnalyticsService:
         watch_duration_seconds: int = 0,
         content_duration_seconds: int = 0,
         completion_pct: float = 0.0,
-        playback_quality: str = None,
-        started_at: datetime = None,
-        completed_at: datetime = None,
+        playback_quality: str | None = None,
+        started_at: datetime | None = None,
+        completed_at: datetime | None = None,
     ):
         """Record a content view/playback event."""
         return await self.view_repo.create(
@@ -61,7 +61,7 @@ class AnalyticsService:
 
     # Creator analytics
 
-    async def get_creator_analytics(self, creator_id: UUID) -> Optional[Dict]:
+    async def get_creator_analytics(self, creator_id: UUID) -> dict | None:
         """Get the latest analytics snapshot for a creator."""
         snapshot = await self.creator_repo.get_latest_for_creator(creator_id)
         if not snapshot:
@@ -85,8 +85,8 @@ class AnalyticsService:
         avg_completion_rate: float = 0.0,
         unique_viewers: int = 0,
         revenue_earned: float = 0.0,
-        period_start: datetime = None,
-        period_end: datetime = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ):
         """Save a creator analytics snapshot."""
         return await self.creator_repo.create(
@@ -102,7 +102,7 @@ class AnalyticsService:
 
     # Content performance metrics
 
-    async def get_content_performance(self, content_id: UUID) -> Optional[Dict]:
+    async def get_content_performance(self, content_id: UUID) -> dict | None:
         """Get performance metrics for a content item."""
         metrics = await self.content_repo.get_by_content(content_id)
         if not metrics:
@@ -120,11 +120,11 @@ class AnalyticsService:
     async def update_content_performance(
         self,
         content_id: UUID,
-        views_7d: int = None,
-        views_30d: int = None,
-        avg_completion_pct: float = None,
-        revenue_7d: float = None,
-        revenue_30d: float = None,
+        views_7d: int | None = None,
+        views_30d: int | None = None,
+        avg_completion_pct: float | None = None,
+        revenue_7d: float | None = None,
+        revenue_30d: float | None = None,
     ):
         """Update content performance metrics."""
         return await self.content_repo.update_metrics(

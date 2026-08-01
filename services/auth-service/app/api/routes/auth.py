@@ -4,33 +4,30 @@ All endpoints implement proper error handling, logging, and validation.
 """
 
 import logging
-from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.core.database import DatabaseManager, get_db
-from app.core.settings import settings
+from app.core.database import get_db
+from app.repositories import (
+    LoginAuditRepository,
+    RefreshTokenRepository,
+    TokenBlacklistRepository,
+    UserRepository,
+)
 from app.schemas import (
-    TokenResponse,
-    UserResponse,
-    UserRegisterRequest,
-    UserLoginRequest,
-    RefreshTokenRequest,
     ChangePasswordRequest,
-    VerifyEmailRequest,
     MFASetupRequest,
     MFAVerifyRequest,
-    ErrorResponse
+    RefreshTokenRequest,
+    TokenResponse,
+    UserLoginRequest,
+    UserRegisterRequest,
+    UserResponse,
+    VerifyEmailRequest,
 )
-from app.repositories import (
-    UserRepository,
-    RefreshTokenRepository,
-    LoginAuditRepository,
-)
-from app.security import TokenManager, PasswordManager
+from app.security import PasswordManager, RateLimiter, TokenManager
 from app.services import AuthService
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +56,7 @@ async def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:
 
 
 async def get_current_user(
-    authorization: Optional[str] = Header(None, alias="Authorization"),
+    authorization: str | None = Header(None, alias="Authorization"),
     db: AsyncSession = Depends(get_db)
 ) -> UUID:
     """Extract and verify current user from JWT token.
@@ -264,7 +261,7 @@ async def refresh(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    authorization: Optional[str] = None,
+    authorization: str | None = None,
     auth_service: AuthService = Depends(get_auth_service),
     db: AsyncSession = Depends(get_db)
 ) -> None:

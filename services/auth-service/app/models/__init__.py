@@ -3,21 +3,22 @@ Database models for Auth Service.
 Implements User and RefreshToken entities with audit columns.
 """
 
+import uuid
 from datetime import datetime
 from typing import Optional
+
 from sqlalchemy import (
-    Column,
-    String,
-    DateTime,
     Boolean,
+    Column,
+    DateTime,
     Index,
-    UniqueConstraint,
-    Text,
     Integer,
+    String,
+    Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
-import uuid
 
 Base = declarative_base()
 

@@ -1,8 +1,11 @@
 """Search service tests."""
-import pytest
 from uuid import uuid4
+
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.services import SearchService
+
 
 @pytest.mark.asyncio
 async def test_search_content(db: AsyncSession):

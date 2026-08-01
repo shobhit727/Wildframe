@@ -1,11 +1,14 @@
+from datetime import UTC, timezone
+
 """Repository layer for Auth Service."""
+import logging
 from typing import Optional
 from uuid import UUID
+
+from app.models import LoginAudit, RefreshToken, User
+from app.schemas import UserResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import User, RefreshToken, LoginAudit
-from app.schemas import UserResponse
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -42,20 +45,20 @@ class UserRepository(BaseRepository):
             return user
         except Exception as e:
             await self.rollback()
-            logger.error(f"Error creating user: {str(e)}")
+            logger.error(f"Error creating user: {e!s}")
             raise
 
-    async def get_by_email(self, email: str) -> Optional[User]:
+    async def get_by_email(self, email: str) -> User | None:
         """Get user by email."""
         stmt = select(User).where(User.email == email)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_id(self, user_id: UUID) -> Optional[User]:
+    async def get_by_id(self, user_id: UUID) -> User | None:
         """Get user by ID."""
         return await self.session.get(User, user_id)
 
-    async def update(self, user_id: UUID, **kwargs) -> Optional[User]:
+    async def update(self, user_id: UUID, **kwargs) -> User | None:
         """Update user."""
         try:
             user = await self.get_by_id(user_id)
@@ -71,7 +74,7 @@ class UserRepository(BaseRepository):
             return user
         except Exception as e:
             await self.rollback()
-            logger.error(f"Error updating user: {str(e)}")
+            logger.error(f"Error updating user: {e!s}")
             raise
 
     async def increment_login_attempts(self, user_id: UUID) -> User:
@@ -109,16 +112,16 @@ class RefreshTokenRepository(BaseRepository):
             return token
         except Exception as e:
             await self.rollback()
-            logger.error(f"Error creating refresh token: {str(e)}")
+            logger.error(f"Error creating refresh token: {e!s}")
             raise
 
-    async def get_by_token_hash(self, token_hash: str) -> Optional[RefreshToken]:
+    async def get_by_token_hash(self, token_hash: str) -> RefreshToken | None:
         """Get refresh token by hash."""
         stmt = select(RefreshToken).where(RefreshToken.token_hash == token_hash)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_user_id(self, user_id: UUID) -> Optional[RefreshToken]:
+    async def get_by_user_id(self, user_id: UUID) -> RefreshToken | None:
         """Get latest refresh token for user."""
         stmt = select(RefreshToken).where(
             RefreshToken.user_id == user_id
@@ -138,7 +141,7 @@ class RefreshTokenRepository(BaseRepository):
             return False
         except Exception as e:
             await self.rollback()
-            logger.error(f"Error revoking token: {str(e)}")
+            logger.error(f"Error revoking token: {e!s}")
             raise
 
     async def delete_expired(self) -> int:
@@ -146,7 +149,7 @@ class RefreshTokenRepository(BaseRepository):
         from datetime import datetime
         try:
             stmt = select(RefreshToken).where(
-                RefreshToken.expires_at < datetime.utcnow()
+                RefreshToken.expires_at < datetime.now(UTC)
             )
             result = await self.session.execute(stmt)
             tokens = result.scalars().all()
@@ -159,7 +162,7 @@ class RefreshTokenRepository(BaseRepository):
             return len(tokens)
         except Exception as e:
             await self.rollback()
-            logger.error(f"Error deleting expired tokens: {str(e)}")
+            logger.error(f"Error deleting expired tokens: {e!s}")
             raise
 
 
@@ -179,7 +182,7 @@ class LoginAuditRepository(BaseRepository):
             return audit
         except Exception as e:
             await self.rollback()
-            logger.error(f"Error creating audit: {str(e)}")
+            logger.error(f"Error creating audit: {e!s}")
             raise
 
     async def get_recent_failed_attempts(
@@ -189,7 +192,7 @@ class LoginAuditRepository(BaseRepository):
     ) -> int:
         """Get count of failed login attempts in last N minutes."""
         from datetime import datetime, timedelta
-        cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+        cutoff = datetime.now(UTC) - timedelta(minutes=minutes)
         
         stmt = select(LoginAudit).where(
             (LoginAudit.user_id == user_id) &

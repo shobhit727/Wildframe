@@ -1,21 +1,9 @@
 """Integration tests for Streaming Service."""
-import pytest
+from uuid import uuid4
+
 import pytest_asyncio
-from uuid import UUID, uuid4
-from datetime import datetime
-from httpx import AsyncClient
-from app.main import app
+
 from app.services import StreamingService
-from app.repositories import (
-    PlaybackSessionRepository, VideoManifestRepository, TranscodingJobRepository,
-    QualityProfileRepository, CDNRegionRepository, DownloadSessionRepository
-)
-from app.schemas import (
-    PlaybackSessionCreateRequest, PlaybackSessionUpdateRequest,
-    ManifestGenerationRequest, TranscodingJobCreateRequest,
-    QualityProfileCreateRequest, CDNRegionCreateRequest, DownloadSessionCreateRequest
-)
-from app.models import PlaybackSessionStatus, DeliveryProtocol, TranscodingStatus
 
 
 @pytest_asyncio.fixture
@@ -74,7 +62,10 @@ class TestPlaybackSessionIntegration:
 
     async def test_update_playback_session(self, streaming_service, db_session):
         """Test updating playback session."""
-        from app.schemas import PlaybackSessionCreateRequest, PlaybackSessionUpdateRequest
+        from app.schemas import (
+            PlaybackSessionCreateRequest,
+            PlaybackSessionUpdateRequest,
+        )
         
         request = PlaybackSessionCreateRequest(
             user_id=uuid4(),
@@ -116,8 +107,8 @@ class TestVideoManifestIntegration:
 
     async def test_generate_manifest(self, streaming_service, db_session):
         """Test generating a video manifest."""
-        from app.schemas import ManifestGenerationRequest
         from app.models import DeliveryProtocol
+        from app.schemas import ManifestGenerationRequest
         
         request = ManifestGenerationRequest(
             episode_id=uuid4(),
@@ -134,8 +125,8 @@ class TestVideoManifestIntegration:
 
     async def test_get_manifest_for_episode(self, streaming_service, db_session):
         """Test getting manifest for episode."""
-        from app.schemas import ManifestGenerationRequest
         from app.models import DeliveryProtocol
+        from app.schemas import ManifestGenerationRequest
         
         episode_id = uuid4()
         request = ManifestGenerationRequest(

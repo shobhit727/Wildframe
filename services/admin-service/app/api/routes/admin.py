@@ -1,4 +1,3 @@
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from jose import jwt
@@ -7,18 +6,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.settings import settings
 from app.schemas.admin import (
-    UserModerationRequest, UserModerationResponse,
-    ContentModerationRequest, ContentModerationResponse,
-    SystemAlertRequest, SystemAlertResponse,
-    SystemConfigRequest, SystemConfigResponse,
-    AdminAuditLogResponse, SystemStatsResponse
+    AdminAuditLogResponse,
+    ContentModerationRequest,
+    ContentModerationResponse,
+    SystemAlertRequest,
+    SystemAlertResponse,
+    SystemConfigRequest,
+    SystemConfigResponse,
+    SystemStatsResponse,
+    UserModerationRequest,
+    UserModerationResponse,
 )
 from app.services.admin import AdminService
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 
-async def get_current_admin_id(authorization: Optional[str] = Header(None, alias="Authorization")) -> str:
+async def get_current_admin_id(authorization: str | None = Header(None, alias="Authorization")) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization.replace("Bearer ", "")

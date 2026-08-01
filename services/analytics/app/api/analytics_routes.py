@@ -1,14 +1,16 @@
 """Analytics service API routes."""
-from uuid import UUID
 from datetime import datetime
-from fastapi import APIRouter, Depends, Body
+from uuid import UUID
+
+from fastapi import APIRouter, Body, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.repositories import (
-    EventRepository,
+    ContentPerformanceMetricsRepository,
     ContentViewEventRepository,
     CreatorAnalyticsSnapshotRepository,
-    ContentPerformanceMetricsRepository,
+    EventRepository,
 )
 from app.services import AnalyticsService
 

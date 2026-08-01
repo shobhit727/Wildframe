@@ -2,29 +2,27 @@
 
 import logging
 from uuid import UUID
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.schemas.content import (
-    GenreResponse,
-    CreateGenreRequest,
-    MovieResponse,
-    CreateMovieRequest,
-    UpdateMovieRequest,
-    ListMoviesResponse,
-    ShowResponse,
-    CreateShowRequest,
-    ListShowsResponse,
-    SeasonResponse,
-    CreateSeasonRequest,
-    ListSeasonsResponse,
-    EpisodeResponse,
     CreateEpisodeRequest,
+    CreateGenreRequest,
+    CreateMovieRequest,
+    CreateSeasonRequest,
+    CreateShowRequest,
+    EpisodeResponse,
+    GenreResponse,
     ListEpisodesResponse,
-    ErrorResponse
+    ListMoviesResponse,
+    ListSeasonsResponse,
+    ListShowsResponse,
+    MovieResponse,
+    SeasonResponse,
+    ShowResponse,
+    UpdateMovieRequest,
 )
 from app.services.content import ContentService
 
@@ -137,7 +135,7 @@ async def get_movie_by_key(
 
 @router.get("/movies", response_model=ListMoviesResponse)
 async def list_movies(
-    genre_id: Optional[UUID] = Query(None),
+    genre_id: UUID | None = Query(None),
     trending: bool = Query(False),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -241,7 +239,7 @@ async def get_show(
 
 @router.get("/shows", response_model=ListShowsResponse)
 async def list_shows(
-    genre_id: Optional[UUID] = Query(None),
+    genre_id: UUID | None = Query(None),
     ongoing_only: bool = Query(False),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),

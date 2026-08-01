@@ -1,22 +1,10 @@
 """Integration tests for Content Service."""
-import pytest
 import pytest_asyncio
-from uuid import UUID, uuid4
 from httpx import AsyncClient
+
 from app.main import app
+from app.models import ContentStatus
 from app.services import ContentService
-from app.repositories import (
-    ContentRepository, GenreRepository, CastMemberRepository,
-    SeasonRepository, EpisodeRepository, ContentRatingRepository,
-    ContentRecommendationRepository
-)
-from app.schemas import (
-    ContentCreateRequest, ContentUpdateRequest, ContentPublishRequest,
-    SeasonCreateRequest, EpisodeCreateRequest, GenreCreateRequest,
-    CastMemberCreateRequest, ContentRatingCreateRequest,
-    ContentRecommendationCreateRequest
-)
-from app.models import ContentType, ContentStatus
 
 
 @pytest_asyncio.fixture
@@ -76,16 +64,17 @@ class TestContentIntegration:
 
     async def test_create_content(self, content_service, db_session):
         """Test creating content."""
-        from app.schemas import ContentCreateRequest
-        from app.models import ContentType
         from datetime import datetime
+
+        from app.models import ContentType
+        from app.schemas import ContentCreateRequest
         
         request = ContentCreateRequest(
             title="Test Movie",
             slug="test-movie",
             description="A test movie",
             content_type="movie",
-            release_date=datetime.utcnow(),
+            release_date=datetime.now(timezone.utc),
             duration_minutes=120,
             original_language="en",
             country="US",
@@ -106,10 +95,9 @@ class TestContentIntegration:
 
     async def test_create_content_with_genres(self, content_service, db_session):
         """Test creating content with genres."""
-        from app.schemas import ContentCreateRequest, GenreCreateRequest
-        from app.models import ContentType
         from datetime import datetime
-        from uuid import uuid4
+
+        from app.schemas import ContentCreateRequest
         
         # Create genres first
         genre1 = await content_service.create_genre(
@@ -124,7 +112,7 @@ class TestContentIntegration:
             slug="adventure-movie",
             description="An adventure movie",
             content_type="movie",
-            release_date=datetime.utcnow(),
+            release_date=datetime.now(timezone.utc),
             duration_minutes=150,
             genre_ids=[genre1.id, genre2.id],
         )
@@ -136,8 +124,6 @@ class TestContentIntegration:
     async def test_update_content(self, content_service, db_session):
         """Test updating content."""
         from app.schemas import ContentCreateRequest, ContentUpdateRequest
-        from app.models import ContentType
-        from datetime import datetime
         
         # Create content
         request = ContentCreateRequest(
@@ -161,9 +147,8 @@ class TestContentIntegration:
 
     async def test_publish_content(self, content_service, db_session):
         """Test publishing content."""
+        from app.models import ContentStatus
         from app.schemas import ContentCreateRequest, ContentPublishRequest
-        from app.models import ContentType, ContentStatus
-        from datetime import datetime
         
         request = ContentCreateRequest(
             title="To Publish",
@@ -188,9 +173,9 @@ class TestSeasonIntegration:
 
     async def test_create_season(self, content_service, db_session):
         """Test creating a season."""
-        from app.schemas import ContentCreateRequest, SeasonCreateRequest
-        from app.models import ContentType
         from datetime import datetime
+
+        from app.schemas import ContentCreateRequest, SeasonCreateRequest
         
         # Create content first
         content_request = ContentCreateRequest(
@@ -206,7 +191,7 @@ class TestSeasonIntegration:
             season_number=1,
             title="Season 1",
             description="First season",
-            release_date=datetime.utcnow(),
+            release_date=datetime.now(timezone.utc),
         )
         
         season = await content_service.create_season(content.id, season_request)
@@ -221,9 +206,11 @@ class TestEpisodeIntegration:
 
     async def test_create_episode(self, content_service, db_session):
         """Test creating an episode."""
-        from app.schemas import ContentCreateRequest, SeasonCreateRequest, EpisodeCreateRequest
-        from app.models import ContentType
-        from datetime import datetime
+        from app.schemas import (
+            ContentCreateRequest,
+            EpisodeCreateRequest,
+            SeasonCreateRequest,
+        )
         
         # Create content
         content_request = ContentCreateRequest(
@@ -261,9 +248,9 @@ class TestRatingIntegration:
 
     async def test_rate_content(self, content_service, db_session):
         """Test rating content."""
-        from app.schemas import ContentCreateRequest, ContentRatingCreateRequest
-        from app.models import ContentType
         from uuid import uuid4
+
+        from app.schemas import ContentCreateRequest, ContentRatingCreateRequest
         
         request = ContentCreateRequest(
             title="Rated Content",
@@ -293,8 +280,6 @@ class TestRecommendationIntegration:
     async def test_add_recommendation(self, content_service, db_session):
         """Test adding a recommendation."""
         from app.schemas import ContentCreateRequest, ContentRecommendationCreateRequest
-        from app.models import ContentType
-        from uuid import uuid4
         
         # Create two content items
         content1 = ContentCreateRequest(

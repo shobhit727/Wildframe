@@ -1,11 +1,11 @@
 """Main FastAPI application for Creators Service."""
 import logging
+
 from fastapi import FastAPI
-from app.core.settings import settings
-from app.core.database import DatabaseManager
-from app.core.logging import setup_logging
-from app.api.routes.creators import router, admin_router
 from wildframe_observability.wire import wire_observability
+
+from app.api.routes.creators import admin_router, router
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 

@@ -1,14 +1,10 @@
 """Integration tests for Auth Service API endpoints."""
 import pytest
-from uuid import uuid4
-
-from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-
+from app.core.database import DatabaseManager
 from app.main import create_app
 from app.models import Base
-from app.core.database import DatabaseManager
-from app.security import TokenManager
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
 @pytest.fixture

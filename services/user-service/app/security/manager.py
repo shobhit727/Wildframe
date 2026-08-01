@@ -1,12 +1,13 @@
 """Security utilities for authentication and authorization."""
 
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
 import hashlib
 import logging
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import jwt
 from passlib.context import CryptContext
+
 from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ class PasswordManager:
     """Manages password hashing and verification."""
     
     @staticmethod
-    def hash_password(password: str, rounds: Optional[int] = None) -> str:
+    def hash_password(password: str, rounds: int | None = None) -> str:
         """Hash a password using bcrypt."""
         rounds = rounds or settings.PASSWORD_BCRYPT_ROUNDS
         return pwd_context.hash(password, rounds=rounds)
@@ -34,16 +35,16 @@ class TokenManager:
     """Manages JWT token creation and verification."""
     
     @staticmethod
-    def create_access_token(user_id: str, expires_delta: Optional[timedelta] = None) -> str:
+    def create_access_token(user_id: str, expires_delta: timedelta | None = None) -> str:
         """Create a new access token."""
         if expires_delta is None:
             expires_delta = timedelta(minutes=settings.JWT_EXPIRATION_MINUTES)
         
-        expires = datetime.now(timezone.utc) + expires_delta
+        expires = datetime.now(UTC) + expires_delta
         payload = {
             "sub": str(user_id),
             "exp": expires,
-            "iat": datetime.now(timezone.utc),
+            "iat": datetime.now(UTC),
             "type": "access"
         }
         
@@ -54,7 +55,7 @@ class TokenManager:
         )
     
     @staticmethod
-    def verify_token(token: str, token_type: str = "access") -> Optional[Dict[str, Any]]:
+    def verify_token(token: str, token_type: str = "access") -> dict[str, Any] | None:
         """Verify and decode a JWT token."""
         try:
             payload = jwt.decode(

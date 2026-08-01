@@ -1,8 +1,10 @@
 """Search service business logic."""
 from uuid import UUID
-from typing import List, Dict, Optional
+
 from elasticsearch import AsyncElasticsearch
-from app.repositories import SearchQueryRepository, SearchIndexRepository
+
+from app.repositories import SearchIndexRepository, SearchQueryRepository
+
 
 class SearchService:
     def __init__(self, es_client: AsyncElasticsearch, query_repo: SearchQueryRepository, index_repo: SearchIndexRepository):
@@ -10,7 +12,7 @@ class SearchService:
         self.query_repo = query_repo
         self.index_repo = index_repo
     
-    async def search(self, user_id: UUID, query: str, content_type: Optional[str] = None, limit: int = 20) -> List[Dict]:
+    async def search(self, user_id: UUID, query: str, content_type: str | None = None, limit: int = 20) -> list[dict]:
         """Full-text search via Elasticsearch."""
         must_clauses = [{"multi_match": {"query": query, "fields": ["title^2", "description", "actors", "director"]}}]
         if content_type:

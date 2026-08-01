@@ -3,18 +3,17 @@ Streaming service main application.
 FastAPI app factory with lifespan management.
 """
 
+import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from wildframe_observability.wire import wire_observability
 
-from app.core.settings import settings
-from app.core.database import db_manager
 from app.api.routes import router as api_router
-
-import logging
+from app.core.database import db_manager
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 

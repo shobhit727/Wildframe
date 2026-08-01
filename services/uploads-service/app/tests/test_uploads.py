@@ -12,15 +12,15 @@ Two layers:
    constructs the real ``UploadService`` against a ``db`` session. This only
    runs where Postgres is available; it asserts the service wires up.
 """
+from uuid import UUID, uuid4
+
 import pytest
-from uuid import uuid4, UUID
 
-from app.core.events import Event, InMemoryEventPublisher, set_event_publisher
-from app.core.storage import PresignedUpload, StubStoragePort, set_storage
-from app.models import UploadSession, UploadSessionStatus, UploadChunk
+from app.core.events import InMemoryEventPublisher, set_event_publisher
+from app.core.storage import StubStoragePort, set_storage
+from app.models import UploadChunk, UploadSession, UploadSessionStatus
 from app.repositories import UploadChunkRepository
-from app.services import UploadService, UploadError
-
+from app.services import UploadError, UploadService
 
 # ---------------------------------------------------------------------------
 # In-memory fakes (no DB). They mirror the repository's surface just enough
@@ -93,7 +93,7 @@ async def test_create_session_plans_chunks_and_issues_urls():
 
 @pytest.mark.asyncio
 async def test_register_chunk_advances_status_and_counts():
-    service, repo = make_service()
+    service, _repo = make_service()
     session, _ = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
@@ -111,7 +111,7 @@ async def test_register_chunk_advances_status_and_counts():
 
 @pytest.mark.asyncio
 async def test_complete_happy_path_emits_content_uploaded():
-    service, repo = make_service()
+    service, _repo = make_service()
     creator = uuid4()
     session, _ = await service.create_session(
         creator_id=creator,
@@ -141,7 +141,7 @@ async def test_complete_happy_path_emits_content_uploaded():
 
 @pytest.mark.asyncio
 async def test_complete_rejects_missing_chunks():
-    service, repo = make_service()
+    service, _repo = make_service()
     session, _ = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
@@ -161,7 +161,7 @@ async def test_complete_rejects_missing_chunks():
 
 @pytest.mark.asyncio
 async def test_register_rejects_duplicate_chunk():
-    service, repo = make_service()
+    service, _repo = make_service()
     session, _ = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
@@ -177,7 +177,7 @@ async def test_register_rejects_duplicate_chunk():
 
 @pytest.mark.asyncio
 async def test_register_rejects_out_of_range_chunk():
-    service, repo = make_service()
+    service, _repo = make_service()
     session, _ = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
@@ -192,7 +192,7 @@ async def test_register_rejects_out_of_range_chunk():
 
 @pytest.mark.asyncio
 async def test_complete_rejects_checksum_mismatch():
-    service, repo = make_service()
+    service, _repo = make_service()
     session, _ = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
@@ -211,7 +211,7 @@ async def test_complete_rejects_checksum_mismatch():
 
 @pytest.mark.asyncio
 async def test_abort_emits_content_uploaded_aborted_and_blocks_chunks():
-    service, repo = make_service()
+    service, _repo = make_service()
     session, _ = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
@@ -236,7 +236,7 @@ async def test_abort_emits_content_uploaded_aborted_and_blocks_chunks():
 @pytest.mark.asyncio
 async def test_complete_is_idempotent_guard():
     """Completing an already-complete session raises rather than double-emitting."""
-    service, repo = make_service()
+    service, _repo = make_service()
     session, _ = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
@@ -262,7 +262,7 @@ async def test_complete_is_idempotent_guard():
 async def test_create_session_persists_to_db(db):
     """Creating a session persists a row via the real repository."""
     service = UploadService(UploadChunkRepository(db))
-    session, uploads = await service.create_session(
+    session, _uploads = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
         mime="video/mp4",

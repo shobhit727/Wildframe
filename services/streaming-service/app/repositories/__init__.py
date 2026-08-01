@@ -1,18 +1,27 @@
+from datetime import timezone
+
 """
 Repository layer for Streaming Service data access.
 """
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, desc
-from uuid import UUID
-from typing import List, Optional
-from datetime import datetime
 import logging
+from datetime import UTC, datetime
+from typing import List, Optional
+from uuid import UUID
+
+from sqlalchemy import and_, desc, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    PlaybackSession, PlaybackSessionStatus, VideoManifest, TranscodingJob,
-    TranscodingStatus, StreamingQualityProfile, CDNRegion, StreamingStatistics,
-    DownloadSession
+    CDNRegion,
+    DownloadSession,
+    PlaybackSession,
+    PlaybackSessionStatus,
+    StreamingQualityProfile,
+    StreamingStatistics,
+    TranscodingJob,
+    TranscodingStatus,
+    VideoManifest,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,7 +46,7 @@ class BaseRepository:
 class PlaybackSessionRepository(BaseRepository):
     """Repository for playback session operations."""
     
-    async def create(self, user_id: UUID, content_id: UUID, episode_id: Optional[UUID],
+    async def create(self, user_id: UUID, content_id: UUID, episode_id: UUID | None,
                     device_id: str, protocol: str, resolution: str, bitrate_kbps: int,
                     total_duration_seconds: int) -> PlaybackSession:
         """Create a new playback session."""
@@ -50,11 +59,11 @@ class PlaybackSessionRepository(BaseRepository):
         await self.flush()
         return session
     
-    async def get_by_id(self, session_id: UUID) -> Optional[PlaybackSession]:
+    async def get_by_id(self, session_id: UUID) -> PlaybackSession | None:
         """Get session by ID."""
         return await self.session.get(PlaybackSession, session_id)
     
-    async def get_active_sessions(self, user_id: UUID) -> List[PlaybackSession]:
+    async def get_active_sessions(self, user_id: UUID) -> list[PlaybackSession]:
         """Get active sessions for user."""
         result = await self.session.execute(
             select(PlaybackSession)
@@ -63,7 +72,7 @@ class PlaybackSessionRepository(BaseRepository):
         )
         return result.scalars().all()
     
-    async def update(self, session_id: UUID, **kwargs) -> Optional[PlaybackSession]:
+    async def update(self, session_id: UUID, **kwargs) -> PlaybackSession | None:
         """Update session."""
         session = await self.get_by_id(session_id)
         if session:
@@ -73,18 +82,18 @@ class PlaybackSessionRepository(BaseRepository):
             await self.flush()
         return session
     
-    async def mark_completed(self, session_id: UUID) -> Optional[PlaybackSession]:
+    async def mark_completed(self, session_id: UUID) -> PlaybackSession | None:
         """Mark session as completed."""
         from datetime import datetime
-        return await self.update(session_id, status=PlaybackSessionStatus.COMPLETED, ended_at=datetime.utcnow())
+        return await self.update(session_id, status=PlaybackSessionStatus.COMPLETED, ended_at=datetime.now(UTC))
 
 
 class VideoManifestRepository(BaseRepository):
     """Repository for video manifest operations."""
     
     async def create(self, episode_id: UUID, content_id: UUID, protocol: str,
-                    manifest_url: str, manifest_content: str, variants: List[str],
-                    available_bitrates: List[int]) -> VideoManifest:
+                    manifest_url: str, manifest_content: str, variants: list[str],
+                    available_bitrates: list[int]) -> VideoManifest:
         """Create a new manifest."""
         manifest = VideoManifest(
             episode_id=episode_id, content_id=content_id, protocol=protocol,
@@ -95,11 +104,11 @@ class VideoManifestRepository(BaseRepository):
         await self.flush()
         return manifest
     
-    async def get_by_id(self, manifest_id: UUID) -> Optional[VideoManifest]:
+    async def get_by_id(self, manifest_id: UUID) -> VideoManifest | None:
         """Get manifest by ID."""
         return await self.session.get(VideoManifest, manifest_id)
     
-    async def get_by_episode_and_protocol(self, episode_id: UUID, protocol: str) -> Optional[VideoManifest]:
+    async def get_by_episode_and_protocol(self, episode_id: UUID, protocol: str) -> VideoManifest | None:
         """Get manifest by episode and protocol."""
         result = await self.session.execute(
             select(VideoManifest)
@@ -112,7 +121,7 @@ class TranscodingJobRepository(BaseRepository):
     """Repository for transcoding job operations."""
     
     async def create(self, episode_id: UUID, content_id: UUID, input_file_path: str,
-                    target_resolutions: List[str], target_bitrates: List[int],
+                    target_resolutions: list[str], target_bitrates: list[int],
                     priority: int = 5) -> TranscodingJob:
         """Create a new transcoding job."""
         job = TranscodingJob(
@@ -124,11 +133,11 @@ class TranscodingJobRepository(BaseRepository):
         await self.flush()
         return job
     
-    async def get_by_id(self, job_id: UUID) -> Optional[TranscodingJob]:
+    async def get_by_id(self, job_id: UUID) -> TranscodingJob | None:
         """Get job by ID."""
         return await self.session.get(TranscodingJob, job_id)
     
-    async def get_pending_jobs(self, limit: int = 10) -> List[TranscodingJob]:
+    async def get_pending_jobs(self, limit: int = 10) -> list[TranscodingJob]:
         """Get pending transcoding jobs ordered by priority."""
         result = await self.session.execute(
             select(TranscodingJob)
@@ -138,7 +147,7 @@ class TranscodingJobRepository(BaseRepository):
         )
         return result.scalars().all()
     
-    async def update(self, job_id: UUID, **kwargs) -> Optional[TranscodingJob]:
+    async def update(self, job_id: UUID, **kwargs) -> TranscodingJob | None:
         """Update job."""
         job = await self.get_by_id(job_id)
         if job:
@@ -164,18 +173,18 @@ class QualityProfileRepository(BaseRepository):
         await self.flush()
         return profile
     
-    async def get_by_id(self, profile_id: UUID) -> Optional[StreamingQualityProfile]:
+    async def get_by_id(self, profile_id: UUID) -> StreamingQualityProfile | None:
         """Get profile by ID."""
         return await self.session.get(StreamingQualityProfile, profile_id)
     
-    async def get_by_name(self, name: str) -> Optional[StreamingQualityProfile]:
+    async def get_by_name(self, name: str) -> StreamingQualityProfile | None:
         """Get profile by name."""
         result = await self.session.execute(
             select(StreamingQualityProfile).where(StreamingQualityProfile.name == name)
         )
         return result.scalars().first()
     
-    async def get_all_active(self) -> List[StreamingQualityProfile]:
+    async def get_all_active(self) -> list[StreamingQualityProfile]:
         """Get all active quality profiles."""
         result = await self.session.execute(
             select(StreamingQualityProfile).where(StreamingQualityProfile.is_active == True)
@@ -198,11 +207,11 @@ class CDNRegionRepository(BaseRepository):
         await self.flush()
         return region
     
-    async def get_by_id(self, region_id: UUID) -> Optional[CDNRegion]:
+    async def get_by_id(self, region_id: UUID) -> CDNRegion | None:
         """Get region by ID."""
         return await self.session.get(CDNRegion, region_id)
     
-    async def get_all_active(self) -> List[CDNRegion]:
+    async def get_all_active(self) -> list[CDNRegion]:
         """Get all active CDN regions."""
         result = await self.session.execute(
             select(CDNRegion).where(CDNRegion.is_active == True)
@@ -218,8 +227,8 @@ class StreamingMetricsRepository(BaseRepository):
         """Record a metrics sample as an aggregated statistics row."""
         stats = StreamingStatistics(
             content_id=session_id,
-            period_start=datetime.utcnow().replace(minute=0, second=0, microsecond=0),
-            period_end=datetime.utcnow(),
+            period_start=datetime.now(UTC).replace(minute=0, second=0, microsecond=0),
+            period_end=datetime.now(UTC),
             period_type="hourly",
             total_streams=1,
             average_bitrate_kbps=bitrate_kbps,
@@ -230,7 +239,7 @@ class StreamingMetricsRepository(BaseRepository):
         await self.flush()
         return stats
 
-    async def get_by_id(self, stats_id: UUID) -> Optional[StreamingStatistics]:
+    async def get_by_id(self, stats_id: UUID) -> StreamingStatistics | None:
         """Get statistics by ID."""
         return await self.session.get(StreamingStatistics, stats_id)
 
@@ -249,18 +258,18 @@ class DownloadSessionRepository(BaseRepository):
         await self.flush()
         return download
     
-    async def get_by_id(self, download_id: UUID) -> Optional[DownloadSession]:
+    async def get_by_id(self, download_id: UUID) -> DownloadSession | None:
         """Get download by ID."""
         return await self.session.get(DownloadSession, download_id)
     
-    async def get_user_downloads(self, user_id: UUID) -> List[DownloadSession]:
+    async def get_user_downloads(self, user_id: UUID) -> list[DownloadSession]:
         """Get all downloads for user."""
         result = await self.session.execute(
             select(DownloadSession).where(DownloadSession.user_id == user_id)
         )
         return result.scalars().all()
     
-    async def update(self, download_id: UUID, **kwargs) -> Optional[DownloadSession]:
+    async def update(self, download_id: UUID, **kwargs) -> DownloadSession | None:
         """Update download session."""
         download = await self.get_by_id(download_id)
         if download:

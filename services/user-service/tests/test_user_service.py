@@ -1,12 +1,10 @@
 """Comprehensive tests for User Service."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
-from datetime import datetime, timedelta, timezone
 
+import pytest
 from app.services.user import UserService
-from app.models.user import UserProfile, Device, UserSession, WatchHistory, UserPreference
 
 
 @pytest.fixture

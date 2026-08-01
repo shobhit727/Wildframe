@@ -13,11 +13,12 @@ Two layers:
 2. A thin DB-backed smoke test mirroring billing/streaming that constructs
    the real ``MediaPipelineService`` against a ``db`` session.
 """
-import pytest
-from uuid import uuid4, UUID
-from typing import Any, Dict
+from typing import Any
+from uuid import UUID, uuid4
 
-from app.core.events import Event, InMemoryEventPublisher, set_event_publisher
+import pytest
+
+from app.core.events import InMemoryEventPublisher, set_event_publisher
 from app.core.stages import Stage, StageRegistry, install_default_stages
 from app.models import (
     PipelineJob,
@@ -26,8 +27,7 @@ from app.models import (
     PipelineStageStatus,
 )
 from app.repositories import PipelineJobRepository, PipelineStageLogRepository
-from app.services import MediaPipelineService, PipelineError, PipelineNonRetryable
-
+from app.services import MediaPipelineService, PipelineNonRetryable
 
 # ---------------------------------------------------------------------------
 # In-memory fakes.
@@ -36,7 +36,7 @@ from app.services import MediaPipelineService, PipelineError, PipelineNonRetryab
 
 class FakeJobRepo:
     def __init__(self) -> None:
-        self.jobs: Dict[UUID, PipelineJob] = {}
+        self.jobs: dict[UUID, PipelineJob] = {}
 
     async def create(self, job: PipelineJob) -> PipelineJob:
         self.jobs[job.id] = job
@@ -93,7 +93,7 @@ class CountingStage(Stage):
         self._non_retryable = non_retryable
         self.calls = 0
 
-    async def run(self, ctx: Dict[str, Any]) -> Dict[str, Any]:
+    async def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         self.calls += 1
         if self._non_retryable:
             raise PipelineNonRetryable(f"{self.name}: fatal")

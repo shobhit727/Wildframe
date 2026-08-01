@@ -1,7 +1,8 @@
 """Notification service business logic."""
 from uuid import UUID
-import smtplib
+
 from app.repositories import NotificationRepository
+
 
 class NotificationService:
     def __init__(self, notif_repo: NotificationRepository):
@@ -14,4 +15,3 @@ class NotificationService:
     async def mark_as_read(self, notification_id: UUID):
         """Mark notification as read."""
         # Implementation
-        pass

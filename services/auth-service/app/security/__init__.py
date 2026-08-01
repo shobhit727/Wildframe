@@ -1,17 +1,19 @@
+from datetime import timezone
+
 """
 Security utilities for Auth Service.
 Implements JWT token handling, password hashing, and validation.
 """
 
-from datetime import datetime, timedelta
-from typing import Optional, Any
-from jose import JWTError, jwt
-from passlib.context import CryptContext
-from uuid import UUID
-import logging
 import hashlib
+import logging
+from datetime import UTC, datetime, timedelta
+from typing import Any, Optional
+from uuid import UUID
 
 from app.core.settings import settings
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +68,7 @@ class TokenManager:
         Returns:
             str: JWT access token
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         expires_at = now + timedelta(minutes=settings.JWT_EXPIRATION_MINUTES)
 
         payload = {
@@ -95,7 +97,7 @@ class TokenManager:
         Returns:
             str: JWT refresh token
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRATION_DAYS)
 
         payload = {
@@ -145,7 +147,7 @@ class TokenManager:
             raise
 
     @staticmethod
-    def extract_user_id(token: str) -> Optional[UUID]:
+    def extract_user_id(token: str) -> UUID | None:
         """Extract user ID from token without verification.
         
         Args:
@@ -175,14 +177,14 @@ class TokenManager:
 
     def create_refresh_token(self, user) -> tuple[str, str, datetime]:
         """Create refresh token and return token, hash, and expires_at."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRATION_DAYS)
         # Use existing static method to build token
         token = TokenManager.create_refresh_token(str(user.id))
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         return token, token_hash, expires_at
 
-    def verify_refresh_token(self, token: str) -> Optional[UUID]:
+    def verify_refresh_token(self, token: str) -> UUID | None:
         """Verify refresh token and return user UUID or None."""
         try:
             payload = TokenManager.verify_token(token, token_type="refresh")

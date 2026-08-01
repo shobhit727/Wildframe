@@ -1,14 +1,14 @@
 """Main FastAPI application for Api Gateway Service."""
 import logging
+
 import redis.asyncio as redis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.settings import settings
-from app.core.database import DatabaseManager
-from app.core.logging import setup_logging
-from app.api.gateway_routes import router as gateway_router
-from app.middleware import AuthenticationMiddleware, RateLimiter
 from wildframe_observability.wire import wire_observability
+
+from app.api.gateway_routes import router as gateway_router
+from app.core.settings import settings
+from app.middleware import AuthenticationMiddleware, RateLimiter
 
 logger = logging.getLogger(__name__)
 

@@ -10,13 +10,13 @@ This service implements the economic model that makes WildFrame different:
 import logging
 
 from fastapi import FastAPI
+from wildframe_observability.wire import wire_observability
 
-from app.core.settings import settings
-from app.core.database import DatabaseManager
-from app.core.logging import setup_logging
 from app.api.billing_routes import router as billing_router
 from app.api.webhook_routes import router as webhook_router
-from wildframe_observability.wire import wire_observability
+from app.core.database import DatabaseManager
+from app.core.logging import setup_logging
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 

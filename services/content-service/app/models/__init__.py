@@ -3,15 +3,26 @@ SQLAlchemy ORM models for Content Service.
 Manages animation content, episodes, seasons, genres, series, and recommendations.
 """
 
-from sqlalchemy import (
-    Column, String, Integer, Float, Text, Boolean, DateTime,
-    ForeignKey, Table, UniqueConstraint, Index, Enum
-)
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import declarative_base, relationship
-from datetime import datetime
-import uuid
 import enum
+import uuid
+from datetime import datetime
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 

@@ -22,12 +22,12 @@ coordinating the full payment lifecycle:
 """
 import logging
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any
 from uuid import UUID
 
 from app.core.settings import settings
 from app.core.stripe_client import StripeClient, StripeError
-from app.services import BillingService, BillingError
+from app.services import BillingError, BillingService
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class PaymentService:
         self,
         user_id: UUID,
         tier: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Initiate an SVOD subscription checkout flow.
 
         Creates a Stripe Checkout Session for the given tier and
@@ -97,7 +97,7 @@ class PaymentService:
         user_id: UUID,
         content_id: UUID,
         amount: Decimal,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Initiate a TVOD (pay-per-view) purchase checkout flow.
 
         Creates a Stripe Checkout Session in ``payment`` mode for
@@ -134,7 +134,7 @@ class PaymentService:
     # Webhook event processing
     # -----------------------------------------------------------------------
 
-    async def process_webhook_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
+    async def process_webhook_event(self, event: dict[str, Any]) -> dict[str, Any]:
         """Dispatch a Stripe webhook event to the correct handler.
 
         This is the single entry point for all webhook events. It
@@ -168,26 +168,26 @@ class PaymentService:
         except BillingError as exc:
             raise PaymentServiceError(f"Webhook handler failed: {exc}") from exc
 
-    async def _process_checkout_completed(self, event: Dict[str, Any]) -> None:
+    async def _process_checkout_completed(self, event: dict[str, Any]) -> None:
         """Process checkout.session.completed event."""
         # Delegates to BillingService for subscription/purchase recording.
         # In a full implementation this would parse the session metadata
         # and call subscribe() or purchase_title() accordingly.
         logger.info("Processing checkout.session.completed: %s", event["id"])
 
-    async def _process_subscription_updated(self, event: Dict[str, Any]) -> None:
+    async def _process_subscription_updated(self, event: dict[str, Any]) -> None:
         """Process customer.subscription.updated event."""
         logger.info("Processing customer.subscription.updated: %s", event["id"])
 
-    async def _process_subscription_deleted(self, event: Dict[str, Any]) -> None:
+    async def _process_subscription_deleted(self, event: dict[str, Any]) -> None:
         """Process customer.subscription.deleted event."""
         logger.info("Processing customer.subscription.deleted: %s", event["id"])
 
-    async def _process_invoice_paid(self, event: Dict[str, Any]) -> None:
+    async def _process_invoice_paid(self, event: dict[str, Any]) -> None:
         """Process invoice.paid event."""
         logger.info("Processing invoice.paid: %s", event["id"])
 
-    async def _process_payment_succeeded(self, event: Dict[str, Any]) -> None:
+    async def _process_payment_succeeded(self, event: dict[str, Any]) -> None:
         """Process payment_intent.succeeded event."""
         logger.info("Processing payment_intent.succeeded: %s", event["id"])
 
@@ -200,7 +200,7 @@ class PaymentService:
         creator_id: UUID,
         country: str,
         email: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Onboard a creator to Stripe Connect.
 
         Creates an Express-type Connect account for the creator and
@@ -239,7 +239,7 @@ class PaymentService:
         creator_stripe_account_id: str,
         amount: Decimal,
         idempotency_key: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Transfer funds to a creator's Stripe Connect account.
 
         This is the final step in the payout flow:

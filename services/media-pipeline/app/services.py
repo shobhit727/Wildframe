@@ -43,13 +43,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from app.core.events import Event, EventPublisher, get_event_publisher
-from app.core.settings import settings
-from app.core.stages import Stage, StageRegistry, registry as default_registry
+from app.core.stages import Stage, StageRegistry
+from app.core.stages import registry as default_registry
 from app.models import (
     PipelineJob,
     PipelineJobStatus,
@@ -57,7 +57,6 @@ from app.models import (
     PipelineStageStatus,
 )
 from app.repositories import PipelineJobRepository, PipelineStageLogRepository
-
 
 logger = logging.getLogger(__name__)
 
@@ -76,13 +75,13 @@ logger = logging.getLogger(__name__)
 def _is_port(value: Any) -> bool:
     """True if ``value`` is a stage port instance (non-serializable)."""
     from app.core.stages import (
-        VirusScanner,
-        MetadataExtractor,
-        ThumbnailGenerator,
-        MultiBitrateEncoder,
-        Packager,
-        ObjectStorage,
         CDN,
+        MetadataExtractor,
+        MultiBitrateEncoder,
+        ObjectStorage,
+        Packager,
+        ThumbnailGenerator,
+        VirusScanner,
     )
 
     return isinstance(
@@ -99,7 +98,7 @@ def _is_port(value: Any) -> bool:
     )
 
 
-def _rehydrate_context(job: PipelineJob, ctx: Dict[str, Any]) -> Dict[str, Any]:
+def _rehydrate_context(job: PipelineJob, ctx: dict[str, Any]) -> dict[str, Any]:
     """Re-inject stub ports into a deserialized context dict.
 
     On a fresh start the orchestrator populates ports in ``_build_context``.
@@ -107,13 +106,13 @@ def _rehydrate_context(job: PipelineJob, ctx: Dict[str, Any]) -> Dict[str, Any]:
     so the same stage code works in both cases.
     """
     from app.core.stages import (
-        StubVirusScanner,
-        StubMetadataExtractor,
-        StubThumbnailGenerator,
-        StubMultiBitrateEncoder,
-        StubPackager,
-        StubObjectStorage,
         StubCDN,
+        StubMetadataExtractor,
+        StubMultiBitrateEncoder,
+        StubObjectStorage,
+        StubPackager,
+        StubThumbnailGenerator,
+        StubVirusScanner,
     )
 
     defaults = {
@@ -159,8 +158,8 @@ class MediaPipelineService:
         self,
         job_repo: PipelineJobRepository,
         log_repo: PipelineStageLogRepository,
-        registry: Optional[StageRegistry] = None,
-        publisher: Optional[EventPublisher] = None,
+        registry: StageRegistry | None = None,
+        publisher: EventPublisher | None = None,
         # Retry knobs are injectable so tests can run them with zero delay.
         max_attempts: int = MAX_STAGE_ATTEMPTS,
         backoff_base: float = BACKOFF_BASE_SECONDS,
@@ -184,7 +183,7 @@ class MediaPipelineService:
         content_id: UUID,
         upload_session_id: UUID,
         storage_key: str,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> PipelineJob:
         """Create a pending pipeline job for an uploaded piece of content.
 
@@ -223,16 +222,16 @@ class MediaPipelineService:
         )
         return job
 
-    def _build_context(self, job: PipelineJob, *, storage_key: str) -> Dict[str, Any]:
+    def _build_context(self, job: PipelineJob, *, storage_key: str) -> dict[str, Any]:
         """Assemble the per-job context dict with injected ports."""
         from app.core.stages import (
-            StubVirusScanner,
-            StubMetadataExtractor,
-            StubThumbnailGenerator,
-            StubMultiBitrateEncoder,
-            StubPackager,
-            StubObjectStorage,
             StubCDN,
+            StubMetadataExtractor,
+            StubMultiBitrateEncoder,
+            StubObjectStorage,
+            StubPackager,
+            StubThumbnailGenerator,
+            StubVirusScanner,
         )
 
         return {
@@ -283,7 +282,7 @@ class MediaPipelineService:
 
         job.status = PipelineJobStatus.RUNNING
         if job.started_at is None:
-            job.started_at = datetime.now(timezone.utc)
+            job.started_at = datetime.now(UTC)
         await self.job_repo.save(job)
 
         for stage_name in self.registry.order:
@@ -313,7 +312,7 @@ class MediaPipelineService:
             # Stage succeeded: snapshot its output into stage_versions.
             job.stage_versions = {
                 **job.stage_versions,
-                stage_name: {"completed_at": datetime.now(timezone.utc).isoformat()},
+                stage_name: {"completed_at": datetime.now(UTC).isoformat()},
             }
             job.retries = 0
             # Persist ctx (without ports) so a later advance() can resume.
@@ -370,8 +369,8 @@ class MediaPipelineService:
         return job
 
     async def _run_stage_with_retries(
-        self, job: PipelineJob, stage: Stage, ctx: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, job: PipelineJob, stage: Stage, ctx: dict[str, Any]
+    ) -> dict[str, Any]:
         """Run one stage with exponential-backoff retries.
 
         Returns the updated ctx on success. On retry exhaustion of a critical
@@ -379,7 +378,7 @@ class MediaPipelineService:
         non-critical stage, logs a skip and returns ctx unchanged.
         """
         attempt = 0
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         while attempt < self.max_attempts:
             attempt += 1
             job.retries = attempt

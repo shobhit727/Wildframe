@@ -13,24 +13,23 @@ Handled events:
   - payment_intent.succeeded    → trigger payout ledger accrual
 """
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Dict
-from uuid import UUID, uuid4
+from typing import Any
+from uuid import UUID
 
-from fastapi import APIRouter, Request, HTTPException, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.settings import settings
 from app.core.stripe_client import StripeClient, StripeError
 from app.repositories import (
-    SubscriptionRepository,
-    PurchaseRepository,
     InvoiceRepository,
     PayoutLedgerRepository,
+    PurchaseRepository,
+    SubscriptionRepository,
 )
-from app.services import BillingService, BillingError
+from app.services import BillingService
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +75,7 @@ def _mark_event_processed(event_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 async def _handle_checkout_session_completed(
-    event: Dict[str, Any],
+    event: dict[str, Any],
     service: BillingService,
 ) -> None:
     """Handle checkout.session.completed.
@@ -92,8 +91,7 @@ async def _handle_checkout_session_completed(
         return
 
     user_id = UUID(user_id_str)
-    event_id = event["id"]
-    idem_key = f"stripe:checkout_completed:{event_id}"
+    event["id"]
 
     tier = metadata.get("tier")
     if tier:
@@ -123,14 +121,14 @@ async def _handle_checkout_session_completed(
             return
 
         content_id = UUID(content_id_str)
-        amount = Decimal(str(session["amount_total"])) / Decimal("100")
+        amount = Decimal(str(session["amount_total"])) / Decimal(100)
         await service.purchase_title(user_id, content_id, amount)
         logger.info("TVOD purchase recorded for user %s (content=%s, amount=%s)",
                      user_id, content_id, amount)
 
 
 async def _handle_subscription_updated(
-    event: Dict[str, Any],
+    event: dict[str, Any],
     service: BillingService,
 ) -> None:
     """Handle customer.subscription.updated.
@@ -158,7 +156,7 @@ async def _handle_subscription_updated(
 
 
 async def _handle_subscription_deleted(
-    event: Dict[str, Any],
+    event: dict[str, Any],
     service: BillingService,
 ) -> None:
     """Handle customer.subscription.deleted.
@@ -177,7 +175,7 @@ async def _handle_subscription_deleted(
 
 
 async def _handle_invoice_paid(
-    event: Dict[str, Any],
+    event: dict[str, Any],
     service: BillingService,
 ) -> None:
     """Handle invoice.paid.
@@ -202,7 +200,7 @@ async def _handle_invoice_paid(
         user_id_str = metadata.get("user_id")
         if user_id_str:
             user_id = UUID(user_id_str)
-            amount = Decimal(str(invoice_obj["total"])) / Decimal("100")
+            amount = Decimal(str(invoice_obj["total"])) / Decimal(100)
             # Check if invoice already exists for this amount + user.
             existing_invoices = await service.inv_repo.get_by_user(user_id)
             already_recorded = any(
@@ -222,13 +220,13 @@ async def _handle_invoice_paid(
                 new_inv = inv[-1] if inv else None
                 if new_inv and new_inv.status == InvoiceStatus.PENDING:
                     new_inv.status = InvoiceStatus.PAID
-                    new_inv.paid_at = datetime.now(timezone.utc)
+                    new_inv.paid_at = datetime.now(UTC)
             logger.info("Invoice payment recorded for user %s (amount=%s)", user_id, amount)
             break
 
 
 async def _handle_payment_intent_succeeded(
-    event: Dict[str, Any],
+    event: dict[str, Any],
     service: BillingService,
 ) -> None:
     """Handle payment_intent.succeeded.
@@ -247,7 +245,7 @@ async def _handle_payment_intent_succeeded(
         return
     _mark_event_processed(idem_key)
 
-    amount = Decimal(str(pi["amount"])) / Decimal("100")
+    amount = Decimal(str(pi["amount"])) / Decimal(100)
     # Calculate creator share (>=55%).
     creator_share = BillingService.calculate_creator_share(amount)
 

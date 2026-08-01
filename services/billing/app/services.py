@@ -12,30 +12,28 @@ Invariant: the 55% creator share is calculated BEFORE platform costs.
 A creator's *effective floor* is a minimum guarantee, not a cap — top
 performers always earn their full pro-rata share above the floor.
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import UUID, uuid4
-from typing import Optional
+from uuid import UUID
 
 from app.models import (
+    Milestone,
+    MilestoneStatus,
+    MilestoneTranche,
+    PayoutLedger,
     RevenueTier,
     Subscription,
-    Milestone,
-    MilestoneTranche,
-    MilestoneStatus,
     TrancheStatus,
-    PayoutLedger,
 )
 from app.repositories import (
-    SubscriptionRepository,
-    PurchaseRepository,
-    InvoiceRepository,
-    RegionFloorRepository,
     CreatorPoolRepository,
+    InvoiceRepository,
     MilestoneRepository,
     PayoutLedgerRepository,
+    PurchaseRepository,
+    RegionFloorRepository,
+    SubscriptionRepository,
 )
-
 
 # ---------------------------------------------------------------------------
 # Price table (§3 of PRODUCT_VISION.md)
@@ -110,7 +108,7 @@ class BillingService:
     # Subscription management
     # -----------------------------------------------------------------------
 
-    async def get_subscription(self, user_id: UUID) -> Optional[Subscription]:
+    async def get_subscription(self, user_id: UUID) -> Subscription | None:
         """Get a user's current subscription tier and details."""
         return await self.sub_repo.get_by_user(user_id)
 
@@ -134,14 +132,14 @@ class BillingService:
             return await self.sub_repo.update_tier(user_id, tier, price)
         return await self.sub_repo.create(user_id, tier, price)
 
-    async def cancel_subscription(self, user_id: UUID) -> Optional[Subscription]:
+    async def cancel_subscription(self, user_id: UUID) -> Subscription | None:
         """Cancel a subscription (reverts to AVOD)."""
         sub = await self.sub_repo.get_by_user(user_id)
         if not sub:
             return None
         sub.tier = RevenueTier.AVOD
         sub.monthly_price = Decimal("0.00")
-        sub.cancelled_at = datetime.now(timezone.utc)
+        sub.cancelled_at = datetime.now(UTC)
         sub.is_active = False
         return sub
 
@@ -240,7 +238,7 @@ class BillingService:
             raise BillingError(f"Tranche {tranche_number} is not locked (status={tranche.status.value})")
 
         tranche.status = TrancheStatus.RELEASED
-        tranche.released_at = datetime.now(timezone.utc)
+        tranche.released_at = datetime.now(UTC)
 
         # Accrue payout for the released tranche amount.
         idem_key = f"tranche:{milestone_id}:{tranche_number}"
@@ -250,7 +248,7 @@ class BillingService:
             currency="USD",
             idempotency_key=idem_key,
             cycle_start=milestone.created_at,
-            cycle_end=datetime.now(timezone.utc),
+            cycle_end=datetime.now(UTC),
             breakdown={"type": "milestone_tranche", "tranche_number": tranche_number},
         )
         return tranche
@@ -269,7 +267,7 @@ class BillingService:
         milestone.status = MilestoneStatus.KILLED
 
         tranches = await self.milestone_repo.get_tranches(milestone_id)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for tranche in tranches:
             if tranche.status == TrancheStatus.LOCKED:
                 tranche.status = TrancheStatus.REVERTED
@@ -293,7 +291,7 @@ class BillingService:
         idempotency_key: str,
         cycle_start: datetime,
         cycle_end: datetime,
-        breakdown: dict = None,
+        breakdown: dict | None = None,
     ) -> PayoutLedger:
         """Accrue a creator payout, idempotently.
 

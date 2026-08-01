@@ -3,26 +3,26 @@ import logging
 from typing import Annotated, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
 from app.repositories import (
-    UserProfileRepository,
     UserDeviceRepository,
     UserPreferenceRepository,
+    UserProfileRepository,
     UserSubscriptionProfileRepository,
 )
 from app.schemas import (
-    UserProfileResponse,
-    UserProfileUpdateRequest,
-    UserDeviceResponse,
     UserDeviceRegisterRequest,
+    UserDeviceResponse,
     UserDeviceUpdateRequest,
     UserPreferenceResponse,
     UserPreferenceUpdateRequest,
-    UserSubscriptionProfileResponse,
     UserProfileCompleteResponse,
+    UserProfileResponse,
+    UserProfileUpdateRequest,
+    UserSubscriptionProfileResponse,
 )
 from app.security.manager import TokenManager
 from app.services import UserService
@@ -33,7 +33,7 @@ router = APIRouter()
 
 
 async def get_current_user_id(
-    authorization: Optional[str] = Header(None, alias="Authorization"),
+    authorization: str | None = Header(None, alias="Authorization"),
 ) -> UUID:
     """Validate JWT and return the authenticated user_id (sub claim)."""
     if not authorization or not authorization.startswith("Bearer "):
@@ -197,7 +197,7 @@ async def register_device(
 
 @router.get(
     "/devices/{user_id}",
-    response_model=List[UserDeviceResponse],
+    response_model=list[UserDeviceResponse],
     tags=["Devices"],
     summary="Get user devices",
 )
@@ -205,7 +205,7 @@ async def get_devices(
     user_id: UUID,
     _user: Annotated[UUID, Depends(require_self)],
     user_service: Annotated[UserService, Depends(get_user_service)],
-) -> List[UserDeviceResponse]:
+) -> list[UserDeviceResponse]:
     """Get all devices for user."""
     return await user_service.get_user_devices(user_id)
 

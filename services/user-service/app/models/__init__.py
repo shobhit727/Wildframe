@@ -1,10 +1,21 @@
 """SQLAlchemy models for User Service."""
-from uuid import uuid4
+import enum
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, DateTime, Text, Index, ForeignKey, Enum as SQLEnum, Integer
+from uuid import uuid4
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
-import enum
 
 Base = declarative_base()
 

@@ -6,11 +6,8 @@ implementation passed a ``lambda`` to ``conn.execute`` (``conn.execute(lambda:
 raise, making the health check fail and preventing the app from starting.
 """
 import pytest
-
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
-
 from app.core.database import DatabaseManager
+from sqlalchemy.ext.asyncio import create_async_engine
 
 
 @pytest.fixture

@@ -1,11 +1,11 @@
 """Main FastAPI application for Recommendation Service."""
 import logging
+
 from fastapi import FastAPI
-from app.core.settings import settings
-from app.core.database import DatabaseManager
-from app.core.logging import setup_logging
-from app.api.recommendation_routes import router as recommendation_router
 from wildframe_observability.wire import wire_observability
+
+from app.api.recommendation_routes import router as recommendation_router
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 

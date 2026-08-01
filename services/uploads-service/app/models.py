@@ -18,18 +18,21 @@ the assembled checksum matches, then flips to ``complete`` and emits
 ``content.uploaded``. ``abort`` (or expiry) flips to ``aborted`` and emits
 ``content.uploaded.aborted``.
 """
-from datetime import datetime, timezone
-from uuid import uuid4
+from datetime import UTC, datetime
 from enum import Enum
+from uuid import uuid4
+
 from sqlalchemy import (
-    Column,
-    String,
-    Integer,
     BigInteger,
+    Column,
     DateTime,
-    Enum as SQLEnum,
     ForeignKey,
     Index,
+    Integer,
+    String,
+)
+from sqlalchemy import (
+    Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
@@ -68,13 +71,13 @@ class UploadSession(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     created_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     updated_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -101,7 +104,7 @@ class UploadChunk(Base):
     etag = Column(String(255), nullable=True)
     received_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 

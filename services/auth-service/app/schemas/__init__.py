@@ -3,13 +3,12 @@ Request and response schemas for Auth Service.
 Implements Pydantic models for input validation and API contracts.
 """
 
-from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, EmailStr, Field, field_validator
 import re
-from uuid import UUID
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class TokenResponse(BaseModel):
@@ -97,7 +96,7 @@ class UserLoginRequest(BaseModel):
 
     email: EmailStr
     password: str
-    device_id: Optional[str] = Field(None, max_length=255)
+    device_id: str | None = Field(None, max_length=255)
 
     class Config:
         json_schema_extra = {
@@ -137,10 +136,10 @@ class UserResponse(BaseModel):
 
     id: UUID
     email: str
-    first_name: Optional[str]
-    last_name: Optional[str]
+    first_name: str | None
+    last_name: str | None
     email_verified: bool
-    last_login_at: Optional[datetime]
+    last_login_at: datetime | None
     created_at: datetime
 
     class Config:
@@ -217,7 +216,7 @@ class ErrorResponse(BaseModel):
 
     error: str
     message: str
-    details: Optional[dict] = None
+    details: dict | None = None
 
     class Config:
         json_schema_extra = {

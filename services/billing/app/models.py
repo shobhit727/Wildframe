@@ -10,16 +10,26 @@ Implements the Sustenance Engine architecture from PRODUCT_VISION.md:
 Key invariant: >= 55% of net SVOD revenue goes to creators. This is
 calculated BEFORE platform costs are deducted (contractual floor, not target).
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import uuid4
 from enum import Enum
+from uuid import uuid4
 
 from sqlalchemy import (
-    Column, String, Integer, Float, Boolean, DateTime,
-    Enum as SQLEnum, ForeignKey, Index, Numeric, CheckConstraint,
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import (
+    Enum as SQLEnum,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -54,15 +64,15 @@ class Subscription(Base):
     user_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
     tier = Column(SQLEnum(RevenueTier), default=RevenueTier.AVOD, nullable=False)
     monthly_price = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
-    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    started_at = Column(DateTime, default=lambda: datetime.now(UTC))
     renewal_date = Column(DateTime, nullable=True)
     cancelled_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True, index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
 
@@ -82,7 +92,7 @@ class Purchase(Base):
         String(128), unique=True, nullable=False,
         comment="Prevents duplicate charges from retried requests.",
     )
-    purchased_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    purchased_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
         Index("idx_purchase_user_content", "user_id", "content_id", unique=True),
@@ -114,10 +124,10 @@ class Invoice(Base):
         comment="Portion of this invoice allocated to creators (>=55% of net for SVOD).",
     )
     status = Column(SQLEnum(InvoiceStatus), default=InvoiceStatus.PENDING)
-    issued_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    issued_at = Column(DateTime, default=lambda: datetime.now(UTC))
     due_at = Column(DateTime, nullable=True)
     paid_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # ---------------------------------------------------------------------------
@@ -140,11 +150,11 @@ class RegionFloor(Base):
     currency = Column(String(3), nullable=False, comment="ISO 4217")
     floor_low = Column(Numeric(10, 4), nullable=False, comment="Minimum per finished minute")
     floor_high = Column(Numeric(10, 4), nullable=False, comment="Maximum per finished minute")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
 
@@ -169,7 +179,7 @@ class CreatorPoolEntry(Base):
     pool_percentage = Column(Numeric(5, 4), default=Decimal("0.1500"), comment="Default 15%")
     pool_amount = Column(Numeric(12, 2), nullable=False, comment="= net_revenue * pool_percentage")
     redistributed_amount = Column(Numeric(12, 2), default=Decimal("0.00"))
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class CreatorPoolDistribution(Base):
@@ -181,7 +191,7 @@ class CreatorPoolDistribution(Base):
     creator_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     amount = Column(Numeric(10, 2), nullable=False)
     floor_deficit = Column(Numeric(10, 2), comment="How far below floor before this distribution")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 # ---------------------------------------------------------------------------
@@ -210,11 +220,11 @@ class Milestone(Base):
     project_title = Column(String(255), nullable=False)
     total_commitment = Column(Numeric(12, 2), nullable=False)
     status = Column(SQLEnum(MilestoneStatus), default=MilestoneStatus.PENDING)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     updated_at = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     tranches = relationship("MilestoneTranche", back_populates="milestone", order_by="MilestoneTranche.tranche_number")
@@ -243,7 +253,7 @@ class MilestoneTranche(Base):
     status = Column(SQLEnum(TrancheStatus), default=TrancheStatus.LOCKED)
     released_at = Column(DateTime, nullable=True)
     reverted_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     milestone = relationship("Milestone", back_populates="tranches")
 
@@ -290,9 +300,9 @@ class PayoutLedger(Base):
     stripe_account_id = Column(String(255), nullable=True, comment="Creator's Stripe Connect account")
     cycle_start = Column(DateTime, nullable=False)
     cycle_end = Column(DateTime, nullable=False)
-    accrued_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    accrued_at = Column(DateTime, default=lambda: datetime.now(UTC))
     transferred_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
         Index("idx_payout_creator_cycle", "creator_id", "cycle_start", "cycle_end"),

@@ -5,26 +5,22 @@ These cover the core domain rules: flag creation, the 3-strike suspension
 threshold, decision making, and event emission. They use in-memory stubs
 for the event publisher and fake repositories.
 """
-import pytest
-from uuid import uuid4, UUID
+from datetime import UTC
+from uuid import UUID, uuid4
 
-from app.core.events import Event, InMemoryEventPublisher, set_event_publisher
+import pytest
+
+from app.core.events import InMemoryEventPublisher, set_event_publisher
 from app.models import (
     ContentFlag,
+    CreatorStrike,
+    DecisionType,
     FlagReason,
     FlagStatus,
     ModerationDecision,
-    DecisionType,
-    CreatorStrike,
     StrikeReason,
 )
-from app.repositories import (
-    ContentFlagRepository,
-    ModerationDecisionRepository,
-    CreatorStrikeRepository,
-)
-from app.services import ModerationService, ModerationError
-
+from app.services import ModerationError, ModerationService
 
 # ---------------------------------------------------------------------------
 # In-memory fakes (no DB). They mirror the repository's surface just enough
@@ -154,28 +150,28 @@ async def test_get_queue_returns_pending_flags_oldest_first():
 
     # Create three flags. Sleep is not needed because default timestamps
     # are set at flush time; we manipulate created_at directly for ordering.
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta
 
     f1 = ContentFlag(
         content_id=uuid4(),
         flag_reason=FlagReason.SPAM,
         reported_by=uuid4(),
         status=FlagStatus.PENDING,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     f2 = ContentFlag(
         content_id=uuid4(),
         flag_reason=FlagReason.INAPPROPRIATE,
         reported_by=uuid4(),
         status=FlagStatus.PENDING,
-        created_at=datetime.now(timezone.utc) + timedelta(seconds=1),
+        created_at=datetime.now(UTC) + timedelta(seconds=1),
     )
     f3 = ContentFlag(
         content_id=uuid4(),
         flag_reason=FlagReason.COPYRIGHT,
         reported_by=uuid4(),
         status=FlagStatus.RESOLVED,  # already resolved — should not appear
-        created_at=datetime.now(timezone.utc) + timedelta(seconds=2),
+        created_at=datetime.now(UTC) + timedelta(seconds=2),
     )
     for f in (f1, f2, f3):
         await flag_repo.create(f)
@@ -190,7 +186,7 @@ async def test_get_queue_returns_pending_flags_oldest_first():
 @pytest.mark.asyncio
 async def test_make_decision_approve_resolves_flag_without_strike():
     """Approving a flag resolves it and does NOT create a strike."""
-    service, flag_repo, decision_repo, strike_repo = make_service()
+    service, flag_repo, _decision_repo, strike_repo = make_service()
     flag = await service.flag_content(
         content_id=uuid4(),
         flag_reason=FlagReason.SPAM,
@@ -382,7 +378,7 @@ async def test_escalate_does_not_create_strike():
 @pytest.mark.asyncio
 async def test_get_strikes_returns_all_strikes_for_creator():
     """get_strikes() returns all strikes (active + expired) for a creator."""
-    service, _, _, strike_repo = make_service()
+    service, _, _, _strike_repo = make_service()
     creator_id = uuid4()
     moderator_id = uuid4()
 

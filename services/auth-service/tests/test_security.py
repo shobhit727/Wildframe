@@ -1,10 +1,9 @@
 """Unit tests for security utilities."""
-import pytest
 from uuid import uuid4
-from datetime import datetime, timedelta
-from jose import JWTError
 
-from app.security import PasswordManager, TokenManager, RateLimiter
+import pytest
+from app.security import RateLimiter, TokenManager
+from jose import JWTError
 
 
 class TestPasswordManager:

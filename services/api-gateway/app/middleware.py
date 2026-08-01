@@ -1,11 +1,10 @@
 """API Gateway - routing, load balancing, authentication."""
 import logging
+
 import httpx
-from typing import Optional
-from fastapi import Request, HTTPException, Depends, status
-from datetime import datetime, timezone, timedelta
-import redis.asyncio as redis
 import jwt
+import redis.asyncio as redis
+from fastapi import Depends, HTTPException, Request, status
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +31,12 @@ class ServiceRegistry:
     }
     
     @classmethod
-    def get_service_url(cls, service: str) -> Optional[str]:
+    def get_service_url(cls, service: str) -> str | None:
         """Get service URL by name."""
         return cls.SERVICES.get(service)
     
     @classmethod
-    def route_request(cls, path: str) -> tuple[Optional[str], str]:
+    def route_request(cls, path: str) -> tuple[str | None, str]:
         """Route request path to appropriate service."""
         parts = path.strip("/").split("/")
         if not parts:
@@ -63,7 +62,7 @@ class AuthenticationMiddleware:
     def __init__(self, jwt_secret: str):
         self.jwt_secret = jwt_secret
     
-    async def verify_token(self, request: Request) -> Optional[dict]:
+    async def verify_token(self, request: Request) -> dict | None:
         """Verify JWT token from Authorization header."""
         auth_header = request.headers.get("Authorization")
         if not auth_header:
@@ -80,7 +79,7 @@ class AuthenticationMiddleware:
             logger.warning(f"Token verification failed: {e}")
             return None
     
-    async def __call__(self, request: Request) -> Optional[dict]:
+    async def __call__(self, request: Request) -> dict | None:
         """Middleware to check authentication on protected routes."""
         # Check if path is public
         if any(request.url.path.startswith(path) for path in self.PUBLIC_PATHS):
@@ -122,7 +121,7 @@ class RateLimiter:
 class LoadBalancer:
     """Simple load balancer for service replicas."""
     
-    async def get_healthy_instance(self, service: str) -> Optional[str]:
+    async def get_healthy_instance(self, service: str) -> str | None:
         """Get healthy instance of a service."""
         url = ServiceRegistry.get_service_url(service)
         if not url:

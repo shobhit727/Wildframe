@@ -1,13 +1,7 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 from app.services.admin import AdminService
-from app.repositories.admin import (
-    UserModerationRepository,
-    ContentModerationRepository,
-    SystemAlertRepository,
-    SystemConfigRepository,
-    AdminAuditLogRepository
-)
 
 
 @pytest.fixture

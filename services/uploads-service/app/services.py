@@ -9,22 +9,19 @@ pure domain logic and unit-testable with stubs.
 """
 from __future__ import annotations
 
-import hashlib
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional, List
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from app.core.events import EventPublisher, Event, get_event_publisher
-from app.core.storage import StoragePort, PresignedUpload, get_storage
+from app.core.events import Event, EventPublisher, get_event_publisher
 from app.core.settings import settings
+from app.core.storage import PresignedUpload, StoragePort, get_storage
 from app.models import (
+    UploadChunk,
     UploadSession,
     UploadSessionStatus,
-    UploadChunk,
 )
 from app.repositories import UploadChunkRepository
-
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +36,8 @@ class UploadService:
     def __init__(
         self,
         repo: UploadChunkRepository,
-        storage: Optional[StoragePort] = None,
-        publisher: Optional[EventPublisher] = None,
+        storage: StoragePort | None = None,
+        publisher: EventPublisher | None = None,
     ) -> None:
         self.repo = repo
         self.storage = storage or get_storage()
@@ -83,9 +80,9 @@ class UploadService:
         filename: str,
         mime: str,
         size_bytes: int,
-        checksum_sha256: Optional[str] = None,
-        chunk_size: Optional[int] = None,
-    ) -> tuple[UploadSession, List[PresignedUpload]]:
+        checksum_sha256: str | None = None,
+        chunk_size: int | None = None,
+    ) -> tuple[UploadSession, list[PresignedUpload]]:
         """Create an upload session and a pre-signed URL per chunk.
 
         Returns the persisted session plus the list of pre-signed uploads the
@@ -95,7 +92,7 @@ class UploadService:
             size_bytes, chunk_size or settings.DEFAULT_CHUNK_SIZE_BYTES
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         session = UploadSession(
             creator_id=creator_id,
             filename=filename,
@@ -115,7 +112,7 @@ class UploadService:
         # keep the contract simple and deterministic we derive a single stable
         # key here and reuse it across chunks (the stub ignores it; S3 uses the
         # key returned per chunk).
-        uploads: List[PresignedUpload] = []
+        uploads: list[PresignedUpload] = []
         for index in range(total_chunks):
             presigned = await self.storage.create_upload(
                 session_id=str(session.id),
@@ -144,7 +141,7 @@ class UploadService:
         session_id: UUID,
         index: int,
         size_bytes: int,
-        etag: Optional[str] = None,
+        etag: str | None = None,
     ) -> UploadChunk:
         """Record that a chunk was received.
 
@@ -200,7 +197,7 @@ class UploadService:
     # ------------------------------------------------------------------
 
     async def complete_session(
-        self, session_id: UUID, *, checksum_sha256: Optional[str] = None
+        self, session_id: UUID, *, checksum_sha256: str | None = None
     ) -> UploadSession:
         """Verify all chunks + checksum and finalize the upload.
 

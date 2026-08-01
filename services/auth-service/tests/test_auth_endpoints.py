@@ -4,14 +4,9 @@ Tests the complete flow from HTTP request to database operations.
 """
 
 import pytest
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import uuid4
-
-from app.main import app
-from app.models.user import User, Base
 from app.core.database import get_db
-from app.security.manager import PasswordManager
+from app.main import app
+from httpx import AsyncClient
 
 
 @pytest_asyncio.fixture
@@ -222,4 +217,3 @@ class TestAuthEndpoints:
 # Decorator to mark async tests
 def pytest_asyncio():
     """Pytest asyncio configuration."""
-    pass

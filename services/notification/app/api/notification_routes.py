@@ -1,7 +1,9 @@
 """Notification service API routes."""
 from uuid import UUID
-from fastapi import APIRouter, Depends, Body
+
+from fastapi import APIRouter, Body, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.repositories import NotificationRepository
 from app.services import NotificationService

@@ -1,14 +1,21 @@
 """Creators service repositories."""
+from datetime import UTC, datetime
 from uuid import UUID
-from datetime import datetime, timezone
-from typing import Optional, List
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    CreatorAccount, EffectiveFloor, CreatorPoolBalance,
-    Milestone, MilestoneTranche, PayoutLedger,
-    KYCStatus, MilestoneStatus, TrancheStatus, PayoutStatus,
+    CreatorAccount,
+    CreatorPoolBalance,
+    EffectiveFloor,
+    KYCStatus,
+    Milestone,
+    MilestoneStatus,
+    MilestoneTranche,
+    PayoutLedger,
+    PayoutStatus,
+    TrancheStatus,
 )
 
 
@@ -16,12 +23,12 @@ class CreatorAccountRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_by_user(self, user_id: UUID) -> Optional[CreatorAccount]:
+    async def get_by_user(self, user_id: UUID) -> CreatorAccount | None:
         stmt = select(CreatorAccount).where(CreatorAccount.user_id == user_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get(self, creator_id: UUID) -> Optional[CreatorAccount]:
+    async def get(self, creator_id: UUID) -> CreatorAccount | None:
         stmt = select(CreatorAccount).where(CreatorAccount.id == creator_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -49,7 +56,7 @@ class EffectiveFloorRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_floor_for_creator(self, creator_id: UUID) -> Optional[EffectiveFloor]:
+    async def get_floor_for_creator(self, creator_id: UUID) -> EffectiveFloor | None:
         """Return the current (latest effective_from) floor for a creator."""
         stmt = (
             select(EffectiveFloor)
@@ -60,8 +67,8 @@ class EffectiveFloorRepository:
         return result.scalars().first()
 
     async def set_floor(self, creator_id: UUID, per_minute_amount: float,
-                        currency: str = "USD", reason: str = None) -> EffectiveFloor:
-        now = datetime.now(timezone.utc)
+                        currency: str = "USD", reason: str | None = None) -> EffectiveFloor:
+        now = datetime.now(UTC)
         floor = EffectiveFloor(
             creator_id=creator_id,
             per_minute_amount=per_minute_amount,
@@ -79,7 +86,7 @@ class CreatorPoolBalanceRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_for_creator(self, creator_id: UUID) -> Optional[CreatorPoolBalance]:
+    async def get_for_creator(self, creator_id: UUID) -> CreatorPoolBalance | None:
         stmt = select(CreatorPoolBalance).where(CreatorPoolBalance.creator_id == creator_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -109,13 +116,13 @@ class MilestoneRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get(self, milestone_id: UUID) -> Optional[Milestone]:
+    async def get(self, milestone_id: UUID) -> Milestone | None:
         stmt = select(Milestone).where(Milestone.id == milestone_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def create(self, title: str, creator_id: UUID, total_cents: int = 0,
-                     currency: str = "USD", goal: str = None) -> Milestone:
+                     currency: str = "USD", goal: str | None = None) -> Milestone:
         ms = Milestone(
             title=title, creator_id=creator_id, total_cents=total_cents,
             currency=currency, goal=goal, status=MilestoneStatus.DRAFT,
@@ -125,7 +132,7 @@ class MilestoneRepository:
         return ms
 
     async def add_tranche(self, milestone_id: UUID, threshold: int,
-                          amount_cents: int, release_condition: str = None) -> MilestoneTranche:
+                          amount_cents: int, release_condition: str | None = None) -> MilestoneTranche:
         tranche = MilestoneTranche(
             milestone_id=milestone_id, threshold=threshold,
             amount_cents=amount_cents, release_condition=release_condition,
@@ -135,7 +142,7 @@ class MilestoneRepository:
         await self.session.flush()
         return tranche
 
-    async def release_tranche(self, milestone_id: UUID, threshold: int) -> Optional[MilestoneTranche]:
+    async def release_tranche(self, milestone_id: UUID, threshold: int) -> MilestoneTranche | None:
         """Mark a single tranche released and stamp released_at."""
         stmt = select(MilestoneTranche).where(
             MilestoneTranche.milestone_id == milestone_id,
@@ -146,11 +153,11 @@ class MilestoneRepository:
         if tranche is None:
             return None
         tranche.status = TrancheStatus.RELEASED
-        tranche.released_at = datetime.now(timezone.utc)
+        tranche.released_at = datetime.now(UTC)
         await self.session.flush()
         return tranche
 
-    async def kill_milestone(self, milestone_id: UUID, reason: str = None) -> Optional[Milestone]:
+    async def kill_milestone(self, milestone_id: UUID, reason: str | None = None) -> Milestone | None:
         """Kill a milestone: status=killed, and flip EVERY non-released tranche
         to rolled_back in ONE transaction. Released tranches stay released —
         that is the capital protection guarantee (PRODUCT_VISION §2.3).
@@ -184,7 +191,7 @@ class PayoutLedgerRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_by_idempotency_key(self, key: str) -> Optional[PayoutLedger]:
+    async def get_by_idempotency_key(self, key: str) -> PayoutLedger | None:
         stmt = select(PayoutLedger).where(PayoutLedger.idempotency_key == key)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

@@ -12,7 +12,7 @@ into domain-specific errors.
 """
 import logging
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any
 from uuid import UUID
 
 import stripe
@@ -48,7 +48,7 @@ class StripeClient:
         tier: str,
         success_url: str,
         cancel_url: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a Stripe Checkout Session for an SVOD subscription.
 
         The session is created in ``subscription`` mode so Stripe
@@ -91,7 +91,7 @@ class StripeClient:
         price: Decimal,
         success_url: str,
         cancel_url: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a Stripe Checkout Session for a one-off TVOD purchase.
 
         The session is created in ``payment`` mode. The price is passed
@@ -138,7 +138,7 @@ class StripeClient:
     # -----------------------------------------------------------------------
 
     @staticmethod
-    def handle_webhook(payload: bytes, sig_header: str) -> Dict[str, Any]:
+    def handle_webhook(payload: bytes, sig_header: str) -> dict[str, Any]:
         """Verify and parse a Stripe webhook event.
 
         Uses the raw request body (not the parsed JSON) because
@@ -172,7 +172,7 @@ class StripeClient:
         creator_id: UUID,
         country: str,
         email: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Onboard a creator to Stripe Connect (Express account type).
 
         Express accounts are the recommended type for marketplaces —
@@ -214,7 +214,7 @@ class StripeClient:
         creator_stripe_account_id: str,
         amount: Decimal,
         idempotency_key: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Transfer funds to a creator's Stripe Connect account.
 
         The amount is in the major currency unit (e.g. dollars) and

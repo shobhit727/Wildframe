@@ -3,19 +3,19 @@ Database configuration and session management for Auth Service.
 Implements async SQLAlchemy with connection pooling and health checks.
 """
 
-from typing import AsyncGenerator
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    create_async_engine,
-    async_sessionmaker,
-    AsyncEngine,
-)
-from sqlalchemy.pool import NullPool, QueuePool
-from sqlalchemy.exc import SQLAlchemyError
 import logging
+from collections.abc import AsyncGenerator
 
 from app.core.settings import settings
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import NullPool, QueuePool
 
 logger = logging.getLogger(__name__)
 

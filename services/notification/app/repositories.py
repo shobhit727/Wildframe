@@ -1,10 +1,11 @@
 """Notification service repositories."""
 from uuid import UUID
-from datetime import datetime, timezone
-from typing import List
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models import Notification
+
 
 class NotificationRepository:
     def __init__(self, session: AsyncSession):
@@ -14,7 +15,7 @@ class NotificationRepository:
         self.session.add(notif)
         await self.session.flush()
         return notif
-    async def get_unread(self, user_id: UUID) -> List[Notification]:
+    async def get_unread(self, user_id: UUID) -> list[Notification]:
         stmt = select(Notification).where((Notification.user_id == user_id) & (Notification.is_read == False))
         result = await self.session.execute(stmt)
         return result.scalars().all()

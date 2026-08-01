@@ -1,12 +1,12 @@
 """JSON logging setup for Streaming Service."""
 import logging
 import logging.config
-from pythonjsonlogger import jsonlogger
 from contextvars import ContextVar
-from typing import Optional
 
-correlation_id: ContextVar[Optional[str]] = ContextVar('correlation_id', default=None)
-request_id: ContextVar[Optional[str]] = ContextVar('request_id', default=None)
+from pythonjsonlogger import jsonlogger
+
+correlation_id: ContextVar[str | None] = ContextVar('correlation_id', default=None)
+request_id: ContextVar[str | None] = ContextVar('request_id', default=None)
 
 
 class ContextFilter(logging.Filter):
@@ -58,9 +58,9 @@ def set_request_id(rid: str):
     request_id.set(rid)
 
 
-def get_correlation_id() -> Optional[str]:
+def get_correlation_id() -> str | None:
     return correlation_id.get()
 
 
-def get_request_id() -> Optional[str]:
+def get_request_id() -> str | None:
     return request_id.get()

@@ -1,6 +1,6 @@
 """Configuration for Streaming Service."""
+
 from pydantic_settings import BaseSettings
-from typing import List
 
 
 class Settings(BaseSettings):
@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/1"
     JWT_SECRET_KEY: str = "dev-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
-    CORS_ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
+    CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8004
     DB_POOL_SIZE: int = 20

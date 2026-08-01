@@ -1,24 +1,45 @@
+from datetime import UTC, timezone
+
 """
 Service layer for Content Service business logic.
 Orchestrates repositories and business rules.
 """
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID
-from typing import List, Optional
 import logging
+from typing import List, Optional
+from uuid import UUID
 
-from app.models import ContentType, ContentStatus, AnimationStyle, ContentCreator, ContentSeries, SeriesStatus
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import (
+    AnimationStyle,
+    ContentCreator,
+    ContentSeries,
+    ContentStatus,
+    ContentType,
+    SeriesStatus,
+)
 from app.repositories import (
-    ContentRepository, GenreRepository, CastMemberRepository,
-    SeasonRepository, EpisodeRepository, ContentRatingRepository,
-    ContentRecommendationRepository
+    CastMemberRepository,
+    ContentRatingRepository,
+    ContentRecommendationRepository,
+    ContentRepository,
+    EpisodeRepository,
+    GenreRepository,
+    SeasonRepository,
 )
 from app.schemas import (
-    ContentCreateRequest, ContentUpdateRequest, ContentPublishRequest,
-    SeasonCreateRequest, SeasonUpdateRequest, EpisodeCreateRequest, EpisodeUpdateRequest,
-    GenreCreateRequest, CastMemberCreateRequest, ContentRatingCreateRequest,
-    ContentRecommendationCreateRequest
+    CastMemberCreateRequest,
+    ContentCreateRequest,
+    ContentPublishRequest,
+    ContentRatingCreateRequest,
+    ContentRecommendationCreateRequest,
+    ContentUpdateRequest,
+    EpisodeCreateRequest,
+    EpisodeUpdateRequest,
+    GenreCreateRequest,
+    SeasonCreateRequest,
+    SeasonUpdateRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -194,7 +215,7 @@ class ContentService:
             from datetime import datetime
             update_data = {'status': ContentStatus(request.status)}
             if request.status == 'published':
-                update_data['published_at'] = datetime.utcnow()
+                update_data['published_at'] = datetime.now(UTC)
             
             content = await self.content_repo.update(content_id, **update_data)
             await self.content_repo.commit()

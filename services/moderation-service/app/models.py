@@ -18,18 +18,20 @@ A flag starts ``pending``. A moderator picks it up (``reviewing``) before
 rendering a decision (``resolved``) or escalating to a senior moderator
 (``escalated``).
 """
-from datetime import datetime, timezone
-from uuid import uuid4
+from datetime import UTC, datetime
 from enum import Enum
+from uuid import uuid4
+
 from sqlalchemy import (
-    Column,
-    String,
-    DateTime,
-    Enum as SQLEnum,
-    ForeignKey,
     Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
     Index,
     Text,
+)
+from sqlalchemy import (
+    Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
@@ -87,13 +89,13 @@ class ContentFlag(Base):
     resolution_notes = Column(Text, nullable=True)
     created_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     updated_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -119,7 +121,7 @@ class ModerationDecision(Base):
     notes = Column(Text, nullable=True)
     created_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -145,7 +147,7 @@ class CreatorStrike(Base):
     expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 

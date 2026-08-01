@@ -1,20 +1,21 @@
+
 """Main FastAPI application for User Service."""
-from contextlib import asynccontextmanager
-from datetime import datetime
 import logging
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
-
-from app.core.settings import settings
-from app.core.database import DatabaseManager
-from app.core.logging import setup_logging, set_request_id, set_correlation_id
-from app.schemas import ErrorResponse, HealthCheckResponse
 from wildframe_observability.wire import wire_observability
+
+from app.core.database import DatabaseManager
+from app.core.logging import set_correlation_id, set_request_id, setup_logging
+from app.core.settings import settings
+from app.schemas import ErrorResponse
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ def create_app() -> FastAPI:
             "status": "healthy" if db_health else "unhealthy",
             "service": settings.SERVICE_NAME,
             "version": settings.SERVICE_VERSION,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(UTC),
         }
 
     # Ready check endpoint (for Kubernetes)

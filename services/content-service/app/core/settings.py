@@ -3,8 +3,8 @@ Configuration settings for Content Service.
 Centralized environment-based configuration management.
 """
 
+
 from pydantic_settings import BaseSettings
-from typing import List
 
 
 class Settings(BaseSettings):
@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRATION_DAYS: int = 7
     
     # CORS
-    CORS_ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
+    CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:8000"]
     
     # Server
     SERVER_HOST: str = "0.0.0.0"

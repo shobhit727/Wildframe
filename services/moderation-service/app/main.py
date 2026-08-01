@@ -6,12 +6,12 @@ creator strike management. Part of the Wildframe Sustenance Engine platform.
 import logging
 
 from fastapi import FastAPI
+from wildframe_observability.wire import wire_observability
 
-from app.core.settings import settings
+from app.api.moderation_routes import router as moderation_router
 from app.core.database import DatabaseManager
 from app.core.logging import setup_logging
-from app.api.moderation_routes import router as moderation_router
-from wildframe_observability.wire import wire_observability
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 

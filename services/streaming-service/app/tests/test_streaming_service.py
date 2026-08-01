@@ -1,11 +1,12 @@
 """Streaming service tests."""
+from uuid import uuid4
+
 import pytest
-from uuid import uuid4, UUID
-from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.streaming import StreamingSession, VideoManifest, WatchHistory, StreamingMetrics
-from app.services import StreamingService
+
 from app.repositories import StreamingSessionRepository
+from app.services import StreamingService
+
 
 @pytest.mark.asyncio
 async def test_start_streaming_session(db: AsyncSession):

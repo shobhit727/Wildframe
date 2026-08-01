@@ -1,21 +1,27 @@
 """Analytics service repositories."""
+from datetime import datetime
 from uuid import UUID
-from datetime import datetime, timezone
-from typing import List, Optional
+
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
-from app.models import Event, ContentViewEvent, CreatorAnalyticsSnapshot, ContentPerformanceMetrics
+
+from app.models import (
+    ContentPerformanceMetrics,
+    ContentViewEvent,
+    CreatorAnalyticsSnapshot,
+    Event,
+)
 
 
 class EventRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
-    async def create(self, user_id: UUID, event_type: str, event_data: dict = None, content_id: UUID = None):
+    async def create(self, user_id: UUID, event_type: str, event_data: dict | None = None, content_id: UUID | None = None):
         event = Event(user_id=user_id, event_type=event_type, event_data=event_data, content_id=content_id)
         self.session.add(event)
         await self.session.flush()
         return event
-    async def get_by_user(self, user_id: UUID, limit: int = 100) -> List[Event]:
+    async def get_by_user(self, user_id: UUID, limit: int = 100) -> list[Event]:
         stmt = select(Event).where(Event.user_id == user_id).limit(limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
@@ -32,9 +38,9 @@ class ContentViewEventRepository:
         watch_duration_seconds: int = 0,
         content_duration_seconds: int = 0,
         completion_pct: float = 0.0,
-        playback_quality: str = None,
-        started_at: datetime = None,
-        completed_at: datetime = None,
+        playback_quality: str | None = None,
+        started_at: datetime | None = None,
+        completed_at: datetime | None = None,
     ) -> ContentViewEvent:
         event = ContentViewEvent(
             content_id=content_id,
@@ -50,12 +56,12 @@ class ContentViewEventRepository:
         await self.session.flush()
         return event
 
-    async def get_by_content(self, content_id: UUID, limit: int = 100) -> List[ContentViewEvent]:
+    async def get_by_content(self, content_id: UUID, limit: int = 100) -> list[ContentViewEvent]:
         stmt = select(ContentViewEvent).where(ContentViewEvent.content_id == content_id).order_by(ContentViewEvent.created_at.desc()).limit(limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
-    async def get_by_viewer(self, viewer_id: UUID, limit: int = 100) -> List[ContentViewEvent]:
+    async def get_by_viewer(self, viewer_id: UUID, limit: int = 100) -> list[ContentViewEvent]:
         stmt = select(ContentViewEvent).where(ContentViewEvent.viewer_id == viewer_id).order_by(ContentViewEvent.created_at.desc()).limit(limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
@@ -73,8 +79,8 @@ class CreatorAnalyticsSnapshotRepository:
         avg_completion_rate: float = 0.0,
         unique_viewers: int = 0,
         revenue_earned: float = 0.0,
-        period_start: datetime = None,
-        period_end: datetime = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
     ) -> CreatorAnalyticsSnapshot:
         snapshot = CreatorAnalyticsSnapshot(
             creator_id=creator_id,
@@ -90,7 +96,7 @@ class CreatorAnalyticsSnapshotRepository:
         await self.session.flush()
         return snapshot
 
-    async def get_latest_for_creator(self, creator_id: UUID) -> Optional[CreatorAnalyticsSnapshot]:
+    async def get_latest_for_creator(self, creator_id: UUID) -> CreatorAnalyticsSnapshot | None:
         stmt = select(CreatorAnalyticsSnapshot).where(
             CreatorAnalyticsSnapshot.creator_id == creator_id
         ).order_by(CreatorAnalyticsSnapshot.period_end.desc()).limit(1)
@@ -99,7 +105,7 @@ class CreatorAnalyticsSnapshotRepository:
 
     async def get_for_creator_in_range(
         self, creator_id: UUID, period_start: datetime, period_end: datetime
-    ) -> List[CreatorAnalyticsSnapshot]:
+    ) -> list[CreatorAnalyticsSnapshot]:
         stmt = select(CreatorAnalyticsSnapshot).where(
             and_(
                 CreatorAnalyticsSnapshot.creator_id == creator_id,
@@ -136,7 +142,7 @@ class ContentPerformanceMetricsRepository:
         await self.session.flush()
         return metrics
 
-    async def get_by_content(self, content_id: UUID) -> Optional[ContentPerformanceMetrics]:
+    async def get_by_content(self, content_id: UUID) -> ContentPerformanceMetrics | None:
         stmt = select(ContentPerformanceMetrics).where(ContentPerformanceMetrics.content_id == content_id)
         result = await self.session.execute(stmt)
         return result.scalars().first()
@@ -144,12 +150,12 @@ class ContentPerformanceMetricsRepository:
     async def update_metrics(
         self,
         content_id: UUID,
-        views_7d: int = None,
-        views_30d: int = None,
-        avg_completion_pct: float = None,
-        revenue_7d: float = None,
-        revenue_30d: float = None,
-    ) -> Optional[ContentPerformanceMetrics]:
+        views_7d: int | None = None,
+        views_30d: int | None = None,
+        avg_completion_pct: float | None = None,
+        revenue_7d: float | None = None,
+        revenue_30d: float | None = None,
+    ) -> ContentPerformanceMetrics | None:
         metrics = await self.get_by_content(content_id)
         if not metrics:
             return None

@@ -1,16 +1,14 @@
 """Integration tests for Auth Service."""
+import json
+
 import pytest
 import pytest_asyncio
-import json
-from uuid import UUID
-from httpx import AsyncClient
 from app.main import app
-from app.core.database import Base, engine as app_engine
-from app.models import User
-from app.services import AuthService
-from app.repositories import UserRepository, RefreshTokenRepository, LoginAuditRepository
+from app.repositories import UserRepository
+from app.schemas import UserRegisterRequest
 from app.security import PasswordManager, TokenManager
-from app.schemas import UserRegisterRequest, UserLoginRequest
+from app.services import AuthService
+from httpx import AsyncClient
 
 
 @pytest_asyncio.fixture
@@ -87,7 +85,7 @@ class TestUserLoginIntegration:
 
     async def test_login_success(self, auth_service, db_session):
         """Test successful login."""
-        from app.schemas import UserRegisterRequest, UserLoginRequest
+        from app.schemas import UserLoginRequest, UserRegisterRequest
         
         # Register user first
         reg_request = UserRegisterRequest(
@@ -99,14 +97,14 @@ class TestUserLoginIntegration:
         await auth_service.register(reg_request)
         
         # Login
-        login_request = UserLoginRequest(
+        UserLoginRequest(
             email="login_test@example.com",
             password="SecurePass123!",
         )
         
         # We need to use the service's login method which expects different args
         # Let's test via the API endpoint instead
-        pass  # Will test via API client
+        # Will test via API client
 
 
 class TestEmailVerificationIntegration:
@@ -276,4 +274,3 @@ class TestMFAIntegration:
 
 
 # Add json import at top
-import json

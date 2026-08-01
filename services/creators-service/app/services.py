@@ -1,14 +1,15 @@
 """Creators service business logic."""
-from uuid import UUID
 from datetime import datetime
-from typing import Optional
+from uuid import UUID
+
 from app.core.settings import settings
 from app.repositories import (
-    CreatorAccountRepository, EffectiveFloorRepository,
-    CreatorPoolBalanceRepository, MilestoneRepository,
+    CreatorAccountRepository,
+    CreatorPoolBalanceRepository,
+    EffectiveFloorRepository,
+    MilestoneRepository,
     PayoutLedgerRepository,
 )
-from app.models import KYCStatus
 
 
 class CreatorService:
@@ -42,7 +43,7 @@ class CreatorService:
         return await self.floor_repo.get_floor_for_creator(creator_id)
 
     async def set_floor(self, creator_id: UUID, per_minute_amount: float,
-                        currency: str = "USD", reason: str = None):
+                        currency: str = "USD", reason: str | None = None):
         # Invariant: floor is a minimum guarantee, never negative.
         # A negative floor would imply the platform owes the creator for NOT
         # publishing, which is nonsensical and would break the pool math.
@@ -57,19 +58,19 @@ class CreatorService:
     # --------------------------------------------------------------- milestones
     async def create_milestone(self, title: str, creator_id: UUID,
                                total_cents: int = 0, currency: str = "USD",
-                               goal: str = None):
+                               goal: str | None = None):
         return await self.milestone_repo.create(title, creator_id, total_cents,
                                                 currency, goal)
 
     async def add_tranche(self, milestone_id: UUID, threshold: int,
-                          amount_cents: int, release_condition: str = None):
+                          amount_cents: int, release_condition: str | None = None):
         return await self.milestone_repo.add_tranche(milestone_id, threshold,
                                                      amount_cents, release_condition)
 
     async def release_tranche(self, milestone_id: UUID, threshold: int):
         return await self.milestone_repo.release_tranche(milestone_id, threshold)
 
-    async def kill_milestone(self, milestone_id: UUID, reason: str = None):
+    async def kill_milestone(self, milestone_id: UUID, reason: str | None = None):
         return await self.milestone_repo.kill_milestone(milestone_id, reason)
 
     # ------------------------------------------------------------------- payout

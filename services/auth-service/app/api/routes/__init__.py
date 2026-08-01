@@ -2,25 +2,24 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.database import get_db_session
 from app.repositories import (
-    UserRepository,
-    RefreshTokenRepository,
     LoginAuditRepository,
+    RefreshTokenRepository,
+    UserRepository,
 )
 from app.schemas import (
-    TokenResponse,
-    UserRegisterRequest,
-    UserLoginRequest,
-    RefreshTokenRequest,
-    UserResponse,
     ChangePasswordRequest,
+    RefreshTokenRequest,
+    TokenResponse,
+    UserLoginRequest,
+    UserRegisterRequest,
+    UserResponse,
 )
 from app.security import PasswordManager, TokenManager
 from app.services import AuthService
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +75,7 @@ async def get_current_user_id(request: Request) -> str:
             )
         return user_id
     except Exception as e:
-        logger.warning(f"Token verification failed: {str(e)}")
+        logger.warning(f"Token verification failed: {e!s}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",

@@ -10,13 +10,14 @@ Endpoints:
     POST /uploads/sessions/{id}/abort — abort
 """
 from uuid import UUID
-from typing import List, Optional
-from fastapi import APIRouter, Depends, Body, HTTPException
+
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.repositories import UploadChunkRepository
-from app.services import UploadService, UploadError
+from app.services import UploadError, UploadService
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
@@ -37,15 +38,15 @@ class CreateSessionRequest(BaseModel):
     filename: str
     mime: str
     size_bytes: int
-    checksum_sha256: Optional[str] = None
-    chunk_size: Optional[int] = None
+    checksum_sha256: str | None = None
+    chunk_size: int | None = None
 
 
 class PresignedUploadResponse(BaseModel):
     storage_key: str
     upload_url: str
     method: str = "PUT"
-    headers: Optional[dict] = None
+    headers: dict | None = None
 
 
 class CreateSessionResponse(BaseModel):
@@ -54,13 +55,13 @@ class CreateSessionResponse(BaseModel):
     chunk_size: int
     total_chunks: int
     expires_at: str
-    uploads: List[PresignedUploadResponse]
+    uploads: list[PresignedUploadResponse]
 
 
 class RegisterChunkRequest(BaseModel):
     index: int
     size_bytes: int
-    etag: Optional[str] = None
+    etag: str | None = None
 
 
 class SessionResponse(BaseModel):
@@ -70,8 +71,8 @@ class SessionResponse(BaseModel):
     mime: str
     size_bytes: int
     status: str
-    storage_key: Optional[str] = None
-    checksum_sha256: Optional[str] = None
+    storage_key: str | None = None
+    checksum_sha256: str | None = None
     total_chunks: int
     uploaded_chunks: int
     expires_at: str
@@ -159,7 +160,7 @@ async def register_chunk(
 @router.post("/sessions/{session_id}/complete", response_model=SessionResponse)
 async def complete_session(
     session_id: UUID,
-    checksum_sha256: Optional[str] = Body(None),
+    checksum_sha256: str | None = Body(None),
     service: UploadService = Depends(get_upload_service),
 ):
     """Verify all chunks + checksum and finalize the upload."""

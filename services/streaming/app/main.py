@@ -1,10 +1,10 @@
 """Main FastAPI application for Streaming Service."""
 import logging
+
 from fastapi import FastAPI
-from app.core.settings import settings
-from app.core.database import DatabaseManager
-from app.core.logging import setup_logging
 from wildframe_observability.wire import wire_observability
+
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 

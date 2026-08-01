@@ -1,10 +1,10 @@
 """Streaming service tests."""
 
-import pytest
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
-from datetime import datetime, timezone
 
+import pytest
 from app.services.streaming import StreamingService
 
 
@@ -170,8 +170,8 @@ class TestMetrics:
         mock_session.buffering_count = 2
         mock_session.total_buffer_seconds = 5
         mock_session.stream_quality = "1080p"
-        mock_session.started_at = datetime.now(timezone.utc)
-        mock_session.last_heartbeat = datetime.now(timezone.utc)
+        mock_session.started_at = datetime.now(UTC)
+        mock_session.last_heartbeat = datetime.now(UTC)
         mock_repositories["session_repo"].get_by_token.return_value = mock_session
         mock_repositories["metrics_repo"].get_average_metrics.return_value = {
             "avg_bandwidth_mbps": 5.0,

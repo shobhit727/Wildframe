@@ -1,17 +1,17 @@
 """Main FastAPI application for the Media Pipeline Service."""
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from sqlalchemy import text
+from wildframe_observability.wire import wire_observability
 
-from app.core.settings import settings
+from app.api.media_pipeline_routes import legacy_router as media_router
+from app.api.media_pipeline_routes import router as pipeline_router
 from app.core.database import DatabaseManager
 from app.core.logging import setup_logging
-from app.api.media_pipeline_routes import router as pipeline_router
-from app.api.media_pipeline_routes import legacy_router as media_router
-from wildframe_observability.wire import wire_observability
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +75,8 @@ def create_app() -> FastAPI:
         """Readiness probe (Kubernetes)."""
         db_ok = await DatabaseManager.health_check()
         if not db_ok:
-            from fastapi.responses import JSONResponse
             from fastapi import status
+            from fastapi.responses import JSONResponse
             return JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 content={"ready": False, "reason": "database_unavailable"},

@@ -1,19 +1,29 @@
 """API routes for Streaming Service."""
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID
 from typing import List
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import db_manager
-from app.services import StreamingService
 from app.schemas import (
-    PlaybackSessionResponse, PlaybackSessionCreateRequest, PlaybackSessionUpdateRequest,
-    VideoManifestResponse, TranscodingJobResponse, TranscodingJobCreateRequest,
-    QualityProfileResponse, QualityProfileCreateRequest,
-    CDNRegionResponse, CDNRegionCreateRequest,
-    DownloadSessionResponse, DownloadSessionCreateRequest,
-    ManifestGenerationRequest, ErrorResponse, HealthCheckResponse
+    CDNRegionCreateRequest,
+    CDNRegionResponse,
+    DownloadSessionCreateRequest,
+    DownloadSessionResponse,
+    ErrorResponse,
+    HealthCheckResponse,
+    ManifestGenerationRequest,
+    PlaybackSessionCreateRequest,
+    PlaybackSessionResponse,
+    PlaybackSessionUpdateRequest,
+    QualityProfileCreateRequest,
+    QualityProfileResponse,
+    TranscodingJobCreateRequest,
+    TranscodingJobResponse,
+    VideoManifestResponse,
 )
+from app.services import StreamingService
 
 router = APIRouter(prefix="/api/v1", tags=["streaming"])
 
@@ -46,7 +56,7 @@ async def get_playback_session(
     return session
 
 
-@router.get("/users/{user_id}/playback-sessions", response_model=List[PlaybackSessionResponse])
+@router.get("/users/{user_id}/playback-sessions", response_model=list[PlaybackSessionResponse])
 async def get_user_playback_sessions(
     user_id: UUID,
     service: StreamingService = Depends(get_streaming_service)
@@ -138,7 +148,7 @@ async def get_transcoding_job(
     return job
 
 
-@router.get("/transcoding-jobs/pending", response_model=List[TranscodingJobResponse])
+@router.get("/transcoding-jobs/pending", response_model=list[TranscodingJobResponse])
 async def get_pending_jobs(
     limit: int = Query(10, ge=1, le=50),
     service: StreamingService = Depends(get_streaming_service)
@@ -184,7 +194,7 @@ async def get_quality_profile(
     return profile
 
 
-@router.get("/quality-profiles", response_model=List[QualityProfileResponse])
+@router.get("/quality-profiles", response_model=list[QualityProfileResponse])
 async def list_quality_profiles_for_bandwidth(
     bandwidth_kbps: int = Query(..., ge=100),
     service: StreamingService = Depends(get_streaming_service)
@@ -216,7 +226,7 @@ async def get_cdn_region(
     return region
 
 
-@router.get("/cdn-regions", response_model=List[CDNRegionResponse])
+@router.get("/cdn-regions", response_model=list[CDNRegionResponse])
 async def list_cdn_regions(
     service: StreamingService = Depends(get_streaming_service)
 ):
@@ -247,7 +257,7 @@ async def get_download(
     return download
 
 
-@router.get("/users/{user_id}/downloads", response_model=List[DownloadSessionResponse])
+@router.get("/users/{user_id}/downloads", response_model=list[DownloadSessionResponse])
 async def get_user_downloads(
     user_id: UUID,
     service: StreamingService = Depends(get_streaming_service)

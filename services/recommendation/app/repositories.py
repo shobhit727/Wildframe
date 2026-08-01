@@ -1,10 +1,11 @@
 """Recommendation service repositories."""
 from uuid import UUID
-from datetime import datetime, timezone
-from typing import List, Optional
+
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
-from app.models import UserPreferences, Recommendation
+
+from app.models import Recommendation, UserPreferences
+
 
 class UserPreferencesRepository:
     def __init__(self, session: AsyncSession):
@@ -27,7 +28,7 @@ class RecommendationRepository:
         self.session.add(rec)
         await self.session.flush()
         return rec
-    async def get_for_user(self, user_id: UUID, limit: int = 20) -> List[Recommendation]:
+    async def get_for_user(self, user_id: UUID, limit: int = 20) -> list[Recommendation]:
         stmt = select(Recommendation).where(Recommendation.user_id == user_id).order_by(desc(Recommendation.score)).limit(limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()

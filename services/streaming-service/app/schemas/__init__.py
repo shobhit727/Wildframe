@@ -2,11 +2,12 @@
 Pydantic v2 schemas for Streaming Service API requests/responses.
 """
 
-from pydantic import BaseModel, Field, field_validator
-from datetime import datetime
-from uuid import UUID
-from typing import Optional, List, Dict, Any
 import re
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+from uuid import UUID
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class PlaybackSessionResponse(BaseModel):
@@ -14,7 +15,7 @@ class PlaybackSessionResponse(BaseModel):
     id: UUID
     user_id: UUID
     content_id: UUID
-    episode_id: Optional[UUID] = None
+    episode_id: UUID | None = None
     device_id: str
     status: str
     current_position_seconds: int
@@ -26,7 +27,7 @@ class PlaybackSessionResponse(BaseModel):
     stalls_count: int
     started_at: datetime
     last_activity_at: datetime
-    ended_at: Optional[datetime] = None
+    ended_at: datetime | None = None
     
     model_config = {"from_attributes": True}
 
@@ -35,23 +36,23 @@ class PlaybackSessionCreateRequest(BaseModel):
     """Playback session creation request schema."""
     user_id: UUID
     content_id: UUID
-    episode_id: Optional[UUID] = None
+    episode_id: UUID | None = None
     device_id: str = Field(..., min_length=1, max_length=255)
     protocol: str = Field(default="hls", pattern="^(hls|dash|smooth_streaming)$")
     resolution: str = Field(default="720p", pattern="^[0-9]+p$")
     bitrate_kbps: int = Field(default=2500, ge=100)
-    subtitle_language: Optional[str] = None
-    audio_language: Optional[str] = None
+    subtitle_language: str | None = None
+    audio_language: str | None = None
 
 
 class PlaybackSessionUpdateRequest(BaseModel):
     """Playback session update request schema."""
-    current_position_seconds: Optional[int] = Field(None, ge=0)
-    status: Optional[str] = None
-    resolution: Optional[str] = None
-    bitrate_kbps: Optional[int] = Field(None, ge=100)
-    buffer_health_seconds: Optional[float] = None
-    dropped_frames: Optional[int] = None
+    current_position_seconds: int | None = Field(None, ge=0)
+    status: str | None = None
+    resolution: str | None = None
+    bitrate_kbps: int | None = Field(None, ge=100)
+    buffer_health_seconds: float | None = None
+    dropped_frames: int | None = None
 
 
 class VideoManifestResponse(BaseModel):
@@ -61,10 +62,10 @@ class VideoManifestResponse(BaseModel):
     content_id: UUID
     protocol: str
     manifest_url: str
-    variants: List[str]
-    available_bitrates: List[int]
+    variants: list[str]
+    available_bitrates: list[int]
     generated_at: datetime
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
     
     model_config = {"from_attributes": True}
 
@@ -77,13 +78,13 @@ class TranscodingJobResponse(BaseModel):
     status: str
     priority: int
     input_file_path: str
-    target_resolutions: List[str]
-    target_bitrates: List[int]
+    target_resolutions: list[str]
+    target_bitrates: list[int]
     progress_percent: int
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    error_message: Optional[str] = None
-    estimated_time_remaining_seconds: Optional[int] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error_message: str | None = None
+    estimated_time_remaining_seconds: int | None = None
     
     model_config = {"from_attributes": True}
 
@@ -93,8 +94,8 @@ class TranscodingJobCreateRequest(BaseModel):
     episode_id: UUID
     content_id: UUID
     input_file_path: str = Field(..., min_length=1)
-    target_resolutions: List[str] = Field(default=["1080p", "720p", "480p"])
-    target_bitrates: List[int] = Field(default=[5000, 2500, 1000])
+    target_resolutions: list[str] = Field(default=["1080p", "720p", "480p"])
+    target_bitrates: list[int] = Field(default=[5000, 2500, 1000])
     priority: int = Field(default=5, ge=1, le=10)
 
 
@@ -102,14 +103,14 @@ class QualityProfileResponse(BaseModel):
     """Quality profile response schema."""
     id: UUID
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     resolution: str
     bitrate_kbps: int
     fps: int
     video_codec: str
     audio_codec: str
     audio_bitrate_kbps: int
-    supported_devices: List[str]
+    supported_devices: list[str]
     min_bandwidth_kbps: int
     max_bandwidth_kbps: int
     is_active: bool
@@ -120,14 +121,14 @@ class QualityProfileResponse(BaseModel):
 class QualityProfileCreateRequest(BaseModel):
     """Quality profile creation request schema."""
     name: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = None
+    description: str | None = None
     resolution: str = Field(..., pattern="^[0-9]+p$")
     bitrate_kbps: int = Field(..., ge=100)
     fps: int = Field(default=24, ge=1, le=60)
     video_codec: str = Field(default="h264")
     audio_codec: str = Field(default="aac")
     audio_bitrate_kbps: int = Field(default=128, ge=32)
-    supported_devices: List[str] = Field(default=["web", "ios", "android"])
+    supported_devices: list[str] = Field(default=["web", "ios", "android"])
     min_bandwidth_kbps: int
     max_bandwidth_kbps: int
 
@@ -152,8 +153,8 @@ class CDNRegionCreateRequest(BaseModel):
     region_code: str = Field(..., min_length=1, max_length=10)
     region_name: str = Field(..., min_length=1, max_length=100)
     country: str = Field(..., min_length=1, max_length=100)
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    latitude: float | None = None
+    longitude: float | None = None
     cdn_provider: str = Field(..., min_length=1, max_length=100)
     max_concurrent_streams: int = Field(default=10000, ge=1)
     bandwidth_capacity_gbps: float = Field(..., ge=0.1)
@@ -171,11 +172,11 @@ class StreamingStatisticsResponse(BaseModel):
     total_watch_time_hours: float
     average_watch_time_minutes: float
     completion_rate: float
-    average_resolution: Optional[str] = None
-    average_bitrate_kbps: Optional[int] = None
+    average_resolution: str | None = None
+    average_bitrate_kbps: int | None = None
     average_buffer_ratio: float
     total_errors: int
-    top_regions: Dict[str, int]
+    top_regions: dict[str, int]
     
     model_config = {"from_attributes": True}
 
@@ -191,9 +192,9 @@ class DownloadSessionResponse(BaseModel):
     progress_percent: int
     bytes_downloaded: int
     total_bytes: int
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    expires_at: datetime | None = None
     
     model_config = {"from_attributes": True}
 
@@ -212,7 +213,7 @@ class ManifestGenerationRequest(BaseModel):
     episode_id: UUID
     content_id: UUID
     protocol: str = Field(default="hls", pattern="^(hls|dash|smooth_streaming)$")
-    variants: List[str] = Field(default=["1080p", "720p", "480p"])
+    variants: list[str] = Field(default=["1080p", "720p", "480p"])
     include_subtitles: bool = True
     include_closed_captions: bool = True
 
@@ -221,7 +222,7 @@ class ErrorResponse(BaseModel):
     """Error response schema."""
     status_code: int
     message: str
-    detail: Optional[str] = None
+    detail: str | None = None
 
 
 class HealthCheckResponse(BaseModel):

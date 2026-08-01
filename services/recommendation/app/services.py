@@ -1,20 +1,21 @@
 """Recommendation service business logic."""
 from uuid import UUID
-from typing import List, Dict
-from app.repositories import UserPreferencesRepository, RecommendationRepository
+
+from app.repositories import RecommendationRepository, UserPreferencesRepository
+
 
 class RecommendationService:
     def __init__(self, pref_repo: UserPreferencesRepository, rec_repo: RecommendationRepository):
         self.pref_repo = pref_repo
         self.rec_repo = rec_repo
     
-    async def get_recommendations(self, user_id: UUID, limit: int = 20) -> List[Dict]:
+    async def get_recommendations(self, user_id: UUID, limit: int = 20) -> list[dict]:
         """Get personalized recommendations for user using collaborative filtering."""
-        prefs = await self.pref_repo.get_or_create(user_id)
+        await self.pref_repo.get_or_create(user_id)
         recommendations = await self.rec_repo.get_for_user(user_id, limit)
         return [{"content_id": str(r.content_id), "score": r.score, "reason": r.reason} for r in recommendations]
     
-    async def update_preferences(self, user_id: UUID, liked_genres: List[str] = None, disliked_genres: List[str] = None):
+    async def update_preferences(self, user_id: UUID, liked_genres: list[str] | None = None, disliked_genres: list[str] | None = None):
         """Update user preferences."""
         prefs = await self.pref_repo.get_or_create(user_id)
         if liked_genres:

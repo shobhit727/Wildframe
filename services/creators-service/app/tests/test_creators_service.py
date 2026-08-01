@@ -9,20 +9,23 @@ about: idempotency, floor >= 0, kill rolls back only unreleased tranches, and
 onboarding defaults KYC to pending.
 """
 import os
+from datetime import UTC, datetime
+from uuid import uuid4
+
 import pytest
 import pytest_asyncio
-from uuid import uuid4
-from datetime import datetime, timezone
 
 # Use in-memory SQLite for tests BEFORE importing app code that reads settings.
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.models import Base, KYCStatus, MilestoneStatus, TrancheStatus, PayoutStatus
+from app.models import Base, KYCStatus, MilestoneStatus, TrancheStatus
 from app.repositories import (
-    CreatorAccountRepository, EffectiveFloorRepository,
-    CreatorPoolBalanceRepository, MilestoneRepository,
+    CreatorAccountRepository,
+    CreatorPoolBalanceRepository,
+    EffectiveFloorRepository,
+    MilestoneRepository,
     PayoutLedgerRepository,
 )
 from app.services import CreatorService
@@ -70,6 +73,7 @@ async def test_accrual_is_idempotent(session):
     return the existing row, not insert a new one.
     """
     from sqlalchemy import select
+
     from app.models import PayoutLedger
 
     user_id = uuid4()
@@ -78,8 +82,8 @@ async def test_accrual_is_idempotent(session):
     await session.flush()
     svc = _svc(session)
 
-    period_start = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    period_end = datetime(2026, 1, 31, tzinfo=timezone.utc)
+    period_start = datetime(2026, 1, 1, tzinfo=UTC)
+    period_end = datetime(2026, 1, 31, tzinfo=UTC)
 
     row1 = await svc.accrue_payout(
         creator_id=acct.id, period_start=period_start, period_end=period_end,
@@ -161,6 +165,7 @@ async def test_kill_rolls_back_only_unreleased_tranches(session):
 
     # Inspect tranches.
     from sqlalchemy import select
+
     from app.models import MilestoneTranche
     stmt = select(MilestoneTranche).where(MilestoneTranche.milestone_id == ms.id)
     result = await session.execute(stmt)

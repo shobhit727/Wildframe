@@ -17,11 +17,10 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
-
 
 logger = logging.getLogger(__name__)
 
@@ -44,13 +43,13 @@ class Event:
 
     topic: str
     key: str
-    payload: Dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = field(default_factory=dict)
     event_id: str = field(default_factory=lambda: str(uuid4()))
     occurred_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "event_id": self.event_id,
             "topic": self.topic,
@@ -76,7 +75,7 @@ class EventPublisher(ABC):
         """Publish a single event."""
         raise NotImplementedError
 
-    async def publish_many(self, events: List[Event]) -> None:
+    async def publish_many(self, events: list[Event]) -> None:
         """Publish multiple events (default: sequential)."""
         for event in events:
             await self.publish(event)
@@ -91,7 +90,7 @@ class InMemoryEventPublisher(EventPublisher):
     """
 
     def __init__(self) -> None:
-        self.sent: List[Event] = []
+        self.sent: list[Event] = []
 
     async def publish(self, event: Event) -> None:
         self.sent.append(event)
@@ -155,7 +154,7 @@ class KafkaEventPublisher(EventPublisher):
 # Process-wide publisher singleton (dependency-injected into services).
 # ---------------------------------------------------------------------------
 
-_publisher: Optional[EventPublisher] = None
+_publisher: EventPublisher | None = None
 
 
 def get_event_publisher() -> EventPublisher:

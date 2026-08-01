@@ -1,10 +1,11 @@
 """Search service repositories."""
 from uuid import UUID
-from datetime import datetime, timezone
-from typing import List, Optional
+
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
-from app.models import SearchQuery, SearchIndex
+
+from app.models import SearchIndex, SearchQuery
+
 
 class SearchQueryRepository:
     def __init__(self, session: AsyncSession):
@@ -14,7 +15,7 @@ class SearchQueryRepository:
         self.session.add(q)
         await self.session.flush()
         return q
-    async def get_recent(self, user_id: UUID, limit: int = 20) -> List[SearchQuery]:
+    async def get_recent(self, user_id: UUID, limit: int = 20) -> list[SearchQuery]:
         stmt = select(SearchQuery).where(SearchQuery.user_id == user_id).order_by(desc(SearchQuery.created_at)).limit(limit)
         result = await self.session.execute(stmt)
         return result.scalars().all()
@@ -27,7 +28,7 @@ class SearchIndexRepository:
         self.session.add(idx)
         await self.session.flush()
         return idx
-    async def get_by_content_id(self, content_id: UUID) -> Optional[SearchIndex]:
+    async def get_by_content_id(self, content_id: UUID) -> SearchIndex | None:
         stmt = select(SearchIndex).where(SearchIndex.content_id == content_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

@@ -1,19 +1,19 @@
-from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
+
+from pydantic import BaseModel, Field
 
 
 class UserModerationRequest(BaseModel):
     user_id: str = Field(..., min_length=1)
     status: str = Field(..., pattern="^(active|suspended|banned)$")
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class UserModerationResponse(BaseModel):
     id: int
     user_id: str
     status: str
-    reason: Optional[str]
+    reason: str | None
     moderated_by: str
     moderated_at: datetime
     created_at: datetime
@@ -24,7 +24,7 @@ class ContentModerationRequest(BaseModel):
     content_id: str = Field(..., min_length=1)
     content_type: str = Field(..., pattern="^(movie|show|episode)$")
     status: str = Field(..., pattern="^(active|flagged|removed)$")
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class ContentModerationResponse(BaseModel):
@@ -32,9 +32,9 @@ class ContentModerationResponse(BaseModel):
     content_id: str
     content_type: str
     status: str
-    reason: Optional[str]
+    reason: str | None
     flagged_at: datetime
-    resolved_at: Optional[datetime]
+    resolved_at: datetime | None
     created_at: datetime
 
 
@@ -52,7 +52,7 @@ class SystemAlertResponse(BaseModel):
     message: str
     service: str
     acknowledged: bool
-    acknowledged_by: Optional[str]
+    acknowledged_by: str | None
     created_at: datetime
 
 
@@ -60,7 +60,7 @@ class SystemConfigRequest(BaseModel):
     key: str = Field(..., min_length=1)
     value: str = Field(..., min_length=1)
     config_type: str = Field(..., pattern="^(string|integer|boolean|json)$")
-    description: Optional[str] = None
+    description: str | None = None
 
 
 class SystemConfigResponse(BaseModel):
@@ -68,7 +68,7 @@ class SystemConfigResponse(BaseModel):
     key: str
     value: str
     config_type: str
-    description: Optional[str]
+    description: str | None
     updated_by: str
     created_at: datetime
     updated_at: datetime
@@ -80,7 +80,7 @@ class AdminAuditLogResponse(BaseModel):
     action: str
     resource_type: str
     resource_id: str
-    changes: Optional[str]
+    changes: str | None
     ip_address: str
     created_at: datetime
 

@@ -1,21 +1,32 @@
+from datetime import timezone
+
 """
 Service layer for Streaming Service business logic.
 """
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID
-from typing import List, Optional
-from datetime import datetime
 import logging
+from datetime import UTC, datetime
+from typing import List, Optional
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories import (
-    PlaybackSessionRepository, VideoManifestRepository, TranscodingJobRepository,
-    QualityProfileRepository, CDNRegionRepository, DownloadSessionRepository
+    CDNRegionRepository,
+    DownloadSessionRepository,
+    PlaybackSessionRepository,
+    QualityProfileRepository,
+    TranscodingJobRepository,
+    VideoManifestRepository,
 )
 from app.schemas import (
-    PlaybackSessionCreateRequest, PlaybackSessionUpdateRequest,
-    TranscodingJobCreateRequest, ManifestGenerationRequest,
-    QualityProfileCreateRequest, CDNRegionCreateRequest, DownloadSessionCreateRequest
+    CDNRegionCreateRequest,
+    DownloadSessionCreateRequest,
+    ManifestGenerationRequest,
+    PlaybackSessionCreateRequest,
+    PlaybackSessionUpdateRequest,
+    QualityProfileCreateRequest,
+    TranscodingJobCreateRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -121,7 +132,7 @@ class StreamingService:
     def _generate_manifest_content(self, request: ManifestGenerationRequest) -> str:
         """Generate M3U8/MPD manifest content."""
         if request.protocol == "hls":
-            return f"""#EXTM3U
+            return """#EXTM3U
 #EXT-X-VERSION:3
 #EXT-X-TARGETDURATION:10
 #EXTINF:10.0,
@@ -166,7 +177,7 @@ segment-001.ts
         """Get pending transcoding jobs."""
         return await self.transcoding_repo.get_pending_jobs(limit)
     
-    async def update_transcoding_progress(self, job_id: UUID, progress_percent: int, error_message: Optional[str] = None):
+    async def update_transcoding_progress(self, job_id: UUID, progress_percent: int, error_message: str | None = None):
         """Update transcoding job progress."""
         try:
             job = await self.transcoding_repo.update(job_id, progress_percent=progress_percent, error_message=error_message)
@@ -184,7 +195,7 @@ segment-001.ts
                 job_id,
                 status="completed",
                 progress_percent=100,
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(UTC),
                 output_paths=output_paths
             )
             await self.transcoding_repo.commit()

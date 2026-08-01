@@ -15,20 +15,23 @@ PipelineJob.status machine::
 resumed job can skip stages already done. ``retries`` counts attempts at the
 *current* stage (reset when the job advances past it).
 """
-from datetime import datetime, timezone
-from uuid import uuid4
+from datetime import UTC, datetime
 from enum import Enum
+from uuid import uuid4
+
 from sqlalchemy import (
     Column,
-    String,
-    Integer,
     DateTime,
-    Enum as SQLEnum,
     ForeignKey,
     Index,
+    Integer,
+    String,
     Text,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import (
+    Enum as SQLEnum,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -73,13 +76,13 @@ class PipelineJob(Base):
     started_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     updated_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -107,7 +110,7 @@ class PipelineStageLog(Base):
     message = Column(Text, nullable=True)
     created_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -150,7 +153,7 @@ class TranscodingJob(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     __table_args__ = (Index("idx_transcoding_status", "status"),)

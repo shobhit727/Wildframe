@@ -1,6 +1,6 @@
 """Core configuration for User Service."""
+
 from pydantic_settings import BaseSettings
-from typing import List
 
 
 class Settings(BaseSettings):
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     PASSWORD_BCRYPT_ROUNDS: int = 12
 
     # CORS
-    CORS_ALLOWED_ORIGINS: List[str] = [
+    CORS_ALLOWED_ORIGINS: list[str] = [
         "http://localhost:3000",
         "http://localhost:5173",
         "https://wildframe.com",

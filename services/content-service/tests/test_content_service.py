@@ -1,12 +1,11 @@
 """Content service tests."""
 
-import pytest
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
-from datetime import datetime, timezone, timedelta
 
+import pytest
 from app.services.content import ContentService
-from app.models.content import Genre, Movie, Show, Season, Episode
 
 
 @pytest.fixture
@@ -121,7 +120,7 @@ class TestMovieManagement:
             "title": "Test Movie",
             "description": "A test movie",
             "poster_url": "http://example.com/poster.jpg",
-            "release_date": datetime.now(timezone.utc),
+            "release_date": datetime.now(UTC),
             "duration_seconds": 7200,
             "genre_ids": [uuid4()],
             "director": "Test Director",
@@ -167,7 +166,7 @@ class TestMovieManagement:
         mock_movie = MagicMock()
         mock_repositories["movie_repo"].list_trending.return_value = ([mock_movie], 1)
         
-        movies, total = await content_service.list_trending_movies(20, 0)
+        movies, _total = await content_service.list_trending_movies(20, 0)
         
         assert len(movies) == 1
     
@@ -199,7 +198,7 @@ class TestShowManagement:
             "title": "Test Show",
             "description": "A test show",
             "poster_url": "http://example.com/poster.jpg",
-            "first_air_date": datetime.now(timezone.utc),
+            "first_air_date": datetime.now(UTC),
             "episode_runtime_seconds": 3600,
             "genre_ids": [uuid4()],
             "language": "en",
@@ -227,7 +226,7 @@ class TestShowManagement:
         mock_show = MagicMock()
         mock_repositories["show_repo"].list_ongoing.return_value = ([mock_show], 1)
         
-        shows, total = await content_service.list_ongoing_shows(20, 0)
+        shows, _total = await content_service.list_ongoing_shows(20, 0)
         
         assert len(shows) == 1
     

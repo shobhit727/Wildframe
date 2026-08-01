@@ -5,25 +5,20 @@ classes — the service layer never touches the session directly for queries.
 """
 from decimal import Decimal
 from uuid import UUID
-from typing import Optional, List
 
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
 
 from app.models import (
-    Subscription,
-    Purchase,
-    Invoice,
-    RegionFloor,
     CreatorPoolEntry,
-    CreatorPoolDistribution,
+    Invoice,
     Milestone,
     MilestoneTranche,
     PayoutLedger,
+    Purchase,
+    RegionFloor,
     RevenueTier,
-    MilestoneStatus,
-    TrancheStatus,
-    PayoutStatus,
+    Subscription,
 )
 
 
@@ -33,7 +28,7 @@ class SubscriptionRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_by_user(self, user_id: UUID) -> Optional[Subscription]:
+    async def get_by_user(self, user_id: UUID) -> Subscription | None:
         stmt = select(Subscription).where(Subscription.user_id == user_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -44,7 +39,7 @@ class SubscriptionRepository:
         await self.session.flush()
         return sub
 
-    async def update_tier(self, user_id: UUID, tier: RevenueTier, monthly_price: Decimal) -> Optional[Subscription]:
+    async def update_tier(self, user_id: UUID, tier: RevenueTier, monthly_price: Decimal) -> Subscription | None:
         sub = await self.get_by_user(user_id)
         if sub:
             sub.tier = tier
@@ -59,7 +54,7 @@ class PurchaseRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_by_user_and_content(self, user_id: UUID, content_id: UUID) -> Optional[Purchase]:
+    async def get_by_user_and_content(self, user_id: UUID, content_id: UUID) -> Purchase | None:
         stmt = select(Purchase).where(
             and_(Purchase.user_id == user_id, Purchase.content_id == content_id)
         )
@@ -82,7 +77,7 @@ class InvoiceRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create(self, user_id: UUID, amount: Decimal, subscription_id: UUID = None, purchase_id: UUID = None) -> Invoice:
+    async def create(self, user_id: UUID, amount: Decimal, subscription_id: UUID | None = None, purchase_id: UUID | None = None) -> Invoice:
         inv = Invoice(
             subscription_id=subscription_id,
             purchase_id=purchase_id,
@@ -93,7 +88,7 @@ class InvoiceRepository:
         await self.session.flush()
         return inv
 
-    async def get_by_user(self, user_id: UUID) -> List[Invoice]:
+    async def get_by_user(self, user_id: UUID) -> list[Invoice]:
         stmt = select(Invoice).where(Invoice.user_id == user_id).order_by(Invoice.issued_at.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -105,12 +100,12 @@ class RegionFloorRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_by_region(self, region_code: str) -> Optional[RegionFloor]:
+    async def get_by_region(self, region_code: str) -> RegionFloor | None:
         stmt = select(RegionFloor).where(RegionFloor.region_code == region_code)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_all(self) -> List[RegionFloor]:
+    async def list_all(self) -> list[RegionFloor]:
         stmt = select(RegionFloor).order_by(RegionFloor.region_code)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -122,7 +117,7 @@ class CreatorPoolRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_latest(self) -> Optional[CreatorPoolEntry]:
+    async def get_latest(self) -> CreatorPoolEntry | None:
         stmt = select(CreatorPoolEntry).order_by(CreatorPoolEntry.cycle_end.desc()).limit(1)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -146,7 +141,7 @@ class MilestoneRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get(self, milestone_id: UUID) -> Optional[Milestone]:
+    async def get(self, milestone_id: UUID) -> Milestone | None:
         stmt = select(Milestone).where(Milestone.id == milestone_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -172,7 +167,7 @@ class MilestoneRepository:
         await self.session.flush()
         return ms
 
-    async def get_tranches(self, milestone_id: UUID) -> List[MilestoneTranche]:
+    async def get_tranches(self, milestone_id: UUID) -> list[MilestoneTranche]:
         stmt = (
             select(MilestoneTranche)
             .where(MilestoneTranche.milestone_id == milestone_id)
@@ -192,7 +187,7 @@ class PayoutLedgerRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_by_idempotency_key(self, key: str) -> Optional[PayoutLedger]:
+    async def get_by_idempotency_key(self, key: str) -> PayoutLedger | None:
         stmt = select(PayoutLedger).where(PayoutLedger.idempotency_key == key)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -205,7 +200,7 @@ class PayoutLedgerRepository:
         idempotency_key: str,
         cycle_start,
         cycle_end,
-        breakdown: dict = None,
+        breakdown: dict | None = None,
     ) -> PayoutLedger:
         """Create an accrued payout entry, idempotently."""
         existing = await self.get_by_idempotency_key(idempotency_key)
@@ -224,7 +219,7 @@ class PayoutLedgerRepository:
         await self.session.flush()
         return entry
 
-    async def get_by_creator(self, creator_id: UUID) -> List[PayoutLedger]:
+    async def get_by_creator(self, creator_id: UUID) -> list[PayoutLedger]:
         stmt = (
             select(PayoutLedger)
             .where(PayoutLedger.creator_id == creator_id)

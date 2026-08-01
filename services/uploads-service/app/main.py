@@ -1,11 +1,12 @@
 """Main FastAPI application for the Uploads Service."""
 import logging
+
 from fastapi import FastAPI
-from app.core.settings import settings
-from app.core.database import DatabaseManager
-from app.core.logging import setup_logging
-from app.api.uploads_routes import router as uploads_router
 from wildframe_observability.wire import wire_observability
+
+from app.api.uploads_routes import router as uploads_router
+from app.core.logging import setup_logging
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 

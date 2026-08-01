@@ -10,27 +10,25 @@ domain logic and unit-testable with stubs.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional, List
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from app.core.events import EventPublisher, Event, get_event_publisher
+from app.core.events import Event, EventPublisher, get_event_publisher
 from app.core.settings import settings
 from app.models import (
     ContentFlag,
+    CreatorStrike,
+    DecisionType,
     FlagReason,
     FlagStatus,
     ModerationDecision,
-    DecisionType,
-    CreatorStrike,
     StrikeReason,
 )
 from app.repositories import (
     ContentFlagRepository,
-    ModerationDecisionRepository,
     CreatorStrikeRepository,
+    ModerationDecisionRepository,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +45,7 @@ class ModerationService:
         flag_repo: ContentFlagRepository,
         decision_repo: ModerationDecisionRepository,
         strike_repo: CreatorStrikeRepository,
-        publisher: Optional[EventPublisher] = None,
+        publisher: EventPublisher | None = None,
     ) -> None:
         self.flag_repo = flag_repo
         self.decision_repo = decision_repo
@@ -104,7 +102,7 @@ class ModerationService:
     # get_queue
     # ------------------------------------------------------------------
 
-    async def get_queue(self, limit: int = 50) -> List[ContentFlag]:
+    async def get_queue(self, limit: int = 50) -> list[ContentFlag]:
         """Return the pending review queue, oldest first."""
         return await self.flag_repo.list_pending(limit=limit)
 
@@ -118,7 +116,7 @@ class ModerationService:
         flag_id: UUID,
         decision: DecisionType,
         moderator_id: UUID,
-        notes: Optional[str] = None,
+        notes: str | None = None,
     ) -> ModerationDecision:
         """Record a moderator's decision on a flag.
 
@@ -152,7 +150,7 @@ class ModerationService:
 
         # Update the flag's status.
         flag.reviewed_by = moderator_id
-        flag.reviewed_at = datetime.now(timezone.utc)
+        flag.reviewed_at = datetime.now(UTC)
         flag.resolution_notes = notes
         if decision == DecisionType.ESCALATE:
             flag.status = FlagStatus.ESCALATED
@@ -204,7 +202,7 @@ class ModerationService:
         >= ``STRIKES_BEFORE_SUSPENSION`` active strikes, emit
         ``creator.suspended``.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires_at = now + timedelta(days=settings.STRIKE_EXPIRES_DAYS)
 
         # Derive the strike reason from the flag reason.
@@ -250,6 +248,6 @@ class ModerationService:
     # get_strikes
     # ------------------------------------------------------------------
 
-    async def get_strikes(self, creator_id: UUID) -> List[CreatorStrike]:
+    async def get_strikes(self, creator_id: UUID) -> list[CreatorStrike]:
         """List all strikes (active + expired) for a creator."""
         return await self.strike_repo.list_all(creator_id)

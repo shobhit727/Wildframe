@@ -1,6 +1,6 @@
 """Tests for Analytics Service."""
 import pytest
-from unittest.mock import AsyncMock
+
 
 @pytest.mark.asyncio
 async def test_health_check():

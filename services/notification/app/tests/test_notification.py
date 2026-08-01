@@ -1,8 +1,11 @@
 """Notification service tests."""
-import pytest
 from uuid import uuid4
+
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.services import NotificationService
+
 
 @pytest.mark.asyncio
 async def test_send_notification(db: AsyncSession):

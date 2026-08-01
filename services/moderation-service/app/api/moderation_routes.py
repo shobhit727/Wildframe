@@ -10,25 +10,26 @@ Endpoints:
     GET  /health                    — health check
 """
 from uuid import UUID
-from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.repositories import (
     ContentFlagRepository,
-    ModerationDecisionRepository,
     CreatorStrikeRepository,
+    ModerationDecisionRepository,
 )
-from app.services import ModerationService, ModerationError
 from app.schemas import (
-    FlagContentRequest,
-    MakeDecisionRequest,
-    FlagResponse,
     DecisionResponse,
-    StrikeResponse,
+    FlagContentRequest,
+    FlagResponse,
+    MakeDecisionRequest,
     QueueResponse,
+    StrikeResponse,
     StrikesResponse,
 )
+from app.services import ModerationError, ModerationService
 
 router = APIRouter(prefix="/moderation", tags=["moderation"])
 

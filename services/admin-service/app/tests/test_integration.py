@@ -1,22 +1,15 @@
 """Integration tests for Admin Service."""
-import pytest
+from uuid import uuid4
+
 import pytest_asyncio
-from uuid import UUID, uuid4
-from datetime import datetime
-from httpx import AsyncClient
-from app.main import app
-from app.services.admin import AdminService
-from app.repositories.admin import (
-    UserModerationRepository,
-    ContentModerationRepository,
-    SystemAlertRepository,
-    SystemConfigRepository,
-    AdminAuditLogRepository
-)
+
 from app.schemas.admin import (
-    UserModerationRequest, ContentModerationRequest,
-    SystemAlertRequest, SystemConfigRequest
+    ContentModerationRequest,
+    SystemAlertRequest,
+    SystemConfigRequest,
+    UserModerationRequest,
 )
+from app.services.admin import AdminService
 
 
 @pytest_asyncio.fixture

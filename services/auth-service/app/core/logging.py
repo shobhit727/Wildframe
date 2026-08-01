@@ -1,3 +1,4 @@
+
 """
 Structured logging configuration for Auth Service.
 Implements JSON logging with correlation IDs for distributed tracing.
@@ -5,14 +6,13 @@ Implements JSON logging with correlation IDs for distributed tracing.
 
 import logging
 import logging.config
-import json
-from datetime import datetime
-from typing import Any
-from pythonjsonlogger import jsonlogger
-from contextvars import ContextVar
 import uuid
+from contextvars import ContextVar
+from datetime import UTC, datetime
+from typing import Any
 
 from app.core.settings import settings
+from pythonjsonlogger import jsonlogger
 
 # Context variables for distributed tracing
 correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
@@ -39,7 +39,7 @@ class CorrelationIdJsonFormatter(jsonlogger.JsonFormatter):
         super().add_fields(log_record, record, message_dict)
 
         # Add timestamp in ISO format
-        log_record["timestamp"] = datetime.utcnow().isoformat()
+        log_record["timestamp"] = datetime.now(UTC).isoformat()
 
         # Add correlation information
         log_record["correlation_id"] = correlation_id_var.get()

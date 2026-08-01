@@ -11,11 +11,8 @@ This keeps storage swappable and testable via dependency injection:
 from __future__ import annotations
 
 import logging
-import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
-
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +26,7 @@ class PresignedUpload:
     # HTTP method the client should use (PUT for single, POST/part for multi).
     method: str = "PUT"
     # Optional headers the client must send (e.g. Content-Type, x-amz-acl).
-    headers: Optional[dict] = None
+    headers: dict | None = None
     expires_in_seconds: int = 3600
 
 
@@ -43,7 +40,7 @@ class StoragePort(ABC):
         session_id: str,
         filename: str,
         mime: str,
-        chunk_index: Optional[int] = None,
+        chunk_index: int | None = None,
     ) -> PresignedUpload:
         """Return a pre-signed URL for a chunk (or the whole object)."""
         raise NotImplementedError
@@ -67,7 +64,7 @@ class StubStoragePort(StoragePort):
         session_id: str,
         filename: str,
         mime: str,
-        chunk_index: Optional[int] = None,
+        chunk_index: int | None = None,
     ) -> PresignedUpload:
         safe_name = filename.replace(" ", "_")
         if chunk_index is None:
@@ -130,7 +127,7 @@ class S3StoragePort(StoragePort):
         session_id: str,
         filename: str,
         mime: str,
-        chunk_index: Optional[int] = None,
+        chunk_index: int | None = None,
     ) -> PresignedUpload:
         safe_name = filename.replace(" ", "_")
         if chunk_index is None:
@@ -168,7 +165,7 @@ class S3StoragePort(StoragePort):
 # Process-wide storage port singleton (dependency-injected into services).
 # ---------------------------------------------------------------------------
 
-_storage: Optional[StoragePort] = None
+_storage: StoragePort | None = None
 
 
 def get_storage() -> StoragePort:

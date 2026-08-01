@@ -2,25 +2,23 @@
 
 import logging
 from uuid import UUID
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.schemas.streaming import (
+    AudioTrackRequest,
+    AudioTrackResponse,
+    EndStreamingRequest,
+    HeartbeatRequest,
+    ManifestResponse,
+    RecordMetricsRequest,
     StartStreamingRequest,
     StreamingSessionResponse,
-    HeartbeatRequest,
-    RecordMetricsRequest,
-    EndStreamingRequest,
-    SubtitleRequest,
-    AudioTrackRequest,
     StreamingStatsResponse,
-    ManifestResponse,
+    SubtitleRequest,
     SubtitleResponse,
-    AudioTrackResponse,
-    ErrorResponse
 )
 from app.services.streaming import StreamingService
 
@@ -210,7 +208,7 @@ async def get_streaming_stats(
     """Get streaming statistics."""
     try:
         stats = await service.get_session_stats(session_token)
-        session = await service.get_streaming_session(session_token)
+        await service.get_streaming_session(session_token)
         
         return StreamingStatsResponse(
             session_id=stats["session_id"],

@@ -9,7 +9,6 @@ These cover two confirmed bugs:
    never defined it, raising ``ImportError`` at import time.
 """
 import pytest
-
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.database import DatabaseManager

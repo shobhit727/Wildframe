@@ -1,7 +1,8 @@
 """Recommendation service models."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, ForeignKey, Index, JSON
+
+from sqlalchemy import JSON, Column, DateTime, Float, Index, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 
@@ -16,8 +17,8 @@ class UserPreferences(Base):
     disliked_genres = Column(JSON, default=[])
     preferred_languages = Column(JSON, default=["en"])
     watch_frequency = Column(String(50), default="medium")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
 class Recommendation(Base):
     """Generated recommendation for user."""
@@ -28,5 +29,5 @@ class Recommendation(Base):
     score = Column(Float, nullable=False)
     reason = Column(String(255))
     algorithm = Column(String(50))
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     __table_args__ = (Index("idx_recommendations_user", "user_id", "score"),)

@@ -9,15 +9,15 @@ Endpoints:
     GET  /pipeline/jobs/{id}               — get job status + stage log
 """
 from uuid import UUID
-from typing import Optional
-from fastapi import APIRouter, Depends, Body, HTTPException
+
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.repositories import (
     PipelineJobRepository,
     PipelineStageLogRepository,
-    TranscodingJobRepository,
 )
 from app.services import MediaPipelineService, PipelineError
 
@@ -48,9 +48,9 @@ class JobResponse(BaseModel):
     content_id: UUID
     upload_session_id: UUID
     status: str
-    current_stage: Optional[str] = None
+    current_stage: str | None = None
     retries: int
-    error: Optional[str] = None
+    error: str | None = None
     stage_versions: dict
 
 
@@ -58,7 +58,7 @@ class StageLogResponse(BaseModel):
     stage: str
     status: str
     duration_ms: int
-    message: Optional[str] = None
+    message: str | None = None
     created_at: str
 
 

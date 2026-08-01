@@ -1,15 +1,16 @@
 """Database configuration and session management for User Service."""
-from typing import AsyncGenerator
+import logging
+from collections.abc import AsyncGenerator
+
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    create_async_engine,
-    async_sessionmaker,
     AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
 )
 from sqlalchemy.pool import NullPool, QueuePool
-from sqlalchemy.exc import SQLAlchemyError
-import logging
 
 from app.core.settings import settings
 

@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from uuid import UUID
-from typing import Optional, List
 from enum import Enum
+from typing import List, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field
-
 
 # ---------------------------------------------------------------------------
 # Enums (mirror the SQLAlchemy enums for API wire format).
@@ -55,7 +54,7 @@ class MakeDecisionRequest(BaseModel):
     flag_id: UUID
     decision: DecisionTypeEnum
     moderator_id: UUID
-    notes: Optional[str] = Field(None, max_length=2000)
+    notes: str | None = Field(None, max_length=2000)
 
 
 # ---------------------------------------------------------------------------
@@ -69,9 +68,9 @@ class FlagResponse(BaseModel):
     flag_reason: FlagReasonEnum
     reported_by: UUID
     status: FlagStatusEnum
-    reviewed_by: Optional[UUID] = None
-    reviewed_at: Optional[datetime] = None
-    resolution_notes: Optional[str] = None
+    reviewed_by: UUID | None = None
+    reviewed_at: datetime | None = None
+    resolution_notes: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -85,7 +84,7 @@ class DecisionResponse(BaseModel):
     flag_id: UUID
     moderator_id: UUID
     decision: DecisionTypeEnum
-    notes: Optional[str] = None
+    notes: str | None = None
     created_at: datetime
 
     class Config:
@@ -97,9 +96,9 @@ class StrikeResponse(BaseModel):
     id: UUID
     creator_id: UUID
     strike_reason: StrikeReasonEnum
-    related_flag_id: Optional[UUID] = None
+    related_flag_id: UUID | None = None
     is_active: bool
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
     created_at: datetime
 
     class Config:
@@ -108,12 +107,12 @@ class StrikeResponse(BaseModel):
 
 class QueueResponse(BaseModel):
     """Response for GET /moderation/queue."""
-    items: List[FlagResponse]
+    items: list[FlagResponse]
     total: int
 
 
 class StrikesResponse(BaseModel):
     """Response for GET /moderation/strikes/{creator_id}."""
     creator_id: UUID
-    strikes: List[StrikeResponse]
+    strikes: list[StrikeResponse]
     active_count: int

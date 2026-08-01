@@ -3,21 +3,22 @@ FastAPI application factory and configuration.
 Sets up middleware, exception handlers, health checks, and lifespan events.
 """
 
+import logging
+import uuid
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-import uuid
-import logging
-
-from app.core.settings import settings
-from app.core.database import db_manager
-from app.core.logging import setup_logging, set_correlation_id, set_request_id
-from app.api.routes import router
-from app.schemas import ErrorResponse, HealthCheckResponse
+from fastapi.responses import JSONResponse
 from wildframe_observability.wire import wire_observability
+
+from app.api.routes import router
+from app.core.database import db_manager
+from app.core.logging import set_correlation_id, set_request_id, setup_logging
+from app.core.settings import settings
+from app.schemas import ErrorResponse, HealthCheckResponse
 
 logger = logging.getLogger(__name__)
 

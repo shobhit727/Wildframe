@@ -1,26 +1,29 @@
+from datetime import timezone
+
 """Service layer for User Service."""
-from typing import Optional, List
-from uuid import UUID
-from datetime import datetime, timedelta
 import logging
+from datetime import UTC, datetime, timedelta
+from typing import List, Optional
+from uuid import UUID
+
 from fastapi import HTTPException, status
 
 from app.repositories import (
-    UserProfileRepository,
     UserDeviceRepository,
     UserPreferenceRepository,
+    UserProfileRepository,
     UserSubscriptionProfileRepository,
 )
 from app.schemas import (
-    UserProfileResponse,
-    UserProfileUpdateRequest,
-    UserDeviceResponse,
     UserDeviceRegisterRequest,
+    UserDeviceResponse,
     UserDeviceUpdateRequest,
     UserPreferenceResponse,
     UserPreferenceUpdateRequest,
-    UserSubscriptionProfileResponse,
     UserProfileCompleteResponse,
+    UserProfileResponse,
+    UserProfileUpdateRequest,
+    UserSubscriptionProfileResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,7 +56,7 @@ class UserService:
             logger.info(f"Created full user profile for: {user_id}")
             return UserProfileResponse.from_orm(profile)
         except Exception as e:
-            logger.error(f"Error creating user profile: {str(e)}")
+            logger.error(f"Error creating user profile: {e!s}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create user profile",
@@ -126,19 +129,19 @@ class UserService:
                 browser_version=request.browser_version,
                 ip_address=ip_address,
                 user_agent=request.user_agent,
-                last_active_at=datetime.utcnow(),
+                last_active_at=datetime.now(UTC),
             )
             await self.device_repo.commit()
             logger.info(f"Registered device {request.device_id} for user {user_id}")
             return UserDeviceResponse.from_orm(device)
         except Exception as e:
-            logger.error(f"Error registering device: {str(e)}")
+            logger.error(f"Error registering device: {e!s}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to register device",
             )
 
-    async def get_user_devices(self, user_id: UUID) -> List[UserDeviceResponse]:
+    async def get_user_devices(self, user_id: UUID) -> list[UserDeviceResponse]:
         """Get all user devices."""
         devices = await self.device_repo.get_user_devices(user_id)
         return [UserDeviceResponse.from_orm(d) for d in devices]

@@ -1,14 +1,18 @@
-"""Shared test fixtures and configuration."""
-import pytest
-import asyncio
-from uuid import uuid4
-from datetime import datetime, timedelta
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from app.core.settings import settings
-from app.models import Base, User, RefreshToken, LoginAudit
+"""Shared test fixtures and configuration."""
+import asyncio
+from datetime import UTC, datetime
+from uuid import uuid4
+
+import pytest
+from app.models import Base, User
+from app.repositories import (
+    LoginAuditRepository,
+    RefreshTokenRepository,
+    UserRepository,
+)
 from app.security import PasswordManager, TokenManager
-from app.repositories import UserRepository, RefreshTokenRepository, LoginAuditRepository
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
 @pytest.fixture(scope="session")
@@ -81,8 +85,8 @@ async def test_user(test_session, password_manager):
         first_name="Test",
         last_name="User",
         email_verified=True,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     test_session.add(user)
     await test_session.commit()

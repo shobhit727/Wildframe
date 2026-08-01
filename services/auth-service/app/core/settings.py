@@ -3,9 +3,9 @@ Core configuration module for Auth Service.
 Manages environment-based settings and dependency injection.
 """
 
-from typing import Optional
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -82,7 +82,7 @@ class Settings(BaseSettings):
         case_sensitive = True
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """Get cached settings instance.
     

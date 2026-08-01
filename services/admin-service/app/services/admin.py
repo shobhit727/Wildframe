@@ -1,12 +1,12 @@
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
-from datetime import datetime, timedelta
+
 from app.repositories.admin import (
-    UserModerationRepository,
+    AdminAuditLogRepository,
     ContentModerationRepository,
     SystemAlertRepository,
     SystemConfigRepository,
-    AdminAuditLogRepository
+    UserModerationRepository,
 )
 
 
@@ -20,7 +20,7 @@ class AdminService:
         self.audit_repo = AdminAuditLogRepository(db)
 
     # User Moderation
-    async def moderate_user(self, user_id: str, status: str, reason: Optional[str], moderated_by: str, ip_address: str) -> dict:
+    async def moderate_user(self, user_id: str, status: str, reason: str | None, moderated_by: str, ip_address: str) -> dict:
         moderation = await self.user_repo.update_status(user_id, status, reason, moderated_by)
         if not moderation:
             moderation = await self.user_repo.create(user_id, status, reason, moderated_by)
@@ -35,7 +35,7 @@ class AdminService:
             "moderated_at": moderation.moderated_at
         }
 
-    async def get_user_moderation_history(self, user_id: str) -> Optional[dict]:
+    async def get_user_moderation_history(self, user_id: str) -> dict | None:
         moderation = await self.user_repo.get_by_user_id(user_id)
         if not moderation:
             return None
@@ -48,7 +48,7 @@ class AdminService:
             "moderated_at": moderation.moderated_at
         }
 
-    async def list_moderated_users(self, status: Optional[str] = None, limit: int = 50, offset: int = 0) -> List[dict]:
+    async def list_moderated_users(self, status: str | None = None, limit: int = 50, offset: int = 0) -> list[dict]:
         users = await self.user_repo.list_moderated_users(status, limit, offset)
         return [
             {
@@ -62,7 +62,7 @@ class AdminService:
         ]
 
     # Content Moderation
-    async def flag_content(self, content_id: str, content_type: str, reason: Optional[str], flagged_by: str, ip_address: str) -> dict:
+    async def flag_content(self, content_id: str, content_type: str, reason: str | None, flagged_by: str, ip_address: str) -> dict:
         moderation = await self.content_repo.create(content_id, content_type, "flagged", reason, flagged_by)
         await self.audit_repo.create(flagged_by, "content_flagged", "content", content_id, reason, ip_address)
         return {
@@ -72,7 +72,7 @@ class AdminService:
             "reason": moderation.reason
         }
 
-    async def resolve_content_flag(self, content_id: str, status: str, resolved_by: str, ip_address: str) -> Optional[dict]:
+    async def resolve_content_flag(self, content_id: str, status: str, resolved_by: str, ip_address: str) -> dict | None:
         moderation = await self.content_repo.update_status(content_id, status, resolved_by)
         if moderation:
             await self.audit_repo.create(resolved_by, f"content_resolved_{status}", "content", content_id, None, ip_address)
@@ -83,7 +83,7 @@ class AdminService:
             "resolved_at": moderation.resolved_at
         } if moderation else None
 
-    async def list_flagged_content(self, limit: int = 50, offset: int = 0) -> List[dict]:
+    async def list_flagged_content(self, limit: int = 50, offset: int = 0) -> list[dict]:
         content = await self.content_repo.list_by_status("flagged", limit, offset)
         return [
             {
@@ -108,7 +108,7 @@ class AdminService:
             "created_at": alert.created_at
         }
 
-    async def get_system_alerts(self, limit: int = 50) -> List[dict]:
+    async def get_system_alerts(self, limit: int = 50) -> list[dict]:
         alerts = await self.alert_repo.list_unacknowledged(limit)
         return [
             {
@@ -123,7 +123,7 @@ class AdminService:
             for a in alerts
         ]
 
-    async def acknowledge_alert(self, alert_id: int, admin_id: str) -> Optional[dict]:
+    async def acknowledge_alert(self, alert_id: int, admin_id: str) -> dict | None:
         alert = await self.alert_repo.acknowledge(alert_id, admin_id)
         if alert:
             return {
@@ -135,7 +135,7 @@ class AdminService:
             }
         return None
 
-    async def get_critical_alerts(self) -> List[dict]:
+    async def get_critical_alerts(self) -> list[dict]:
         alerts = await self.alert_repo.list_by_severity("critical", 50)
         return [
             {
@@ -150,7 +150,7 @@ class AdminService:
         ]
 
     # System Configuration
-    async def set_config(self, key: str, value: str, config_type: str, description: Optional[str], admin_id: str, ip_address: str) -> dict:
+    async def set_config(self, key: str, value: str, config_type: str, description: str | None, admin_id: str, ip_address: str) -> dict:
         config = await self.config_repo.get_by_key(key)
         if config:
             config = await self.config_repo.update(key, value, admin_id)
@@ -166,7 +166,7 @@ class AdminService:
             "updated_at": config.updated_at
         }
 
-    async def get_config(self, key: str) -> Optional[dict]:
+    async def get_config(self, key: str) -> dict | None:
         config = await self.config_repo.get_by_key(key)
         if not config:
             return None
@@ -178,7 +178,7 @@ class AdminService:
             "description": config.description
         }
 
-    async def list_configs(self, limit: int = 100) -> List[dict]:
+    async def list_configs(self, limit: int = 100) -> list[dict]:
         configs = await self.config_repo.list_all(limit)
         return [
             {
@@ -192,7 +192,7 @@ class AdminService:
         ]
 
     # Audit Logs
-    async def get_audit_logs_by_admin(self, admin_id: str, limit: int = 50) -> List[dict]:
+    async def get_audit_logs_by_admin(self, admin_id: str, limit: int = 50) -> list[dict]:
         logs = await self.audit_repo.list_by_admin(admin_id, limit)
         return [
             {
@@ -207,7 +207,7 @@ class AdminService:
             for l in logs
         ]
 
-    async def get_audit_logs_by_resource(self, resource_type: str, resource_id: str, limit: int = 50) -> List[dict]:
+    async def get_audit_logs_by_resource(self, resource_type: str, resource_id: str, limit: int = 50) -> list[dict]:
         logs = await self.audit_repo.list_by_resource(resource_type, resource_id, limit)
         return [
             {

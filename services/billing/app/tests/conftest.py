@@ -1,7 +1,8 @@
 """Pytest configuration and fixtures."""
-import pytest
 import asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 DATABASE_URL = "postgresql+asyncpg://postgres:password@db:5432/billing_db"

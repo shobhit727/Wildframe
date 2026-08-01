@@ -1,16 +1,17 @@
 """Logging configuration for User Service."""
 import logging
 import logging.config
-from pythonjsonlogger import jsonlogger
 from contextvars import ContextVar
 from uuid import uuid4
+
+from pythonjsonlogger import jsonlogger
 
 # Context variables for correlation IDs
 correlation_id: ContextVar[str] = ContextVar("correlation_id", default=str(uuid4()))
 request_id: ContextVar[str] = ContextVar("request_id", default=str(uuid4()))
 
 
-def set_correlation_id(cid: str = None) -> str:
+def set_correlation_id(cid: str | None = None) -> str:
     """Set or generate correlation ID."""
     if cid is None:
         cid = str(uuid4())
@@ -18,7 +19,7 @@ def set_correlation_id(cid: str = None) -> str:
     return cid
 
 
-def set_request_id(rid: str = None) -> str:
+def set_request_id(rid: str | None = None) -> str:
     """Set or generate request ID."""
     if rid is None:
         rid = str(uuid4())

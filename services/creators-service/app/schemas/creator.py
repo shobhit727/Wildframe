@@ -1,10 +1,10 @@
 """Pydantic v2 schemas for the Creators service."""
-from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
-from app.models import KYCStatus, MilestoneStatus, TrancheStatus, PayoutStatus
+from pydantic import BaseModel, Field
+
+from app.models import KYCStatus, MilestoneStatus, PayoutStatus, TrancheStatus
 
 
 # ---------------------------------------------------------------- CreatorAccount
@@ -16,11 +16,11 @@ class CreatorAccountCreate(BaseModel):
 
 
 class CreatorAccountUpdate(BaseModel):
-    display_name: Optional[str] = Field(None, max_length=255)
-    bio: Optional[str] = Field(None, max_length=2000)
-    region_code: Optional[str] = Field(None, max_length=8)
-    currency: Optional[str] = Field(None, max_length=8)
-    stripe_connect_account_id: Optional[str] = Field(None, max_length=255)
+    display_name: str | None = Field(None, max_length=255)
+    bio: str | None = Field(None, max_length=2000)
+    region_code: str | None = Field(None, max_length=8)
+    currency: str | None = Field(None, max_length=8)
+    stripe_connect_account_id: str | None = Field(None, max_length=255)
 
 
 class CreatorAccountResponse(BaseModel):
@@ -30,9 +30,9 @@ class CreatorAccountResponse(BaseModel):
     bio: str
     region_code: str
     currency: str
-    stripe_connect_account_id: Optional[str]
+    stripe_connect_account_id: str | None
     kyc_status: KYCStatus
-    kyc_verified_at: Optional[datetime]
+    kyc_verified_at: datetime | None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -42,7 +42,7 @@ class CreatorAccountResponse(BaseModel):
 class EffectiveFloorCreate(BaseModel):
     per_minute_amount: float = Field(..., ge=0)
     currency: str = Field("USD", max_length=8)
-    reason: Optional[str] = Field(None, max_length=500)
+    reason: str | None = Field(None, max_length=500)
 
 
 class EffectiveFloorResponse(BaseModel):
@@ -51,8 +51,8 @@ class EffectiveFloorResponse(BaseModel):
     per_minute_amount: float
     currency: str
     effective_from: datetime
-    last_adjusted_at: Optional[datetime]
-    reason: Optional[str]
+    last_adjusted_at: datetime | None
+    reason: str | None
 
 
 # ----------------------------------------------------------- CreatorPoolBalance
@@ -65,7 +65,7 @@ class CreatorPoolBalanceResponse(BaseModel):
     creator_id: UUID
     accrued_cents: int
     contributed_cents: int
-    last_payout_at: Optional[datetime]
+    last_payout_at: datetime | None
 
 
 # -------------------------------------------------------------------- Milestone
@@ -73,7 +73,7 @@ class MilestoneCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     total_cents: int = Field(0, ge=0)
     currency: str = Field("USD", max_length=8)
-    goal: Optional[str] = Field(None, max_length=1000)
+    goal: str | None = Field(None, max_length=1000)
 
 
 class MilestoneResponse(BaseModel):
@@ -83,8 +83,8 @@ class MilestoneResponse(BaseModel):
     status: MilestoneStatus
     total_cents: int
     currency: str
-    goal: Optional[str]
-    kill_reason: Optional[str]
+    goal: str | None
+    kill_reason: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -93,7 +93,7 @@ class MilestoneResponse(BaseModel):
 class TrancheCreate(BaseModel):
     threshold: int = Field(..., ge=0, le=100)
     amount_cents: int = Field(0, ge=0)
-    release_condition: Optional[str] = Field(None, max_length=1000)
+    release_condition: str | None = Field(None, max_length=1000)
 
 
 class MilestoneTrancheResponse(BaseModel):
@@ -102,8 +102,8 @@ class MilestoneTrancheResponse(BaseModel):
     threshold: int
     amount_cents: int
     status: TrancheStatus
-    release_condition: Optional[str]
-    released_at: Optional[datetime]
+    release_condition: str | None
+    released_at: datetime | None
 
 
 # ----------------------------------------------------------------- PayoutLedger
@@ -127,6 +127,6 @@ class PayoutLedgerResponse(BaseModel):
     share_cents: int
     stripe_fee_cents: int
     net_cents: int
-    stripe_transfer_id: Optional[str]
+    stripe_transfer_id: str | None
     status: PayoutStatus
     created_at: datetime

@@ -1,10 +1,8 @@
-"""Unit tests for repository layer."""
-import pytest
-from uuid import uuid4
-from datetime import datetime, timedelta
 
-from app.models import User, RefreshToken, LoginAudit
-from app.repositories import UserRepository, RefreshTokenRepository, LoginAuditRepository
+"""Unit tests for repository layer."""
+from datetime import UTC, datetime, timedelta
+
+from app.models import LoginAudit
 
 
 class TestUserRepository:
@@ -89,7 +87,7 @@ class TestRefreshTokenRepository:
     async def test_create_refresh_token(self, test_user, token_repository):
         """Test creating refresh token."""
         token_hash = "token_hash_123"
-        expires_at = datetime.utcnow() + timedelta(days=7)
+        expires_at = datetime.now(UTC) + timedelta(days=7)
 
         token = await token_repository.create(
             user_id=test_user.id,
@@ -105,7 +103,7 @@ class TestRefreshTokenRepository:
     async def test_get_refresh_token_by_hash(self, test_user, token_repository):
         """Test fetching refresh token by hash."""
         token_hash = "token_hash_123"
-        expires_at = datetime.utcnow() + timedelta(days=7)
+        expires_at = datetime.now(UTC) + timedelta(days=7)
 
         await token_repository.create(
             user_id=test_user.id,
@@ -128,7 +126,7 @@ class TestRefreshTokenRepository:
     async def test_revoke_refresh_token(self, test_user, token_repository):
         """Test revoking refresh token."""
         token_hash = "token_hash_123"
-        expires_at = datetime.utcnow() + timedelta(days=7)
+        expires_at = datetime.now(UTC) + timedelta(days=7)
 
         await token_repository.create(
             user_id=test_user.id,
@@ -149,7 +147,7 @@ class TestRefreshTokenRepository:
     async def test_delete_expired_tokens(self, test_user, token_repository):
         """Test deleting expired tokens."""
         # Create expired token
-        expired_at = datetime.utcnow() - timedelta(hours=1)
+        expired_at = datetime.now(UTC) - timedelta(hours=1)
         await token_repository.create(
             user_id=test_user.id,
             token_hash="expired_hash",
@@ -157,7 +155,7 @@ class TestRefreshTokenRepository:
         )
 
         # Create valid token
-        valid_at = datetime.utcnow() + timedelta(days=7)
+        valid_at = datetime.now(UTC) + timedelta(days=7)
         await token_repository.create(
             user_id=test_user.id,
             token_hash="valid_hash",
@@ -220,7 +218,7 @@ class TestLoginAuditRepository:
             user_id=test_user.id,
             status="failed",
             ip_address="192.168.1.1",
-            created_at=datetime.utcnow() - timedelta(minutes=10),
+            created_at=datetime.now(UTC) - timedelta(minutes=10),
         )
         audit_repository.session.add(old_audit)
         await audit_repository.commit()

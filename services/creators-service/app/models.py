@@ -1,11 +1,20 @@
 """Creators service models."""
-from datetime import datetime, timezone
-from uuid import uuid4
+from datetime import UTC, datetime
 from enum import Enum
+from uuid import uuid4
+
 from sqlalchemy import (
-    Column, String, Integer, Float, Boolean, DateTime, Enum as SQLEnum,
-    ForeignKey, Index, UniqueConstraint, CheckConstraint
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
 )
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 
@@ -59,9 +68,9 @@ class CreatorAccount(Base):
     kyc_status = Column(SQLEnum(KYCStatus), default=KYCStatus.PENDING, nullable=False)
     kyc_verified_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True, index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
+                        onupdate=lambda: datetime.now(UTC))
 
 
 class EffectiveFloor(Base):
@@ -78,8 +87,8 @@ class EffectiveFloor(Base):
     per_minute_amount = Column(Float, nullable=False)
     currency = Column(String(8), nullable=False, default="USD")
     effective_from = Column(DateTime, nullable=False,
-                            default=lambda: datetime.now(timezone.utc))
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+                            default=lambda: datetime.now(UTC))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     last_adjusted_at = Column(DateTime, nullable=True)
     reason = Column(String(500), nullable=True)
 
@@ -125,9 +134,9 @@ class Milestone(Base):
     currency = Column(String(8), nullable=False, default="USD")
     goal = Column(String(1000), nullable=True)
     kill_reason = Column(String(1000), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
+                        onupdate=lambda: datetime.now(UTC))
 
 
 class MilestoneTranche(Base):
@@ -173,7 +182,7 @@ class PayoutLedger(Base):
     net_cents = Column(Integer, nullable=False, default=0)
     stripe_transfer_id = Column(String(255), nullable=True)
     status = Column(SQLEnum(PayoutStatus), default=PayoutStatus.ACCRUED, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
         CheckConstraint("floor_cents >= 0", name="ck_ledger_floor_non_negative"),

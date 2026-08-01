@@ -1,7 +1,8 @@
 """Notification service models."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Index
+
+from sqlalchemy import Boolean, Column, DateTime, Index, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 
@@ -16,6 +17,6 @@ class Notification(Base):
     message = Column(String(1000), nullable=False)
     channel = Column(String(50))
     is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     read_at = Column(DateTime, nullable=True)
     __table_args__ = (Index("idx_notifications_user_read", "user_id", "is_read"),)

@@ -1,8 +1,9 @@
 """Pytest configuration and fixtures with testcontainers for integration tests."""
+import asyncio
+
 import pytest
 import pytest_asyncio
-import asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from testcontainers.postgres import PostgresContainer
 

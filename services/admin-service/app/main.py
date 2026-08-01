@@ -1,13 +1,12 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from wildframe_observability.wire import wire_observability
 
 from app.api.routes.admin import router as admin_router
 from app.core.database import DatabaseManager
 from app.core.settings import settings
-from wildframe_observability.wire import wire_observability
-
-import logging
 
 logger = logging.getLogger(__name__)
 

@@ -1,10 +1,11 @@
 """Uploads service repositories."""
+from datetime import UTC, datetime
 from uuid import UUID
-from typing import Optional, List
-from datetime import datetime, timezone
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import select
-from app.models import UploadSession, UploadChunk
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import UploadChunk, UploadSession
 
 
 class UploadChunkRepository:
@@ -25,7 +26,7 @@ class UploadChunkRepository:
         await self.session.flush()
         return session
 
-    async def get(self, session_id: UUID) -> Optional[UploadSession]:
+    async def get(self, session_id: UUID) -> UploadSession | None:
         result = await self.session.execute(
             select(UploadSession).where(UploadSession.id == session_id)
         )
@@ -33,7 +34,7 @@ class UploadChunkRepository:
 
     async def list_by_creator(
         self, creator_id: UUID, limit: int = 50
-    ) -> List[UploadSession]:
+    ) -> list[UploadSession]:
         result = await self.session.execute(
             select(UploadSession)
             .where(UploadSession.creator_id == creator_id)
@@ -43,7 +44,7 @@ class UploadChunkRepository:
         return list(result.scalars().all())
 
     async def save(self, session: UploadSession) -> UploadSession:
-        session.updated_at = datetime.now(timezone.utc)
+        session.updated_at = datetime.now(UTC)
         await self.session.flush()
         return session
 
@@ -60,7 +61,7 @@ class UploadChunkRepository:
         )
         return len(result.scalars().all())
 
-    async def received_indices(self, session_id: UUID) -> List[int]:
+    async def received_indices(self, session_id: UUID) -> list[int]:
         result = await self.session.execute(
             select(UploadChunk.index)
             .where(UploadChunk.session_id == session_id)

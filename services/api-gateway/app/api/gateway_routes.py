@@ -1,8 +1,9 @@
 """API Gateway routes - proxy requests to backend services."""
 import logging
+
 import httpx
-from fastapi import APIRouter, Request, HTTPException, status, Depends
-from app.middleware import ServiceRegistry, AuthenticationMiddleware, RateLimiter, get_current_user
+from app.middleware import ServiceRegistry, get_current_user
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
