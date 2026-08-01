@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for Media Pipeline
 
 # Stage 1: Builder
-FROM python:3.14-slim as builder
+FROM python:3.11-slim as builder
 
 WORKDIR /build
 
@@ -14,14 +14,14 @@ RUN pip install --user --no-cache-dir poetry && \
     poetry install --no-dev --no-interaction --no-ansi
 
 # Stage 2: Development
-FROM python:3.14-slim as development
+FROM python:3.11-slim as development
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client curl && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 COPY services/media-pipeline /app
@@ -33,14 +33,14 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # Stage 3: Production
-FROM python:3.14-slim as production
+FROM python:3.11-slim as production
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client curl && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 COPY services/media-pipeline /app
