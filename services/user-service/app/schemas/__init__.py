@@ -61,7 +61,7 @@ class UserDeviceRegisterRequest(BaseModel):
 
     device_id: str = Field(..., max_length=255)
     device_name: str = Field(..., max_length=255)
-    device_type: str = Field(..., regex="^(web|ios|android|smart_tv)$")
+    device_type: str = Field(..., pattern="^(web|ios|android|smart_tv)$")
     os_name: Optional[str] = Field(None, max_length=50)
     os_version: Optional[str] = Field(None, max_length=50)
     browser_name: Optional[str] = Field(None, max_length=50)
@@ -125,16 +125,16 @@ class UserDeviceResponse(BaseModel):
 class UserPreferenceUpdateRequest(BaseModel):
     """Update user preferences request."""
 
-    theme: Optional[str] = Field(None, regex="^(dark|light|auto)$")
+    theme: Optional[str] = Field(None, pattern="^(dark|light|auto)$")
     language: Optional[str] = Field(None, max_length=5)
     subtitle_language: Optional[str] = Field(None, max_length=5)
-    subtitle_size: Optional[str] = Field(None, regex="^(small|medium|large)$")
+    subtitle_size: Optional[str] = Field(None, pattern="^(small|medium|large)$")
     closed_captions: Optional[bool] = None
     autoplay: Optional[bool] = None
     autoplay_next_episode: Optional[bool] = None
-    default_video_quality: Optional[str] = Field(None, regex="^(adaptive|720p|1080p|4k)$")
+    default_video_quality: Optional[str] = Field(None, pattern="^(adaptive|720p|1080p|4k)$")
     default_audio_language: Optional[str] = Field(None, max_length=5)
-    content_rating: Optional[str] = Field(None, regex="^(G|PG|PG-13|R|NC-17)$")
+    content_rating: Optional[str] = Field(None, pattern="^(G|PG|PG-13|R|NC-17)$")
     allow_explicit_content: Optional[bool] = None
     share_viewing_activity: Optional[bool] = None
     allow_recommendations: Optional[bool] = None
