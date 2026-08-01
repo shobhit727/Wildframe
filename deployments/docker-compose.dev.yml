@@ -1,5 +1,4 @@
 services:
-  # PostgreSQL - Main Database
   postgres:
     image: postgres:15-alpine
     environment:
@@ -7,35 +6,36 @@ services:
       POSTGRES_USER: wildframe
       POSTGRES_PASSWORD: wildframe_dev_password
     ports:
-      - "5432:5432"
+    - 5432:5432
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./infrastructure/database/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql
+    - postgres_data:/var/lib/postgresql/data
+    - ./infrastructure/database/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U wildframe"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U wildframe
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - wildframe-network
-
-  # Redis - Caching & Sessions
+    - wildframe-network
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+    - 6379:6379
     command: redis-server --appendonly yes
     volumes:
-      - redis_data:/data
+    - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+      - CMD
+      - redis-cli
+      - ping
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - wildframe-network
-
-  # Kafka - Event Streaming
+    - wildframe-network
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     depends_on:
@@ -50,122 +50,121 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
     ports:
-      - "9092:9092"
-      - "29092:29092"
+    - 9092:9092
+    - 29092:29092
     volumes:
-      - kafka_data:/var/lib/kafka/data
+    - kafka_data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD", "kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:29092"]
+      test:
+      - CMD
+      - kafka-broker-api-versions.sh
+      - --bootstrap-server
+      - localhost:29092
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - wildframe-network
-
-  # Zookeeper - Kafka Coordination
+    - wildframe-network
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports:
-      - "2181:2181"
+    - 2181:2181
     volumes:
-      - zookeeper_data:/var/lib/zookeeper/data
+    - zookeeper_data:/var/lib/zookeeper/data
     healthcheck:
-      test: ["CMD", "echo", "ruok", "|", "nc", "localhost", "2181"]
+      test:
+      - CMD
+      - echo
+      - ruok
+      - '|'
+      - nc
+      - localhost
+      - '2181'
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - wildframe-network
-
-  # Elasticsearch - Search Engine
+    - wildframe-network
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
     environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    - discovery.type=single-node
+    - xpack.security.enabled=false
+    - ES_JAVA_OPTS=-Xms512m -Xmx512m
     ports:
-      - "9200:9200"
-      - "9300:9300"
+    - 9200:9200
+    - 9300:9300
     volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data
+    - elasticsearch_data:/usr/share/elasticsearch/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:9200 | grep -q cluster_name"]
+      test:
+      - CMD-SHELL
+      - curl -s http://localhost:9200 | grep -q cluster_name
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - wildframe-network
-
-  # Prometheus - Metrics Collection
+    - wildframe-network
   prometheus:
     image: prom/prometheus:latest
     ports:
-      - "9090:9090"
+    - 9090:9090
     volumes:
-      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
+    - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    - prometheus_data:/prometheus
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=15d'
+    - --config.file=/etc/prometheus/prometheus.yml
+    - --storage.tsdb.path=/prometheus
+    - --storage.tsdb.retention.time=15d
     networks:
-      - wildframe-network
-
-  # Grafana - Dashboards
+    - wildframe-network
   grafana:
     image: grafana/grafana:latest
     ports:
-      - "3001:3000"
+    - 3001:3000
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_SECURITY_ADMIN_USER: admin
-      GF_INSTALL_PLUGINS: "grafana-piechart-panel"
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
     volumes:
-      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
-      - grafana_data:/var/lib/grafana
+    - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+    - grafana_data:/var/lib/grafana
     depends_on:
-      - prometheus
+    - prometheus
     networks:
-      - wildframe-network
-
-  # Loki - Log Aggregation
+    - wildframe-network
   loki:
     image: grafana/loki:latest
     ports:
-      - "3100:3100"
+    - 3100:3100
     volumes:
-      - ./infrastructure/loki/loki-config.yml:/etc/loki/local-config.yaml
-      - loki_data:/loki
+    - ./infrastructure/loki/loki-config.yml:/etc/loki/local-config.yaml
+    - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
     networks:
-      - wildframe-network
-
-  # Jaeger - Distributed Tracing
+    - wildframe-network
   jaeger:
     image: jaegertracing/all-in-one:latest
     ports:
-      - "16686:16686"  # UI
-      - "14268:14268"  # Collector HTTP
-      - "14250:14250"  # Collector gRPC
+    - 16686:16686
+    - 14268:14268
+    - 14250:14250
     environment:
       COLLECTOR_OTLP_ENABLED: 'true'
     volumes:
-      - jaeger_data:/badger/data
+    - jaeger_data:/badger/data
     networks:
-      - wildframe-network
-
-  # Auth Service
+    - wildframe-network
   auth-service:
     build:
       context: .
       dockerfile: services/auth-service/Dockerfile
       target: development
     ports:
-      - "8001:8000"
+    - 8001:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/auth_db
       REDIS_URL: redis://redis:6379/0
@@ -187,20 +186,19 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-      - ./services/auth-service:/app
-      - ./packages/sdk:/app/packages/sdk
-    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --reload"
+    - ./services/auth-service:/app
+    - ./packages/sdk:/app/packages/sdk
+    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0
+      --reload"
     networks:
-      - wildframe-network
-
-  # User Service
+    - wildframe-network
   user-service:
     build:
       context: .
       dockerfile: services/user-service/Dockerfile
       target: development
     ports:
-      - "8002:8000"
+    - 8002:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/users_db
       REDIS_URL: redis://redis:6379/1
@@ -218,20 +216,19 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-      - ./services/user-service:/app
-      - ./packages/sdk:/app/packages/sdk
-    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --reload"
+    - ./services/user-service:/app
+    - ./packages/sdk:/app/packages/sdk
+    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0
+      --reload"
     networks:
-      - wildframe-network
-
-  # Admin Service
+    - wildframe-network
   admin-service:
     build:
       context: .
       dockerfile: services/admin-service/Dockerfile
       target: development
     ports:
-      - "8006:8000"
+    - 8006:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/admin_db
       REDIS_URL: redis://redis:6379/3
@@ -249,20 +246,19 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-      - ./services/admin-service:/app
-      - ./packages/sdk:/app/packages/sdk
-    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --reload"
+    - ./services/admin-service:/app
+    - ./packages/sdk:/app/packages/sdk
+    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0
+      --reload"
     networks:
-      - wildframe-network
-
-  # Content Service
+    - wildframe-network
   content-service:
     build:
       context: .
       dockerfile: services/content-service/Dockerfile
       target: development
     ports:
-      - "8003:8000"
+    - 8003:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/content_db
       REDIS_URL: redis://redis:6379/2
@@ -280,20 +276,19 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-      - ./services/content-service:/app
-      - ./packages/sdk:/app/packages/sdk
-    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --reload"
+    - ./services/content-service:/app
+    - ./packages/sdk:/app/packages/sdk
+    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0
+      --reload"
     networks:
-      - wildframe-network
-
-  # API Gateway
+    - wildframe-network
   api-gateway:
     build:
       context: .
       dockerfile: services/api-gateway/Dockerfile
       target: development
     ports:
-      - "8000:8000"
+    - 8000:8000
     environment:
       AUTH_SERVICE_URL: http://auth-service:8000
       USER_SERVICE_URL: http://user-service:8000
@@ -305,25 +300,23 @@ services:
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
     depends_on:
-      - auth-service
-      - user-service
-      - content-service
-      - redis
+    - auth-service
+    - user-service
+    - content-service
+    - redis
     volumes:
-      - ./services/api-gateway:/app
-      - ./packages/sdk:/app/packages/sdk
+    - ./services/api-gateway:/app
+    - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
-      - wildframe-network
-
-  # Streaming Service
+    - wildframe-network
   streaming-service:
     build:
       context: .
       dockerfile: services/streaming-service/Dockerfile
       target: development
     ports:
-      - "8004:8000"
+    - 8004:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/streaming_db
       REDIS_URL: redis://redis:6379/4
@@ -336,20 +329,18 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./services/streaming-service:/app
-      - ./packages/sdk:/app/packages/sdk
+    - ./services/streaming-service:/app
+    - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
-      - wildframe-network
-
-  # Search Service
+    - wildframe-network
   search-service:
     build:
       context: .
       dockerfile: services/search/Dockerfile
       target: development
     ports:
-      - "8005:8000"
+    - 8005:8000
     environment:
       ELASTICSEARCH_URL: http://elasticsearch:9200
       REDIS_URL: redis://redis:6379/5
@@ -361,20 +352,18 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./services/search:/app
-      - ./packages/sdk:/app/packages/sdk
+    - ./services/search:/app
+    - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
-      - wildframe-network
-
-  # Recommendation Service
+    - wildframe-network
   recommendation-service:
     build:
       context: .
       dockerfile: services/recommendation/Dockerfile
       target: development
     ports:
-      - "8007:8000"
+    - 8007:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/recommendation_db
       REDIS_URL: redis://redis:6379/6
@@ -387,20 +376,18 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./services/recommendation:/app
-      - ./packages/sdk:/app/packages/sdk
+    - ./services/recommendation:/app
+    - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
-      - wildframe-network
-
-  # Billing Service
+    - wildframe-network
   billing-service:
     build:
       context: .
       dockerfile: services/billing/Dockerfile
       target: development
     ports:
-      - "8008:8000"
+    - 8008:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/billing_db
       REDIS_URL: redis://redis:6379/7
@@ -413,20 +400,18 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./services/billing:/app
-      - ./packages/sdk:/app/packages/sdk
+    - ./services/billing:/app
+    - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
-      - wildframe-network
-
-  # Analytics Service
+    - wildframe-network
   analytics-service:
     build:
       context: .
       dockerfile: services/analytics/Dockerfile
       target: development
     ports:
-      - "8009:8000"
+    - 8009:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/analytics_db
       REDIS_URL: redis://redis:6379/8
@@ -439,20 +424,18 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./services/analytics:/app
-      - ./packages/sdk:/app/packages/sdk
+    - ./services/analytics:/app
+    - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
-      - wildframe-network
-
-  # Notification Service
+    - wildframe-network
   notification-service:
     build:
       context: .
       dockerfile: services/notification/Dockerfile
       target: development
     ports:
-      - "8010:8000"
+    - 8010:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/notification_db
       REDIS_URL: redis://redis:6379/9
@@ -465,23 +448,18 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./services/notification:/app
-      - ./packages/sdk:/app/packages/sdk
+    - ./services/notification:/app
+    - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
-      - wildframe-network
-
-  networks:
-      - wildframe-network
-
-  # Creators Service
+    - wildframe-network
   creators-service:
     build:
       context: .
       dockerfile: services/creators-service/Dockerfile
       target: development
     ports:
-      - "8012:8000"
+    - 8012:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/creators_db
       REDIS_URL: redis://redis:6379/11
@@ -496,20 +474,18 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-      - ./services/creators-service:/app
-      - ./packages/sdk:/app/packages/sdk
+    - ./services/creators-service:/app
+    - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
-      - wildframe-network
-
-  # Moderation Service
+    - wildframe-network
   moderation-service:
     build:
       context: .
       dockerfile: services/moderation-service/Dockerfile
       target: development
     ports:
-      - "8013:8000"
+    - 8013:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/moderation_db
       REDIS_URL: redis://redis:6379/12
@@ -524,20 +500,18 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-      - ./services/moderation-service:/app
-      - ./packages/sdk:/app/packages/sdk
+    - ./services/moderation-service:/app
+    - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
-      - wildframe-network
-
-  # Uploads Service
+    - wildframe-network
   uploads-service:
     build:
       context: .
       dockerfile: services/uploads-service/Dockerfile
       target: development
     ports:
-      - "8014:8000"
+    - 8014:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/uploads_db
       REDIS_URL: redis://redis:6379/13
@@ -552,20 +526,18 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-      - ./services/uploads-service:/app
-      - ./packages/sdk:/app/packages/sdk
+    - ./services/uploads-service:/app
+    - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
-      - wildframe-network
-
-  # Media Pipeline Service
+    - wildframe-network
   media-pipeline:
     build:
       context: .
       dockerfile: services/media-pipeline/Dockerfile
       target: development
     ports:
-      - "8011:8000"
+    - 8011:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/media_db
       REDIS_URL: redis://redis:6379/10
@@ -578,47 +550,41 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./services/media-pipeline:/app
-      - ./packages/sdk:/app/packages/sdk
+    - ./services/media-pipeline:/app
+    - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
-      - wildframe-network
-
-  # Postgres Exporter for Prometheus
+    - wildframe-network
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:latest
     environment:
       DATA_SOURCE_NAME: postgresql://wildframe:wildframe_dev_password@postgres:5432/wildframe_db?sslmode=disable
     ports:
-      - "9187:9187"
+    - 9187:9187
     depends_on:
-      - postgres
+    - postgres
     networks:
-      - wildframe-network
-
-  # Redis Exporter for Prometheus
+    - wildframe-network
   redis-exporter:
     image: oliver006/redis_exporter:latest
     environment:
       REDIS_ADDR: redis:6379
     ports:
-      - "9121:9121"
+    - 9121:9121
     depends_on:
-      - redis
+    - redis
     networks:
-      - wildframe-network
-
+    - wildframe-network
 volumes:
-  postgres_data:
-  redis_data:
-  kafka_data:
-  zookeeper_data:
-  elasticsearch_data:
-  prometheus_data:
-  grafana_data:
-  loki_data:
-  jaeger_data:
-
+  postgres_data: null
+  redis_data: null
+  kafka_data: null
+  zookeeper_data: null
+  elasticsearch_data: null
+  prometheus_data: null
+  grafana_data: null
+  loki_data: null
+  jaeger_data: null
 networks:
   wildframe-network:
     driver: bridge
