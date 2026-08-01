@@ -1,87 +1,86 @@
 # Wildframe OTT Streaming Platform
 
-[![CI](https://github.com/shobhit727/Wildframe/actions/workflows/ci.yml/badge.svg)](https://github.com/shobhit727/Wildframe/actions/workflows/ci.yml)
+A FastAPI microservices-based OTT streaming platform. **Not yet production-ready** — core services start and CRUD works; email/MFA stubbed; no integration tests; observability stubbed.
 
-A production-grade, enterprise-level Over-The-Top (OTT) streaming platform engineered for scale, reliability, and developer experience.
+## 🎯 Current State (August 2026)
 
-## 🎯 Vision
+| Service | Status |
+|---------|--------|
+| auth-service | ✅ Starts; JWT auth works; **email/MFA stubbed (501)** |
+| user-service | ✅ Starts; CRUD works |
+| content-service | ✅ Starts; CRUD works |
+| streaming-service | ✅ Starts; CRUD works |
+| admin-service | ✅ Starts; CRUD works |
+| media-pipeline | ✅ Starts; orchestrator works |
+| api-gateway | 🟡 Exists; unverified |
+| creators-service | 🟡 Exists; unverified |
+| moderation-service | 🟡 Exists; unverified |
+| uploads-service | 🟡 Exists; unverified |
+| analytics | 🟡 Exists; unverified |
+| billing | 🟡 Exists; unverified |
+| notification | 🟡 Exists; unverified |
+| recommendation | 🟡 Exists; unverified |
+| search | 🟡 Exists; unverified |
 
-Wildframe is **not a toy project**. This is an authentic, production-ready codebase demonstrating real engineering decisions that experienced architects and engineers would make when building a global streaming platform from scratch. Every component is designed with scalability, maintainability, observability, and operational excellence in mind.
+**What works**: All 6 core services import cleanly and expose CRUD APIs. Dockerfiles, k8s, Terraform exist.
 
-## 🎬 Features
-
-✅ **Microservices Architecture** - 13 independent, horizontally scalable services with database-per-service  
-✅ **Adaptive Bitrate Streaming** - HLS/DASH with 240p-4K support, 15+ concurrent streams, sub-2s startup  
-✅ **Enterprise Authentication** - JWT with 15-min access + 7-day refresh, MFA-ready, OAuth2-compatible  
-✅ **AI Recommendations** - Collaborative filtering, content-based, A/B testing framework  
-✅ **Full-Text Search** - Elasticsearch with advanced filtering, typo tolerance, faceted search  
-✅ **Enterprise Billing** - Subscription management, Stripe/payment integration, usage-based pricing  
-✅ **Event-Driven Architecture** - Kafka-based inter-service communication, audit trails, event sourcing  
-✅ **Production Observability** - OpenTelemetry tracing, Prometheus metrics, Grafana dashboards, Loki logs  
-✅ **Enterprise Security** - RBAC, encryption at rest/transit, PII masking, compliance-ready (GDPR/CCPA)  
-✅ **Production Deployment** - Kubernetes with auto-scaling, blue-green/canary deployments, zero-downtime updates  
-✅ **Developer Experience** - Local dev with Docker Compose, hot reload, comprehensive documentation, standardized patterns
+**What's missing**: Email verification, MFA, integration tests, real observability SDK, secrets management, load testing, security audit.
 
 ## Technology Stack
 
 ### Backend
 - **FastAPI** 0.100+: Async Python web framework
 - **SQLAlchemy 2.0**: Async ORM
-- **PostgreSQL 14+**: Primary database
+- **PostgreSQL 14+**: Primary database (per-service)
 - **Redis 7.0+**: Caching and sessions
-- **Kafka 3.0+**: Event streaming
-- **Elasticsearch 8.0+**: Search engine
-- **FFmpeg**: Video transcoding
+- **Kafka 3.0+**: Event streaming (configured, not verified)
+- **Elasticsearch 8.0+**: Search (configured, not verified)
+- **FFmpeg**: Video transcoding (configured, not verified)
 
 ### Frontend
-- **Next.js 15**: React framework with SSR
+- **Next.js 15**: React framework with SSR (scaffold only)
 - **TypeScript**: Type-safe development
 - **TailwindCSS**: Utility-first CSS
-- **Zustand**: State management
-- **React Query**: Data fetching
-- **Framer Motion**: Animations
 
 ### Infrastructure
-- **Kubernetes**: Container orchestration
-- **Docker**: Containerization
-- **Helm**: Kubernetes package manager
-- **Terraform**: Infrastructure as code
-- **GitHub Actions**: CI/CD
-- **Prometheus**: Metrics
-- **Grafana**: Dashboards
-- **Loki**: Log aggregation
+- **Kubernetes**: Container orchestration (manifests exist)
+- **Docker**: Containerization (Dockerfiles exist)
+- **Helm**: Kubernetes package manager (chart template exists)
+- **Terraform**: Infrastructure as code (modules exist)
+- **GitHub Actions**: CI/CD (consolidated workflow)
+- **Prometheus**: Metrics (exposed, not verified)
+- **Grafana**: Dashboards (not configured)
+- **Loki**: Log aggregation (not configured)
 
 ## Project Structure
 
 ```
 wildframe/
-├── apps/                           # Frontend applications
-│   └── web/                        # Next.js web application
+├── apps/
+│   └── web/                        # Next.js web application (scaffold)
 ├── services/                       # Backend microservices
-│   ├── api-gateway/               # Request routing and auth
-│   ├── auth-service/              # Authentication and JWT
-│   ├── user-service/              # User profiles and devices
-│   ├── content-service/           # Content metadata
-│   ├── streaming-service/         # Video streaming manifests
-│   ├── search-service/            # Content search
-│   ├── recommendation-service/    # ML-based recommendations
-│   ├── billing-service/           # Subscriptions and payments
-│   ├── analytics-service/         # Event analytics
-│   ├── notification-service/      # Multi-channel notifications
-│   ├── admin-service/             # Administration
-│   └── media-pipeline/            # Video transcoding
-├── packages/                       # Shared libraries
-│   ├── sdk/                       # Python SDK for internal services
-│   └── shared-types/              # Shared TypeScript types
-├── infrastructure/                # Infrastructure as code
-│   ├── kubernetes/                # K8s manifests and Helm
-│   ├── terraform/                 # Terraform modules
-│   └── docker/                    # Docker configurations
-├── deployments/                   # Deployment scripts
-├── scripts/                       # Utility scripts
-├── docs/                          # Documentation
-└── tools/                         # Development tools
-
+│   ├── api-gateway/                # Request routing and auth
+│   ├── auth-service/               # Authentication and JWT
+│   ├── user-service/               # User profiles and devices
+│   ├── content-service/            # Content metadata
+│   ├── streaming-service/          # Video streaming manifests
+│   ├── search-service/             # Content search
+│   ├── recommendation-service/     # ML-based recommendations
+│   ├── billing-service/            # Subscriptions and payments
+│   ├── analytics-service/          # Event analytics
+│   ├── notification-service/       # Multi-channel notifications
+│   ├── admin-service/              # Administration
+│   └── media-pipeline/             # Video transcoding
+├── packages/
+│   ├── sdk/                        # wildframe-observability stub
+│   └── shared-types/               # Shared TypeScript types
+├── infrastructure/                 # Infrastructure as code
+│   ├── kubernetes/                 # K8s manifests and Helm
+│   ├── terraform/                  # Terraform modules
+│   └── docker/                     # Docker configurations
+├── deployments/                    # Docker Compose
+├── docs/                           # Documentation
+└── .github/workflows/              # CI/CD
 ```
 
 ## Quick Start
@@ -90,247 +89,146 @@ wildframe/
 - Docker & Docker Compose
 - Python 3.11+
 - Node.js 18+
-- PostgreSQL 14+ (or use provided Docker container)
-- Redis 7.0+ (or use provided Docker container)
 
 ### Local Development with Docker Compose
 
 ```bash
-# Clone the repository
-git clone https://github.com/wildframe/platform.git
-cd wildframe
-
-# Start all services
+# Start all services (infrastructure + 6 core services)
 docker-compose -f deployments/docker-compose.dev.yml up -d
 
-# Run migrations
-docker-compose exec auth-service alembic upgrade head
-docker-compose exec user-service alembic upgrade head
-docker-compose exec content-service alembic upgrade head
+# Wait for services to be ready
+sleep 30
 
-# Access services
-# API Gateway: http://localhost:8000
-# Web UI: http://localhost:3000
-# Admin Dashboard: http://localhost:3001
+# Verify services
+curl http://localhost:8000/health   # API Gateway (if running)
+curl http://localhost:8001/health   # Auth Service
+curl http://localhost:8002/health   # User Service
+curl http://localhost:8003/health   # Content Service
+curl http://localhost:8004/health   # Streaming Service
+curl http://localhost:8006/health   # Admin Service
+curl http://localhost:8011/health   # Media Pipeline
 ```
 
-### Service Setup (Individual)
+### Run Services Individually (Dev)
 
-#### Auth Service
 ```bash
+# Auth Service
 cd services/auth-service
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload --port 8001
-```
+poetry install
+poetry run uvicorn app.main:app --reload --port 8001
 
-#### User Service
-```bash
+# User Service
 cd services/user-service
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload --port 8002
+poetry install
+poetry run uvicorn app.main:app --reload --port 8002
+
+# Content Service
+cd services/content-service
+poetry install
+poetry run uvicorn app.main:app --reload --port 8003
+
+# Streaming Service
+cd services/streaming-service
+poetry install
+poetry run uvicorn app.main:app --reload --port 8004
+
+# Admin Service
+cd services/admin-service
+poetry install
+poetry run uvicorn app.main:app --reload --port 8006
+
+# Media Pipeline
+cd services/media-pipeline
+poetry install
+poetry run uvicorn app.main:app --reload --port 8011
 ```
 
-#### Web Frontend
+### Frontend
+
 ```bash
 cd apps/web
 npm install
 npm run dev
-# Access at http://localhost:3000
+# http://localhost:3000
 ```
 
 ## Architecture
 
-See [PLATFORM_ARCHITECTURE.md](PLATFORM_ARCHITECTURE.md) for:
-- System architecture overview
-- Service descriptions
-- Data architecture
-- Event-driven design
-- Streaming architecture
-- Security model
-- Observability strategy
+See `docs/ARCHITECTURE.md` for system design, service patterns, and data architecture.
 
 ## API Documentation
 
-### Base URL
-```
-Development: http://localhost:8000/api/v1
-Production: https://api.wildframe.com/api/v1
-```
+All endpoints under `/api/v1` (mounted by each service).
 
 ### Authentication
-All endpoints (except `/auth/register` and `/auth/login`) require Bearer token:
-```
-Authorization: Bearer {access_token}
-```
+- `POST /api/v1/auth/register` — Create account
+- `POST /api/v1/auth/login` — Get access + refresh tokens
+- `POST /api/v1/auth/refresh` — Refresh access token
+- `POST /api/v1/auth/logout` — Revoke tokens
+- `GET /api/v1/users/me` — Current user (requires Bearer token)
 
-### Health Check
-```
-GET /health
-GET /api/v1/health
-```
-
-### Key Endpoints
-
-#### Authentication
-- `POST /auth/register` - Create account
-- `POST /auth/login` - Get tokens
-- `POST /auth/refresh` - Refresh access token
-- `POST /auth/logout` - Revoke tokens
-
-#### Content
-- `GET /api/v1/content` - List all content
-- `GET /api/v1/content/{id}` - Get content details
-- `GET /api/v1/content/trending` - Get trending
-- `GET /api/v1/search` - Full-text search
-
-#### User
-- `GET /api/v1/users/me` - Current user
-- `GET /api/v1/users/me/watchlist` - User's watchlist
-- `GET /api/v1/users/me/history` - Watch history
-- `POST /api/v1/users/me/preferences` - Update preferences
-
-#### Streaming
-- `POST /api/v1/streaming/sessions` - Create playback session
-- `GET /api/v1/streaming/sessions/{id}/manifest` - Get HLS/DASH manifest
-- `POST /api/v1/streaming/sessions/{id}/events` - Report playback event
-
-#### Subscriptions
-- `GET /api/v1/subscriptions/plans` - List plans
-- `POST /api/v1/subscriptions` - Subscribe to plan
-- `GET /api/v1/subscriptions/me` - Current subscription
-
-## Database Schema
-
-Refer to [docs/database_schema.md](docs/database_schema.md) for:
-- Entity-relationship diagrams
-- Table definitions
-- Indexing strategy
-- Partitioning strategy
-
-## Deployment
-
-### Kubernetes
-```bash
-# Deploy to Kubernetes
-helm install wildframe ./infrastructure/helm -f values.yaml
-
-# Check status
-kubectl get pods
-kubectl logs -f pod/{pod-name}
-```
-
-### Docker
-```bash
-# Build service image
-docker build -f services/auth-service/Dockerfile -t auth-service:latest .
-
-# Push to registry
-docker tag auth-service:latest myregistry.azurecr.io/auth-service:latest
-docker push myregistry.azurecr.io/auth-service:latest
-```
-
-### Terraform
-```bash
-# Initialize Terraform
-cd infrastructure/terraform
-terraform init
-
-# Plan infrastructure
-terraform plan -out=tfplan
-
-# Apply infrastructure
-terraform apply tfplan
-```
-
-## Monitoring and Observability
-
-### Grafana Dashboards
-- http://localhost:3000 (admin/admin)
-- Dashboards: Service Health, API Performance, Business Metrics
-
-### Prometheus Metrics
-- http://localhost:9090
-- Metrics retention: 15 days
-
-### Log Aggregation (Loki)
-- Grafana Explore → Loki
-- Query language: LogQL
-
-### Distributed Tracing (Jaeger)
-- http://localhost:16686
-- Service trace visualization
+### Health Checks
+- `GET /health` — Liveness
+- `GET /ready` — Readiness (verifies DB)
 
 ## Development
 
 ### Code Quality
 ```bash
-# Format code
-black services/*/app
-
 # Lint
-pylint services/*/app
-eslint apps/web/src
+ruff check services/
+black --check services/
 
-# Type checking
-mypy services/*/app
-tsc apps/web/src
+# Type check
+mypy services/
 
-# Tests
-pytest services/auth-service/tests
-npm test --prefix apps/web
+# Tests (unit only; no integration tests yet)
+pytest services/auth-service/tests --asyncio-mode=auto
+pytest services/user-service/tests --asyncio-mode=auto
 ```
 
-### Adding a New Service
+### Adding a Service
+Each service follows: `api/routes` → `services` → `repositories` → `models` with `create_app()` in `main.py`.
 
-Use the service template in `tools/service-template/`:
+## Deployment
+
+### Docker
 ```bash
-python tools/generate_service.py --name my-service
+docker build -f services/auth-service/Dockerfile -t auth-service:latest .
 ```
 
-This creates a new service with:
-- FastAPI app structure
-- SQLAlchemy models
-- Repository pattern
-- Unit tests
-- Docker configuration
-- Kubernetes manifests
+### Kubernetes
+```bash
+kubectl apply -f infrastructure/kubernetes/
+# Helm chart: infrastructure/helm/
+```
 
-## Contributing
+### Terraform
+```bash
+cd infrastructure/terraform
+terraform init && terraform plan
+```
 
-See [CONTRIBUTING.md](docs/CONTRIBUTING.md)
+## Monitoring
 
-## Security
+- Prometheus metrics: `/metrics` on each service
+- Structured JSON logs with correlation IDs
+- OpenTelemetry tracing (stubbed — needs real SDK)
 
-- JWT token validation
-- CORS policies
-- Rate limiting on API Gateway
-- Input validation (Pydantic)
-- SQL injection prevention (SQLAlchemy)
-- Secret rotation
-- Regular security audits
+## Known Limitations
 
-See [docs/SECURITY.md](docs/SECURITY.md) for security procedures.
-
-## Performance
-
-Target SLOs:
-- API response time: < 100ms (p95)
-- Video startup time: < 2s
-- Search latency: < 100ms
-- Platform uptime: 99.99%
+- ❌ Email verification (501)
+- ❌ MFA/TOTP (501)
+- ❌ Integration tests (only unit)
+- ❌ Real observability SDK (stub in `packages/sdk/`)
+- ❌ Secrets management (hardcoded defaults)
+- ❌ Load testing / capacity planning
+- ❌ Security audit
 
 ## License
 
 Proprietary - Wildframe Platform
 
-## Support
+## Status
 
-- Issues: https://github.com/wildframe/platform/issues
-- Documentation: https://docs.wildframe.com
-- Status: https://status.wildframe.com
+See `STATUS.md` for current progress and next steps.

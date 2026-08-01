@@ -1,371 +1,190 @@
 # 🚀 Wildframe Quick Start Guide
 
-## Complete Platform Setup & Execution
+**Current State**: 6 core services start and expose CRUD APIs. Email/MFA stubbed. No integration tests. Observability stubbed.
 
-### 1️⃣ Prerequisites (One-Time Setup)
+---
+
+## 1️⃣ Prerequisites
 
 ```bash
-# Install required tools
-sudo apt-get update
-sudo apt-get install -y docker.io docker-compose python3 python3-pip git
+# Required
+docker & docker-compose
+python 3.11+
+node 18+
 
-# Verify installations
-docker --version
-docker-compose --version
-python3 --version
-
-# Add user to docker group (no sudo needed)
-sudo usermod -aG docker $USER
-# Log out and back in for this to take effect
+# Optional (for local dev without Docker)
+poetry
+postgresql 14+
+redis 7+
 ```
 
-### 2️⃣ Clone & Navigate to Project
+## 2️⃣ Start Core Platform (6 Services + Infra)
 
 ```bash
 cd /home/phoenix/Desktop/wildframe
-git status  # Verify you're in the repo
-```
 
-### 3️⃣ Start Complete Platform (All Services)
-
-```bash
-# Start all services in background
+# Start infrastructure + 6 core services
 docker-compose -f deployments/docker-compose.dev.yml up -d
 
-# Wait for services to initialize (~60-90 seconds)
-sleep 90
+# Wait ~30s for services to initialize
+sleep 30
 
-# Verify all services are healthy
-docker-compose -f deployments/docker-compose.dev.yml ps
-
-# Check specific service health
+# Verify health
 curl http://localhost:8001/health  # Auth Service
 curl http://localhost:8002/health  # User Service
 curl http://localhost:8003/health  # Content Service
-curl http://localhost:8000/health  # API Gateway (once ready)
+curl http://localhost:8004/health  # Streaming Service
+curl http://localhost:8006/health  # Admin Service
+curl http://localhost:8011/health  # Media Pipeline
 ```
 
-### 4️⃣ View Logs
+**What runs**: Postgres (per-service), Redis, Kafka + 6 core services.
 
-```bash
-# All services
-docker-compose -f deployments/docker-compose.dev.yml logs -f
-
-# Specific service
-docker-compose -f deployments/docker-compose.dev.yml logs -f auth-service
-
-# Last 100 lines, specific service
-docker-compose -f deployments/docker-compose.dev.yml logs --tail=100 auth-service
-```
-
-### 5️⃣ Run Tests
-
-```bash
-# Run all auth service tests
-cd services/auth-service
-python3 -m pytest tests/ -v
-
-# Run with coverage report
-python3 -m pytest tests/ --cov=app --cov-report=html
-# Open htmlcov/index.html in browser to view coverage
-
-# Run specific test
-python3 -m pytest tests/test_auth_service.py::TestUserRegistration::test_register_new_user -v
-```
-
-### 6️⃣ Access Services & Dashboards
-
-| Service | URL | Purpose |
-|---------|-----|---------|
-| **API Gateway** | http://localhost:8000 | Main entry point |
-| **Auth Service** | http://localhost:8001 | Authentication |
-| **User Service** | http://localhost:8002 | User profiles |
-| **Content Service** | http://localhost:8003 | Movies & shows |
-| **Streaming Service** | http://localhost:8004 | Video playback |
-| **Search Service** | http://localhost:8005 | Content search |
-| **Admin Service** | http://localhost:8006 | Admin panel |
-| **Recommendation Service** | http://localhost:8007 | Recommendations |
-| **Billing Service** | http://localhost:8008 | Payments |
-| **Analytics Service** | http://localhost:8009 | Analytics |
-| **Notification Service** | http://localhost:8010 | Notifications |
-| **Media Pipeline** | http://localhost:8011 | Media processing |
-| **Prometheus** | http://localhost:9090 | Metrics |
-| **Grafana** | http://localhost:3000 | Dashboards (admin/admin) |
-| **Jaeger** | http://localhost:16686 | Tracing |
-| **Loki** | http://localhost:3100 | Logs |
-| **pgAdmin** | http://localhost:5050 | Database UI |
-| **Redis Commander** | http://localhost:8081 | Redis UI |
-| **PostgreSQL** | localhost:5432 | Database |
-| **Redis** | localhost:6379 | Cache |
-| **Elasticsearch** | http://localhost:9200 | Search engine |
+**What does NOT run**: Search, Recommendation, Billing, Analytics, Notification, API Gateway (exist but unverified), Prometheus/Grafana/Jaeger/Loki (not in compose).
 
 ---
 
-## Common Tasks
-
-### Test User Registration Flow
+## 3️⃣ Run Services Locally (Dev)
 
 ```bash
-# 1. Register new user
+# Auth Service (port 8001)
+cd services/auth-service && poetry install && poetry run uvicorn app.main:app --reload --port 8001
+
+# User Service (port 8002)
+cd services/user-service && poetry install && poetry run uvicorn app.main:app --reload --port 8002
+
+# Content Service (port 8003)
+cd services/content-service && poetry install && poetry run uvicorn app.main:app --reload --port 8003
+
+# Streaming Service (port 8004)
+cd services/streaming-service && poetry install && poetry run uvicorn app.main:app --reload --port 8004
+
+# Admin Service (port 8006)
+cd services/admin-service && poetry install && poetry run uvicorn app.main:app --reload --port 8006
+
+# Media Pipeline (port 8011)
+cd services/media-pipeline && poetry install && poetry run uvicorn app.main:app --reload --port 8011
+```
+
+---
+
+## 4️⃣ Test Auth Flow (What Works)
+
+```bash
+# 1. Register (works)
 curl -X POST http://localhost:8001/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "testuser@example.com",
-    "password": "SecurePass123!",
-    "password_confirm": "SecurePass123!"
-  }'
+  -d '{"email":"test@example.com","password":"SecurePass123!","first_name":"John","last_name":"Doe"}'
 
-# 2. Login
+# 2. Login (works - returns access_token + refresh_token)
 curl -X POST http://localhost:8001/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "testuser@example.com",
-    "password": "SecurePass123!"
-  }'
-# Save the access_token from response
+  -d '{"email":"test@example.com","password":"SecurePass123!"}'
 
-# 3. Get user profile (replace TOKEN with actual token)
-TOKEN="eyJ0eXAiOiJKV1QiLCJhbGc..."
-curl http://localhost:8002/users/me \
+# 3. Use access_token for protected endpoints
+TOKEN="<access_token_from_login>"
+curl http://localhost:8001/api/v1/users/me -H "Authorization: Bearer $TOKEN"
+```
+
+**What returns 501 (not implemented)**:
+- `POST /api/v1/auth/verify-email` — email verification
+- `POST /api/v1/auth/mfa/setup` — MFA setup
+- `POST /api/v1/auth/mfa/verify` — MFA verify
+
+---
+
+## 5️⃣ Test Other Services
+
+```bash
+# User Service - create profile (needs auth)
+curl -X POST http://localhost:8002/api/v1/profiles \
   -H "Authorization: Bearer $TOKEN"
+
+# Content Service - list content
+curl http://localhost:8003/api/v1/content
+
+# Streaming Service - health
+curl http://localhost:8004/health
+
+# Admin Service - health
+curl http://localhost:8006/health
+
+# Media Pipeline - health
+curl http://localhost:8011/health
 ```
 
-### Develop a Service
+---
+
+## 6️⃣ Run Tests
 
 ```bash
-# Hot reload enabled in docker-compose
-# Edit any service code and it automatically reloads
+# Unit tests only (no integration tests yet)
+cd services/auth-service && poetry run pytest tests/ -v --asyncio-mode=auto
+cd services/user-service && poetry run pytest tests/ -v --asyncio-mode=auto
+cd services/content-service && poetry run pytest tests/ -v --asyncio-mode=auto
+cd services/streaming-service && poetry run pytest tests/ -v --asyncio-mode=auto
+cd services/admin-service && poetry run pytest tests/ -v --asyncio-mode=auto
+cd services/media-pipeline && poetry run pytest tests/ -v --asyncio-mode=auto
 
-# Example: Edit auth service
-vim services/auth-service/app/main.py
-# Changes are automatically reloaded
-
-# Or rebuild if needed
-docker-compose -f deployments/docker-compose.dev.yml build auth-service
-docker-compose -f deployments/docker-compose.dev.yml restart auth-service
+# Lint
+ruff check services/
+black --check services/
 ```
 
-### View Database
+---
+
+## 7️⃣ Frontend (Scaffold Only)
 
 ```bash
-# Access PostgreSQL via pgAdmin
-# URL: http://localhost:5050
-# Email: admin@example.com (no password set by default)
-
-# Or via command line
-docker-compose -f deployments/docker-compose.dev.yml exec postgres psql -U wildframe -d wildframe_db
-
-# Example queries
-\dt                  # List tables
-SELECT * FROM users; # Query users
-\q                   # Exit
+cd apps/web
+npm install
+npm run dev
+# http://localhost:3000
 ```
 
-### Stop All Services
+---
+
+## ⚠️ Known Limitations
+
+| Feature | Status |
+|---------|--------|
+| Email verification | 501 Not Implemented |
+| MFA/TOTP | 501 Not Implemented |
+| Integration tests | ❌ None |
+| Observability SDK | Stubbed (`packages/sdk/`) |
+| Secrets management | Hardcoded defaults |
+| Load testing | ❌ None |
+| Security audit | ❌ None |
+| Search/Rec/Billing/Analytics/Notification | Exist but unverified |
+
+---
+
+## 🛑 Stop Everything
 
 ```bash
-# Stop without removing volumes (preserves data)
-docker-compose -f deployments/docker-compose.dev.yml stop
-
-# Stop and remove everything (cleanup)
 docker-compose -f deployments/docker-compose.dev.yml down
-
-# Remove all volumes too (DESTRUCTIVE - clears all data)
+# With data cleanup (DESTRUCTIVE):
 docker-compose -f deployments/docker-compose.dev.yml down -v
 ```
 
-### Restart Everything
-
-```bash
-# Full restart
-docker-compose -f deployments/docker-compose.dev.yml down
-docker-compose -f deployments/docker-compose.dev.yml up -d
-```
-
 ---
 
-## Development Workflow
-
-### 1. Create Feature Branch
-```bash
-git checkout -b feature/new-endpoint
-```
-
-### 2. Edit Service Code
-```bash
-vim services/auth-service/app/api/routes/auth.py
-# Changes auto-reload in docker container
-```
-
-### 3. Write Tests
-```bash
-vim services/auth-service/tests/test_auth_service.py
-```
-
-### 4. Run Tests
-```bash
-cd services/auth-service
-python3 -m pytest tests/ -v
-```
-
-### 5. Commit & Push
-```bash
-git add .
-git commit -m "feat: add new endpoint"
-git push origin feature/new-endpoint
-```
-
-### 6. Create Pull Request
-```
-GitHub UI: Create PR, tests run automatically via CI/CD
-```
-
----
-
-## Performance Optimization
-
-### Monitor Resource Usage
-```bash
-# CPU and memory usage
-docker stats
-
-# Detailed service metrics
-curl http://localhost:9090/metrics | head -50
-```
-
-### Scale Services (Production)
-```bash
-# In production (Kubernetes), scale auth service to 3 replicas:
-kubectl scale deployment auth-service --replicas=3
-
-# Or with docker-compose (not recommended for production):
-docker-compose -f deployments/docker-compose.dev.yml up -d --scale auth-service=3
-```
-
----
-
-## Troubleshooting
-
-### Port 8000 Already in Use
-```bash
-# Find what's using port 8000
-lsof -i :8000
-
-# Kill the process
-kill -9 <PID>
-
-# Then restart
-docker-compose -f deployments/docker-compose.dev.yml restart
-```
-
-### Services Won't Start
-```bash
-# Check logs
-docker-compose -f deployments/docker-compose.dev.yml logs auth-service
-
-# Rebuild without cache
-docker-compose -f deployments/docker-compose.dev.yml build --no-cache
-
-# Start fresh
-docker-compose -f deployments/docker-compose.dev.yml down -v
-docker-compose -f deployments/docker-compose.dev.yml up -d
-```
-
-### Database Connection Error
-```bash
-# Wait a bit longer for database to fully initialize
-sleep 30
-
-# Verify postgres is healthy
-docker-compose -f deployments/docker-compose.dev.yml ps postgres
-
-# Check postgres logs
-docker-compose -f deployments/docker-compose.dev.yml logs postgres
-
-# Reset database
-docker-compose -f deployments/docker-compose.dev.yml down -v
-docker-compose -f deployments/docker-compose.dev.yml up -d
-```
-
-### Out of Memory
-```bash
-# Reduce resource limits in docker-compose.dev.yml
-# Or increase Docker's memory allocation in Docker Desktop preferences
-
-# Check current memory usage
-docker stats --no-stream
-```
-
----
-
-## Project Structure
-
-```
-wildframe/
-├── services/                 # 12 microservices
-│   ├── auth-service/        # Authentication (JWT, MFA)
-│   ├── user-service/        # User profiles & sessions
-│   ├── content-service/     # Movies & shows
-│   ├── streaming-service/   # Video playback tracking
-│   ├── search-service/      # Full-text search
-│   ├── recommendation-service/  # ML recommendations
-│   ├── billing-service/     # Subscriptions & payments
-│   ├── analytics-service/   # Event tracking
-│   ├── notification-service/ # Email & push
-│   ├── admin-service/       # Moderation & config
-│   ├── media-pipeline/      # Video encoding
-│   └── api-gateway/         # Request routing
-├── apps/web/                # Next.js frontend
-├── deployments/             # Docker Compose configs
-├── infrastructure/          # Kubernetes & Terraform
-├── docs/                    # Documentation (created)
-├── TEST_GUIDE.md           # Testing guide (created)
-└── docker-compose.dev.yml  # Local dev environment
-```
-
----
-
-## Next Steps
-
-1. **Verify Setup**: Run `docker-compose ps` and confirm all services are running
-2. **Run Tests**: Execute `cd services/auth-service && python3 -m pytest tests/ -v`
-3. **Test Endpoints**: Use curl commands above to test APIs
-4. **View Dashboards**: Access Grafana (http://localhost:3000) for metrics
-5. **Start Development**: Create feature branches and develop as needed
-
----
-
-## Quick Reference Commands
+## 📂 Quick Reference
 
 ```bash
-# Start all services
+# Start all
 docker-compose -f deployments/docker-compose.dev.yml up -d
 
-# Stop all services
-docker-compose -f deployments/docker-compose.dev.yml down
+# Logs
+docker-compose -f deployments/docker-compose.dev.yml logs -f auth-service
 
-# View logs
-docker-compose -f deployments/docker-compose.dev.yml logs -f
-
-# Run tests
-cd services/auth-service && python3 -m pytest tests/ -v
-
-# Rebuild a service
+# Rebuild
 docker-compose -f deployments/docker-compose.dev.yml build auth-service
 
-# Access database
-docker-compose -f deployments/docker-compose.dev.yml exec postgres psql -U wildframe
+# Tests
+cd services/auth-service && poetry run pytest tests/ -v --asyncio-mode=auto
 
-# Clean everything (WARNING: deletes data)
-docker-compose -f deployments/docker-compose.dev.yml down -v
+# Lint
+ruff check services/
+black --check services/
 ```
-
----
-
-## Getting Help
-
-- **Logs**: `docker-compose logs -f <service>`
-- **Metrics**: Visit http://localhost:9090 (Prometheus)
-- **Dashboards**: Visit http://localhost:3000 (Grafana)
-- **Traces**: Visit http://localhost:16686 (Jaeger)
-- **Documentation**: Check README.md and other .md files in repo root

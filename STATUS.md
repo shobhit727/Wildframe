@@ -1,8 +1,8 @@
 # 📊 Wildframe Project Status Report
 
-**Last Updated**: May 27, 2026  
-**Overall Progress**: 65% Complete  
-**Current Phase**: Foundation ✅ Complete → Services Scaffolded & Ready
+**Last Updated**: August 1, 2026  
+**Overall Progress**: 35% Complete  
+**Current Phase**: Core services startup-fixed → Production hardening
 
 ---
 
@@ -10,304 +10,115 @@
 
 | Category | Progress | Status |
 |----------|----------|--------|
-| **Documentation** | ✅ 100% | Complete |
+| **Documentation** | ✅ 90% | Consolidated, needs reality update |
 | **Architecture** | ✅ 100% | Complete |
-| **Infrastructure** | ✅ 100% | Production-Ready |
-| **Auth Service** | 🔄 70% | Core complete, routes ready |
-| **Other Services** | 🟡 5% | Scaffolded |
-| **Frontend** | 🟡 5% | Configured |
-| **Testing** | 🟡 20% | Framework ready |
-| **Observability** | 🟡 80% | Configured |
-| **Overall Platform** | 🔄 35% | Progressing |
+| **Infrastructure** | 🔄 70% | Docker/k8s/Terraform exist; needs hardening |
+| **Auth Service** | 🔄 60% | Core auth works; email/MFA stubbed (501) |
+| **User Service** | 🔄 40% | CRUD works; no integration tests |
+| **Content Service** | 🔄 40% | CRUD works; no integration tests |
+| **Streaming Service** | 🔄 40% | CRUD works; no integration tests |
+| **Admin Service** | 🔄 40% | CRUD works; no integration tests |
+| **Media Pipeline** | 🔄 40% | Orchestrator works; no integration tests |
+| **Frontend** | 🟡 10% | Next.js scaffold only |
+| **Testing** | 🟡 20% | Unit tests only; no integration |
+| **Observability** | 🟡 30% | SDK stubbed; needs real implementation |
+| **Overall Platform** | 🔄 35% | Services start; not production-ready |
 
 ---
 
-## ✅ FOUNDATION PHASE - COMPLETE
+## ✅ COMPLETED (This Session)
 
-### 1. Complete Architecture & Documentation
-**Status**: ✅ 4,000+ lines  
-**Location**: `/docs/`
+### 1. Fixed Critical Startup Bugs (6 Services)
+- **auth-service**: Removed duplicate AuthService/schemas/security; fixed imports; added MFA models
+- **user-service**: Deleted dead routes/services/schemas/repos; fixed Pydantic v2 `regex`→`pattern`
+- **content-service**: Removed dead schema/repo duplicates; router correctly mounted
+- **streaming-service**: Deleted dead stack (5 files); rewrote `main.py` with `create_app()` + lifespan; fixed Pydantic v2; mounted correct `api.routes` router
+- **admin-service**: Fixed `datetime.utcnow`→timezone-aware; Python `3.14`→`3.11`; health check verifies DB; added `SERVER_HOST/PORT`
+- **media-pipeline**: Dockerfile Python `3.14`→`3.11`; added lifespan + `/ready` endpoint; fixed router
 
-- **ARCHITECTURE.md** - System design, 13 microservices, patterns, database schema
-- **DEVELOPMENT.md** - Setup, conventions, roadmap, glossary
-- **OPERATIONS.md** - Deployment, monitoring, operations, incidents
-- **OVERVIEW.md** - Quick start and navigation guide
+### 2. CI/CD Consolidation
+- Merged `ci.yml` + `ci-cd.yml` into single consolidated workflow
+- Python `3.14`→`3.12` (3.14 doesn't exist as release)
+- Fixed broken `pip install -r requirements.txt` (services use `pyproject.toml`)
+- Guarded all deploy jobs with secret checks (`if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}`)
+- Updated action versions to latest
+- Removed duplicate CI jobs
 
-### 2. Production Infrastructure
-**Status**: ✅ Production-Ready  
-**Location**: `/infrastructure/`, `/deployments/`
-
-- ✅ **Docker Compose** - 14 services configured (local development)
-- ✅ **Kubernetes Manifests** - Auth service template with HPA, RBAC, NetworkPolicy
-- ✅ **Terraform** - EKS, RDS, ElastiCache, S3, CloudFront, VPC
-- ✅ **GitHub Actions** - CI/CD pipeline for testing and deployment
-- ✅ **Monitoring Stack** - Prometheus, Grafana, Loki, Jaeger configured
-
-### 3. Auth Service (Core Complete)
-**Status**: 🔄 70% Complete  
-**Location**: `/services/auth-service/`
-
-**Core Infrastructure** ✅
-- Async SQLAlchemy 2.0 with connection pooling
-- JWT authentication (15-min access + 7-day refresh)
-- Password hashing with bcrypt
-- Rate limiting (Redis-backed, 10 attempts → 30-min lockout)
-- Structured JSON logging with correlation IDs
-- OpenTelemetry tracing with Jaeger
-- Health checks (liveness + readiness)
-- Graceful shutdown handling
-
-**Data Models** ✅
-- User (email, password_hash, login tracking, brute force protection)
-- RefreshToken (token_hash, expiry)
-- TokenBlacklist (revocation tracking)
-- LoginAudit (security event logging)
-
-**Routes** 🔄 (Scaffolded, ready to implement)
-- POST /auth/register
-- POST /auth/login
-- POST /auth/refresh
-- POST /auth/logout
-- GET /users/me
-- POST /auth/verify-email
-- POST /auth/change-password
-
-### 4. Frontend Foundation
-**Status**: ✅ Configured  
-**Location**: `/apps/web/`
-
-- ✅ Next.js 15 + TypeScript setup
-- ✅ 100+ type definitions
-- ✅ TailwindCSS with design tokens
-- ✅ Feature-based directory structure
-- ✅ ESLint + Prettier configured
-
-### 5. Database Schema
-**Status**: ✅ Complete  
-
-- ✅ 20+ normalized tables
-- ✅ Proper indexing strategy
-- ✅ Foreign key relationships
-- ✅ Audit columns and soft deletes
-- ✅ Disaster recovery plan
+### 3. Final Bug Fixes
+- **auth-service**: Added `MFASetupRequest`/`MFAVerifyRequest` to `schemas/__init__.py`; fixed `routes/auth.py` imports
+- **streaming-service**: Added default `JWT_SECRET_KEY` to settings
 
 ---
 
-## 🔄 IMPLEMENTATION PHASE - IN PROGRESS
+## 🔄 IN PROGRESS / REMAINING FOR PRODUCTION
 
-### Phase 2: Core Services (Weeks 3-6)
-**Status**: Just Starting
+### Critical (Must Have)
+- [ ] **Auth Service**: Implement real email verification + MFA flows (replace 501 stubs)
+- [ ] **Integration Tests**: All 6 services need pytest-asyncio integration tests against real DB
+- [ ] **Observability SDK**: Replace stub with real `wildframe-observability` package
+- [ ] **Local Stack Verification**: Run docker-compose; verify end-to-end flow
+- [ ] **Secrets Management**: Real Vault/AWS Secrets Manager integration
 
-- 🟡 **User Service** - Structure ready, implementation starting
-- 🟡 **Content Service** - Structure ready, implementation pending
-- 🟡 **Streaming Service** - Structure ready, implementation pending
-- 🟡 **Search Service** - Structure ready, implementation pending
-- 🟡 **API Gateway** - Structure ready, implementation pending
+### High (Should Have)
+- [ ] **Load Testing**: k6/Locust scripts for 1000+ concurrent users
+- [ ] **Security Audit**: SAST (Semgrep), dependency scan (Trivy), pen test
+- [ ] **Database Migrations**: Alembic per-service, verified in CI
+- [ ] **API Contract Tests**: Pact or similar for service-to-service contracts
 
-### Phase 3: Business Logic (Weeks 7-10)
-**Status**: Planned
-
-- 🟡 Billing Service
-- 🟡 Recommendation Engine
-- 🟡 Analytics Service
-- 🟡 Notification Service
-- 🟡 Admin Service
-
-### Phase 4: Media Pipeline (Weeks 11-12)
-**Status**: Planned
-
-- 🟡 Video transcoding
-- 🟡 HLS/DASH packaging
-- 🟡 CDN integration
-
-### Phase 5: Frontend Development (Weeks 13-14)
-**Status**: Planned
-
-- 🟡 Component library
-- 🟡 Video player
-- 🟡 Content browsing
-- 🟡 Admin dashboard
-
-### Phase 6: Deployment & Operations (Weeks 15-16)
-**Status**: Planned
-
-- 🟡 Kubernetes manifests (all services)
-- 🟡 Helm charts
-- 🟡 Deployment procedures
-- 🟡 Operational runbooks
+### Medium (Nice to Have)
+- [ ] **Disaster Recovery**: Backup/restore drills, RTO/RPO documented
+- [ ] **Runbooks**: Incident response procedures per service
+- [ ] **Frontend**: Next.js 15 component library + video player
+- [ ] **Documentation**: Update all .md files to reflect actual state
 
 ---
 
-## 📊 By The Numbers
-
-| Metric | Value |
-|--------|-------|
-| **Total Code Generated** | 5,500+ lines |
-| **Documentation** | 4,000+ lines |
-| **Services Defined** | 13 microservices |
-| **Database Tables** | 20+ normalized |
-| **Type Definitions** | 100+ interfaces |
-| **Infrastructure Code** | 500+ lines |
-| **Monitoring Tools** | 4 configured |
-
----
-
-## 🚀 Next Immediate Steps
-
-### This Week
-1. **Continue Auth Service** - Complete route implementations
-   - User registration with validation
-   - Login with JWT generation
-   - Token refresh endpoint
-   - Logout and token revocation
-
-2. **Begin User Service** - Follow auth service pattern
-   - Models (User, Device, Session)
-   - Repositories and services
-   - 9-12 endpoints
-   - Tests
-
-### Next Week
-3. **Start Content Service** - Content metadata and relationships
-4. **Parallel Frontend Work** - Component library and layouts
-
----
-
-## 📚 Documentation Structure
-
-All documentation is now consolidated into 5 files in `/docs/`:
-
-1. **[OVERVIEW.md](docs/OVERVIEW.md)** - Start here (5 min)
-   - Quick overview and status
-   - Navigation guide
-   - Common tasks reference
-
-2. **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System design (30 min)
-   - 13 microservices
-   - Service patterns (clean architecture)
-   - Frontend architecture
-   - Database schema
-
-3. **[DEVELOPMENT.md](docs/DEVELOPMENT.md)** - Setup & conventions (30 min)
-   - Development environment setup
-   - Code conventions (Python, TypeScript, SQL)
-   - Implementation roadmap
-   - Technical glossary
-
-4. **[OPERATIONS.md](docs/OPERATIONS.md)** - Deploy & run (reference)
-   - Deployment procedures
-   - Monitoring and alerting
-   - Daily operations
-   - Incident response
-
-5. **[DOCUMENTATION_GUIDE.md](docs/DOCUMENTATION_GUIDE.md)** - Writing docs (reference)
-   - Best practices for humans
-   - Best practices for AI
-   - Templates and examples
-   - Testing documentation
-
----
-
-## 📂 Project Structure
+## 📂 Current Service Structure (Verified)
 
 ```
-wildframe/
-├── README.md                 # Project overview
-├── STATUS.md                # This file
-├── AGENTS.md                # Development conventions
-├── docs/                    # 📚 Consolidated documentation
-│   ├── OVERVIEW.md
-│   ├── ARCHITECTURE.md
-│   ├── DEVELOPMENT.md
-│   └── OPERATIONS.md
-├── apps/
-│   └── web/                 # Next.js frontend
-├── services/                # 13 microservices
-│   ├── auth-service/       # ✅ 70% complete
-│   ├── user-service/       # 🟡 Scaffolded
-│   ├── content-service/    # 🟡 Scaffolded
-│   └── ... (10 more)
-├── infrastructure/
-│   ├── kubernetes/         # K8s manifests
-│   ├── terraform/          # IaC for AWS
-│   └── docker/             # Docker configs
-└── deployments/
-    └── docker-compose.dev.yml  # Local dev setup
+services/
+├── auth-service/          ✅ Starts; auth works; email/MFA stubbed
+├── user-service/          ✅ Starts; CRUD works
+├── content-service/       ✅ Starts; CRUD works  
+├── streaming-service/     ✅ Starts; CRUD works
+├── admin-service/         ✅ Starts; CRUD works
+├── media-pipeline/        ✅ Starts; orchestrator works
+├── api-gateway/           🟡 Exists; not verified
+├── creators-service/      🟡 Exists; not verified
+├── moderation-service/    🟡 Exists; not verified
+├── uploads-service/       🟡 Exists; not verified
+├── analytics/             🟡 Exists; not verified
+├── billing/               🟡 Exists; not verified
+├── notification/          🟡 Exists; not verified
+├── recommendation/        🟡 Exists; not verified
+└── search/                🟡 Exists; not verified
 ```
 
 ---
 
-## 🎯 Success Criteria
+## 📚 Documentation Files (Need Updates)
 
-- [ ] All services deployed and running
-- [ ] API latency < 100ms (p95)
-- [ ] Video startup < 2 seconds
-- [ ] Platform uptime > 99.9%
-- [ ] Zero critical security vulnerabilities
-- [ ] Test coverage > 80%
-- [ ] All documentation complete
-- [ ] Team trained on operations
-- [ ] Load testing passed (1000 concurrent users)
-- [ ] Security audit passed
-
----
-
-## 📅 Timeline
-
-| Phase | Duration | Status | ETA |
-|-------|----------|--------|-----|
-| 1: Foundation | 2 weeks | ✅ Complete | - |
-| 2: Core Services | 4 weeks | 🔄 Week 1 | Jun 23 |
-| 3: Business Logic | 4 weeks | 📋 Week 5 | Jul 21 |
-| 4: Media Pipeline | 2 weeks | 📋 Week 9 | Aug 4 |
-| 5: Frontend | 2 weeks | 📋 Week 11 | Aug 18 |
-| 6: Operations | 2 weeks | 📋 Week 13 | Sep 1 |
-
-**Total Estimated**: 16 weeks from start
+| File | Status |
+|------|--------|
+| `STATUS.md` | ✅ Updated (this file) |
+| `README.md` | ⚠️ Outdated (May 2026) |
+| `QUICKSTART.md` | ⚠️ Outdated |
+| `COMPLETION_SUMMARY.md` | ⚠️ Outdated (claims 100% complete) |
+| `FINAL_EXECUTION_REPORT.md` | ⚠️ Outdated |
+| `IMPLEMENTATION_COMPLETE.md` | ⚠️ Outdated |
+| `docs/ARCHITECTURE.md` | ✅ Accurate |
+| `docs/DEVELOPMENT.md` | ✅ Accurate |
+| `docs/OPERATIONS.md` | ✅ Accurate |
 
 ---
 
-## 🤝 Team Requirements
+## 🚀 Next Immediate Steps (This Week)
 
-- 3x Backend Engineers (FastAPI/Python)
-- 1x Frontend Engineer (React/Next.js)
-- 1x DevOps Engineer
-- 1x Database Administrator
-- 1x QA Engineer
-- 1x Security Engineer
-- 1x Product Manager
+1. **Auth Service** - Implement email verification (Redis-backed codes) + MFA (TOTP)
+2. **Integration Tests** - Add pytest fixtures for real DB per service
+3. **Observability SDK** - Implement real `wildframe-observability` package
+4. **Local Stack** - `docker compose up` and verify `/health`, auth flow
 
 ---
 
-## 💡 Key Decision Points
-
-### Architecture
-✅ **Microservices Pattern** - Database-per-service for independent scaling  
-✅ **Clean Architecture** - Clear layer separation (API → Services → Domain → Infra)  
-✅ **Event-Driven** - Kafka for async inter-service communication  
-✅ **Async-First** - FastAPI + SQLAlchemy 2.0 for high concurrency  
-
-### Infrastructure
-✅ **Kubernetes** - Production orchestration  
-✅ **Infrastructure as Code** - Terraform for reproducibility  
-✅ **Observability First** - OpenTelemetry, Prometheus, Grafana, Loki, Jaeger  
-✅ **CI/CD Automated** - GitHub Actions for testing and deployment  
-
-### Security
-✅ **JWT with Refresh Tokens** - Stateless auth with token rotation  
-✅ **Rate Limiting** - Redis-backed per-user/IP limiting  
-✅ **Encryption** - TLS in transit, encryption at rest  
-✅ **RBAC** - Kubernetes RBAC + application-level permissions  
-
----
-
-## 📞 Support & Resources
-
-- **Documentation**: See `/docs/` folder
-- **Issues**: GitHub Issues
-- **Discussions**: GitHub Discussions  
-- **Code Conventions**: [AGENTS.md](AGENTS.md)
-
----
-
-**This status is maintained weekly. Last review: May 26, 2026**
+**This status is maintained per session. Last update: August 1, 2026**
