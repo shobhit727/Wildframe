@@ -154,7 +154,7 @@ class TokenManager:
             token: JWT token
         
         Returns:
-            Optional[UUID]: User ID if extractable, None otherwise
+            UUID | None: User ID if extractable, None otherwise
         """
         try:
             payload = jwt.decode(
