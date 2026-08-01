@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: "3.12"
+  PYTHON_VERSION: "3.13"
   NODE_VERSION: "20"
   POETRY_VERSION: "1.8.3"
   REGISTRY: ghcr.io
@@ -232,7 +232,7 @@ jobs:
             p/security-audit
 
   # ===========================================================================
-  # CD JOBS — only run on push to main/develop, skip if secrets not configured
+  # CD JOBS — only run on push to main/develop
   # ===========================================================================
 
   # Build and push Docker images
@@ -262,7 +262,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Container Registry
-        if: ${{ secrets.GITHUB_TOKEN != '' }}
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -281,7 +280,6 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
 
       - name: Build and push
-        if: ${{ secrets.GITHUB_TOKEN != '' }}
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -308,7 +306,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Container Registry
-        if: ${{ secrets.GITHUB_TOKEN != '' }}
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -327,7 +324,6 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
 
       - name: Build and push
-        if: ${{ secrets.GITHUB_TOKEN != '' }}
         uses: docker/build-push-action@v5
         with:
           context: apps/web
@@ -348,7 +344,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -356,12 +351,10 @@ jobs:
           aws-region: us-east-1
 
       - name: Update EKS kubeconfig
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         run: |
           aws eks update-kubeconfig --name wildframe-staging --region us-east-1
 
       - name: Deploy with Helm
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         run: |
           helm repo add wildframe https://charts.wildframe.com || true
           helm repo update
@@ -371,13 +364,11 @@ jobs:
             --create-namespace
 
       - name: Verify deployment
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         run: |
           kubectl rollout status deployment/api-gateway -n wildframe-staging --timeout=5m || true
           kubectl rollout status deployment/auth-service -n wildframe-staging --timeout=5m || true
 
       - name: Run smoke tests
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         run: |
           chmod +x scripts/smoke-tests.sh || true
           ./scripts/smoke-tests.sh staging || true
@@ -393,7 +384,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -401,12 +391,10 @@ jobs:
           aws-region: us-east-1
 
       - name: Update EKS kubeconfig
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         run: |
           aws eks update-kubeconfig --name wildframe-production --region us-east-1
 
       - name: Create deployment approval
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         uses: actions/github-script@v7
         with:
           script: |
@@ -418,7 +406,6 @@ jobs:
             })
 
       - name: Deploy with Helm (Blue-Green)
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         run: |
           helm repo add wildframe https://charts.wildframe.com || true
           helm repo update
@@ -430,20 +417,17 @@ jobs:
             --timeout 10m
 
       - name: Verify deployment
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         run: |
           kubectl rollout status deployment/api-gateway -n wildframe-production --timeout=10m || true
           kubectl rollout status deployment/auth-service -n wildframe-production --timeout=10m || true
           kubectl rollout status deployment/user-service -n wildframe-production --timeout=10m || true
 
       - name: Run smoke tests
-        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
         run: |
           chmod +x scripts/smoke-tests.sh || true
           ./scripts/smoke-tests.sh production || true
 
       - name: Notify deployment
-        if: ${{ secrets.SLACK_WEBHOOK != '' }}
         uses: slackapi/slack-github-action@v1.25.0
         with:
           webhook-url: ${{ secrets.SLACK_WEBHOOK }}
