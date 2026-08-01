@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
+    SERVER_HOST: str = "0.0.0.0"
+    SERVER_PORT: int = 8006
     DATABASE_URL: str = "postgresql+asyncpg://wildframe:password@localhost:5432/admin_db"
     JWT_SECRET_KEY: str = "dev-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"

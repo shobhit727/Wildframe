@@ -1,6 +1,5 @@
 from contextlib import asynccontextmanager
 
-import uvicorn
 from fastapi import FastAPI
 
 from app.api.routes.admin import router as admin_router
@@ -8,11 +7,19 @@ from app.core.database import DatabaseManager
 from app.core.settings import settings
 from wildframe_observability.wire import wire_observability
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await DatabaseManager.init()
-    await DatabaseManager.health_check()
+    db_healthy = await DatabaseManager.health_check()
+    if not db_healthy:
+        logger.warning("Database health check failed on startup")
+    else:
+        logger.info("Database connection established")
     yield
     await DatabaseManager.close()
 
@@ -31,7 +38,12 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health_check():
-        return {"status": "ok", "service": "admin-service"}
+        db_healthy = await DatabaseManager.health_check()
+        return {
+            "status": "healthy" if db_healthy else "unhealthy",
+            "service": "admin-service",
+            "database": "connected" if db_healthy else "disconnected",
+        }
 
     return app
 
@@ -40,4 +52,5 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8006)
+    import uvicorn
+    uvicorn.run(app, host=settings.SERVER_HOST, port=settings.SERVER_PORT)
