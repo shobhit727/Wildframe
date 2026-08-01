@@ -24,14 +24,13 @@ from app.schemas.auth import (
     MFAVerifyRequest,
     ErrorResponse
 )
-from app.repositories.user_repository import (
+from app.repositories import (
     UserRepository,
     RefreshTokenRepository,
-    TokenBlacklistRepository,
-    LoginAuditRepository
+    LoginAuditRepository,
 )
-from app.services.auth_service import AuthService
-from app.security.manager import RateLimiter, TokenManager, PasswordManager
+from app.security import TokenManager, PasswordManager
+from app.services import AuthService
 
 logger = logging.getLogger(__name__)
 
