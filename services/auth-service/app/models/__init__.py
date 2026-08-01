@@ -87,6 +87,11 @@ class User(Base, BaseModel):
     login_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime, nullable=True)
     
+    # MFA
+    mfa_enabled = Column(Boolean, default=False, nullable=False)
+    mfa_secret = Column(String(255), nullable=True)
+    backup_codes = Column(Text, nullable=True)  # JSON array of backup codes
+    
     # Indexes for common queries
     __table_args__ = (
         Index("idx_users_email_active", "email", "is_active"),

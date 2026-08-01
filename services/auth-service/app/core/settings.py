@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     EMAIL_VERIFICATION_ENABLED: bool = True
     EMAIL_VERIFICATION_EXPIRATION_HOURS: int = 24
 
+    # MFA Configuration
+    MFA_ENABLED: bool = True
+    MFA_ISSUER_NAME: str = "Wildframe"
+    MFA_BACKUP_CODES_COUNT: int = 10
+    MFA_BACKUP_CODE_LENGTH: int = 8
+
     class Config:
         env_file = ".env"
         case_sensitive = True

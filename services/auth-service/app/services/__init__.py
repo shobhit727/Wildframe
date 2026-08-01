@@ -3,6 +3,8 @@ from typing import Optional, Tuple
 from uuid import UUID, uuid4
 from datetime import datetime, timedelta
 import logging
+import secrets
+import json
 from fastapi import HTTPException, status
 
 from app.repositories import UserRepository, RefreshTokenRepository, LoginAuditRepository
@@ -287,3 +289,169 @@ class AuthService:
 
         logger.info(f"Password changed for user: {user.email}")
         return True
+
+    async def send_email_verification(self, user_id: UUID) -> dict:
+        """Send email verification code to user."""
+        user = await self.user_repo.get_by_id(user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+        
+        if user.email_verified:
+            return {"message": "Email already verified"}
+        
+        # Generate verification code
+        code = f"{secrets.randbelow(1000000):06d}"
+        expires_at = datetime.utcnow() + timedelta(hours=24)
+        
+        # Store code in user record (in production, use Redis with TTL)
+        user.mfa_secret = code  # Reusing mfa_secret field temporarily for email code
+        user.locked_until = expires_at  # Reusing locked_until for code expiry
+        await self.user_repo.commit()
+        
+        # TODO: Send email with code
+        logger.info(f"Email verification code sent to {user.email}: {code}")
+        
+        return {"message": "Verification code sent", "code": code}  # Return code for dev only
+
+    async def verify_email(self, user_id: UUID, code: str) -> dict:
+        """Verify email verification code."""
+        user = await self.user_repo.get_by_id(user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+        
+        if user.email_verified:
+            return {"message": "Email already verified"}
+        
+        # Check code
+        stored_code = user.mfa_secret
+        expires_at = user.locked_until
+        
+        if not stored_code or stored_code != code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid verification code",
+            )
+        
+        if datetime.utcnow() > expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Verification code expired",
+            )
+        
+        # Mark email as verified
+        user.email_verified = True
+        user.email_verified_at = datetime.utcnow()
+        user.mfa_secret = None  # Clear code
+        user.locked_until = None  # Clear expiry
+        await self.user_repo.commit()
+        
+        logger.info(f"Email verified for user: {user.email}")
+        return {"message": "Email verified successfully"}
+
+    async def setup_mfa(self, user_id: UUID) -> dict:
+        """Setup MFA for user - generate TOTP secret and QR code."""
+        user = await self.user_repo.get_by_id(user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+        
+        if user.mfa_enabled:
+            return {"message": "MFA already enabled"}
+        
+        # Generate TOTP secret
+        secret = secrets.token_base32(20)
+        
+        # Generate backup codes
+        backup_codes = [secrets.token_hex(4).upper() for _ in range(10)]
+        
+        # Store secret and backup codes (encrypted in production)
+        user.mfa_secret = secret
+        user.backup_codes = json.dumps(backup_codes)
+        await self.user_repo.commit()
+        
+        # Generate provisioning URI for QR code
+        import urllib.parse
+        totp_uri = (
+            f"otpauth://totp/{urllib.parse.quote('Wildframe')}:"
+            f"{urllib.parse.quote(user.email)}?"
+            f"secret={secret}&issuer={urllib.parse.quote('Wildframe')}"
+        )
+        
+        logger.info(f"MFA setup initiated for user: {user.email}")
+        return {
+            "secret": secret,
+            "totp_uri": totp_uri,
+            "backup_codes": backup_codes,
+        }
+
+    async def verify_mfa(self, user_id: UUID, code: str) -> dict:
+        """Verify MFA code and enable MFA."""
+        user = await self.user_repo.get_by_id(user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+        
+        if user.mfa_enabled:
+            return {"message": "MFA already enabled"}
+        
+        if not user.mfa_secret:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MFA not set up",
+            )
+        
+        # Verify TOTP code
+        import pyotp
+        totp = pyotp.TOTP(user.mfa_secret)
+        if not totp.verify(code, valid_window=1):
+            # Check backup codes
+            if user.backup_codes:
+                backup_codes = json.loads(user.backup_codes)
+                if code.upper() in backup_codes:
+                    # Remove used backup code
+                    backup_codes.remove(code.upper())
+                    user.backup_codes = json.dumps(backup_codes)
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid MFA code",
+                    )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid MFA code",
+                )
+        
+        # Enable MFA
+        user.mfa_enabled = True
+        await self.user_repo.commit()
+        
+        logger.info(f"MFA enabled for user: {user.email}")
+        return {"message": "MFA enabled successfully"}
+
+    async def disable_mfa(self, user_id: UUID) -> dict:
+        """Disable MFA for user."""
+        user = await self.user_repo.get_by_id(user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+        
+        user.mfa_enabled = False
+        user.mfa_secret = None
+        user.backup_codes = None
+        await self.user_repo.commit()
+        
+        logger.info(f"MFA disabled for user: {user.email}")
+        return {"message": "MFA disabled successfully"}

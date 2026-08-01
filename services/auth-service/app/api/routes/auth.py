@@ -408,46 +408,29 @@ async def change_password(
 @router.post("/verify-email", status_code=status.HTTP_204_NO_CONTENT)
 async def verify_email(
     request: VerifyEmailRequest,
+    user_id: UUID = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> None:
     """Verify user email address.
     
-    Note: This is a simplified implementation. In production,
-    the code would be sent via email and verified here.
-    
     Args:
-        request: Email verification request
+        request: Email verification request with code
+        user_id: Current user ID from JWT
         db: Database session
-        
-    Raises:
-        HTTPException: If verification fails
     """
+    auth_service = AuthService(
+        user_repo=UserRepository(db),
+        token_repo=RefreshTokenRepository(db),
+        audit_repo=LoginAuditRepository(db),
+        password_manager=PasswordManager(),
+        token_manager=TokenManager(),
+    )
+    
     try:
-        user_repo = UserRepository(db)
-        user = await user_repo.get_by_email(request.email)
-        
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        # NOTE: A real flow generates a one-time code, stores it in Redis
-        # (TTL'd to EMAIL_VERIFICATION_EXPIRATION_HOURS), and emails it. The
-        # caller then resubmits here for validation. That Redis-backed
-        # storage is not wired yet, so to avoid flagging emails as verified
-        # without proof, this endpoint returns 501 until the flow is complete.
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Email verification code flow is not implemented; "
-                   "verification codes are not yet generated or stored."
-        )
-
+        await auth_service.verify_email(user_id, request.token)
     except HTTPException:
-        await db.rollback()
         raise
     except Exception as e:
-        await db.rollback()
         logger.error(f"Email verification error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -469,31 +452,21 @@ async def setup_mfa(
         db: Database session
         
     Returns:
-        MFA setup details (QR code, backup codes, etc.)
+        MFA setup details (secret, QR code URI, backup codes)
         
     Raises:
         HTTPException: If user not found
     """
+    auth_service = AuthService(
+        user_repo=UserRepository(db),
+        token_repo=RefreshTokenRepository(db),
+        audit_repo=LoginAuditRepository(db),
+        password_manager=PasswordManager(),
+        token_manager=TokenManager(),
+    )
+    
     try:
-        user_repo = UserRepository(db)
-        user = await user_repo.get_by_id(user_id)
-        
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        # NOTE: Full setup generates a TOTP secret, renders a provisioning QR
-        # code (otpauth://...), returns backup codes, and waits for the user
-        # to submit a TOTP code to /mfa/verify before enabling. The TOTP/QR
-        # pipeline is not implemented, so to avoid enabling MFA with no
-        # secret, this endpoint returns 501 until the flow is complete.
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="MFA setup (TOTP secret + QR provisioning) is not implemented."
-        )
-
+        return await auth_service.setup_mfa(user_id)
     except HTTPException:
         raise
     except Exception as e:
@@ -520,30 +493,19 @@ async def verify_mfa(
     Raises:
         HTTPException: If verification fails
     """
+    auth_service = AuthService(
+        user_repo=UserRepository(db),
+        token_repo=RefreshTokenRepository(db),
+        audit_repo=LoginAuditRepository(db),
+        password_manager=PasswordManager(),
+        token_manager=TokenManager(),
+    )
+    
     try:
-        user_repo = UserRepository(db)
-        user = await user_repo.get_by_id(user_id)
-        
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        
-        # NOTE: Full verification checks the submitted TOTP code against the
-        # user's stored secret before flipping mfa_enabled. Neither secret
-        # storage nor the TOTP checker is implemented, so to avoid enabling
-        # MFA without actual 2FA proof, this endpoint returns 501.
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="MFA verification (TOTP code check) is not implemented."
-        )
-
+        await auth_service.verify_mfa(user_id, request.code)
     except HTTPException:
-        await db.rollback()
         raise
     except Exception as e:
-        await db.rollback()
         logger.error(f"MFA verification error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
