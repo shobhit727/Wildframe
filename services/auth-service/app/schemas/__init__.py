@@ -8,6 +8,8 @@ from typing import Optional
 from pydantic import BaseModel, EmailStr, Field, field_validator
 import re
 from uuid import UUID
+from datetime import datetime
+from typing import Optional
 
 
 class TokenResponse(BaseModel):
@@ -190,6 +192,18 @@ class VerifyEmailRequest(BaseModel):
 
     email: EmailStr
     token: str
+
+
+class MFASetupRequest(BaseModel):
+    """MFA setup request."""
+    
+    method: str = Field(..., description="MFA method (totp, sms)")
+
+
+class MFAVerifyRequest(BaseModel):
+    """MFA verification request."""
+    
+    code: str = Field(..., min_length=6, description="Verification code")
 
 
 class ErrorResponse(BaseModel):
