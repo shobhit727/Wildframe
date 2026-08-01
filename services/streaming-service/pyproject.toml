@@ -5,7 +5,7 @@ description = "Video streaming service with playback session management and mani
 authors = ["Your Name <you@example.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.14"
+python = "^3.13"
 fastapi = "^0.104.1"
 uvicorn = {version = "^0.24.0", extras = ["standard"]}
 pydantic = "^2.4.2"
@@ -29,6 +29,7 @@ pytest-asyncio = "^0.21.1"
 pytest-cov = "^4.1.0"
 aiosqlite = "^0.19.0"
 faker = "^20.1.0"
+testcontainers = "^3.7.0"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
