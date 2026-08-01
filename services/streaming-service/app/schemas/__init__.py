@@ -37,8 +37,8 @@ class PlaybackSessionCreateRequest(BaseModel):
     content_id: UUID
     episode_id: Optional[UUID] = None
     device_id: str = Field(..., min_length=1, max_length=255)
-    protocol: str = Field(default="hls", regex="^(hls|dash|smooth_streaming)$")
-    resolution: str = Field(default="720p", regex="^[0-9]+p$")
+    protocol: str = Field(default="hls", pattern="^(hls|dash|smooth_streaming)$")
+    resolution: str = Field(default="720p", pattern="^[0-9]+p$")
     bitrate_kbps: int = Field(default=2500, ge=100)
     subtitle_language: Optional[str] = None
     audio_language: Optional[str] = None
@@ -121,7 +121,7 @@ class QualityProfileCreateRequest(BaseModel):
     """Quality profile creation request schema."""
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
-    resolution: str = Field(..., regex="^[0-9]+p$")
+    resolution: str = Field(..., pattern="^[0-9]+p$")
     bitrate_kbps: int = Field(..., ge=100)
     fps: int = Field(default=24, ge=1, le=60)
     video_codec: str = Field(default="h264")
@@ -203,7 +203,7 @@ class DownloadSessionCreateRequest(BaseModel):
     user_id: UUID
     episode_id: UUID
     device_id: str = Field(..., min_length=1, max_length=255)
-    resolution: str = Field(default="720p", regex="^[0-9]+p$")
+    resolution: str = Field(default="720p", pattern="^[0-9]+p$")
     download_ttl_days: int = Field(default=30, ge=1, le=180)
 
 
@@ -211,7 +211,7 @@ class ManifestGenerationRequest(BaseModel):
     """Request to generate video manifest."""
     episode_id: UUID
     content_id: UUID
-    protocol: str = Field(default="hls", regex="^(hls|dash|smooth_streaming)$")
+    protocol: str = Field(default="hls", pattern="^(hls|dash|smooth_streaming)$")
     variants: List[str] = Field(default=["1080p", "720p", "480p"])
     include_subtitles: bool = True
     include_closed_captions: bool = True
