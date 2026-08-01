@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev && rm -rf /var/lib/apt/lists/*
 
 COPY services/media-pipeline/pyproject.toml .
+COPY packages/sdk/wildframe_observability /build/packages/sdk/wildframe_observability
 RUN pip install --user --no-cache-dir poetry && \
     poetry config virtualenvs.create false && \
     poetry install --no-dev --no-interaction --no-ansi
@@ -25,6 +26,7 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 COPY services/media-pipeline /app
+COPY packages/sdk/wildframe_observability /app/packages/sdk/wildframe_observability
 RUN mkdir -p logs
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
@@ -44,6 +46,7 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 COPY services/media-pipeline /app
+COPY packages/sdk/wildframe_observability /app/packages/sdk/wildframe_observability
 RUN mkdir -p logs
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \

@@ -13,6 +13,9 @@ CREATE DATABASE analytics_db;
 CREATE DATABASE notification_db;
 CREATE DATABASE media_db;
 CREATE DATABASE admin_db;
+CREATE DATABASE creators_db;
+CREATE DATABASE moderation_db;
+CREATE DATABASE uploads_db;
 CREATE DATABASE wildframe_db;
 
 -- Create service users with limited privileges
@@ -27,6 +30,9 @@ CREATE USER analytics_user WITH PASSWORD 'analytics_service_secure_password';
 CREATE USER notification_user WITH PASSWORD 'notification_service_secure_password';
 CREATE USER media_user WITH PASSWORD 'media_service_secure_password';
 CREATE USER admin_user WITH PASSWORD 'admin_service_secure_password';
+CREATE USER creators_user WITH PASSWORD 'creators_service_secure_password';
+CREATE USER moderation_user WITH PASSWORD 'moderation_service_secure_password';
+CREATE USER uploads_user WITH PASSWORD 'uploads_service_secure_password';
 
 -- Grant privileges to service users on their respective databases
 GRANT ALL PRIVILEGES ON DATABASE auth_db TO auth_user;
@@ -40,6 +46,9 @@ GRANT ALL PRIVILEGES ON DATABASE analytics_db TO analytics_user;
 GRANT ALL PRIVILEGES ON DATABASE notification_db TO notification_user;
 GRANT ALL PRIVILEGES ON DATABASE media_db TO media_user;
 GRANT ALL PRIVILEGES ON DATABASE admin_db TO admin_user;
+GRANT ALL PRIVILEGES ON DATABASE creators_db TO creators_user;
+GRANT ALL PRIVILEGES ON DATABASE moderation_db TO moderation_user;
+GRANT ALL PRIVILEGES ON DATABASE uploads_db TO uploads_user;
 GRANT ALL PRIVILEGES ON DATABASE wildframe_db TO auth_user;
 
 -- Connect to each database and set schema privileges
@@ -92,6 +101,27 @@ GRANT CREATE ON SCHEMA public TO admin_user;
 ALTER DEFAULT PRIVILEGES FOR USER admin_user IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO admin_user;
 ALTER DEFAULT PRIVILEGES FOR USER admin_user IN SCHEMA public GRANT USAGE ON SEQUENCES TO admin_user;
 
+\c creators_db
+ALTER SCHEMA public OWNER TO creators_user;
+GRANT USAGE ON SCHEMA public TO creators_user;
+GRANT CREATE ON SCHEMA public TO creators_user;
+ALTER DEFAULT PRIVILEGES FOR USER creators_user IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO creators_user;
+ALTER DEFAULT PRIVILEGES FOR USER creators_user IN SCHEMA public GRANT USAGE ON SEQUENCES TO creators_user;
+
+\c moderation_db
+ALTER SCHEMA public OWNER TO moderation_user;
+GRANT USAGE ON SCHEMA public TO moderation_user;
+GRANT CREATE ON SCHEMA public TO moderation_user;
+ALTER DEFAULT PRIVILEGES FOR USER moderation_user IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO moderation_user;
+ALTER DEFAULT PRIVILEGES FOR USER moderation_user IN SCHEMA public GRANT USAGE ON SEQUENCES TO moderation_user;
+
+\c uploads_db
+ALTER SCHEMA public OWNER TO uploads_user;
+GRANT USAGE ON SCHEMA public TO uploads_user;
+GRANT CREATE ON SCHEMA public TO uploads_user;
+ALTER DEFAULT PRIVILEGES FOR USER uploads_user IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO uploads_user;
+ALTER DEFAULT PRIVILEGES FOR USER uploads_user IN SCHEMA public GRANT USAGE ON SEQUENCES TO uploads_user;
+
 -- Create shared read-only user for analytics/reporting
 CREATE USER analytics_reader WITH PASSWORD 'analytics_reader_password';
 GRANT CONNECT ON DATABASE auth_db TO analytics_reader;
@@ -99,6 +129,9 @@ GRANT CONNECT ON DATABASE users_db TO analytics_reader;
 GRANT CONNECT ON DATABASE content_db TO analytics_reader;
 GRANT CONNECT ON DATABASE streaming_db TO analytics_reader;
 GRANT CONNECT ON DATABASE billing_db TO analytics_reader;
+GRANT CONNECT ON DATABASE creators_db TO analytics_reader;
+GRANT CONNECT ON DATABASE moderation_db TO analytics_reader;
+GRANT CONNECT ON DATABASE uploads_db TO analytics_reader;
 
 -- Enable required extensions
 \c auth_db
@@ -133,6 +166,9 @@ GRANT CONNECT ON DATABASE users_db TO metrics_user;
 GRANT CONNECT ON DATABASE content_db TO metrics_user;
 GRANT CONNECT ON DATABASE streaming_db TO metrics_user;
 GRANT CONNECT ON DATABASE billing_db TO metrics_user;
+GRANT CONNECT ON DATABASE creators_db TO metrics_user;
+GRANT CONNECT ON DATABASE moderation_db TO metrics_user;
+GRANT CONNECT ON DATABASE uploads_db TO metrics_user;
 
 -- Performance tuning
 \c auth_db
