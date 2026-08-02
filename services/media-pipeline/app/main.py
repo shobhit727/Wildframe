@@ -61,7 +61,7 @@ def create_app() -> FastAPI:
             async with DatabaseManager.engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
             db_ok = True
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             db_error = str(exc)
         return {
             "status": "healthy" if db_ok else "degraded",

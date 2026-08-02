@@ -69,7 +69,7 @@ class DatabaseManager:
             async with engine.begin() as conn:
                 await conn.execute(text("SELECT 1"))
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Database health check failed: {e}")
             return False
     

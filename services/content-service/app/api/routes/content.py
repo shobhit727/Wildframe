@@ -49,7 +49,7 @@ async def create_genre(
         return genre
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error creating genre: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create genre")
 
@@ -62,7 +62,7 @@ async def list_genres(
     try:
         genres = await service.list_genres()
         return genres
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing genres: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list genres")
 
@@ -78,7 +78,7 @@ async def get_genre(
         if not genre:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Genre not found")
         return genre
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting genre: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get genre")
 
@@ -96,7 +96,7 @@ async def create_movie(
         return movie
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error creating movie: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create movie")
 
@@ -112,7 +112,7 @@ async def get_movie(
         if not movie:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found")
         return movie
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting movie: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get movie")
 
@@ -128,7 +128,7 @@ async def get_movie_by_key(
         if not movie:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found")
         return movie
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting movie: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get movie")
 
@@ -151,7 +151,7 @@ async def list_movies(
             movies, total = await service.list_recent_movies(limit, offset)
         
         return ListMoviesResponse(movies=movies, total=total, page=offset // limit + 1, page_size=limit)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing movies: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list movies")
 
@@ -167,7 +167,7 @@ async def search_movies(
     try:
         movies, total = await service.search_movies(q, limit, offset)
         return ListMoviesResponse(movies=movies, total=total, page=offset // limit + 1, page_size=limit)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error searching movies: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to search movies")
 
@@ -184,7 +184,7 @@ async def update_movie(
         return movie
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error updating movie: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update movie")
 
@@ -198,7 +198,7 @@ async def record_movie_view(
     try:
         await service.increment_movie_views(movie_id)
         return {"status": "success"}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error recording view: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to record view")
 
@@ -216,7 +216,7 @@ async def create_show(
         return show
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error creating show: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create show")
 
@@ -232,7 +232,7 @@ async def get_show(
         if not show:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Show not found")
         return show
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting show: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get show")
 
@@ -255,7 +255,7 @@ async def list_shows(
             shows, total = await service.list_recent_shows(limit, offset)
         
         return ListShowsResponse(shows=shows, total=total, page=offset // limit + 1, page_size=limit)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing shows: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list shows")
 
@@ -271,7 +271,7 @@ async def search_shows(
     try:
         shows, total = await service.search_shows(q, limit, offset)
         return ListShowsResponse(shows=shows, total=total, page=offset // limit + 1, page_size=limit)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error searching shows: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to search shows")
 
@@ -285,7 +285,7 @@ async def record_show_view(
     try:
         await service.increment_show_views(show_id)
         return {"status": "success"}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error recording view: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to record view")
 
@@ -303,7 +303,7 @@ async def create_season(
         return season
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error creating season: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create season")
 
@@ -319,7 +319,7 @@ async def get_season(
         if not season:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
         return season
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting season: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get season")
 
@@ -335,7 +335,7 @@ async def list_seasons(
         return ListSeasonsResponse(seasons=seasons, total=len(seasons))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing seasons: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list seasons")
 
@@ -353,7 +353,7 @@ async def create_episode(
         return episode
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error creating episode: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create episode")
 
@@ -369,7 +369,7 @@ async def get_episode(
         if not episode:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Episode not found")
         return episode
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting episode: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get episode")
 
@@ -385,7 +385,7 @@ async def list_season_episodes(
         return ListEpisodesResponse(episodes=episodes, total=len(episodes))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing episodes: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list episodes")
 
@@ -403,7 +403,7 @@ async def list_show_episodes(
         return ListEpisodesResponse(episodes=episodes, total=total)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing episodes: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list episodes")
 
@@ -417,6 +417,6 @@ async def record_episode_view(
     try:
         await service.increment_episode_views(episode_id)
         return {"status": "success"}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error recording view: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to record view")

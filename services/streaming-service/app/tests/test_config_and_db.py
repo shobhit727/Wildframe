@@ -9,7 +9,6 @@ from importing:
    was never defined in ``core/database.py`` (only ``DatabaseManager.get_session``
    existed), so the included router failed to import.
 """
-import asyncio
 import pytest
 
 
@@ -21,7 +20,7 @@ def test_settings_importable_from_core():
     raising ``ModuleNotFoundError`` at import time; it now imports from
     ``app.core.settings``.
     """
-    from app.core.settings
+    from app.core.settings import settings
 
     assert settings.settings.SERVICE_NAME == "streaming-service"
     assert isinstance(settings.settings.CORS_ALLOWED_ORIGINS, list)
@@ -66,11 +65,11 @@ def test_construct_app_imports_cleanly():
     historical ImportError/ModuleNotFoundError sites (config import and the
     get_db_session import inside streaming_routes).
     """
-    from app import main  # noqa: F401
+    from app import main
 
     assert main.app is not None
 
-    from app.api import streaming_routes as _streaming_routes  # noqa: F401
+    from app.api import streaming_routes as _streaming_routes
 
     assert _streaming_routes.router is not None
 

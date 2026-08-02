@@ -1,5 +1,7 @@
 from datetime import UTC, timezone
 
+from fastapi import HTTPException
+
 """Repository layer for Auth Service."""
 import logging
 from typing import Optional

@@ -1,5 +1,7 @@
 from datetime import UTC, timezone
 
+from fastapi import HTTPException
+
 """
 Service layer for Content Service business logic.
 Orchestrates repositories and business rules.

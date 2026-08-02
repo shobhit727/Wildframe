@@ -21,7 +21,7 @@ class DatabaseManager:
             async with cls.engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
             return True
-        except Exception:
+        except Exception:  # noqa: BLE001
             return False
 
     @classmethod

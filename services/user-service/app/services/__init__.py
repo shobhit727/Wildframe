@@ -55,7 +55,7 @@ class UserService:
             await self.profile_repo.commit()
             logger.info(f"Created full user profile for: {user_id}")
             return UserProfileResponse.from_orm(profile)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error creating user profile: {e!s}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -134,7 +134,7 @@ class UserService:
             await self.device_repo.commit()
             logger.info(f"Registered device {request.device_id} for user {user_id}")
             return UserDeviceResponse.from_orm(device)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error registering device: {e!s}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

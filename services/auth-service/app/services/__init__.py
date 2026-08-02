@@ -72,7 +72,7 @@ class AuthService:
             await self.user_repo.commit()
             logger.info(f"User registered: {request.email}")
             return UserResponse.from_orm(user)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Registration error: {e!s}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -250,7 +250,7 @@ class AuthService:
             if success:
                 logger.info("User logged out")
             return success
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Logout error: {e!s}")
             return False
 

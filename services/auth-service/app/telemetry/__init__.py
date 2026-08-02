@@ -44,5 +44,5 @@ def setup_tracing() -> None:
             f"({settings.JAEGER_AGENT_HOST}:{settings.JAEGER_AGENT_PORT})"
         )
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to setup Jaeger tracing: {e}")

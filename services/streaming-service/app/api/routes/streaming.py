@@ -85,7 +85,7 @@ async def start_streaming(
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error starting stream: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to start streaming")
 
@@ -130,7 +130,7 @@ async def get_session(
             cdn_edge="cdn.edge.region1",
             created_at=session.created_at
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting session: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get session")
 
@@ -152,7 +152,7 @@ async def heartbeat(
         return {"status": "alive", "session_id": str(session.id)}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error sending heartbeat: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send heartbeat")
 
@@ -179,7 +179,7 @@ async def record_metrics(
         return {"status": "recorded", "metrics_id": str(metrics.id)}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error recording metrics: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to record metrics")
 
@@ -195,7 +195,7 @@ async def end_streaming(
         await service.end_streaming(data.session_token, data.played_until_seconds)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error ending stream: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to end streaming")
 
@@ -224,7 +224,7 @@ async def get_streaming_stats(
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting stats: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get stats")
 
@@ -243,7 +243,7 @@ async def record_buffering(
         return {"status": "recorded"}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error recording buffering: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to record buffering")
 
@@ -268,7 +268,7 @@ async def add_subtitle(
             data.is_forced
         )
         return subtitle
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error adding subtitle: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to add subtitle")
 
@@ -282,7 +282,7 @@ async def list_subtitles(
     try:
         subtitles = await service.list_subtitles(media_key)
         return subtitles
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing subtitles: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list subtitles")
 
@@ -307,7 +307,7 @@ async def add_audio_track(
             data.is_default
         )
         return track
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error adding audio track: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to add audio track")
 
@@ -321,6 +321,6 @@ async def list_audio_tracks(
     try:
         tracks = await service.list_audio_tracks(media_key)
         return tracks
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing audio tracks: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list audio tracks")

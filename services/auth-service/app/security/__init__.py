@@ -191,7 +191,7 @@ class TokenManager:
             user_id = payload.get("user_id") or payload.get("sub")
             if user_id:
                 return UUID(user_id)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return None
         return None
 

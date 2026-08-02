@@ -74,7 +74,7 @@ async def get_current_user_id(request: Request) -> str:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return user_id
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Token verification failed: {e!s}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

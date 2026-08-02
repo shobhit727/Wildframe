@@ -146,7 +146,7 @@ async def register(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         await db.rollback()
         logger.error(f"Registration error: {e}")
         raise HTTPException(
@@ -203,7 +203,7 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         await db.rollback()
         logger.error(f"Login error: {e}")
         raise HTTPException(
@@ -250,7 +250,7 @@ async def refresh(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e)
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         await db.rollback()
         logger.error(f"Token refresh error: {e}")
         raise HTTPException(
@@ -297,7 +297,7 @@ async def logout(
         
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         await db.rollback()
         logger.error(f"Logout error: {e}")
         raise HTTPException(
@@ -337,7 +337,7 @@ async def get_current_user_info(
         
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error fetching user info: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -393,7 +393,7 @@ async def change_password(
     except HTTPException:
         await db.rollback()
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         await db.rollback()
         logger.error(f"Error changing password: {e}")
         raise HTTPException(
@@ -427,7 +427,7 @@ async def verify_email(
         await auth_service.verify_email(user_id, request.token)
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Email verification error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -466,7 +466,7 @@ async def setup_mfa(
         return await auth_service.setup_mfa(user_id)
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"MFA setup error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -502,7 +502,7 @@ async def verify_mfa(
         await auth_service.verify_mfa(user_id, request.code)
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"MFA verification error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

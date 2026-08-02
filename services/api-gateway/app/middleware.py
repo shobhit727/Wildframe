@@ -75,7 +75,7 @@ class AuthenticationMiddleware:
             
             payload = jwt.decode(token, self.jwt_secret, algorithms=["HS256"])
             return payload
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Token verification failed: {e}")
             return None
     
@@ -133,7 +133,7 @@ class LoadBalancer:
                 response = await client.get(f"{url}/health")
                 if response.status_code == 200:
                     return url
-            except Exception:
+            except Exception:  # noqa: BLE001
                 logger.warning(f"Health check failed for {service}")
         
         return None

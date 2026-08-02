@@ -42,7 +42,7 @@ async def proxy_request(
         except httpx.TimeoutException:
             logger.error(f"Timeout calling {url}{path}")
             raise HTTPException(status_code=504, detail="Service timeout")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error proxying request to {url}{path}: {e}")
             raise HTTPException(status_code=502, detail="Bad gateway")
 
