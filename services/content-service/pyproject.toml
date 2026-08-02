@@ -17,6 +17,7 @@ python-jose = {version = "^3.3.0", extras = ["cryptography"]}
 python-json-logger = "^2.0.7"
 email-validator = "^2.1.0"
 httpx = "^0.25.0"
+wildframe-observability-sdk = {path = "../../packages/sdk/wildframe_observability", develop = true}
 aiokafka = "^0.10.0"
 opentelemetry-api = "^1.21.0"
 opentelemetry-sdk = "^1.21.0"
@@ -31,6 +32,7 @@ aiosqlite = "^0.19.0"
 faker = "^20.1.0"
 testcontainers = "^3.7.0"
 httpx = "^0.25.0"
+wildframe-observability-sdk = {path = "../../packages/sdk/wildframe_observability", develop = true}
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
