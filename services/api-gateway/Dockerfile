@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev && rm -rf /var/lib/apt/lists/*
 
 COPY services/api-gateway/pyproject.toml .
-RUN pip install --no-cache-dir poetry && \
+RUN pip install --no-cache-dir poetry==1.8.3 && \
     poetry config virtualenvs.create false && \
     poetry install --no-dev --no-interaction --no-ansi
 

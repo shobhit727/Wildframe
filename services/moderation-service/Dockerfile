@@ -10,7 +10,7 @@ FROM python:3.14-slim AS base
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir poetry>=1.7.0
+RUN pip install --no-cache-dir poetry==1.8.3>=1.7.0
 
 COPY services/moderation-service/pyproject.toml services/moderation-service/poetry.lock* ./
 RUN poetry config virtualenvs.create false \
