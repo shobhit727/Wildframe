@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any
 
 """Media pipeline service business logic — the pipeline ORCHESTRATOR.
@@ -40,7 +42,6 @@ The orchestrator is idempotent: ``advance`` resumes from the last completed
 stage (tracked in ``stage_versions``) and is safe to call repeatedly, which is
 what makes at-least-once event delivery safe.
 """
-from __future__ import annotations
 
 import asyncio
 import logging

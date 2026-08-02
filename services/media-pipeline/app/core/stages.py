@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any
 
 """Pipeline stages: a ``Stage`` port + registry + the concrete stages.
@@ -25,7 +27,6 @@ See ``app/core/events.py`` docstring and PRODUCT_VISION §7. Each stage emits
 one success event; failures are logged and surfaced via the job's stage log and,
 on retry exhaustion, the ``content.pipeline.failed`` DLQ event.
 """
-from __future__ import annotations
 
 import asyncio
 import logging

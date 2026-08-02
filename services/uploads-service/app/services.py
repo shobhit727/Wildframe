@@ -232,9 +232,8 @@ class UploadService:
         # Checksum verification. The strongest check wins: prefer an explicit
         # checksum passed to complete, else the one captured at create.
         expected_checksum = checksum_sha256 or session.checksum_sha256
-        if expected_checksum and session.checksum_sha256:
-            if expected_checksum != session.checksum_sha256:
-                raise UploadError(
+        if expected_checksum and session.checksum_sha256 and expected_checksum != session.checksum_sha256:
+            raise UploadError(
                     "checksum mismatch for session "
                     f"{session_id}: expected {session.checksum_sha256}"
                 )

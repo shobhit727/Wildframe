@@ -280,5 +280,5 @@ class DownloadSessionRepository(BaseRepository):
 # The streaming API routes construct the service with these canonical names.
 # Keep them as aliases onto the existing repository classes.
 StreamingSessionRepository = PlaybackSessionRepository
-VideoManifestRepository = VideoManifestRepository
+# VideoManifestRepository is already defined above
 WatchHistoryRepository = DownloadSessionRepository

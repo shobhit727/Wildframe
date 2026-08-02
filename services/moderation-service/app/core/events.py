@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any
 
 """Lightweight domain events + event-bus publisher port.
@@ -14,7 +16,6 @@ Event topic contract (moderation-service producer):
     moderation.decision_made    — a moderator approved / rejected / escalated
     creator.suspended           — a creator auto-suspended after 3 strikes
 """
-from __future__ import annotations
 
 import json
 import logging

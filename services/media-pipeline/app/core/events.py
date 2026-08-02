@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any
 
 """Lightweight domain events + event-bus publisher port.
@@ -19,7 +21,6 @@ Pipeline event contract (media-pipeline producer):
     content.cdn_invalidated    — CDN cache purged (ready for playback)
     content.pipeline.failed    — DLQ: a job exhausted retries at some stage
 """
-from __future__ import annotations
 
 import json
 import logging

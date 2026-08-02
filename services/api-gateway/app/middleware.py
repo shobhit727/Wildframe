@@ -1,5 +1,6 @@
 """API Gateway - routing, load balancing, authentication."""
 import logging
+from types import MappingProxyType
 
 import httpx
 import jwt
@@ -16,7 +17,7 @@ class ServiceRegistry:
     # streaming binds 8004 (their settings.SERVER_PORT). The hostnames are the
     # stable TLS/DNS names docker-compose assigns; keep them, but fix the ports
     # so the gateway stops sending proxied requests to the wrong port.
-    SERVICES: dict[str, str] = {
+    SERVICES: MappingProxyType[str, str] = MappingProxyType({
         "auth": "http://auth-service:8000",
         "users": "http://user-service:8000",
         "content": "http://content-service:8003",
@@ -28,7 +29,7 @@ class ServiceRegistry:
         "notifications": "http://notification-service:8000",
         "media": "http://media-pipeline:8000",
         "admin": "http://admin-service:8000",
-    }
+    })
     
     @classmethod
     def get_service_url(cls, service: str) -> str | None:

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any
 
 """Lightweight domain events + event-bus publisher port.
@@ -13,7 +15,6 @@ Event topic contract (uploads-service producer):
     content.uploaded        — a chunked upload was verified & assembled
     content.upload.aborted  — an upload session was aborted / expired
 """
-from __future__ import annotations
 
 import json
 import logging
