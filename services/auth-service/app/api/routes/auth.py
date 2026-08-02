@@ -5,6 +5,7 @@ All endpoints implement proper error handling, logging, and validation.
 """
 
 import logging
+from typing import Annotated
 from uuid import UUID
 
 from app.core.database import get_db
@@ -38,7 +39,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 rate_limiter = RateLimiter()
 
 
-async def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:
+async def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
     """Get auth service instance.
     
     Args:
@@ -57,8 +58,8 @@ async def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:
 
 
 async def get_current_user(
-    authorization: str | None = Header(None, alias="Authorization"),
-    db: AsyncSession = Depends(get_db)
+    db: Annotated[AsyncSession, Depends(get_db)],
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> UUID:
     """Extract and verify current user from JWT token.
     
@@ -110,8 +111,8 @@ async def get_current_user(
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     request: UserRegisterRequest,
-    auth_service: AuthService = Depends(get_auth_service),
-    db: AsyncSession = Depends(get_db)
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    db: Annotated[AsyncSession, Depends(get_db)]
 ) -> dict:
     """Register a new user account.
     
@@ -160,8 +161,8 @@ async def register(
 async def login(
     request: UserLoginRequest,
     http_request: Request,
-    auth_service: AuthService = Depends(get_auth_service),
-    db: AsyncSession = Depends(get_db)
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    db: Annotated[AsyncSession, Depends(get_db)]
 ) -> dict:
     """Authenticate user and return tokens.
     
@@ -216,8 +217,8 @@ async def login(
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh(
     request: RefreshTokenRequest,
-    auth_service: AuthService = Depends(get_auth_service),
-    db: AsyncSession = Depends(get_db)
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    db: Annotated[AsyncSession, Depends(get_db)]
 ) -> dict:
     """Get new access token using refresh token.
     
@@ -262,9 +263,9 @@ async def refresh(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    authorization: str | None = None,
-    auth_service: AuthService = Depends(get_auth_service),
-    db: AsyncSession = Depends(get_db)
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> None:
     """Logout user by revoking tokens.
     
@@ -309,8 +310,8 @@ async def logout(
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(
-    user_id: UUID = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    user_id: Annotated[UUID, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     """Get current user information.
     
@@ -349,8 +350,8 @@ async def get_current_user_info(
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
 async def change_password(
     request: ChangePasswordRequest,
-    user_id: UUID = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    user_id: Annotated[UUID, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
 ) -> None:
     """Change user password.
     
@@ -406,8 +407,8 @@ async def change_password(
 @router.post("/verify-email", status_code=status.HTTP_204_NO_CONTENT)
 async def verify_email(
     request: VerifyEmailRequest,
-    user_id: UUID = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    user_id: Annotated[UUID, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
 ) -> None:
     """Verify user email address.
     
@@ -439,8 +440,8 @@ async def verify_email(
 @router.post("/mfa/setup", status_code=status.HTTP_201_CREATED)
 async def setup_mfa(
     request: MFASetupRequest,
-    user_id: UUID = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    user_id: Annotated[UUID, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
 ) -> dict:
     """Setup MFA for user account.
     
@@ -478,8 +479,8 @@ async def setup_mfa(
 @router.post("/mfa/verify", status_code=status.HTTP_204_NO_CONTENT)
 async def verify_mfa(
     request: MFAVerifyRequest,
-    user_id: UUID = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    user_id: Annotated[UUID, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)]
 ) -> None:
     """Verify MFA code and complete MFA setup.
     

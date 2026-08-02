@@ -3,7 +3,7 @@ API routes for Content Service.
 Provides REST endpoints for content management operations.
 """
 
-
+from typing import Annotated
 from uuid import UUID
 
 import jwt
@@ -39,12 +39,12 @@ from app.services import ContentService
 router = APIRouter(prefix="/api/v1", tags=["content"])
 
 
-async def get_content_service(session: AsyncSession = Depends(db_manager.get_session)) -> ContentService:
+async def get_content_service(session: Annotated[AsyncSession, Depends(db_manager.get_session)]) -> ContentService:
     """Dependency injection for ContentService."""
     return ContentService(session)
 
 
-async def get_current_user(authorization: str | None = Header(None, alias="Authorization")) -> UUID:
+async def get_current_user(authorization: Annotated[str | None, Header(alias="Authorization")] = None) -> UUID:
     """Extract and verify current user from JWT token.
 
     Identity is read from the verified JWT ``sub`` claim, never from a
@@ -81,7 +81,7 @@ async def get_current_user(authorization: str | None = Header(None, alias="Autho
 @router.post("/genres", response_model=GenreResponse, status_code=status.HTTP_201_CREATED)
 async def create_genre(
     request: GenreCreateRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Create a new genre."""
     return await service.create_genre(request)
@@ -89,7 +89,7 @@ async def create_genre(
 
 @router.get("/genres", response_model=list[GenreResponse])
 async def list_genres(
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """List all genres."""
     return await service.list_genres()
@@ -98,7 +98,7 @@ async def list_genres(
 @router.get("/genres/{genre_id}", response_model=GenreResponse)
 async def get_genre(
     genre_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Get genre by ID."""
     genre = await service.get_genre(genre_id)
@@ -107,47 +107,28 @@ async def get_genre(
     return genre
 
 
+@router.put("/genres/{genre_id}", response_model=GenreResponse)
+async def update_genre(
+    genre_id: UUID,
+    request: GenreCreateRequest,
+    service: Annotated[ContentService, Depends(get_content_service)],
+):
+    """Update genre."""
+    genre = await service.update_genre(genre_id, request)
+    if not genre:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Genre not found")
+    return genre
+
+
 @router.delete("/genres/{genre_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_genre(
     genre_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
-    """Delete a genre."""
+    """Delete genre."""
     success = await service.delete_genre(genre_id)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Genre not found")
-
-
-# Cast member endpoints
-
-@router.post("/cast-members", response_model=CastMemberResponse, status_code=status.HTTP_201_CREATED)
-async def create_cast_member(
-    request: CastMemberCreateRequest,
-    service: ContentService = Depends(get_content_service)
-):
-    """Create a new cast member."""
-    return await service.create_cast_member(request)
-
-
-@router.get("/cast-members/{member_id}", response_model=CastMemberResponse)
-async def get_cast_member(
-    member_id: UUID,
-    service: ContentService = Depends(get_content_service)
-):
-    """Get cast member by ID."""
-    member = await service.get_cast_member(member_id)
-    if not member:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cast member not found")
-    return member
-
-
-@router.get("/cast-members/search", response_model=list[CastMemberResponse])
-async def search_cast_members(
-    q: str = Query(..., min_length=1),
-    service: ContentService = Depends(get_content_service)
-):
-    """Search cast members by name."""
-    return await service.search_cast_members(q)
 
 
 # Content endpoints
@@ -155,68 +136,29 @@ async def search_cast_members(
 @router.post("/content", response_model=ContentResponse, status_code=status.HTTP_201_CREATED)
 async def create_content(
     request: ContentCreateRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Create new content."""
     return await service.create_content(request)
 
 
-@router.get("/content", response_model=list[ContentListResponse])
+@router.get("/content", response_model=ContentListResponse)
 async def list_content(
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    content_type: Annotated[str | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
+    genre_id: Annotated[UUID | None, Query()] = None,
 ):
-    """List published content."""
-    return await service.content_repo.get_published()
-
-
-@router.get("/content/trending", response_model=list[ContentListResponse])
-async def get_trending_content(
-    limit: int = Query(10, ge=1, le=50),
-    service: ContentService = Depends(get_content_service)
-):
-    """Get trending content."""
-    return await service.get_trending_content(limit)
-
-
-@router.get("/content/premium", response_model=list[ContentListResponse])
-async def get_premium_content(
-    service: ContentService = Depends(get_content_service)
-):
-    """Get premium content."""
-    return await service.get_premium_content()
-
-
-@router.get("/content/by-type/{content_type}", response_model=list[ContentListResponse])
-async def list_content_by_type(
-    content_type: str,
-    service: ContentService = Depends(get_content_service)
-):
-    """List content by type."""
-    return await service.list_content_by_type(content_type)
-
-
-@router.get("/content/by-genre/{genre_id}", response_model=list[ContentListResponse])
-async def list_content_by_genre(
-    genre_id: UUID,
-    service: ContentService = Depends(get_content_service)
-):
-    """List content by genre."""
-    return await service.list_content_by_genre(genre_id)
-
-
-@router.get("/content/search", response_model=list[ContentListResponse])
-async def search_content(
-    q: str = Query(..., min_length=1),
-    service: ContentService = Depends(get_content_service)
-):
-    """Search content by title and description."""
-    return await service.search_content(q)
+    """List content with pagination and filters."""
+    return await service.list_content(page, page_size, content_type, status, genre_id)
 
 
 @router.get("/content/{content_id}", response_model=ContentResponse)
 async def get_content(
     content_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Get content by ID."""
     content = await service.get_content(content_id)
@@ -225,11 +167,11 @@ async def get_content(
     return content
 
 
-@router.patch("/content/{content_id}", response_model=ContentResponse)
+@router.put("/content/{content_id}", response_model=ContentResponse)
 async def update_content(
     content_id: UUID,
     request: ContentUpdateRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Update content."""
     content = await service.update_content(content_id, request)
@@ -238,28 +180,28 @@ async def update_content(
     return content
 
 
-@router.post("/content/{content_id}/publish", response_model=ContentResponse)
-async def publish_content(
-    content_id: UUID,
-    request: ContentPublishRequest,
-    service: ContentService = Depends(get_content_service)
-):
-    """Publish or archive content."""
-    content = await service.publish_content(content_id, request)
-    if not content:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
-    return content
-
-
 @router.delete("/content/{content_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_content(
     content_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Delete content."""
     success = await service.delete_content(content_id)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+
+
+@router.post("/content/{content_id}/publish", response_model=ContentResponse)
+async def publish_content(
+    content_id: UUID,
+    request: ContentPublishRequest,
+    service: Annotated[ContentService, Depends(get_content_service)],
+):
+    """Publish content."""
+    content = await service.publish_content(content_id, request)
+    if not content:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+    return content
 
 
 # Season endpoints
@@ -268,7 +210,7 @@ async def delete_content(
 async def create_season(
     content_id: UUID,
     request: SeasonCreateRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Create a new season."""
     return await service.create_season(content_id, request)
@@ -277,84 +219,114 @@ async def create_season(
 @router.get("/content/{content_id}/seasons", response_model=list[SeasonResponse])
 async def list_seasons(
     content_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
-    """List all seasons for content."""
-    return await service.list_content_seasons(content_id)
+    """List seasons for content."""
+    return await service.list_seasons(content_id)
 
 
-@router.get("/seasons/{season_id}", response_model=SeasonResponse)
+@router.get("/content/{content_id}/seasons/{season_id}", response_model=SeasonResponse)
 async def get_season(
+    content_id: UUID,
     season_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Get season by ID."""
-    season = await service.get_season(season_id)
+    season = await service.get_season(content_id, season_id)
     if not season:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
     return season
 
 
-@router.patch("/seasons/{season_id}", response_model=SeasonResponse)
+@router.put("/content/{content_id}/seasons/{season_id}", response_model=SeasonResponse)
 async def update_season(
+    content_id: UUID,
     season_id: UUID,
     request: SeasonUpdateRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Update season."""
-    season = await service.update_season(season_id, request)
+    season = await service.update_season(content_id, season_id, request)
     if not season:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
     return season
+
+
+@router.delete("/content/{content_id}/seasons/{season_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_season(
+    content_id: UUID,
+    season_id: UUID,
+    service: Annotated[ContentService, Depends(get_content_service)],
+):
+    """Delete season."""
+    success = await service.delete_season(content_id, season_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
 
 
 # Episode endpoints
 
-@router.post("/seasons/{season_id}/episodes", response_model=EpisodeResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/content/{content_id}/seasons/{season_id}/episodes", response_model=EpisodeResponse, status_code=status.HTTP_201_CREATED)
 async def create_episode(
+    content_id: UUID,
     season_id: UUID,
     request: EpisodeCreateRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Create a new episode."""
-    season = await service.get_season(season_id)
-    if not season:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
-    return await service.create_episode(season.content_id, season_id, request)
+    return await service.create_episode(content_id, season_id, request)
 
 
-@router.get("/seasons/{season_id}/episodes", response_model=list[EpisodeResponse])
+@router.get("/content/{content_id}/seasons/{season_id}/episodes", response_model=list[EpisodeResponse])
 async def list_episodes(
+    content_id: UUID,
     season_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
-    """List all episodes in a season."""
-    return await service.list_season_episodes(season_id)
+    """List episodes for season."""
+    return await service.list_episodes(content_id, season_id)
 
 
-@router.get("/episodes/{episode_id}", response_model=EpisodeResponse)
+@router.get("/content/{content_id}/seasons/{season_id}/episodes/{episode_id}", response_model=EpisodeResponse)
 async def get_episode(
+    content_id: UUID,
+    season_id: UUID,
     episode_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Get episode by ID."""
-    episode = await service.get_episode(episode_id)
+    episode = await service.get_episode(content_id, season_id, episode_id)
     if not episode:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Episode not found")
     return episode
 
 
-@router.patch("/episodes/{episode_id}", response_model=EpisodeResponse)
+@router.put("/content/{content_id}/seasons/{season_id}/episodes/{episode_id}", response_model=EpisodeResponse)
 async def update_episode(
+    content_id: UUID,
+    season_id: UUID,
     episode_id: UUID,
     request: EpisodeUpdateRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Update episode."""
-    episode = await service.update_episode(episode_id, request)
+    episode = await service.update_episode(content_id, season_id, episode_id, request)
     if not episode:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Episode not found")
     return episode
+
+
+@router.delete("/content/{content_id}/seasons/{season_id}/episodes/{episode_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_episode(
+    content_id: UUID,
+    season_id: UUID,
+    episode_id: UUID,
+    service: Annotated[ContentService, Depends(get_content_service)],
+):
+    """Delete episode."""
+    success = await service.delete_episode(content_id, season_id, episode_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Episode not found")
 
 
 # Rating endpoints
@@ -363,51 +335,59 @@ async def update_episode(
 async def rate_content(
     content_id: UUID,
     request: ContentRatingCreateRequest,
-    current_user: UUID = Depends(get_current_user),
-    service: ContentService = Depends(get_content_service)
+    user_id: Annotated[UUID, Depends(get_current_user)],
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Rate content."""
-    return await service.rate_content(content_id, current_user, request)
+    return await service.rate_content(content_id, user_id, request)
 
 
 @router.get("/content/{content_id}/ratings", response_model=list[ContentRatingResponse])
-async def get_ratings(
+async def list_ratings(
     content_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
-    """Get all ratings for content."""
-    return await service.get_content_ratings(content_id)
+    """List ratings for content."""
+    return await service.list_ratings(content_id)
 
 
 # Recommendation endpoints
 
-@router.post("/content/{content_id}/recommendations", response_model=ContentRecommendationResponse, 
-            status_code=status.HTTP_201_CREATED)
+@router.post("/content/{content_id}/recommendations", response_model=ContentRecommendationResponse, status_code=status.HTTP_201_CREATED)
 async def add_recommendation(
     content_id: UUID,
     request: ContentRecommendationCreateRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
-    """Add content recommendation."""
+    """Add recommendation for content."""
     return await service.add_recommendation(content_id, request)
 
 
 @router.get("/content/{content_id}/recommendations", response_model=list[ContentRecommendationResponse])
-async def get_recommendations(
+async def list_recommendations(
     content_id: UUID,
-    limit: int = Query(10, ge=1, le=50),
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
-    """Get content recommendations."""
-    return await service.get_recommendations(content_id, limit)
+    """List recommendations for content."""
+    return await service.list_recommendations(content_id)
 
 
-@router.delete("/recommendations/{recommendation_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_recommendation(
-    recommendation_id: UUID,
-    service: ContentService = Depends(get_content_service)
+# Cast endpoints
+
+@router.post("/content/{content_id}/cast", response_model=CastMemberResponse, status_code=status.HTTP_201_CREATED)
+async def add_cast_member(
+    content_id: UUID,
+    request: CastMemberCreateRequest,
+    service: Annotated[ContentService, Depends(get_content_service)],
 ):
-    """Delete content recommendation."""
-    success = await service.remove_recommendation(recommendation_id)
-    if not success:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
+    """Add cast member to content."""
+    return await service.add_cast_member(content_id, request)
+
+
+@router.get("/content/{content_id}/cast", response_model=list[CastMemberResponse])
+async def list_cast(
+    content_id: UUID,
+    service: Annotated[ContentService, Depends(get_content_service)],
+):
+    """List cast for content."""
+    return await service.list_cast(content_id)

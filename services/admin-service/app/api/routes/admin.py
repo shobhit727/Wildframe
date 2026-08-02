@@ -1,3 +1,4 @@
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from jose import jwt
@@ -22,7 +23,7 @@ from app.services.admin import AdminService
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 
-async def get_current_admin_id(authorization: str | None = Header(None, alias="Authorization")) -> str:
+async def get_current_admin_id(authorization: Annotated[str | None, Header(alias="Authorization")] = None) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization.replace("Bearer ", "")
@@ -37,8 +38,8 @@ async def get_current_admin_id(authorization: str | None = Header(None, alias="A
 @router.post("/users/moderate", response_model=UserModerationResponse)
 async def moderate_user(
     request: UserModerationRequest,
-    admin_id: str = Depends(get_current_admin_id),
-    db: AsyncSession = Depends(get_db)
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Moderate a user (suspend/ban/activate)"""
     service = AdminService(db)
@@ -48,7 +49,7 @@ async def moderate_user(
 @router.get("/users/moderation/{user_id}", response_model=UserModerationResponse)
 async def get_user_moderation(
     user_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Get user moderation history"""
     service = AdminService(db)
@@ -60,10 +61,10 @@ async def get_user_moderation(
 
 @router.get("/users/moderated", response_model=list[UserModerationResponse])
 async def list_moderated_users(
-    status: str = Query(None),
-    limit: int = Query(50, le=100),
-    offset: int = Query(0),
-    db: AsyncSession = Depends(get_db)
+    db: Annotated[AsyncSession, Depends(get_db)],
+    status: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(le=100)] = 50,
+    offset: Annotated[int, Query()] = 0,
 ):
     """List moderated users"""
     service = AdminService(db)
@@ -74,8 +75,8 @@ async def list_moderated_users(
 @router.post("/content/flag", response_model=ContentModerationResponse)
 async def flag_content(
     request: ContentModerationRequest,
-    admin_id: str = Depends(get_current_admin_id),
-    db: AsyncSession = Depends(get_db)
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Flag inappropriate content"""
     service = AdminService(db)
@@ -85,9 +86,9 @@ async def flag_content(
 @router.post("/content/resolve", response_model=ContentModerationResponse)
 async def resolve_content_flag(
     content_id: str,
-    status: str = Query(..., pattern="^(active|removed)$"),
-    admin_id: str = Depends(get_current_admin_id),
-    db: AsyncSession = Depends(get_db)
+    db: Annotated[AsyncSession, Depends(get_db)],
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
+    status: Annotated[str, Query(pattern="^(active|removed)$")],
 ):
     """Resolve flagged content"""
     service = AdminService(db)
@@ -99,9 +100,9 @@ async def resolve_content_flag(
 
 @router.get("/content/flagged", response_model=list[ContentModerationResponse])
 async def list_flagged_content(
-    limit: int = Query(50, le=100),
-    offset: int = Query(0),
-    db: AsyncSession = Depends(get_db)
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: Annotated[int, Query(le=100)] = 50,
+    offset: Annotated[int, Query()] = 0,
 ):
     """List flagged content"""
     service = AdminService(db)
@@ -112,7 +113,7 @@ async def list_flagged_content(
 @router.post("/alerts", response_model=SystemAlertResponse)
 async def create_alert(
     request: SystemAlertRequest,
-    db: AsyncSession = Depends(get_db)
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Create system alert"""
     service = AdminService(db)
@@ -121,8 +122,8 @@ async def create_alert(
 
 @router.get("/alerts", response_model=list[SystemAlertResponse])
 async def get_alerts(
-    limit: int = Query(50, le=100),
-    db: AsyncSession = Depends(get_db)
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: Annotated[int, Query(le=100)] = 50,
 ):
     """Get unacknowledged system alerts"""
     service = AdminService(db)
@@ -130,7 +131,7 @@ async def get_alerts(
 
 
 @router.get("/alerts/critical", response_model=list[SystemAlertResponse])
-async def get_critical_alerts(db: AsyncSession = Depends(get_db)):
+async def get_critical_alerts(db: Annotated[AsyncSession, Depends(get_db)]):
     """Get critical system alerts"""
     service = AdminService(db)
     return await service.get_critical_alerts()
@@ -139,8 +140,8 @@ async def get_critical_alerts(db: AsyncSession = Depends(get_db)):
 @router.post("/alerts/{alert_id}/acknowledge")
 async def acknowledge_alert(
     alert_id: int,
-    admin_id: str = Depends(get_current_admin_id),
-    db: AsyncSession = Depends(get_db)
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Acknowledge system alert"""
     service = AdminService(db)
@@ -154,8 +155,8 @@ async def acknowledge_alert(
 @router.post("/config", response_model=SystemConfigResponse)
 async def set_config(
     request: SystemConfigRequest,
-    admin_id: str = Depends(get_current_admin_id),
-    db: AsyncSession = Depends(get_db)
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Set system configuration"""
     service = AdminService(db)
@@ -165,7 +166,7 @@ async def set_config(
 @router.get("/config/{key}", response_model=SystemConfigResponse)
 async def get_config(
     key: str,
-    db: AsyncSession = Depends(get_db)
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Get system configuration"""
     service = AdminService(db)
@@ -177,8 +178,8 @@ async def get_config(
 
 @router.get("/config", response_model=list[SystemConfigResponse])
 async def list_configs(
-    limit: int = Query(100, le=500),
-    db: AsyncSession = Depends(get_db)
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: Annotated[int, Query(le=500)] = 100,
 ):
     """List all system configurations"""
     service = AdminService(db)
@@ -189,8 +190,8 @@ async def list_configs(
 @router.get("/audit/admin/{admin_id}", response_model=list[AdminAuditLogResponse])
 async def get_audit_by_admin(
     admin_id: str,
-    limit: int = Query(50, le=100),
-    db: AsyncSession = Depends(get_db)
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: Annotated[int, Query(le=100)] = 50,
 ):
     """Get audit logs by admin"""
     service = AdminService(db)
@@ -201,8 +202,8 @@ async def get_audit_by_admin(
 async def get_audit_by_resource(
     resource_type: str,
     resource_id: str,
-    limit: int = Query(50, le=100),
-    db: AsyncSession = Depends(get_db)
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: Annotated[int, Query(le=100)] = 50,
 ):
     """Get audit logs by resource"""
     service = AdminService(db)
@@ -211,7 +212,7 @@ async def get_audit_by_resource(
 
 # System Stats Endpoint
 @router.get("/stats", response_model=SystemStatsResponse)
-async def get_system_stats(db: AsyncSession = Depends(get_db)):
+async def get_system_stats(db: Annotated[AsyncSession, Depends(get_db)]):
     """Get system statistics"""
     service = AdminService(db)
     return await service.get_system_stats()

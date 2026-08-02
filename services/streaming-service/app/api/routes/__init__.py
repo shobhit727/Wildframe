@@ -114,8 +114,8 @@ async def get_manifest(
 @router.get("/episodes/{episode_id}/manifest", response_model=VideoManifestResponse)
 async def get_episode_manifest(
     episode_id: UUID,
-    protocol: str = Query(default="hls", regex="^(hls|dash|smooth_streaming)$"),
-    service: Annotated[StreamingService, Depends(get_streaming_service)]
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    protocol: Annotated[str, Query(default="hls", regex="^(hls|dash|smooth_streaming)$")],
 ):
     """Get manifest for episode and protocol."""
     manifest = await service.get_manifest_for_episode(episode_id, protocol)
@@ -149,8 +149,8 @@ async def get_transcoding_job(
 
 @router.get("/transcoding-jobs/pending", response_model=list[TranscodingJobResponse])
 async def get_pending_jobs(
-    limit: int = Query(10, ge=1, le=50),
-    service: Annotated[StreamingService, Depends(get_streaming_service)]
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
 ):
     """Get pending transcoding jobs."""
     return await service.get_pending_jobs(limit)
@@ -159,9 +159,9 @@ async def get_pending_jobs(
 @router.patch("/transcoding-jobs/{job_id}/progress")
 async def update_transcoding_progress(
     job_id: UUID,
-    progress_percent: int = Query(..., ge=0, le=100),
-    error_message: str = Query(None),
-    service: Annotated[StreamingService, Depends(get_streaming_service)]
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    progress_percent: Annotated[int, Query(ge=0, le=100)],
+    error_message: Annotated[str | None, Query()] = None,
 ):
     """Update transcoding progress."""
     job = await service.update_transcoding_progress(job_id, progress_percent, error_message)
@@ -195,8 +195,8 @@ async def get_quality_profile(
 
 @router.get("/quality-profiles", response_model=list[QualityProfileResponse])
 async def list_quality_profiles_for_bandwidth(
-    bandwidth_kbps: int = Query(..., ge=100),
-    service: Annotated[StreamingService, Depends(get_streaming_service)]
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    bandwidth_kbps: Annotated[int, Query(ge=100)],
 ):
     """Get quality profiles for bandwidth."""
     return await service.get_quality_profiles_for_bandwidth(bandwidth_kbps)
@@ -268,8 +268,8 @@ async def get_user_downloads(
 @router.patch("/download-sessions/{download_id}/progress")
 async def update_download_progress(
     download_id: UUID,
-    bytes_downloaded: int = Query(..., ge=0),
-    service: Annotated[StreamingService, Depends(get_streaming_service)]
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    bytes_downloaded: Annotated[int, Query(ge=0)],
 ):
     """Update download progress."""
     download = await service.update_download_progress(download_id, bytes_downloaded)

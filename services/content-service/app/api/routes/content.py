@@ -1,6 +1,7 @@
 """Content service API routes."""
 
 import logging
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/content", tags=["content"])
 
 
-async def get_content_service(db: AsyncSession = Depends(get_db)) -> ContentService:
+async def get_content_service(db: Annotated[AsyncSession, Depends(get_db)]) -> ContentService:
     """Get content service instance."""
     return ContentService(db)
 
@@ -41,7 +42,7 @@ async def get_content_service(db: AsyncSession = Depends(get_db)) -> ContentServ
 @router.post("/genres", response_model=GenreResponse, status_code=status.HTTP_201_CREATED)
 async def create_genre(
     data: CreateGenreRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> GenreResponse:
     """Create new genre."""
     try:
@@ -56,7 +57,7 @@ async def create_genre(
 
 @router.get("/genres", response_model=list[GenreResponse])
 async def list_genres(
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> list[GenreResponse]:
     """List all genres."""
     try:
@@ -70,7 +71,7 @@ async def list_genres(
 @router.get("/genres/{genre_id}", response_model=GenreResponse)
 async def get_genre(
     genre_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> GenreResponse:
     """Get genre by ID."""
     try:
@@ -88,7 +89,7 @@ async def get_genre(
 @router.post("/movies", response_model=MovieResponse, status_code=status.HTTP_201_CREATED)
 async def create_movie(
     data: CreateMovieRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> MovieResponse:
     """Create new movie."""
     try:
@@ -104,7 +105,7 @@ async def create_movie(
 @router.get("/movies/{movie_id}", response_model=MovieResponse)
 async def get_movie(
     movie_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> MovieResponse:
     """Get movie by ID."""
     try:
@@ -120,7 +121,7 @@ async def get_movie(
 @router.get("/movies/by-key/{media_key}", response_model=MovieResponse)
 async def get_movie_by_key(
     media_key: str,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> MovieResponse:
     """Get movie by media key."""
     try:
@@ -135,11 +136,11 @@ async def get_movie_by_key(
 
 @router.get("/movies", response_model=ListMoviesResponse)
 async def list_movies(
-    genre_id: UUID | None = Query(None),
-    trending: bool = Query(False),
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
+    genre_id: Annotated[UUID | None, Query()] = None,
+    trending: Annotated[bool, Query()] = False,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ListMoviesResponse:
     """List movies."""
     try:
@@ -158,10 +159,10 @@ async def list_movies(
 
 @router.get("/movies/search", response_model=ListMoviesResponse)
 async def search_movies(
-    q: str = Query(..., min_length=2),
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
+    q: Annotated[str, Query(min_length=2)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ListMoviesResponse:
     """Search movies."""
     try:
@@ -176,7 +177,7 @@ async def search_movies(
 async def update_movie(
     movie_id: UUID,
     data: UpdateMovieRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> MovieResponse:
     """Update movie."""
     try:
@@ -192,7 +193,7 @@ async def update_movie(
 @router.post("/movies/{movie_id}/view")
 async def record_movie_view(
     movie_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> dict:
     """Record movie view."""
     try:
@@ -208,7 +209,7 @@ async def record_movie_view(
 @router.post("/shows", response_model=ShowResponse, status_code=status.HTTP_201_CREATED)
 async def create_show(
     data: CreateShowRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> ShowResponse:
     """Create new show."""
     try:
@@ -224,7 +225,7 @@ async def create_show(
 @router.get("/shows/{show_id}", response_model=ShowResponse)
 async def get_show(
     show_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> ShowResponse:
     """Get show by ID."""
     try:
@@ -239,11 +240,11 @@ async def get_show(
 
 @router.get("/shows", response_model=ListShowsResponse)
 async def list_shows(
-    genre_id: UUID | None = Query(None),
-    ongoing_only: bool = Query(False),
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
+    genre_id: Annotated[UUID | None, Query()] = None,
+    ongoing_only: Annotated[bool, Query()] = False,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ListShowsResponse:
     """List shows."""
     try:
@@ -262,10 +263,10 @@ async def list_shows(
 
 @router.get("/shows/search", response_model=ListShowsResponse)
 async def search_shows(
-    q: str = Query(..., min_length=2),
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)],
+    q: Annotated[str, Query(min_length=2)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ListShowsResponse:
     """Search shows."""
     try:
@@ -279,7 +280,7 @@ async def search_shows(
 @router.post("/shows/{show_id}/view")
 async def record_show_view(
     show_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> dict:
     """Record show view."""
     try:
@@ -295,7 +296,7 @@ async def record_show_view(
 @router.post("/seasons", response_model=SeasonResponse, status_code=status.HTTP_201_CREATED)
 async def create_season(
     data: CreateSeasonRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> SeasonResponse:
     """Create new season."""
     try:
@@ -311,7 +312,7 @@ async def create_season(
 @router.get("/seasons/{season_id}", response_model=SeasonResponse)
 async def get_season(
     season_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> SeasonResponse:
     """Get season by ID."""
     try:
@@ -327,7 +328,7 @@ async def get_season(
 @router.get("/shows/{show_id}/seasons", response_model=ListSeasonsResponse)
 async def list_seasons(
     show_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> ListSeasonsResponse:
     """List seasons for show."""
     try:
@@ -345,7 +346,7 @@ async def list_seasons(
 @router.post("/episodes", response_model=EpisodeResponse, status_code=status.HTTP_201_CREATED)
 async def create_episode(
     data: CreateEpisodeRequest,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> EpisodeResponse:
     """Create new episode."""
     try:
@@ -361,7 +362,7 @@ async def create_episode(
 @router.get("/episodes/{episode_id}", response_model=EpisodeResponse)
 async def get_episode(
     episode_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> EpisodeResponse:
     """Get episode by ID."""
     try:
@@ -377,7 +378,7 @@ async def get_episode(
 @router.get("/seasons/{season_id}/episodes", response_model=ListEpisodesResponse)
 async def list_season_episodes(
     season_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> ListEpisodesResponse:
     """List episodes for season."""
     try:
@@ -393,9 +394,9 @@ async def list_season_episodes(
 @router.get("/shows/{show_id}/episodes", response_model=ListEpisodesResponse)
 async def list_show_episodes(
     show_id: UUID,
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    service: ContentService = Depends(get_content_service)
+    limit: Annotated[int, Query(50, ge=1, le=500)],
+    offset: Annotated[int, Query(0, ge=0)],
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> ListEpisodesResponse:
     """List episodes for show."""
     try:
@@ -411,7 +412,7 @@ async def list_show_episodes(
 @router.post("/episodes/{episode_id}/view")
 async def record_episode_view(
     episode_id: UUID,
-    service: ContentService = Depends(get_content_service)
+    service: Annotated[ContentService, Depends(get_content_service)]
 ) -> dict:
     """Record episode view."""
     try:

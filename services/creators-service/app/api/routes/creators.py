@@ -1,4 +1,5 @@
 """Creators service API routes."""
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -42,7 +43,7 @@ async def current_user() -> UUID:
     return UUID("00000000-0000-0000-0000-000000000001")
 
 
-def get_service(db: AsyncSession = Depends(get_db)) -> CreatorService:
+def get_service(db: Annotated[AsyncSession, Depends(get_db)]) -> CreatorService:
     return CreatorService(
         CreatorAccountRepository(db),
         EffectiveFloorRepository(db),
@@ -72,8 +73,8 @@ def _to_t_response(t) -> MilestoneTrancheResponse:
 # ---------------------------------------------------------------- onboarding
 @router.post("/onboard", response_model=CreatorAccountResponse)
 async def onboard(payload: CreatorAccountCreate,
-                  user_id: UUID = Depends(current_user),
-                  service: CreatorService = Depends(get_service)):
+                  user_id: Annotated[UUID, Depends(current_user)],
+                  service: Annotated[CreatorService, Depends(get_service)]):
     """Onboard a new creator. KYC defaults to pending (verified only after
     identity review — see PRODUCT_VISION §4)."""
     existing = await service.acct_repo.get_by_user(user_id)
@@ -95,8 +96,8 @@ async def onboard(payload: CreatorAccountCreate,
 
 # --------------------------------------------------------------------- me
 @router.get("/me", response_model=CreatorAccountResponse)
-async def get_me(user_id: UUID = Depends(current_user),
-                 service: CreatorService = Depends(get_service)):
+async def get_me(user_id: Annotated[UUID, Depends(current_user)],
+                 service: Annotated[CreatorService, Depends(get_service)]):
     acct = await service.get_profile(user_id)
     if acct is None:
         raise HTTPException(status_code=404, detail="creator not found")
@@ -112,8 +113,8 @@ async def get_me(user_id: UUID = Depends(current_user),
 
 @router.put("/me", response_model=CreatorAccountResponse)
 async def update_me(payload: CreatorAccountUpdate,
-                    user_id: UUID = Depends(current_user),
-                    service: CreatorService = Depends(get_service)):
+                    user_id: Annotated[UUID, Depends(current_user)],
+                    service: Annotated[CreatorService, Depends(get_service)]):
     acct = await service.update_profile(
         user_id, **payload.model_dump(exclude_unset=True)
     )
@@ -131,8 +132,8 @@ async def update_me(payload: CreatorAccountUpdate,
 
 # -------------------------------------------------------------------- floor
 @router.get("/me/floor", response_model=EffectiveFloorResponse)
-async def get_my_floor(user_id: UUID = Depends(current_user),
-                       service: CreatorService = Depends(get_service)):
+async def get_my_floor(user_id: Annotated[UUID, Depends(current_user)],
+                       service: Annotated[CreatorService, Depends(get_service)]):
     acct = await service.get_profile(user_id)
     if acct is None:
         raise HTTPException(status_code=404, detail="creator not found")
@@ -149,8 +150,8 @@ async def get_my_floor(user_id: UUID = Depends(current_user),
 
 # ------------------------------------------------------------------ balance
 @router.get("/me/balance", response_model=CreatorPoolBalanceResponse)
-async def get_my_balance(user_id: UUID = Depends(current_user),
-                         service: CreatorService = Depends(get_service)):
+async def get_my_balance(user_id: Annotated[UUID, Depends(current_user)],
+                         service: Annotated[CreatorService, Depends(get_service)]):
     acct = await service.get_profile(user_id)
     if acct is None:
         raise HTTPException(status_code=404, detail="creator not found")
@@ -164,8 +165,8 @@ async def get_my_balance(user_id: UUID = Depends(current_user),
 
 # ------------------------------------------------------------------- ledger
 @router.get("/me/ledger", response_model=list[PayoutLedgerResponse])
-async def get_my_ledger(user_id: UUID = Depends(current_user),
-                        service: CreatorService = Depends(get_service)):
+async def get_my_ledger(user_id: Annotated[UUID, Depends(current_user)],
+                        service: Annotated[CreatorService, Depends(get_service)]):
     acct = await service.get_profile(user_id)
     if acct is None:
         raise HTTPException(status_code=404, detail="creator not found")
@@ -192,8 +193,8 @@ async def get_my_ledger(user_id: UUID = Depends(current_user),
 # ------------------------------------------------------------------ payouts
 @router.post("/me/payouts", response_model=PayoutLedgerResponse)
 async def accrue_my_payout(payload: PayoutAccrualRequest,
-                           user_id: UUID = Depends(current_user),
-                           service: CreatorService = Depends(get_service)):
+                           user_id: Annotated[UUID, Depends(current_user)],
+                           service: Annotated[CreatorService, Depends(get_service)]):
     """Accrue a payout period. Idempotent on (creator, period) — re-posting the
     same period returns the existing ledger row unchanged."""
     acct = await service.get_profile(user_id)
@@ -224,7 +225,7 @@ async def accrue_my_payout(payload: PayoutAccrualRequest,
 
 @admin_router.post("/{creator_id}/milestones", response_model=MilestoneResponse)
 async def admin_create_milestone(creator_id: UUID, payload: MilestoneCreate,
-                                 service: CreatorService = Depends(get_service)):
+                                 service: Annotated[CreatorService, Depends(get_service)]):
     acct = await service.acct_repo.get(creator_id)
     if acct is None:
         raise HTTPException(status_code=404, detail="creator not found")
@@ -239,7 +240,7 @@ async def admin_create_milestone(creator_id: UUID, payload: MilestoneCreate,
 @admin_router.post("/{creator_id}/milestones/{mid}/tranches",
                    response_model=MilestoneTrancheResponse)
 async def admin_add_tranche(creator_id: UUID, mid: UUID, payload: TrancheCreate,
-                            service: CreatorService = Depends(get_service)):
+                            service: Annotated[CreatorService, Depends(get_service)]):
     ms = await service.milestone_repo.get(mid)
     if ms is None or ms.creator_id != creator_id:
         raise HTTPException(status_code=404, detail="milestone not found")
@@ -251,8 +252,8 @@ async def admin_add_tranche(creator_id: UUID, mid: UUID, payload: TrancheCreate,
 @admin_router.post("/{creator_id}/milestones/{mid}/release",
                    response_model=MilestoneTrancheResponse)
 async def admin_release_tranche(creator_id: UUID, mid: UUID,
-                                threshold: int = Body(...),
-                                service: CreatorService = Depends(get_service)):
+                                threshold: Annotated[int, Body(...)],
+                                service: Annotated[CreatorService, Depends(get_service)]):
     ms = await service.milestone_repo.get(mid)
     if ms is None or ms.creator_id != creator_id:
         raise HTTPException(status_code=404, detail="milestone not found")
@@ -265,8 +266,8 @@ async def admin_release_tranche(creator_id: UUID, mid: UUID,
 @admin_router.post("/{creator_id}/milestones/{mid}/kill",
                    response_model=MilestoneResponse)
 async def admin_kill_milestone(creator_id: UUID, mid: UUID,
-                               reason: str = Body(None),
-                               service: CreatorService = Depends(get_service)):
+                               reason: Annotated[str, Body(None)],
+                               service: Annotated[CreatorService, Depends(get_service)]):
     ms = await service.milestone_repo.get(mid)
     if ms is None or ms.creator_id != creator_id:
         raise HTTPException(status_code=404, detail="milestone not found")

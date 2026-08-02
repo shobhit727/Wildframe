@@ -6,12 +6,12 @@ Manages animation content, episodes, seasons, genres, series, and recommendation
 
 import uuid
 from datetime import datetime
+from enum import Enum
 
 from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
-    Enum,
     Float,
     ForeignKey,
     Index,
@@ -20,6 +20,9 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
+)
+from sqlalchemy import (
+    Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import declarative_base, relationship
@@ -46,7 +49,7 @@ content_cast_association = Table(
 )
 
 
-class ContentType(str, enum.Enum):
+class ContentType(str, Enum):
     """Content type enumeration."""
     MOVIE = "movie"
     SERIES = "series"
@@ -59,7 +62,7 @@ class ContentType(str, enum.Enum):
     STORYBOARD = "storyboard"
 
 
-class AnimationStyle(str, enum.Enum):
+class AnimationStyle(str, Enum):
     """Animation style enumeration."""
     TRADITIONAL_2D = "traditional_2d"
     CGI_3D = "cgi_3d"
@@ -69,14 +72,14 @@ class AnimationStyle(str, enum.Enum):
     PIXEL_ART = "pixel_art"
 
 
-class ContentStatus(str, enum.Enum):
+class ContentStatus(str, Enum):
     """Content status enumeration."""
     DRAFT = "draft"
     PUBLISHED = "published"
     ARCHIVED = "archived"
 
 
-class SeriesStatus(str, enum.Enum):
+class SeriesStatus(str, Enum):
     """Series status enumeration."""
     ONGOING = "ongoing"
     COMPLETED = "completed"
@@ -91,11 +94,11 @@ class Content(Base):
     title = Column(String(255), nullable=False, index=True)
     slug = Column(String(255), nullable=False, unique=True, index=True)
     description = Column(Text, nullable=False)
-    content_type = Column(Enum(ContentType), nullable=False, index=True)
-    status = Column(Enum(ContentStatus), nullable=False, default=ContentStatus.DRAFT)
+    content_type = Column(SQLEnum(ContentType), nullable=False, index=True)
+    status = Column(SQLEnum(ContentStatus), nullable=False, default=ContentStatus.DRAFT)
 
     # Animation-specific fields
-    animation_style = Column(Enum(AnimationStyle), nullable=True, index=True)
+    animation_style = Column(SQLEnum(AnimationStyle), nullable=True, index=True)
     maturity_rating = Column(String(20), nullable=True)  # G, PG, PG-13, R, TV-Y, TV-Y7, TV-PG, TV-14, TV-MA
     dub_languages = Column(JSONB, default=[])  # List of language codes available for dubbing
     subtitle_languages = Column(JSONB, default=[])  # List of language codes available for subtitles
@@ -361,7 +364,7 @@ class ContentSeries(Base):
     title = Column(String(255), nullable=False, index=True)
     slug = Column(String(255), nullable=False, unique=True, index=True)
     description = Column(Text, nullable=True)
-    animation_style = Column(Enum(AnimationStyle), nullable=True, index=True)
+    animation_style = Column(SQLEnum(AnimationStyle), nullable=True, index=True)
 
     total_seasons = Column(Integer, default=0, nullable=False)
     total_episodes = Column(Integer, default=0, nullable=False)

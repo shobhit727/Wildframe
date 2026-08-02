@@ -9,6 +9,7 @@ Endpoints:
     POST /uploads/sessions/{id}/complete — verify + finalize
     POST /uploads/sessions/{id}/abort — abort
 """
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -23,7 +24,7 @@ router = APIRouter(prefix="/uploads", tags=["uploads"])
 
 
 async def get_upload_service(
-    db: AsyncSession = Depends(get_db),
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UploadService:
     return UploadService(UploadChunkRepository(db))
 
@@ -86,7 +87,7 @@ class SessionResponse(BaseModel):
 @router.post("/sessions", response_model=CreateSessionResponse)
 async def create_session(
     request: CreateSessionRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: Annotated[UploadService, Depends(get_upload_service)],
 ):
     """Create an upload session and return a pre-signed URL per chunk."""
     try:
@@ -122,7 +123,7 @@ async def create_session(
 @router.get("/sessions/{session_id}", response_model=SessionResponse)
 async def get_session(
     session_id: UUID,
-    service: UploadService = Depends(get_upload_service),
+    service: Annotated[UploadService, Depends(get_upload_service)],
 ):
     """Get an upload session's current status."""
     from app.models import UploadSession as _  # noqa: F401 (ensure importable)
@@ -137,7 +138,7 @@ async def get_session(
 async def register_chunk(
     session_id: UUID,
     request: RegisterChunkRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: Annotated[UploadService, Depends(get_upload_service)],
 ):
     """Register a received chunk."""
     try:
@@ -160,8 +161,8 @@ async def register_chunk(
 @router.post("/sessions/{session_id}/complete", response_model=SessionResponse)
 async def complete_session(
     session_id: UUID,
-    checksum_sha256: str | None = Body(None),
-    service: UploadService = Depends(get_upload_service),
+    service: Annotated[UploadService, Depends(get_upload_service)],
+    checksum_sha256: Annotated[str | None, Body()] = None,
 ):
     """Verify all chunks + checksum and finalize the upload."""
     try:
@@ -176,8 +177,8 @@ async def complete_session(
 @router.post("/sessions/{session_id}/abort", response_model=SessionResponse)
 async def abort_session(
     session_id: UUID,
-    reason: str = Body(""),
-    service: UploadService = Depends(get_upload_service),
+    service: Annotated[UploadService, Depends(get_upload_service)],
+    reason: Annotated[str, Body()] = "",
 ):
     """Abort an in-progress upload."""
     try:

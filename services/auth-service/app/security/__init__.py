@@ -170,11 +170,11 @@ class TokenManager:
         return None
 
     # Convenience wrappers for service layer compatibility
-    def create_access_token(self, user) -> str:
+    def create_access_token_for_user(self, user) -> str:
         """Create access token from a user object (service-friendly)."""
         return TokenManager.create_access_token(str(user.id), getattr(user, "email", ""))
 
-    def create_refresh_token(self, user) -> tuple[str, str, datetime]:
+    def create_refresh_token_for_user(self, user) -> tuple[str, str, datetime]:
         """Create refresh token and return token, hash, and expires_at."""
         now = datetime.now(UTC)
         expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRATION_DAYS)

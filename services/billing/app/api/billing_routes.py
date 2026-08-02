@@ -9,6 +9,7 @@ Exposes the Sustenance Engine endpoints:
   - Payout ledger history
 """
 from decimal import Decimal
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -34,7 +35,7 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 # DI helpers
 # ---------------------------------------------------------------------------
 
-async def get_billing_service(db: AsyncSession = Depends(get_db)) -> BillingService:
+async def get_billing_service(db: Annotated[AsyncSession, Depends(get_db)]) -> BillingService:
     """Wire up BillingService with all its repositories."""
     return BillingService(
         sub_repo=SubscriptionRepository(db),
@@ -85,7 +86,7 @@ class SubscriptionResponse(BaseModel):
 @router.get("/subscription/{user_id}", response_model=SubscriptionResponse)
 async def get_subscription(
     user_id: UUID,
-    service: BillingService = Depends(get_billing_service),
+    service: Annotated[BillingService, Depends(get_billing_service)],
 ):
     """Get a user's current subscription details."""
     sub = await service.get_subscription(user_id)
@@ -103,7 +104,7 @@ async def get_subscription(
 async def subscribe(
     user_id: UUID,
     request: SubscribeRequest,
-    service: BillingService = Depends(get_billing_service),
+    service: Annotated[BillingService, Depends(get_billing_service)],
 ):
     """Subscribe or upgrade to a revenue tier (AVOD/SVOD/TVOD)."""
     try:
@@ -116,7 +117,7 @@ async def subscribe(
 @router.post("/cancel/{user_id}")
 async def cancel_subscription(
     user_id: UUID,
-    service: BillingService = Depends(get_billing_service),
+    service: Annotated[BillingService, Depends(get_billing_service)],
 ):
     """Cancel a subscription (reverts to AVOD free tier)."""
     sub = await service.cancel_subscription(user_id)
@@ -132,7 +133,7 @@ async def cancel_subscription(
 @router.post("/purchase")
 async def purchase_title(
     request: PurchaseRequest,
-    service: BillingService = Depends(get_billing_service),
+    service: Annotated[BillingService, Depends(get_billing_service)],
 ):
     """Record a pay-per-view (TVOD) purchase."""
     try:
@@ -149,7 +150,7 @@ async def purchase_title(
 @router.get("/floor/{region_code}")
 async def get_floor(
     region_code: str,
-    service: BillingService = Depends(get_billing_service),
+    service: Annotated[BillingService, Depends(get_billing_service)],
 ):
     """Get the living-wage floor for a region."""
     floor = await service.get_floor(region_code)
@@ -165,7 +166,7 @@ async def get_floor(
 
 @router.get("/floors")
 async def list_floors(
-    service: BillingService = Depends(get_billing_service),
+    service: Annotated[BillingService, Depends(get_billing_service)],
 ):
     """List all regional floor configurations."""
     floors = await service.list_floors()
@@ -186,7 +187,7 @@ async def list_floors(
 
 @router.get("/pool")
 async def get_pool_status(
-    service: BillingService = Depends(get_billing_service),
+    service: Annotated[BillingService, Depends(get_billing_service)],
 ):
     """Get the current Creator Pool balance and latest cycle info."""
     pool = await service.get_pool_status()
@@ -209,7 +210,7 @@ async def get_pool_status(
 @router.post("/milestones")
 async def create_milestone(
     request: CreateMilestoneRequest,
-    service: BillingService = Depends(get_billing_service),
+    service: Annotated[BillingService, Depends(get_billing_service)],
 ):
     """Create a milestone commitment with 10/20/30/40 tranched funding."""
     try:
@@ -230,7 +231,7 @@ async def create_milestone(
 async def release_tranche(
     milestone_id: UUID,
     request: ReleaseTrancheRequest,
-    service: BillingService = Depends(get_billing_service),
+    service: Annotated[BillingService, Depends(get_billing_service)],
 ):
     """Release a tranche after milestone verification."""
     try:
@@ -248,7 +249,7 @@ async def release_tranche(
 @router.post("/milestones/{milestone_id}/kill")
 async def kill_milestone(
     milestone_id: UUID,
-    service: BillingService = Depends(get_billing_service),
+    service: Annotated[BillingService, Depends(get_billing_service)],
 ):
     """Kill a milestone — revert all unreleased tranches to the Creator Pool."""
     try:
@@ -269,7 +270,7 @@ async def kill_milestone(
 @router.get("/payouts/{creator_id}")
 async def get_payout_history(
     creator_id: UUID,
-    service: BillingService = Depends(get_billing_service),
+    service: Annotated[BillingService, Depends(get_billing_service)],
 ):
     """Get a creator's full payout ledger history."""
     payouts = await service.get_payout_history(creator_id)
@@ -292,7 +293,7 @@ async def get_payout_history(
 
 @router.get("/creator-share")
 async def calculate_creator_share(
-    svod_revenue: Decimal = Query(..., description="Total SVOD revenue for the period"),
+    svod_revenue: Annotated[Decimal, Query(..., description="Total SVOD revenue for the period")],
 ):
     """Calculate the minimum creator share from SVOD revenue (>=55% floor)."""
     share = BillingService.calculate_creator_share(svod_revenue)

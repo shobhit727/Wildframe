@@ -12,13 +12,15 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
-    Enum,
     Float,
     Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+)
+from sqlalchemy import (
+    Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import declarative_base
@@ -34,7 +36,7 @@ class PlaybackSessionStatus(str, Enum):
     INTERRUPTED = "interrupted"
 
 
-class TranscodingStatus(str, enum.Enum):
+class TranscodingStatus(str, Enum):
     """Transcoding job status enumeration."""
     PENDING = "pending"
     PROCESSING = "processing"
@@ -42,7 +44,7 @@ class TranscodingStatus(str, enum.Enum):
     FAILED = "failed"
 
 
-class DeliveryProtocol(str, enum.Enum):
+class DeliveryProtocol(str, Enum):
     """Video delivery protocol enumeration."""
     HLS = "hls"
     DASH = "dash"
@@ -60,12 +62,12 @@ class PlaybackSession(Base):
     device_id = Column(String(255), nullable=False, index=True)
     
     # Playback info
-    status = Column(Enum(PlaybackSessionStatus), nullable=False, default=PlaybackSessionStatus.ACTIVE)
+    status = Column(SQLEnum(PlaybackSessionStatus), nullable=False, default=PlaybackSessionStatus.ACTIVE)
     current_position_seconds = Column(Integer, default=0)  # Current playback position
     total_duration_seconds = Column(Integer, nullable=False)
     
     # Delivery info
-    protocol = Column(Enum(DeliveryProtocol), nullable=False, default=DeliveryProtocol.HLS)
+    protocol = Column(SQLEnum(DeliveryProtocol), nullable=False, default=DeliveryProtocol.HLS)
     resolution = Column(String(20), nullable=False)  # e.g., "1080p", "720p", "480p"
     bitrate_kbps = Column(Integer, nullable=False)  # Target bitrate
     
@@ -109,7 +111,7 @@ class VideoManifest(Base):
     content_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     
     # Manifest info
-    protocol = Column(Enum(DeliveryProtocol), nullable=False, index=True)
+    protocol = Column(SQLEnum(DeliveryProtocol), nullable=False, index=True)
     manifest_url = Column(String(500), nullable=False)
     manifest_content = Column(Text, nullable=False)  # M3U8 or MPD content
     
@@ -145,7 +147,7 @@ class TranscodingJob(Base):
     content_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     
     # Job info
-    status = Column(Enum(TranscodingStatus), nullable=False, default=TranscodingStatus.PENDING, index=True)
+    status = Column(SQLEnum(TranscodingStatus), nullable=False, default=TranscodingStatus.PENDING, index=True)
     priority = Column(Integer, default=5)  # 1-10, higher = more important
     
     # Input file

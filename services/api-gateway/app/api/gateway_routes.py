@@ -1,6 +1,7 @@
 
 """API Gateway routes - proxy requests to backend services."""
 import logging
+from typing import Annotated
 
 import httpx
 from app.middleware import ServiceRegistry, get_current_user
@@ -13,7 +14,7 @@ router = APIRouter()
 async def proxy_request(
     request: Request,
     service: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: Annotated[dict, Depends(get_current_user)]
 ):
     """Proxy request to appropriate backend service."""
     # Route to service

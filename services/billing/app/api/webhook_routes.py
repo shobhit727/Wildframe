@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Annotated, Any
 
 """Stripe webhook handler for the billing service.
 
@@ -41,7 +41,7 @@ router = APIRouter(prefix="/billing", tags=["billing", "webhooks"])
 # DI helpers
 # ---------------------------------------------------------------------------
 
-async def get_billing_service(db: AsyncSession = Depends(get_db)) -> BillingService:
+async def get_billing_service(db: Annotated[AsyncSession, Depends(get_db)]) -> BillingService:
     """Wire up BillingService with all its repositories."""
     return BillingService(
         sub_repo=SubscriptionRepository(db),
@@ -278,7 +278,7 @@ _EVENT_HANDLERS = {
 @router.post("/webhooks/stripe", include_in_schema=False)
 async def stripe_webhook(
     request: Request,
-    service: BillingService = Depends(get_billing_service),
+    service: Annotated[BillingService, Depends(get_billing_service)],
     stripe_signature: str = Header(None, alias="Stripe-Signature"),
 ):
     """Receive and process Stripe webhook events.

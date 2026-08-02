@@ -2,7 +2,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserProfileUpdateRequest(BaseModel):
@@ -19,8 +19,8 @@ class UserProfileUpdateRequest(BaseModel):
     newsletter_subscribed: bool | None = None
     marketing_emails: bool | None = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "avatar_url": "https://example.com/avatar.jpg",
                 "bio": "Movie enthusiast",
@@ -30,6 +30,7 @@ class UserProfileUpdateRequest(BaseModel):
                 "public_profile": True,
             }
         }
+    )
 
 
 class UserProfileResponse(BaseModel):
@@ -52,8 +53,7 @@ class UserProfileResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserDeviceRegisterRequest(BaseModel):
@@ -68,8 +68,8 @@ class UserDeviceRegisterRequest(BaseModel):
     browser_version: str | None = Field(None, max_length=50)
     user_agent: str | None = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "device_id": "device-uuid-123",
                 "device_name": "Chrome on MacBook",
@@ -78,6 +78,7 @@ class UserDeviceRegisterRequest(BaseModel):
                 "browser_name": "Chrome",
             }
         }
+    )
 
 
 class UserDeviceUpdateRequest(BaseModel):
@@ -88,13 +89,14 @@ class UserDeviceUpdateRequest(BaseModel):
     can_stream: bool | None = None
     can_download: bool | None = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "device_name": "Chrome on MacBook Pro",
                 "is_trusted": True,
             }
         }
+    )
 
 
 class UserDeviceResponse(BaseModel):
@@ -118,8 +120,7 @@ class UserDeviceResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserPreferenceUpdateRequest(BaseModel):
@@ -143,8 +144,8 @@ class UserPreferenceUpdateRequest(BaseModel):
     email_recommendations: bool | None = None
     push_notifications: bool | None = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "theme": "dark",
                 "language": "en-US",
@@ -153,6 +154,7 @@ class UserPreferenceUpdateRequest(BaseModel):
                 "push_notifications": True,
             }
         }
+    )
 
 
 class UserPreferenceResponse(BaseModel):
@@ -180,8 +182,7 @@ class UserPreferenceResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserSubscriptionProfileResponse(BaseModel):
@@ -200,8 +201,7 @@ class UserSubscriptionProfileResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserProfileCompleteResponse(BaseModel):
@@ -212,8 +212,7 @@ class UserProfileCompleteResponse(BaseModel):
     preferences: UserPreferenceResponse
     subscription: UserSubscriptionProfileResponse
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ErrorResponse(BaseModel):

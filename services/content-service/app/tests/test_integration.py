@@ -1,5 +1,6 @@
 """Integration tests for Content Service."""
-from datetime import timezone
+from datetime import UTC
+
 import pytest_asyncio
 from httpx import AsyncClient
 
@@ -75,7 +76,7 @@ class TestContentIntegration:
             slug="test-movie",
             description="A test movie",
             content_type="movie",
-            release_date=datetime.now(timezone.utc),
+            release_date=datetime.now(UTC),
             duration_minutes=120,
             original_language="en",
             country="US",
@@ -113,7 +114,7 @@ class TestContentIntegration:
             slug="adventure-movie",
             description="An adventure movie",
             content_type="movie",
-            release_date=datetime.now(timezone.utc),
+            release_date=datetime.now(UTC),
             duration_minutes=150,
             genre_ids=[genre1.id, genre2.id],
         )
@@ -192,7 +193,7 @@ class TestSeasonIntegration:
             season_number=1,
             title="Season 1",
             description="First season",
-            release_date=datetime.now(timezone.utc),
+            release_date=datetime.now(UTC),
         )
         
         season = await content_service.create_season(content.id, season_request)

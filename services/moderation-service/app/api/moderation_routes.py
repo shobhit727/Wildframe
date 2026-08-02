@@ -9,6 +9,7 @@ Endpoints:
     GET  /moderation/strikes/{creator_id} — get strike history for a creator
     GET  /health                    — health check
 """
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -35,7 +36,7 @@ router = APIRouter(prefix="/moderation", tags=["moderation"])
 
 
 async def get_moderation_service(
-    db: AsyncSession = Depends(get_db),
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ModerationService:
     """Build a ModerationService wired to the request's DB session."""
     return ModerationService(
@@ -53,7 +54,7 @@ async def get_moderation_service(
 @router.post("/flags", response_model=FlagResponse, status_code=201)
 async def flag_content(
     request: FlagContentRequest,
-    service: ModerationService = Depends(get_moderation_service),
+    service: Annotated[ModerationService, Depends(get_moderation_service)],
 ):
     """Flag a piece of content for moderator review."""
     try:
@@ -69,8 +70,8 @@ async def flag_content(
 
 @router.get("/queue", response_model=QueueResponse)
 async def get_queue(
+    service: Annotated[ModerationService, Depends(get_moderation_service)],
     limit: int = 50,
-    service: ModerationService = Depends(get_moderation_service),
 ):
     """List pending review items, oldest first."""
     flags = await service.get_queue(limit=limit)
@@ -83,7 +84,7 @@ async def get_queue(
 @router.post("/decisions", response_model=DecisionResponse, status_code=201)
 async def make_decision(
     request: MakeDecisionRequest,
-    service: ModerationService = Depends(get_moderation_service),
+    service: Annotated[ModerationService, Depends(get_moderation_service)],
 ):
     """Make a moderation decision (approve / reject / escalate) on a flag."""
     try:
@@ -101,7 +102,7 @@ async def make_decision(
 @router.get("/strikes/{creator_id}", response_model=StrikesResponse)
 async def get_strikes(
     creator_id: UUID,
-    service: ModerationService = Depends(get_moderation_service),
+    service: Annotated[ModerationService, Depends(get_moderation_service)],
 ):
     """Get the full strike history for a creator."""
     strikes = await service.get_strikes(creator_id)

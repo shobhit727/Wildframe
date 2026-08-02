@@ -8,6 +8,7 @@ Endpoints:
     POST /pipeline/jobs/{upload_id}/start  — start (or fetch) a pipeline job
     GET  /pipeline/jobs/{id}               — get job status + stage log
 """
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
 
 async def get_pipeline_service(
-    db: AsyncSession = Depends(get_db),
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MediaPipelineService:
     return MediaPipelineService(PipelineJobRepository(db), PipelineStageLogRepository(db))
 
@@ -76,7 +77,7 @@ class JobDetailResponse(BaseModel):
 async def start_job(
     upload_session_id: UUID,
     request: StartJobRequest,
-    service: MediaPipelineService = Depends(get_pipeline_service),
+    service: Annotated[MediaPipelineService, Depends(get_pipeline_service)],
 ):
     """Start (or idempotently fetch) the pipeline for an uploaded file.
 
@@ -98,7 +99,7 @@ async def start_job(
 @router.get("/jobs/{job_id}", response_model=JobDetailResponse)
 async def get_job(
     job_id: UUID,
-    service: MediaPipelineService = Depends(get_pipeline_service),
+    service: Annotated[MediaPipelineService, Depends(get_pipeline_service)],
 ):
     """Get a pipeline job's status plus its full stage-log audit trail."""
     job = await service.job_repo.get(job_id)
@@ -143,9 +144,9 @@ legacy_router = APIRouter(prefix="/media", tags=["media-legacy"])
 
 @legacy_router.post("/transcode")
 async def start_transcoding(
-    content_id: UUID = Body(...),
-    source_url: str = Body(...),
-    db: AsyncSession = Depends(get_db),
+    content_id: Annotated[UUID, Body(...)],
+    source_url: Annotated[str, Body(...)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Legacy entry point: create a TranscodingJob (compatibility)."""
     service = MediaPipelineService(
@@ -158,7 +159,7 @@ async def start_transcoding(
 @legacy_router.get("/job-status/{content_id}")
 async def get_transcoding_status(
     content_id: UUID,
-    db: AsyncSession = Depends(get_db),
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Legacy entry point: fetch a TranscodingJob by content id."""
     service = MediaPipelineService(

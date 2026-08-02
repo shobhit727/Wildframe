@@ -4,7 +4,7 @@ import logging
 import httpx
 import jwt
 import redis.asyncio as redis
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import HTTPException, Request, status
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class ServiceRegistry:
     # streaming binds 8004 (their settings.SERVER_PORT). The hostnames are the
     # stable TLS/DNS names docker-compose assigns; keep them, but fix the ports
     # so the gateway stops sending proxied requests to the wrong port.
-    SERVICES = {
+    SERVICES: dict[str, str] = {
         "auth": "http://auth-service:8000",
         "users": "http://user-service:8000",
         "content": "http://content-service:8003",
@@ -51,13 +51,13 @@ class ServiceRegistry:
 class AuthenticationMiddleware:
     """Authentication middleware for API Gateway."""
     
-    PUBLIC_PATHS = {
+    PUBLIC_PATHS: frozenset[str] = frozenset({
         "/auth/register",
         "/auth/login",
         "/health",
         "/docs",
         "/openapi.json",
-    }
+    })
     
     def __init__(self, jwt_secret: str):
         self.jwt_secret = jwt_secret
@@ -138,8 +138,11 @@ class LoadBalancer:
         
         return None
 
-async def get_current_user(request: Request, auth: AuthenticationMiddleware = Depends()) -> dict:
+async def get_current_user(request: Request) -> dict:
     """Dependency to get current authenticated user."""
+    from starlette.middleware.authentication import AuthenticationMiddleware
+    
+    auth = AuthenticationMiddleware
     user_info = await auth(request)
     if not user_info:
         raise HTTPException(

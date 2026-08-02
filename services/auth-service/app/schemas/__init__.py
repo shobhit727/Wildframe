@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class TokenResponse(BaseModel):
@@ -24,8 +24,8 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
                 "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -33,6 +33,7 @@ class TokenResponse(BaseModel):
                 "expires_in": 900,
             }
         }
+    )
 
 
 class UserRegisterRequest(BaseModel):
@@ -72,8 +73,8 @@ class UserRegisterRequest(BaseModel):
             raise ValueError("Password must contain special character")
         return v
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "email": "user@example.com",
                 "password": "SecurePass123!",
@@ -81,6 +82,7 @@ class UserRegisterRequest(BaseModel):
                 "last_name": "Doe",
             }
         }
+    )
 
 
 class UserLoginRequest(BaseModel):
@@ -96,14 +98,15 @@ class UserLoginRequest(BaseModel):
     password: str
     device_id: str | None = Field(None, max_length=255)
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "email": "user@example.com",
                 "password": "SecurePass123!",
                 "device_id": "device-123",
             }
         }
+    )
 
 
 class RefreshTokenRequest(BaseModel):
@@ -115,8 +118,9 @@ class RefreshTokenRequest(BaseModel):
 
     refresh_token: str
 
-    class Config:
-        json_schema_extra = {"example": {"refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."}}
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."}}
+    )
 
 
 class UserResponse(BaseModel):
@@ -140,9 +144,9 @@ class UserResponse(BaseModel):
     last_login_at: datetime | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440000",
                 "email": "user@example.com",
@@ -153,6 +157,7 @@ class UserResponse(BaseModel):
                 "created_at": "2026-05-01T10:30:00Z",
             }
         }
+    )
 
 
 class ChangePasswordRequest(BaseModel):
@@ -216,13 +221,14 @@ class ErrorResponse(BaseModel):
     message: str
     details: dict | None = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "error": "INVALID_CREDENTIALS",
                 "message": "Invalid email or password",
             }
         }
+    )
 
 
 class HealthCheckResponse(BaseModel):
@@ -242,8 +248,8 @@ class HealthCheckResponse(BaseModel):
     timestamp: datetime
     checks: dict[str, dict]
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "status": "healthy",
                 "service": "auth-service",
@@ -255,3 +261,4 @@ class HealthCheckResponse(BaseModel):
                 },
             }
         }
+    )

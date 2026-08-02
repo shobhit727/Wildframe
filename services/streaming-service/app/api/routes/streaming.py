@@ -1,6 +1,7 @@
 """Streaming service API routes."""
 
 import logging
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/streaming", tags=["streaming"])
 
 
-async def get_streaming_service(db: AsyncSession = Depends(get_db)) -> StreamingService:
+async def get_streaming_service(db: Annotated[AsyncSession, Depends(get_db)]) -> StreamingService:
     """Get streaming service instance."""
     return StreamingService(db)
 
@@ -37,7 +38,7 @@ async def get_streaming_service(db: AsyncSession = Depends(get_db)) -> Streaming
 @router.post("/sessions/start", response_model=StreamingSessionResponse, status_code=status.HTTP_201_CREATED)
 async def start_streaming(
     data: StartStreamingRequest,
-    service: StreamingService = Depends(get_streaming_service)
+    service: Annotated[StreamingService, Depends(get_streaming_service)]
 ) -> StreamingSessionResponse:
     """Start streaming session."""
     try:
@@ -93,7 +94,7 @@ async def start_streaming(
 @router.get("/sessions/{session_token}", response_model=StreamingSessionResponse)
 async def get_session(
     session_token: str,
-    service: StreamingService = Depends(get_streaming_service)
+    service: Annotated[StreamingService, Depends(get_streaming_service)]
 ) -> StreamingSessionResponse:
     """Get streaming session."""
     try:
@@ -139,7 +140,7 @@ async def get_session(
 async def heartbeat(
     session_token: str,
     data: HeartbeatRequest,
-    service: StreamingService = Depends(get_streaming_service)
+    service: Annotated[StreamingService, Depends(get_streaming_service)]
 ) -> dict:
     """Send heartbeat for streaming session."""
     try:
@@ -161,7 +162,7 @@ async def heartbeat(
 async def record_metrics(
     session_token: str,
     data: RecordMetricsRequest,
-    service: StreamingService = Depends(get_streaming_service)
+    service: Annotated[StreamingService, Depends(get_streaming_service)]
 ) -> dict:
     """Record streaming metrics."""
     try:
@@ -188,7 +189,7 @@ async def record_metrics(
 async def end_streaming(
     session_token: str,
     data: EndStreamingRequest,
-    service: StreamingService = Depends(get_streaming_service)
+    service: Annotated[StreamingService, Depends(get_streaming_service)]
 ) -> None:
     """End streaming session."""
     try:
@@ -203,7 +204,7 @@ async def end_streaming(
 @router.get("/sessions/{session_token}/stats", response_model=StreamingStatsResponse)
 async def get_streaming_stats(
     session_token: str,
-    service: StreamingService = Depends(get_streaming_service)
+    service: Annotated[StreamingService, Depends(get_streaming_service)]
 ) -> StreamingStatsResponse:
     """Get streaming statistics."""
     try:
@@ -234,8 +235,8 @@ async def get_streaming_stats(
 @router.post("/sessions/{session_token}/buffering")
 async def record_buffering(
     session_token: str,
-    buffer_seconds: float = Query(..., gt=0),
-    service: StreamingService = Depends(get_streaming_service)
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    buffer_seconds: Annotated[float, Query(gt=0)],
 ) -> dict:
     """Record buffering event."""
     try:
@@ -253,8 +254,8 @@ async def record_buffering(
 @router.post("/subtitles", response_model=SubtitleResponse, status_code=status.HTTP_201_CREATED)
 async def add_subtitle(
     data: SubtitleRequest,
-    media_key: str = Query(...),
-    service: StreamingService = Depends(get_streaming_service)
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    media_key: Annotated[str, Query()],
 ) -> SubtitleResponse:
     """Add subtitle track."""
     try:
@@ -275,8 +276,8 @@ async def add_subtitle(
 
 @router.get("/subtitles", response_model=list[SubtitleResponse])
 async def list_subtitles(
-    media_key: str = Query(...),
-    service: StreamingService = Depends(get_streaming_service)
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    media_key: Annotated[str, Query()],
 ) -> list[SubtitleResponse]:
     """List subtitles for media."""
     try:
@@ -292,8 +293,8 @@ async def list_subtitles(
 @router.post("/audio", response_model=AudioTrackResponse, status_code=status.HTTP_201_CREATED)
 async def add_audio_track(
     data: AudioTrackRequest,
-    media_key: str = Query(...),
-    service: StreamingService = Depends(get_streaming_service)
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    media_key: Annotated[str, Query()],
 ) -> AudioTrackResponse:
     """Add audio track."""
     try:
@@ -314,8 +315,8 @@ async def add_audio_track(
 
 @router.get("/audio", response_model=list[AudioTrackResponse])
 async def list_audio_tracks(
-    media_key: str = Query(...),
-    service: StreamingService = Depends(get_streaming_service)
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    media_key: Annotated[str, Query()],
 ) -> list[AudioTrackResponse]:
     """List audio tracks for media."""
     try:
