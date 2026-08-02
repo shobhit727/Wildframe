@@ -1,25 +1,18 @@
-import re
-from datetime import UTC, timezone
-
-from fastapi import HTTPException
-
 """
 Service layer for Content Service business logic.
 Orchestrates repositories and business rules.
 """
 
 import logging
+from datetime import UTC
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     AnimationStyle,
-    ContentCreator,
-    ContentSeries,
     ContentStatus,
     ContentType,
-    SeriesStatus,
 )
 from app.repositories import (
     CastMemberRepository,

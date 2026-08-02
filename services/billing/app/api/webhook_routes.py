@@ -1,4 +1,3 @@
-import enum
 from typing import Any
 
 """Stripe webhook handler for the billing service.

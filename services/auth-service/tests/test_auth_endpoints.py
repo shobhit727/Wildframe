@@ -4,6 +4,7 @@ Tests the complete flow from HTTP request to database operations.
 """
 
 import pytest
+import pytest_asyncio
 from app.core.database import get_db
 from app.main import app
 from httpx import AsyncClient

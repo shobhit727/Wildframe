@@ -1,4 +1,3 @@
-import enum
 """Media pipeline service models.
 
 The pipeline is an event-driven state machine over ``pipeline_jobs``. Each job

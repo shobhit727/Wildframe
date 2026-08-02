@@ -1,5 +1,3 @@
-import re
-
 """
 API routes for Content Service.
 Provides REST endpoints for content management operations.
@@ -30,7 +28,6 @@ from app.schemas import (
     EpisodeCreateRequest,
     EpisodeResponse,
     EpisodeUpdateRequest,
-    ErrorResponse,
     GenreCreateRequest,
     GenreResponse,
     SeasonCreateRequest,

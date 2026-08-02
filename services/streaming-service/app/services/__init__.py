@@ -1,5 +1,3 @@
-from fastapi import HTTPException
-
 """
 Service layer for Streaming Service business logic.
 """

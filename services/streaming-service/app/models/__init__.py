@@ -1,5 +1,3 @@
-import enum
-
 """
 SQLAlchemy ORM models for Streaming Service.
 Manages playback sessions, video manifests, transcoding, and delivery.
@@ -8,6 +6,7 @@ Manages playback sessions, video manifests, transcoding, and delivery.
 
 import uuid
 from datetime import datetime
+from enum import Enum
 
 from sqlalchemy import (
     Boolean,
@@ -15,21 +14,19 @@ from sqlalchemy import (
     DateTime,
     Enum,
     Float,
-    ForeignKey,
     Index,
     Integer,
     String,
-    Table,
     Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
 
-class PlaybackSessionStatus(str, enum.Enum):
+class PlaybackSessionStatus(str, Enum):
     """Playback session status enumeration."""
     ACTIVE = "active"
     PAUSED = "paused"

@@ -1,4 +1,3 @@
-import enum
 """Billing service repositories.
 
 One repository per aggregate root. All database access goes through these

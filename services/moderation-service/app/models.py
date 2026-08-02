@@ -1,4 +1,3 @@
-import enum
 """Moderation service models.
 
 Three tables drive the content review workflow:

@@ -1,4 +1,4 @@
-import re
+from typing import Annotated
 
 """API routes for User Service."""
 import logging

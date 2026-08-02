@@ -1,4 +1,5 @@
 """Integration tests for Content Service."""
+from datetime import timezone
 import pytest_asyncio
 from httpx import AsyncClient
 

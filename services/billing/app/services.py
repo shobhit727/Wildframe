@@ -1,4 +1,3 @@
-import enum
 """Billing service business logic — the Sustenance Engine core.
 
 This module implements the economic model from PRODUCT_VISION.md:
@@ -18,10 +17,12 @@ from decimal import Decimal
 from uuid import UUID
 
 from app.models import (
+    CreatorPoolEntry,
     Milestone,
     MilestoneStatus,
     MilestoneTranche,
     PayoutLedger,
+    Purchase,
     RevenueTier,
     Subscription,
     TrancheStatus,

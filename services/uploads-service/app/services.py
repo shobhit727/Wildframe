@@ -10,7 +10,7 @@ pure domain logic and unit-testable with stubs.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from app.core.events import Event, EventPublisher, get_event_publisher

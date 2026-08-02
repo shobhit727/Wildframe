@@ -6,7 +6,7 @@ Pydantic v2 schemas for Streaming Service API requests/responses.
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class PlaybackSessionResponse(BaseModel):

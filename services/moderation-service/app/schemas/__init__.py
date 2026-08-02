@@ -1,5 +1,3 @@
-import enum
-
 """Moderation service Pydantic request/response schemas."""
 from __future__ import annotations
 

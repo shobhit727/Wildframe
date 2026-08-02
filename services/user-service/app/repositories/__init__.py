@@ -1,13 +1,9 @@
-import re
-
-from fastapi import HTTPException
-
 """Repository layer for User Service."""
 import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 

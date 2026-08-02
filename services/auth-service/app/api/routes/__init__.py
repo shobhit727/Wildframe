@@ -1,5 +1,3 @@
-import re
-
 """API endpoints for Auth Service."""
 import logging
 from typing import Annotated

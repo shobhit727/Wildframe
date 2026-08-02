@@ -1,5 +1,7 @@
-import re
+import hashlib
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID
 
 """
 Security utilities for Auth Service.
@@ -8,8 +10,6 @@ Implements JWT token handling, password hashing, and validation.
 
 
 import logging
-from datetime import UTC, datetime
-from uuid import UUID
 
 from app.core.settings import settings
 from jose import JWTError, jwt
@@ -140,7 +140,6 @@ class TokenManager:
                 raise JWTError(f"Invalid token type: expected {token_type}")
 
             return payload
-            import hashlib  # Moved import to the top of the file
 
         except JWTError as e:
             logger.warning(f"Token verification failed: {e}")

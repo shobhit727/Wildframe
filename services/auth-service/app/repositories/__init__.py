@@ -1,14 +1,9 @@
-import re
-from datetime import UTC, timezone
-
-from fastapi import HTTPException
-
 """Repository layer for Auth Service."""
 import logging
+from datetime import UTC
 from uuid import UUID
 
 from app.models import LoginAudit, RefreshToken, User
-from app.schemas import UserResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

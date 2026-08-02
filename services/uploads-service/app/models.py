@@ -1,4 +1,3 @@
-import enum
 """Uploads service models.
 
 Two tables drive the chunked/resumable upload flow:

@@ -1,5 +1,3 @@
-import re
-
 """
 Repository layer for Content Service data access.
 Provides abstraction over database operations with transaction management.
@@ -8,7 +6,7 @@ Provides abstraction over database operations with transaction management.
 import logging
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
