@@ -1,4 +1,5 @@
 """Search service models."""
+
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -8,8 +9,10 @@ from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
+
 class SearchQuery(Base):
     """Search query log for analytics."""
+
     __tablename__ = "search_queries"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
@@ -20,8 +23,10 @@ class SearchQuery(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     __table_args__ = (Index("idx_search_user_date", "user_id", "created_at"),)
 
+
 class SearchIndex(Base):
     """Elasticsearch index metadata."""
+
     __tablename__ = "search_indexes"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     content_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
@@ -40,4 +45,6 @@ class SearchIndex(Base):
     dub_languages = Column(JSON, nullable=True)
     subtitle_languages = Column(JSON, nullable=True)
     indexed_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )

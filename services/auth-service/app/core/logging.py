@@ -1,4 +1,3 @@
-
 """
 Structured logging configuration for Auth Service.
 Implements JSON logging with correlation IDs for distributed tracing.
@@ -30,7 +29,7 @@ class CorrelationIdJsonFormatter(jsonlogger.JsonFormatter):
         message_dict: dict[str, Any],
     ) -> None:
         """Add custom fields to log record.
-        
+
         Args:
             log_record: The log record dictionary
             record: The logging record
@@ -111,17 +110,16 @@ def setup_logging() -> None:
     logging.config.dictConfig(logging_config)
     logger = logging.getLogger(__name__)
     logger.info(
-        f"Logging initialized for {settings.SERVICE_NAME} "
-        f"(environment: {settings.ENVIRONMENT})"
+        f"Logging initialized for {settings.SERVICE_NAME} " f"(environment: {settings.ENVIRONMENT})"
     )
 
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger instance.
-    
+
     Args:
         name: Logger name (typically __name__)
-    
+
     Returns:
         logging.Logger: Configured logger
     """
@@ -130,10 +128,10 @@ def get_logger(name: str) -> logging.Logger:
 
 def set_correlation_id(correlation_id: str | None = None) -> str:
     """Set correlation ID for request tracking.
-    
+
     Args:
         correlation_id: Optional correlation ID. If None, generates a new one.
-    
+
     Returns:
         str: The correlation ID
     """
@@ -146,10 +144,10 @@ def set_correlation_id(correlation_id: str | None = None) -> str:
 
 def set_request_id(request_id: str | None = None) -> str:
     """Set request ID for current request.
-    
+
     Args:
         request_id: Optional request ID. If None, generates a new one.
-    
+
     Returns:
         str: The request ID
     """
@@ -162,7 +160,7 @@ def set_request_id(request_id: str | None = None) -> str:
 
 def set_user_id(user_id: str) -> None:
     """Set user ID for current request context.
-    
+
     Args:
         user_id: The user ID
     """

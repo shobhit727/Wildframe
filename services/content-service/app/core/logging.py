@@ -10,13 +10,13 @@ from contextvars import ContextVar
 from pythonjsonlogger import jsonlogger
 
 # Context variables for tracking request flow
-correlation_id: ContextVar[str | None] = ContextVar('correlation_id', default=None)
-request_id: ContextVar[str | None] = ContextVar('request_id', default=None)
+correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
+request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
 
 
 class ContextFilter(logging.Filter):
     """Add correlation and request IDs to log records."""
-    
+
     def filter(self, record):
         record.correlation_id = get_correlation_id()
         record.request_id = get_request_id()
@@ -25,53 +25,41 @@ class ContextFilter(logging.Filter):
 
 def setup_logging():
     """Configure JSON logging with correlation IDs."""
-    
-    logging.config.dictConfig({
-        'version': 1,
-        'disable_existing_loggers': False,
-        'formatters': {
-            'json': {
-                '()': jsonlogger.JsonFormatter,
-                'format': '%(asctime)s %(name)s %(levelname)s %(message)s %(correlation_id)s %(request_id)s'
+
+    logging.config.dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {
+                "json": {
+                    "()": jsonlogger.JsonFormatter,
+                    "format": "%(asctime)s %(name)s %(levelname)s %(message)s %(correlation_id)s %(request_id)s",
+                },
+                "standard": {"format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s"},
             },
-            'standard': {
-                'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-            }
-        },
-        'filters': {
-            'context_filter': {
-                '()': ContextFilter
-            }
-        },
-        'handlers': {
-            'console': {
-                'class': 'logging.StreamHandler',
-                'level': 'DEBUG',
-                'formatter': 'json',
-                'filters': ['context_filter']
+            "filters": {"context_filter": {"()": ContextFilter}},
+            "handlers": {
+                "console": {
+                    "class": "logging.StreamHandler",
+                    "level": "DEBUG",
+                    "formatter": "json",
+                    "filters": ["context_filter"],
+                },
+                "file": {
+                    "class": "logging.FileHandler",
+                    "level": "INFO",
+                    "formatter": "json",
+                    "filename": "content_service.log",
+                    "filters": ["context_filter"],
+                },
             },
-            'file': {
-                'class': 'logging.FileHandler',
-                'level': 'INFO',
-                'formatter': 'json',
-                'filename': 'content_service.log',
-                'filters': ['context_filter']
-            }
-        },
-        'loggers': {
-            '': {
-                'handlers': ['console', 'file'],
-                'level': 'DEBUG',
-                'propagate': True
+            "loggers": {
+                "": {"handlers": ["console", "file"], "level": "DEBUG", "propagate": True},
+                "sqlalchemy.engine": {"level": "WARNING"},
+                "sqlalchemy.pool": {"level": "WARNING"},
             },
-            'sqlalchemy.engine': {
-                'level': 'WARNING'
-            },
-            'sqlalchemy.pool': {
-                'level': 'WARNING'
-            }
         }
-    })
+    )
 
 
 def set_correlation_id(cid: str):

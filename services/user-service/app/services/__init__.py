@@ -1,4 +1,5 @@
 """Service layer for User Service."""
+
 import logging
 from datetime import UTC, datetime
 from uuid import UUID

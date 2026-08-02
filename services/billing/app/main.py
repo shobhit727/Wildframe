@@ -7,6 +7,7 @@ This service implements the economic model that makes WildFrame different:
   - Milestone-tranched funding with kill clauses
   - Idempotent payout ledger through Stripe Connect
 """
+
 import logging
 
 from fastapi import FastAPI

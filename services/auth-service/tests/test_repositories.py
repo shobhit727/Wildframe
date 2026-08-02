@@ -1,5 +1,5 @@
-
 """Unit tests for repository layer."""
+
 from datetime import UTC, datetime, timedelta
 
 from app.models import LoginAudit
@@ -209,9 +209,7 @@ class TestLoginAuditRepository:
 
         assert count >= 3
 
-    async def test_get_recent_failed_attempts_filtered_by_time(
-        self, test_user, audit_repository
-    ):
+    async def test_get_recent_failed_attempts_filtered_by_time(self, test_user, audit_repository):
         """Test that old attempts are not counted."""
         # Old failed attempt (more than 5 minutes ago)
         old_audit = LoginAudit(

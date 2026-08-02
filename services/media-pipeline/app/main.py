@@ -1,5 +1,5 @@
-
 """Main FastAPI application for the Media Pipeline Service."""
+
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -78,6 +78,7 @@ def create_app() -> FastAPI:
         if not db_ok:
             from fastapi import status
             from fastapi.responses import JSONResponse
+
             return JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 content={"ready": False, "reason": "database_unavailable"},

@@ -15,9 +15,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
 
     # Database
-    DATABASE_URL: str = (
-        "postgresql+asyncpg://postgres:password@localhost:5432/moderation_db"
-    )
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/moderation_db"
 
     # Security
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"

@@ -9,6 +9,7 @@ from importing:
    was never defined in ``core/database.py`` (only ``DatabaseManager.get_session``
    existed), so the included router failed to import.
 """
+
 import pytest
 
 
@@ -52,8 +53,7 @@ def test_get_db_session_is_async_generator():
     from app.core.database import get_db_session
 
     assert inspect.isasyncgenfunction(get_db_session), (
-        "get_db_session must be an async generator function for FastAPI "
-        "dependency injection."
+        "get_db_session must be an async generator function for FastAPI " "dependency injection."
     )
 
 

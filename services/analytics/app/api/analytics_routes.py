@@ -1,4 +1,5 @@
 """Analytics service API routes."""
+
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -17,6 +18,7 @@ from app.services import AnalyticsService
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
+
 async def get_analytics_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AnalyticsService:
     return AnalyticsService(
         EventRepository(db),
@@ -25,13 +27,19 @@ async def get_analytics_service(db: Annotated[AsyncSession, Depends(get_db)]) ->
         ContentPerformanceMetricsRepository(db),
     )
 
+
 @router.post("/events")
-async def log_event(user_id: Annotated[UUID, Body(...)], event_type: Annotated[str, Body(...)],
-                   event_data: Annotated[dict, Body(None)], content_id: Annotated[UUID, Body(None)],
-                   service: Annotated[AnalyticsService, Depends(get_analytics_service)]):
+async def log_event(
+    user_id: Annotated[UUID, Body(...)],
+    event_type: Annotated[str, Body(...)],
+    event_data: Annotated[dict, Body(None)],
+    content_id: Annotated[UUID, Body(None)],
+    service: Annotated[AnalyticsService, Depends(get_analytics_service)],
+):
     """Log analytics event."""
     await service.log_event(user_id, event_type, event_data, content_id)
     return {"status": "logged"}
+
 
 @router.get("/user-events/{user_id}")
 async def get_user_events(
@@ -42,6 +50,7 @@ async def get_user_events(
     """Get user events."""
     events = await service.get_user_events(user_id, limit)
     return {"events": events, "total": len(events)}
+
 
 @router.post("/view-events")
 async def record_view_event(
@@ -68,16 +77,22 @@ async def record_view_event(
     )
     return {"status": "recorded"}
 
+
 @router.get("/creators/{creator_id}")
-async def get_creator_analytics(creator_id: UUID, service: Annotated[AnalyticsService, Depends(get_analytics_service)]):
+async def get_creator_analytics(
+    creator_id: UUID, service: Annotated[AnalyticsService, Depends(get_analytics_service)]
+):
     """Get analytics for a creator."""
     analytics = await service.get_creator_analytics(creator_id)
     if not analytics:
         return {"creator_id": str(creator_id), "analytics": None}
     return analytics
 
+
 @router.get("/content/{content_id}")
-async def get_content_performance(content_id: UUID, service: Annotated[AnalyticsService, Depends(get_analytics_service)]):
+async def get_content_performance(
+    content_id: UUID, service: Annotated[AnalyticsService, Depends(get_analytics_service)]
+):
     """Get performance metrics for content."""
     performance = await service.get_content_performance(content_id)
     if not performance:

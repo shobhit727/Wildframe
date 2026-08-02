@@ -1,5 +1,5 @@
-
 """Database configuration and session management for User Service."""
+
 import logging
 from collections.abc import AsyncGenerator
 

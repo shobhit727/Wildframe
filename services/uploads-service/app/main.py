@@ -1,4 +1,5 @@
 """Main FastAPI application for the Uploads Service."""
+
 import logging
 
 from fastapi import FastAPI

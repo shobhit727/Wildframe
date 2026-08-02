@@ -1,4 +1,5 @@
 """API endpoints for Auth Service."""
+
 import logging
 from typing import Annotated
 
@@ -30,6 +31,7 @@ from app.api.routes.auth import router as auth_router
 
 router.include_router(auth_router)
 
+
 # Dependencies
 async def get_auth_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -53,7 +55,7 @@ async def get_auth_service(
 async def get_current_user_id(request: Request) -> str:
     """Extract user ID from JWT token in Authorization header."""
     auth_header = request.headers.get("Authorization", "")
-    
+
     if not auth_header.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -62,7 +64,7 @@ async def get_current_user_id(request: Request) -> str:
         )
 
     token = auth_header[7:]  # Remove "Bearer " prefix
-    
+
     try:
         token_manager = TokenManager()
         payload = token_manager.verify_token(token, token_type="access")
@@ -97,14 +99,14 @@ async def register(
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> UserResponse:
     """Register new user.
-    
+
     Args:
         request: Registration request with email, password, first_name, last_name
         auth_service: Injected authentication service
-    
+
     Returns:
         UserResponse: Created user profile
-    
+
     Raises:
         HTTPException: If user already exists or validation fails
     """
@@ -125,21 +127,21 @@ async def login(
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> TokenResponse:
     """Authenticate user and return tokens.
-    
+
     Args:
         request: HTTP request (for IP address extraction)
         login_request: Login credentials
         auth_service: Injected authentication service
-    
+
     Returns:
         TokenResponse: Access and refresh tokens
-    
+
     Raises:
         HTTPException: If credentials are invalid or account is locked
     """
     # Extract client IP address
     client_ip = request.client.host if request.client else "unknown"
-    
+
     return await auth_service.login(login_request, client_ip)
 
 
@@ -156,14 +158,14 @@ async def refresh_token(
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> TokenResponse:
     """Refresh access token using refresh token.
-    
+
     Args:
         request: Refresh token request
         auth_service: Injected authentication service
-    
+
     Returns:
         TokenResponse: New access and refresh tokens
-    
+
     Raises:
         HTTPException: If refresh token is invalid or expired
     """
@@ -182,11 +184,11 @@ async def logout(
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> None:
     """Logout user by revoking refresh token.
-    
+
     Args:
         request: Refresh token to revoke
         auth_service: Injected authentication service
-    
+
     Raises:
         HTTPException: If logout fails
     """
@@ -211,18 +213,19 @@ async def get_current_user(
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> UserResponse:
     """Get current user profile.
-    
+
     Args:
         user_id: User ID extracted from JWT token
         auth_service: Injected authentication service
-    
+
     Returns:
         UserResponse: Current user profile
-    
+
     Raises:
         HTTPException: If user not found
     """
     from uuid import UUID
+
     return await auth_service.get_current_user(UUID(user_id))
 
 
@@ -239,16 +242,17 @@ async def change_password(
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> None:
     """Change user password.
-    
+
     Args:
         request: Old and new password
         user_id: User ID from JWT token
         auth_service: Injected authentication service
-    
+
     Raises:
         HTTPException: If old password is incorrect
     """
     from uuid import UUID
+
     await auth_service.change_password(
         UUID(user_id),
         request.old_password,

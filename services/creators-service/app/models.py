@@ -1,4 +1,5 @@
 """Creators service models."""
+
 from datetime import UTC, datetime
 from enum import Enum
 from uuid import uuid4
@@ -23,6 +24,7 @@ Base = declarative_base()
 
 class KYCStatus(str, Enum):
     """KYC verification status for a creator account."""
+
     PENDING = "pending"
     VERIFIED = "verified"
     REJECTED = "rejected"
@@ -31,6 +33,7 @@ class KYCStatus(str, Enum):
 
 class MilestoneStatus(str, Enum):
     """Lifecycle status of a milestone."""
+
     DRAFT = "draft"
     FUNDING = "funding"
     COMPLETED = "completed"
@@ -39,6 +42,7 @@ class MilestoneStatus(str, Enum):
 
 class TrancheStatus(str, Enum):
     """Lifecycle status of a milestone tranche."""
+
     LOCKED = "locked"
     RELEASED = "released"
     ROLLED_BACK = "rolled_back"
@@ -46,6 +50,7 @@ class TrancheStatus(str, Enum):
 
 class PayoutStatus(str, Enum):
     """Lifecycle status of a payout ledger entry."""
+
     ACCRUED = "accrued"
     TRANSFERRED = "transferred"
     FAILED = "failed"
@@ -56,6 +61,7 @@ class CreatorAccount(Base):
 
     One row per onboarded creator. user_id is the API-gateway identity id.
     """
+
     __tablename__ = "creator_accounts"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -69,8 +75,9 @@ class CreatorAccount(Base):
     kyc_verified_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
-                        onupdate=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
 
 
 class EffectiveFloor(Base):
@@ -80,21 +87,19 @@ class EffectiveFloor(Base):
     preserved because each adjustment inserts a new row with a later
     effective_from; get_floor_for_creator returns the latest by effective_from.
     """
+
     __tablename__ = "effective_floors"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     creator_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
     per_minute_amount = Column(Float, nullable=False)
     currency = Column(String(8), nullable=False, default="USD")
-    effective_from = Column(DateTime, nullable=False,
-                            default=lambda: datetime.now(UTC))
+    effective_from = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     last_adjusted_at = Column(DateTime, nullable=True)
     reason = Column(String(500), nullable=True)
 
-    __table_args__ = (
-        CheckConstraint("per_minute_amount >= 0", name="ck_floor_non_negative"),
-    )
+    __table_args__ = (CheckConstraint("per_minute_amount >= 0", name="ck_floor_non_negative"),)
 
 
 class CreatorPoolBalance(Base):
@@ -103,6 +108,7 @@ class CreatorPoolBalance(Base):
     accrued_cents: pool top-ups the creator has received (below-floor support).
     contributed_cents: creator's contributions into the pool (when above floor).
     """
+
     __tablename__ = "creator_pool_balances"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -124,6 +130,7 @@ class Milestone(Base):
     rolls back every non-released tranche in one transaction; released tranches
     stay released — that is the capital protection guarantee.
     """
+
     __tablename__ = "milestones"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -135,8 +142,9 @@ class Milestone(Base):
     goal = Column(String(1000), nullable=True)
     kill_reason = Column(String(1000), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
-                        onupdate=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
 
 
 class MilestoneTranche(Base):
@@ -145,6 +153,7 @@ class MilestoneTranche(Base):
     threshold is the percentage gate (10/20/30/40). Unique per milestone so a
     milestone cannot have two tranches at the same threshold.
     """
+
     __tablename__ = "milestone_tranches"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -167,6 +176,7 @@ class PayoutLedger(Base):
     payout / retried webhook must never double-pay; the unique constraint is the
     last line of defense.
     """
+
     __tablename__ = "payout_ledger"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)

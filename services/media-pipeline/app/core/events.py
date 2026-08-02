@@ -48,9 +48,7 @@ class Event:
     key: str
     payload: dict[str, Any] = field(default_factory=dict)
     event_id: str = field(default_factory=lambda: str(uuid4()))
-    occurred_at: str = field(
-        default_factory=lambda: datetime.now(UTC).isoformat()
-    )
+    occurred_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -107,9 +105,7 @@ class KafkaEventPublisher(EventPublisher):
     is lazy so dev/test environments never hard-require aiokafka.
     """
 
-    def __init__(
-        self, bootstrap_servers: str, client_id: str = "media-pipeline"
-    ) -> None:
+    def __init__(self, bootstrap_servers: str, client_id: str = "media-pipeline") -> None:
         self.bootstrap_servers = bootstrap_servers
         self.client_id = client_id
         self._producer = None

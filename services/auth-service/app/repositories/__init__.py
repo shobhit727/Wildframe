@@ -1,4 +1,5 @@
 """Repository layer for Auth Service."""
+
 import logging
 from datetime import UTC
 from uuid import UUID
@@ -61,11 +62,11 @@ class UserRepository(BaseRepository):
             user = await self.get_by_id(user_id)
             if not user:
                 return None
-            
+
             for key, value in kwargs.items():
                 if hasattr(user, key):
                     setattr(user, key, value)
-            
+
             await self.flush()
             logger.info(f"Updated user: {user_id}")
             return user
@@ -98,11 +99,7 @@ class RefreshTokenRepository(BaseRepository):
     async def create(self, user_id: UUID, token_hash: str, expires_at) -> RefreshToken:
         """Create refresh token."""
         try:
-            token = RefreshToken(
-                user_id=user_id,
-                token_hash=token_hash,
-                expires_at=expires_at
-            )
+            token = RefreshToken(user_id=user_id, token_hash=token_hash, expires_at=expires_at)
             self.session.add(token)
             await self.flush()
             logger.info(f"Created refresh token for user: {user_id}")
@@ -120,9 +117,11 @@ class RefreshTokenRepository(BaseRepository):
 
     async def get_by_user_id(self, user_id: UUID) -> RefreshToken | None:
         """Get latest refresh token for user."""
-        stmt = select(RefreshToken).where(
-            RefreshToken.user_id == user_id
-        ).order_by(RefreshToken.created_at.desc())
+        stmt = (
+            select(RefreshToken)
+            .where(RefreshToken.user_id == user_id)
+            .order_by(RefreshToken.created_at.desc())
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -144,16 +143,15 @@ class RefreshTokenRepository(BaseRepository):
     async def delete_expired(self) -> int:
         """Delete expired refresh tokens."""
         from datetime import datetime
+
         try:
-            stmt = select(RefreshToken).where(
-                RefreshToken.expires_at < datetime.now(UTC)
-            )
+            stmt = select(RefreshToken).where(RefreshToken.expires_at < datetime.now(UTC))
             result = await self.session.execute(stmt)
             tokens = result.scalars().all()
-            
+
             for token in tokens:
                 await self.session.delete(token)
-            
+
             await self.flush()
             logger.info(f"Deleted {len(tokens)} expired tokens")
             return len(tokens)
@@ -169,11 +167,7 @@ class LoginAuditRepository(BaseRepository):
     async def create(self, user_id: UUID, status: str, ip_address: str) -> LoginAudit:
         """Create login audit record."""
         try:
-            audit = LoginAudit(
-                user_id=user_id,
-                status=status,
-                ip_address=ip_address
-            )
+            audit = LoginAudit(user_id=user_id, status=status, ip_address=ip_address)
             self.session.add(audit)
             await self.flush()
             return audit
@@ -182,19 +176,16 @@ class LoginAuditRepository(BaseRepository):
             logger.error(f"Error creating audit: {e!s}")
             raise
 
-    async def get_recent_failed_attempts(
-        self, 
-        user_id: UUID, 
-        minutes: int = 5
-    ) -> int:
+    async def get_recent_failed_attempts(self, user_id: UUID, minutes: int = 5) -> int:
         """Get count of failed login attempts in last N minutes."""
         from datetime import datetime, timedelta
+
         cutoff = datetime.now(UTC) - timedelta(minutes=minutes)
-        
+
         stmt = select(LoginAudit).where(
-            (LoginAudit.user_id == user_id) &
-            (LoginAudit.status == "failed") &
-            (LoginAudit.created_at > cutoff)
+            (LoginAudit.user_id == user_id)
+            & (LoginAudit.status == "failed")
+            & (LoginAudit.created_at > cutoff)
         )
         result = await self.session.execute(stmt)
         audits = result.scalars().all()

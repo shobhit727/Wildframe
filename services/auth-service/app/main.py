@@ -1,4 +1,3 @@
-
 """
 Main FastAPI application for Auth Service.
 Entry point with lifespan management, middleware, and route configuration.
@@ -27,16 +26,16 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Manage FastAPI application lifespan.
-    
+
     Handles startup and shutdown events:
     - Initialize logging
     - Setup observability (tracing, metrics)
     - Perform health checks
     - Graceful shutdown
-    
+
     Args:
         app: FastAPI application instance
-    
+
     Yields:
         Control back to FastAPI
     """
@@ -72,7 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
 def create_app() -> FastAPI:
     """Create and configure FastAPI application.
-    
+
     Returns:
         FastAPI: Configured application instance
     """
@@ -102,11 +101,11 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def add_request_context(request: Request, call_next):
         """Add request context for tracing and logging.
-        
+
         Args:
             request: Incoming request
             call_next: Next middleware/endpoint
-        
+
         Returns:
             Response with added headers
         """
@@ -133,11 +132,11 @@ def create_app() -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         """Handle request validation errors.
-        
+
         Args:
             request: The request
             exc: The validation error
-        
+
         Returns:
             JSONResponse: Error response
         """
@@ -154,7 +153,7 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["Health"], response_model=HealthCheckResponse)
     async def health_check() -> HealthCheckResponse:
         """Health check endpoint.
-        
+
         Returns:
             HealthCheckResponse: Service health status
         """
@@ -176,7 +175,7 @@ def create_app() -> FastAPI:
     @app.get("/ready", tags=["Health"])
     async def readiness_check():
         """Readiness check endpoint for Kubernetes.
-        
+
         Returns:
             dict: Readiness status
         """
@@ -194,7 +193,7 @@ def create_app() -> FastAPI:
     @app.get("/", tags=["Info"])
     async def root():
         """API root information.
-        
+
         Returns:
             dict: Service information
         """

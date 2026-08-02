@@ -8,6 +8,7 @@ Exposes the Sustenance Engine endpoints:
   - Milestone-tranched funding management
   - Payout ledger history
 """
+
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
@@ -35,6 +36,7 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 # DI helpers
 # ---------------------------------------------------------------------------
 
+
 async def get_billing_service(db: Annotated[AsyncSession, Depends(get_db)]) -> BillingService:
     """Wire up BillingService with all its repositories."""
     return BillingService(
@@ -51,6 +53,7 @@ async def get_billing_service(db: Annotated[AsyncSession, Depends(get_db)]) -> B
 # ---------------------------------------------------------------------------
 # Request / response schemas
 # ---------------------------------------------------------------------------
+
 
 class SubscribeRequest(BaseModel):
     tier: str = Field(..., description="Revenue tier: avod, svod, or tvod")
@@ -82,6 +85,7 @@ class SubscriptionResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Subscription routes
 # ---------------------------------------------------------------------------
+
 
 @router.get("/subscription/{user_id}", response_model=SubscriptionResponse)
 async def get_subscription(
@@ -130,6 +134,7 @@ async def cancel_subscription(
 # TVOD purchases
 # ---------------------------------------------------------------------------
 
+
 @router.post("/purchase")
 async def purchase_title(
     request: PurchaseRequest,
@@ -147,6 +152,7 @@ async def purchase_title(
 # Sustenance Engine — Floor
 # ---------------------------------------------------------------------------
 
+
 @router.get("/floor/{region_code}")
 async def get_floor(
     region_code: str,
@@ -155,7 +161,9 @@ async def get_floor(
     """Get the living-wage floor for a region."""
     floor = await service.get_floor(region_code)
     if not floor:
-        raise HTTPException(status_code=404, detail=f"No floor configured for region '{region_code}'")
+        raise HTTPException(
+            status_code=404, detail=f"No floor configured for region '{region_code}'"
+        )
     return {
         "region_code": floor.region_code,
         "currency": floor.currency,
@@ -185,6 +193,7 @@ async def list_floors(
 # Sustenance Engine — Creator Pool
 # ---------------------------------------------------------------------------
 
+
 @router.get("/pool")
 async def get_pool_status(
     service: Annotated[BillingService, Depends(get_billing_service)],
@@ -207,6 +216,7 @@ async def get_pool_status(
 # Sustenance Engine — Milestones & Tranches
 # ---------------------------------------------------------------------------
 
+
 @router.post("/milestones")
 async def create_milestone(
     request: CreateMilestoneRequest,
@@ -215,7 +225,9 @@ async def create_milestone(
     """Create a milestone commitment with 10/20/30/40 tranched funding."""
     try:
         ms = await service.create_milestone(
-            request.creator_id, request.project_title, request.total_commitment,
+            request.creator_id,
+            request.project_title,
+            request.total_commitment,
         )
     except BillingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -267,6 +279,7 @@ async def kill_milestone(
 # Payout history
 # ---------------------------------------------------------------------------
 
+
 @router.get("/payouts/{creator_id}")
 async def get_payout_history(
     creator_id: UUID,
@@ -290,6 +303,7 @@ async def get_payout_history(
 # ---------------------------------------------------------------------------
 # Creator share (utility endpoint)
 # ---------------------------------------------------------------------------
+
 
 @router.get("/creator-share")
 async def calculate_creator_share(

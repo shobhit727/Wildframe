@@ -10,6 +10,7 @@ Implements the Sustenance Engine architecture from PRODUCT_VISION.md:
 Key invariant: >= 55% of net SVOD revenue goes to creators. This is
 calculated BEFORE platform costs are deducted (contractual floor, not target).
 """
+
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
@@ -39,6 +40,7 @@ Base = declarative_base()
 # Revenue Tiers (§3 of PRODUCT_VISION.md)
 # ---------------------------------------------------------------------------
 
+
 class RevenueTier(str, Enum):
     """User-facing subscription / purchase tiers.
 
@@ -46,6 +48,7 @@ class RevenueTier(str, Enum):
     SVOD  — subscription at $7.99/mo. >=55% of net to creators.
     TVOD  — pay-per-view, per-title purchase.
     """
+
     AVOD = "avod"
     SVOD = "svod"
     TVOD = "tvod"
@@ -58,6 +61,7 @@ class Subscription(Base):
     recurring billing; TVOD purchases are one-off and tracked in
     Purchase records, not here.
     """
+
     __tablename__ = "subscriptions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -80,8 +84,10 @@ class Subscription(Base):
 # Purchases (TVOD — per-title)
 # ---------------------------------------------------------------------------
 
+
 class Purchase(Base):
     """A one-off TVOD (pay-per-view) purchase of a title."""
+
     __tablename__ = "purchases"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -89,19 +95,20 @@ class Purchase(Base):
     content_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     price = Column(Numeric(10, 2), nullable=False)
     idempotency_key = Column(
-        String(128), unique=True, nullable=False,
+        String(128),
+        unique=True,
+        nullable=False,
         comment="Prevents duplicate charges from retried requests.",
     )
     purchased_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
-    __table_args__ = (
-        Index("idx_purchase_user_content", "user_id", "content_id", unique=True),
-    )
+    __table_args__ = (Index("idx_purchase_user_content", "user_id", "content_id", unique=True),)
 
 
 # ---------------------------------------------------------------------------
 # Invoicing
 # ---------------------------------------------------------------------------
+
 
 class InvoiceStatus(str, Enum):
     PENDING = "pending"
@@ -112,15 +119,19 @@ class InvoiceStatus(str, Enum):
 
 class Invoice(Base):
     """Billing invoice — one per billing cycle or TVOD purchase."""
+
     __tablename__ = "invoices"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    subscription_id = Column(UUID(as_uuid=True), ForeignKey("subscriptions.id"), nullable=True, index=True)
+    subscription_id = Column(
+        UUID(as_uuid=True), ForeignKey("subscriptions.id"), nullable=True, index=True
+    )
     purchase_id = Column(UUID(as_uuid=True), ForeignKey("purchases.id"), nullable=True, index=True)
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     amount = Column(Numeric(10, 2), nullable=False)
     creator_share_amount = Column(
-        Numeric(10, 2), default=Decimal("0.00"),
+        Numeric(10, 2),
+        default=Decimal("0.00"),
         comment="Portion of this invoice allocated to creators (>=55% of net for SVOD).",
     )
     status = Column(SQLEnum(InvoiceStatus), default=InvoiceStatus.PENDING)
@@ -134,6 +145,7 @@ class Invoice(Base):
 # Living-Wage Floor (§2.1)
 # ---------------------------------------------------------------------------
 
+
 class RegionFloor(Base):
     """Per-region living-wage floor rate.
 
@@ -143,10 +155,13 @@ class RegionFloor(Base):
 
     Admin-editable; reviewed quarterly.
     """
+
     __tablename__ = "region_floors"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    region_code = Column(String(10), nullable=False, unique=True, comment="ISO 3166-1 alpha-2 or custom code")
+    region_code = Column(
+        String(10), nullable=False, unique=True, comment="ISO 3166-1 alpha-2 or custom code"
+    )
     currency = Column(String(3), nullable=False, comment="ISO 4217")
     floor_low = Column(Numeric(10, 4), nullable=False, comment="Minimum per finished minute")
     floor_high = Column(Numeric(10, 4), nullable=False, comment="Maximum per finished minute")
@@ -162,6 +177,7 @@ class RegionFloor(Base):
 # Creator Pool (§2.2)
 # ---------------------------------------------------------------------------
 
+
 class CreatorPoolEntry(Base):
     """Tracks the Creator Pool balance and its redistribution.
 
@@ -170,6 +186,7 @@ class CreatorPoolEntry(Base):
     toward emerging studios. Top earners contribute more and draw nothing
     until the floor is broadly met.
     """
+
     __tablename__ = "creator_pool_entries"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -184,10 +201,13 @@ class CreatorPoolEntry(Base):
 
 class CreatorPoolDistribution(Base):
     """A single creator's share of the Creator Pool for one cycle."""
+
     __tablename__ = "creator_pool_distributions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    pool_entry_id = Column(UUID(as_uuid=True), ForeignKey("creator_pool_entries.id"), nullable=False, index=True)
+    pool_entry_id = Column(
+        UUID(as_uuid=True), ForeignKey("creator_pool_entries.id"), nullable=False, index=True
+    )
     creator_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     amount = Column(Numeric(10, 2), nullable=False)
     floor_deficit = Column(Numeric(10, 2), comment="How far below floor before this distribution")
@@ -197,6 +217,7 @@ class CreatorPoolDistribution(Base):
 # ---------------------------------------------------------------------------
 # Milestone-Tranched Funding (§2.3)
 # ---------------------------------------------------------------------------
+
 
 class MilestoneStatus(str, Enum):
     PENDING = "pending"
@@ -213,6 +234,7 @@ class Milestone(Base):
     first cut, final). Each tranche has a kill clause: miss a milestone,
     remaining tranches pause and funds revert to the pool.
     """
+
     __tablename__ = "milestones"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -227,13 +249,15 @@ class Milestone(Base):
         onupdate=lambda: datetime.now(UTC),
     )
 
-    tranches = relationship("MilestoneTranche", back_populates="milestone", order_by="MilestoneTranche.tranche_number")
+    tranches = relationship(
+        "MilestoneTranche", back_populates="milestone", order_by="MilestoneTranche.tranche_number"
+    )
 
 
 class TrancheStatus(str, Enum):
-    LOCKED = "locked"          # Not yet releasable
-    RELEASED = "released"      # Funds disbursed
-    REVERTED = "reverted"      # Killed — funds returned to Creator Pool
+    LOCKED = "locked"  # Not yet releasable
+    RELEASED = "released"  # Funds disbursed
+    REVERTED = "reverted"  # Killed — funds returned to Creator Pool
 
 
 class MilestoneTranche(Base):
@@ -243,13 +267,18 @@ class MilestoneTranche(Base):
     only when its milestone is verified. If a milestone is killed, all
     unreleased tranches revert to the Creator Pool.
     """
+
     __tablename__ = "milestone_tranches"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    milestone_id = Column(UUID(as_uuid=True), ForeignKey("milestones.id"), nullable=False, index=True)
+    milestone_id = Column(
+        UUID(as_uuid=True), ForeignKey("milestones.id"), nullable=False, index=True
+    )
     tranche_number = Column(Integer, nullable=False, comment="1-4, representing 10/20/30/40%")
     percentage = Column(Numeric(5, 2), nullable=False, comment="10.00, 20.00, 30.00, or 40.00")
-    amount = Column(Numeric(12, 2), nullable=False, comment="= milestone.total_commitment * percentage")
+    amount = Column(
+        Numeric(12, 2), nullable=False, comment="= milestone.total_commitment * percentage"
+    )
     status = Column(SQLEnum(TrancheStatus), default=TrancheStatus.LOCKED)
     released_at = Column(DateTime, nullable=True)
     reverted_at = Column(DateTime, nullable=True)
@@ -270,11 +299,12 @@ class MilestoneTranche(Base):
 # Payout Ledger (§4)
 # ---------------------------------------------------------------------------
 
+
 class PayoutStatus(str, Enum):
-    ACCRUED = "accrued"            # Earned but not yet transferred
+    ACCRUED = "accrued"  # Earned but not yet transferred
     TRANSFERRING = "transferring"  # Stripe Connect transfer in flight
-    COMPLETED = "completed"        # Successfully transferred
-    FAILED = "failed"              # Transfer failed; will retry
+    COMPLETED = "completed"  # Successfully transferred
+    FAILED = "failed"  # Transfer failed; will retry
 
 
 class PayoutLedger(Base):
@@ -284,6 +314,7 @@ class PayoutLedger(Base):
     or retried payout runs cannot double-pay a creator. Payouts go
     through Stripe Connect so creators receive funds in their own accounts.
     """
+
     __tablename__ = "payout_ledger"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -297,13 +328,13 @@ class PayoutLedger(Base):
         comment="JSON breakdown: {floor_payment, svod_share, avod_share, pool_top_up, tvod_share}",
     )
     stripe_transfer_id = Column(String(255), nullable=True)
-    stripe_account_id = Column(String(255), nullable=True, comment="Creator's Stripe Connect account")
+    stripe_account_id = Column(
+        String(255), nullable=True, comment="Creator's Stripe Connect account"
+    )
     cycle_start = Column(DateTime, nullable=False)
     cycle_end = Column(DateTime, nullable=False)
     accrued_at = Column(DateTime, default=lambda: datetime.now(UTC))
     transferred_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
-    __table_args__ = (
-        Index("idx_payout_creator_cycle", "creator_id", "cycle_start", "cycle_end"),
-    )
+    __table_args__ = (Index("idx_payout_creator_cycle", "creator_id", "cycle_start", "cycle_end"),)

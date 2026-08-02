@@ -14,9 +14,16 @@ class UserModeration(Base):
     status = Column(String(50), nullable=False, default="active", index=True)
     reason = Column(Text, nullable=True)
     moderated_by = Column(String(255), nullable=False)
-    moderated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    moderated_at = Column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
     is_active = Column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
@@ -39,7 +46,12 @@ class ContentModeration(Base):
     flagged_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     resolved_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
     is_active = Column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
@@ -61,7 +73,12 @@ class SystemAlert(Base):
     acknowledged_by = Column(String(255), nullable=True)
     acknowledged_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
     is_active = Column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
@@ -81,12 +98,15 @@ class SystemConfig(Base):
     description = Column(Text, nullable=True)
     updated_by = Column(String(255), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
     is_active = Column(Boolean, nullable=False, default=True)
 
-    __table_args__ = (
-        Index("idx_key", "key"),
-    )
+    __table_args__ = (Index("idx_key", "key"),)
 
 
 class AdminAuditLog(Base):

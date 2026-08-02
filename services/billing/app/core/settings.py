@@ -6,6 +6,7 @@ Key settings:
   - MILESTONE_TRANCHE_PERCENTAGES: 10/20/30/40 split
   - MAX_STAGE_ATTEMPTS: kill threshold for stalled milestones
 """
+
 from decimal import Decimal
 
 from pydantic_settings import BaseSettings

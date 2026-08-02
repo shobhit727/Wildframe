@@ -47,7 +47,7 @@ class BaseModel:
 
 class User(Base, BaseModel):
     """User entity for authentication.
-    
+
     Attributes:
         id: Unique user identifier
         email: User email (unique)
@@ -76,22 +76,22 @@ class User(Base, BaseModel):
     password_hash = Column(String(255), nullable=False)
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)
-    
+
     # Email verification
     email_verified = Column(Boolean, default=False, nullable=False)
     email_verified_at = Column(DateTime, nullable=True)
-    
+
     # Login tracking
     last_login_at = Column(DateTime, nullable=True)
     last_login_ip = Column(String(45), nullable=True)  # Supports IPv6
     login_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime, nullable=True)
-    
+
     # MFA
     mfa_enabled = Column(Boolean, default=False, nullable=False)
     mfa_secret = Column(String(255), nullable=True)
     backup_codes = Column(Text, nullable=True)  # JSON array of backup codes
-    
+
     # Indexes for common queries
     __table_args__ = (
         Index("idx_users_email_active", "email", "is_active"),
@@ -102,7 +102,7 @@ class User(Base, BaseModel):
 
 class RefreshToken(Base, BaseModel):
     """Refresh token entity for token rotation.
-    
+
     Attributes:
         id: Unique token identifier
         user_id: Reference to user
@@ -137,7 +137,7 @@ class RefreshToken(Base, BaseModel):
 
 class TokenBlacklist(Base, BaseModel):
     """Token blacklist for revoked access tokens.
-    
+
     Attributes:
         id: Unique entry identifier
         jti: JWT ID (unique token identifier)
@@ -153,14 +153,12 @@ class TokenBlacklist(Base, BaseModel):
     revoked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     expires_at = Column(DateTime, nullable=False, index=True)
 
-    __table_args__ = (
-        Index("idx_token_blacklist_user_expires", "user_id", "expires_at"),
-    )
+    __table_args__ = (Index("idx_token_blacklist_user_expires", "user_id", "expires_at"),)
 
 
 class LoginAudit(Base, BaseModel):
     """Audit log for login attempts.
-    
+
     Attributes:
         id: Unique audit entry identifier
         user_id: Reference to user (nullable for failed attempts)

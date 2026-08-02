@@ -4,6 +4,7 @@ Thin persistence layer: the service owns all business rules (strike
 thresholds, status transitions, event emission). The repository just loads
 and persists rows.
 """
+
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -25,9 +26,7 @@ class ContentFlagRepository:
         return flag
 
     async def get(self, flag_id: UUID) -> ContentFlag | None:
-        result = await self.session.execute(
-            select(ContentFlag).where(ContentFlag.id == flag_id)
-        )
+        result = await self.session.execute(select(ContentFlag).where(ContentFlag.id == flag_id))
         return result.scalar_one_or_none()
 
     async def list_pending(self, limit: int = 50) -> list[ContentFlag]:

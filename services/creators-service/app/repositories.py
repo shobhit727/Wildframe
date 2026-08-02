@@ -1,4 +1,5 @@
 """Creators service repositories."""
+
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -33,11 +34,20 @@ class CreatorAccountRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def create(self, user_id: UUID, display_name: str = "", bio: str = "",
-                     region_code: str = "US", currency: str = "USD") -> CreatorAccount:
+    async def create(
+        self,
+        user_id: UUID,
+        display_name: str = "",
+        bio: str = "",
+        region_code: str = "US",
+        currency: str = "USD",
+    ) -> CreatorAccount:
         acct = CreatorAccount(
-            user_id=user_id, display_name=display_name, bio=bio,
-            region_code=region_code, currency=currency,
+            user_id=user_id,
+            display_name=display_name,
+            bio=bio,
+            region_code=region_code,
+            currency=currency,
             kyc_status=KYCStatus.PENDING,
         )
         self.session.add(acct)
@@ -66,8 +76,13 @@ class EffectiveFloorRepository:
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
-    async def set_floor(self, creator_id: UUID, per_minute_amount: float,
-                        currency: str = "USD", reason: str | None = None) -> EffectiveFloor:
+    async def set_floor(
+        self,
+        creator_id: UUID,
+        per_minute_amount: float,
+        currency: str = "USD",
+        reason: str | None = None,
+    ) -> EffectiveFloor:
         now = datetime.now(UTC)
         floor = EffectiveFloor(
             creator_id=creator_id,
@@ -121,21 +136,38 @@ class MilestoneRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def create(self, title: str, creator_id: UUID, total_cents: int = 0,
-                     currency: str = "USD", goal: str | None = None) -> Milestone:
+    async def create(
+        self,
+        title: str,
+        creator_id: UUID,
+        total_cents: int = 0,
+        currency: str = "USD",
+        goal: str | None = None,
+    ) -> Milestone:
         ms = Milestone(
-            title=title, creator_id=creator_id, total_cents=total_cents,
-            currency=currency, goal=goal, status=MilestoneStatus.DRAFT,
+            title=title,
+            creator_id=creator_id,
+            total_cents=total_cents,
+            currency=currency,
+            goal=goal,
+            status=MilestoneStatus.DRAFT,
         )
         self.session.add(ms)
         await self.session.flush()
         return ms
 
-    async def add_tranche(self, milestone_id: UUID, threshold: int,
-                          amount_cents: int, release_condition: str | None = None) -> MilestoneTranche:
+    async def add_tranche(
+        self,
+        milestone_id: UUID,
+        threshold: int,
+        amount_cents: int,
+        release_condition: str | None = None,
+    ) -> MilestoneTranche:
         tranche = MilestoneTranche(
-            milestone_id=milestone_id, threshold=threshold,
-            amount_cents=amount_cents, release_condition=release_condition,
+            milestone_id=milestone_id,
+            threshold=threshold,
+            amount_cents=amount_cents,
+            release_condition=release_condition,
             status=TrancheStatus.LOCKED,
         )
         self.session.add(tranche)
@@ -157,7 +189,9 @@ class MilestoneRepository:
         await self.session.flush()
         return tranche
 
-    async def kill_milestone(self, milestone_id: UUID, reason: str | None = None) -> Milestone | None:
+    async def kill_milestone(
+        self, milestone_id: UUID, reason: str | None = None
+    ) -> Milestone | None:
         """Kill a milestone: status=killed, and flip EVERY non-released tranche
         to rolled_back in ONE transaction. Released tranches stay released —
         that is the capital protection guarantee (PRODUCT_VISION §2.3).
@@ -196,11 +230,19 @@ class PayoutLedgerRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def accrued(self, creator_id: UUID, period_start: datetime,
-                      period_end: datetime, view_minutes: int,
-                      floor_cents: int, pool_topup_cents: int,
-                      share_cents: int, stripe_fee_cents: int,
-                      net_cents: int, idempotency_key: str) -> PayoutLedger:
+    async def accrued(
+        self,
+        creator_id: UUID,
+        period_start: datetime,
+        period_end: datetime,
+        view_minutes: int,
+        floor_cents: int,
+        pool_topup_cents: int,
+        share_cents: int,
+        stripe_fee_cents: int,
+        net_cents: int,
+        idempotency_key: str,
+    ) -> PayoutLedger:
         """Idempotent accrual. If a row with this idempotency_key already exists,
         return it unchanged so the same period never double-counts.
 

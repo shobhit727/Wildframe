@@ -1,4 +1,5 @@
 """Logging configuration."""
+
 import logging
 import uuid
 from contextvars import ContextVar
@@ -9,8 +10,7 @@ request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 def setup_logging() -> None:
     """Setup application logging."""
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
 

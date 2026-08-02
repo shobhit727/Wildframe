@@ -74,7 +74,9 @@ class StripeClient:
             )
             logger.info(
                 "Created SVOD checkout session for user %s (tier=%s): %s",
-                user_id, tier, session.id,
+                user_id,
+                tier,
+                session.id,
             )
             return session
         except stripe.error.StripeError as exc:
@@ -105,17 +107,19 @@ class StripeClient:
             session = stripe.checkout.Session.create(
                 payment_method_types=["card"],
                 mode="payment",
-                line_items=[{
-                    "price_data": {
-                        "currency": settings.DEFAULT_CURRENCY.lower(),
-                        "product_data": {
-                            "name": f"Title {content_id}",
-                            "metadata": {"content_id": str(content_id)},
+                line_items=[
+                    {
+                        "price_data": {
+                            "currency": settings.DEFAULT_CURRENCY.lower(),
+                            "product_data": {
+                                "name": f"Title {content_id}",
+                                "metadata": {"content_id": str(content_id)},
+                            },
+                            "unit_amount": int(price * 100),  # Stripe uses cents
                         },
-                        "unit_amount": int(price * 100),  # Stripe uses cents
-                    },
-                    "quantity": 1,
-                }],
+                        "quantity": 1,
+                    }
+                ],
                 success_url=success_url,
                 cancel_url=cancel_url,
                 client_reference_id=str(user_id),
@@ -127,7 +131,9 @@ class StripeClient:
             )
             logger.info(
                 "Created TVOD checkout session for user %s (content=%s): %s",
-                user_id, content_id, session.id,
+                user_id,
+                content_id,
+                session.id,
             )
             return session
         except stripe.error.StripeError as exc:
@@ -153,7 +159,9 @@ class StripeClient:
 
         try:
             event = stripe.Webhook.construct_event(
-                payload, sig_header, settings.STRIPE_WEBHOOK_SECRET,
+                payload,
+                sig_header,
+                settings.STRIPE_WEBHOOK_SECRET,
             )
             logger.info("Verified Stripe webhook event %s (%s)", event.id, event.type)
             return event
@@ -199,7 +207,8 @@ class StripeClient:
             )
             logger.info(
                 "Created Stripe Connect account for creator %s: %s",
-                creator_id, account.id,
+                creator_id,
+                account.id,
             )
             return account
         except stripe.error.StripeError as exc:
@@ -235,8 +244,11 @@ class StripeClient:
             )
             logger.info(
                 "Transferred %s %s to creator account %s (transfer=%s, idem_key=%s)",
-                amount, settings.DEFAULT_CURRENCY,
-                creator_stripe_account_id, transfer.id, idempotency_key,
+                amount,
+                settings.DEFAULT_CURRENCY,
+                creator_stripe_account_id,
+                transfer.id,
+                idempotency_key,
             )
             return transfer
         except stripe.error.StripeError as exc:

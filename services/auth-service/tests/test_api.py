@@ -1,4 +1,5 @@
 """Integration tests for Auth Service API endpoints."""
+
 import pytest
 from app.core.database import DatabaseManager
 from app.main import create_app

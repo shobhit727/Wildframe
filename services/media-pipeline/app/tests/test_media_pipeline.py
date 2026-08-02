@@ -114,9 +114,7 @@ def _fresh_registry() -> StageRegistry:
     return StageRegistry()
 
 
-def make_service(
-    registry: StageRegistry, max_attempts: int = 3, backoff_base: float = 0.0
-):
+def make_service(registry: StageRegistry, max_attempts: int = 3, backoff_base: float = 0.0):
     set_event_publisher(InMemoryEventPublisher())
     return MediaPipelineService(
         job_repo=FakeJobRepo(),
@@ -192,9 +190,7 @@ async def test_per_stage_success_events_for_full_pipeline():
 async def test_retry_then_fail_emits_pipeline_failed_dlq():
     reg = _fresh_registry()
     # A critical stage that always fails -> exhausts retries -> DLQ.
-    reg.register(
-        CountingStage("flaky", success_event="x", critical=True, fail_times=99)
-    )
+    reg.register(CountingStage("flaky", success_event="x", critical=True, fail_times=99))
     service = make_service(reg, max_attempts=3, backoff_base=0.0)
 
     job = await service.start_job(
@@ -242,11 +238,7 @@ async def test_non_critical_stage_skip_continues_pipeline():
     reg = _fresh_registry()
     reg.register(CountingStage("must", success_event="x", critical=True))
     # Non-critical stage that always fails -> skipped, not failed.
-    reg.register(
-        CountingStage(
-            "besteffort", success_event="y", critical=False, fail_times=99
-        )
-    )
+    reg.register(CountingStage("besteffort", success_event="y", critical=False, fail_times=99))
     service = make_service(reg, max_attempts=2, backoff_base=0.0)
 
     job = await service.start_job(
@@ -278,9 +270,7 @@ async def test_non_retryable_fails_immediately_without_retries():
     assert job.status == PipelineJobStatus.FAILED
     # Only one attempt — non-retryable failures don't consume retries.
     assert reg.get("fatal").calls == 1
-    assert any(
-        e.topic == "content.pipeline.failed" for e in service.publisher.sent
-    )
+    assert any(e.topic == "content.pipeline.failed" for e in service.publisher.sent)
 
 
 @pytest.mark.asyncio
@@ -288,12 +278,8 @@ async def test_start_job_is_idempotent_per_upload_session():
     reg = _fresh_registry()
     service = make_service(reg)
     up = uuid4()
-    job1 = await service.start_job(
-        content_id=uuid4(), upload_session_id=up, storage_key="k"
-    )
-    job2 = await service.start_job(
-        content_id=uuid4(), upload_session_id=up, storage_key="k"
-    )
+    job1 = await service.start_job(content_id=uuid4(), upload_session_id=up, storage_key="k")
+    job2 = await service.start_job(content_id=uuid4(), upload_session_id=up, storage_key="k")
     assert job1.id == job2.id
 
 

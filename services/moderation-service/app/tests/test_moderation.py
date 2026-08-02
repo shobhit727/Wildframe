@@ -5,6 +5,7 @@ These cover the core domain rules: flag creation, the 3-strike suspension
 threshold, decision making, and event emission. They use in-memory stubs
 for the event publisher and fake repositories.
 """
+
 from datetime import UTC
 from uuid import UUID, uuid4
 
@@ -42,9 +43,7 @@ class FakeFlagRepo:
         return self.flags.get(flag_id)
 
     async def list_pending(self, limit: int = 50) -> list[ContentFlag]:
-        pending = [
-            f for f in self.flags.values() if f.status == FlagStatus.PENDING
-        ]
+        pending = [f for f in self.flags.values() if f.status == FlagStatus.PENDING]
         pending.sort(key=lambda f: f.created_at)
         return pending[:limit]
 
@@ -78,10 +77,7 @@ class FakeStrikeRepo:
         return strike
 
     async def list_active(self, creator_id: UUID) -> list[CreatorStrike]:
-        return [
-            s for s in self.strikes
-            if s.creator_id == creator_id and s.is_active
-        ]
+        return [s for s in self.strikes if s.creator_id == creator_id and s.is_active]
 
     async def count_active(self, creator_id: UUID) -> int:
         return len(await self.list_active(creator_id))

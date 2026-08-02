@@ -7,6 +7,7 @@ plan), register received chunks, complete (verify all chunks + checksum, emit
 Infrastructure (storage, event bus) is injected via ports so this class is
 pure domain logic and unit-testable with stubs.
 """
+
 from __future__ import annotations
 
 import logging
@@ -48,9 +49,7 @@ class UploadService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def compute_chunk_plan(
-        size_bytes: int, chunk_size: int
-    ) -> tuple[int, int]:
+    def compute_chunk_plan(size_bytes: int, chunk_size: int) -> tuple[int, int]:
         """Return ``(chunk_size, total_chunks)`` for an object.
 
         ``total_chunks`` is the ceiling of ``size_bytes / chunk_size`` but is
@@ -161,9 +160,7 @@ class UploadService:
                 f"session {session_id} is {session.status.value}; no more chunks accepted"
             )
         if index < 0 or index >= session.total_chunks:
-            raise UploadError(
-                f"chunk index {index} out of range [0, {session.total_chunks})"
-            )
+            raise UploadError(f"chunk index {index} out of range [0, {session.total_chunks})")
 
         received = await self.repo.received_indices(session_id)
         if index in received:
@@ -225,18 +222,19 @@ class UploadService:
         expected = list(range(session.total_chunks))
         if received != expected:
             missing = sorted(set(expected) - set(received))
-            raise UploadError(
-                f"session {session_id} missing chunks: {missing}"
-            )
+            raise UploadError(f"session {session_id} missing chunks: {missing}")
 
         # Checksum verification. The strongest check wins: prefer an explicit
         # checksum passed to complete, else the one captured at create.
         expected_checksum = checksum_sha256 or session.checksum_sha256
-        if expected_checksum and session.checksum_sha256 and expected_checksum != session.checksum_sha256:
+        if (
+            expected_checksum
+            and session.checksum_sha256
+            and expected_checksum != session.checksum_sha256
+        ):
             raise UploadError(
-                    "checksum mismatch for session "
-                    f"{session_id}: expected {session.checksum_sha256}"
-                )
+                "checksum mismatch for session " f"{session_id}: expected {session.checksum_sha256}"
+            )
 
         session.status = UploadSessionStatus.COMPLETE
         session.storage_key = f"uploads/{session.id}/{session.filename}"

@@ -39,10 +39,10 @@ async def get_content_service(db: Annotated[AsyncSession, Depends(get_db)]) -> C
 
 # Genre Endpoints
 
+
 @router.post("/genres", response_model=GenreResponse, status_code=status.HTTP_201_CREATED)
 async def create_genre(
-    data: CreateGenreRequest,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    data: CreateGenreRequest, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> GenreResponse:
     """Create new genre."""
     try:
@@ -52,12 +52,14 @@ async def create_genre(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error creating genre: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create genre")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create genre"
+        )
 
 
 @router.get("/genres", response_model=list[GenreResponse])
 async def list_genres(
-    service: Annotated[ContentService, Depends(get_content_service)]
+    service: Annotated[ContentService, Depends(get_content_service)],
 ) -> list[GenreResponse]:
     """List all genres."""
     try:
@@ -65,13 +67,14 @@ async def list_genres(
         return genres
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing genres: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list genres")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list genres"
+        )
 
 
 @router.get("/genres/{genre_id}", response_model=GenreResponse)
 async def get_genre(
-    genre_id: UUID,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    genre_id: UUID, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> GenreResponse:
     """Get genre by ID."""
     try:
@@ -81,15 +84,17 @@ async def get_genre(
         return genre
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting genre: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get genre")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get genre"
+        )
 
 
 # Movie Endpoints
 
+
 @router.post("/movies", response_model=MovieResponse, status_code=status.HTTP_201_CREATED)
 async def create_movie(
-    data: CreateMovieRequest,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    data: CreateMovieRequest, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> MovieResponse:
     """Create new movie."""
     try:
@@ -99,13 +104,14 @@ async def create_movie(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error creating movie: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create movie")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create movie"
+        )
 
 
 @router.get("/movies/{movie_id}", response_model=MovieResponse)
 async def get_movie(
-    movie_id: UUID,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    movie_id: UUID, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> MovieResponse:
     """Get movie by ID."""
     try:
@@ -115,13 +121,14 @@ async def get_movie(
         return movie
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting movie: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get movie")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get movie"
+        )
 
 
 @router.get("/movies/by-key/{media_key}", response_model=MovieResponse)
 async def get_movie_by_key(
-    media_key: str,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    media_key: str, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> MovieResponse:
     """Get movie by media key."""
     try:
@@ -131,7 +138,9 @@ async def get_movie_by_key(
         return movie
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting movie: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get movie")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get movie"
+        )
 
 
 @router.get("/movies", response_model=ListMoviesResponse)
@@ -150,11 +159,15 @@ async def list_movies(
             movies, total = await service.list_trending_movies(limit, offset)
         else:
             movies, total = await service.list_recent_movies(limit, offset)
-        
-        return ListMoviesResponse(movies=movies, total=total, page=offset // limit + 1, page_size=limit)
+
+        return ListMoviesResponse(
+            movies=movies, total=total, page=offset // limit + 1, page_size=limit
+        )
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing movies: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list movies")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list movies"
+        )
 
 
 @router.get("/movies/search", response_model=ListMoviesResponse)
@@ -167,17 +180,21 @@ async def search_movies(
     """Search movies."""
     try:
         movies, total = await service.search_movies(q, limit, offset)
-        return ListMoviesResponse(movies=movies, total=total, page=offset // limit + 1, page_size=limit)
+        return ListMoviesResponse(
+            movies=movies, total=total, page=offset // limit + 1, page_size=limit
+        )
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error searching movies: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to search movies")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to search movies"
+        )
 
 
 @router.put("/movies/{movie_id}", response_model=MovieResponse)
 async def update_movie(
     movie_id: UUID,
     data: UpdateMovieRequest,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    service: Annotated[ContentService, Depends(get_content_service)],
 ) -> MovieResponse:
     """Update movie."""
     try:
@@ -187,13 +204,14 @@ async def update_movie(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error updating movie: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update movie")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update movie"
+        )
 
 
 @router.post("/movies/{movie_id}/view")
 async def record_movie_view(
-    movie_id: UUID,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    movie_id: UUID, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> dict:
     """Record movie view."""
     try:
@@ -201,15 +219,17 @@ async def record_movie_view(
         return {"status": "success"}
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error recording view: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to record view")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to record view"
+        )
 
 
 # Show Endpoints
 
+
 @router.post("/shows", response_model=ShowResponse, status_code=status.HTTP_201_CREATED)
 async def create_show(
-    data: CreateShowRequest,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    data: CreateShowRequest, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> ShowResponse:
     """Create new show."""
     try:
@@ -219,13 +239,14 @@ async def create_show(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error creating show: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create show")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create show"
+        )
 
 
 @router.get("/shows/{show_id}", response_model=ShowResponse)
 async def get_show(
-    show_id: UUID,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    show_id: UUID, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> ShowResponse:
     """Get show by ID."""
     try:
@@ -235,7 +256,9 @@ async def get_show(
         return show
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting show: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get show")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get show"
+        )
 
 
 @router.get("/shows", response_model=ListShowsResponse)
@@ -254,11 +277,15 @@ async def list_shows(
             shows, total = await service.list_ongoing_shows(limit, offset)
         else:
             shows, total = await service.list_recent_shows(limit, offset)
-        
-        return ListShowsResponse(shows=shows, total=total, page=offset // limit + 1, page_size=limit)
+
+        return ListShowsResponse(
+            shows=shows, total=total, page=offset // limit + 1, page_size=limit
+        )
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing shows: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list shows")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list shows"
+        )
 
 
 @router.get("/shows/search", response_model=ListShowsResponse)
@@ -271,16 +298,19 @@ async def search_shows(
     """Search shows."""
     try:
         shows, total = await service.search_shows(q, limit, offset)
-        return ListShowsResponse(shows=shows, total=total, page=offset // limit + 1, page_size=limit)
+        return ListShowsResponse(
+            shows=shows, total=total, page=offset // limit + 1, page_size=limit
+        )
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error searching shows: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to search shows")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to search shows"
+        )
 
 
 @router.post("/shows/{show_id}/view")
 async def record_show_view(
-    show_id: UUID,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    show_id: UUID, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> dict:
     """Record show view."""
     try:
@@ -288,31 +318,36 @@ async def record_show_view(
         return {"status": "success"}
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error recording view: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to record view")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to record view"
+        )
 
 
 # Season Endpoints
 
+
 @router.post("/seasons", response_model=SeasonResponse, status_code=status.HTTP_201_CREATED)
 async def create_season(
-    data: CreateSeasonRequest,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    data: CreateSeasonRequest, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> SeasonResponse:
     """Create new season."""
     try:
-        season = await service.create_season(data.show_id, data.season_number, data.model_dump(exclude=["show_id", "season_number"]))
+        season = await service.create_season(
+            data.show_id, data.season_number, data.model_dump(exclude=["show_id", "season_number"])
+        )
         return season
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error creating season: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create season")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create season"
+        )
 
 
 @router.get("/seasons/{season_id}", response_model=SeasonResponse)
 async def get_season(
-    season_id: UUID,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    season_id: UUID, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> SeasonResponse:
     """Get season by ID."""
     try:
@@ -322,13 +357,14 @@ async def get_season(
         return season
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting season: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get season")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get season"
+        )
 
 
 @router.get("/shows/{show_id}/seasons", response_model=ListSeasonsResponse)
 async def list_seasons(
-    show_id: UUID,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    show_id: UUID, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> ListSeasonsResponse:
     """List seasons for show."""
     try:
@@ -338,31 +374,36 @@ async def list_seasons(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing seasons: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list seasons")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list seasons"
+        )
 
 
 # Episode Endpoints
 
+
 @router.post("/episodes", response_model=EpisodeResponse, status_code=status.HTTP_201_CREATED)
 async def create_episode(
-    data: CreateEpisodeRequest,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    data: CreateEpisodeRequest, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> EpisodeResponse:
     """Create new episode."""
     try:
-        episode = await service.create_episode(data.season_id, data.show_id, data.model_dump(exclude=["season_id", "show_id"]))
+        episode = await service.create_episode(
+            data.season_id, data.show_id, data.model_dump(exclude=["season_id", "show_id"])
+        )
         return episode
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error creating episode: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create episode")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create episode"
+        )
 
 
 @router.get("/episodes/{episode_id}", response_model=EpisodeResponse)
 async def get_episode(
-    episode_id: UUID,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    episode_id: UUID, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> EpisodeResponse:
     """Get episode by ID."""
     try:
@@ -372,13 +413,14 @@ async def get_episode(
         return episode
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting episode: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get episode")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get episode"
+        )
 
 
 @router.get("/seasons/{season_id}/episodes", response_model=ListEpisodesResponse)
 async def list_season_episodes(
-    season_id: UUID,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    season_id: UUID, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> ListEpisodesResponse:
     """List episodes for season."""
     try:
@@ -388,7 +430,9 @@ async def list_season_episodes(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing episodes: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list episodes")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list episodes"
+        )
 
 
 @router.get("/shows/{show_id}/episodes", response_model=ListEpisodesResponse)
@@ -396,7 +440,7 @@ async def list_show_episodes(
     show_id: UUID,
     limit: Annotated[int, Query(50, ge=1, le=500)],
     offset: Annotated[int, Query(0, ge=0)],
-    service: Annotated[ContentService, Depends(get_content_service)]
+    service: Annotated[ContentService, Depends(get_content_service)],
 ) -> ListEpisodesResponse:
     """List episodes for show."""
     try:
@@ -406,13 +450,14 @@ async def list_show_episodes(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error listing episodes: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list episodes")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to list episodes"
+        )
 
 
 @router.post("/episodes/{episode_id}/view")
 async def record_episode_view(
-    episode_id: UUID,
-    service: Annotated[ContentService, Depends(get_content_service)]
+    episode_id: UUID, service: Annotated[ContentService, Depends(get_content_service)]
 ) -> dict:
     """Record episode view."""
     try:
@@ -420,4 +465,6 @@ async def record_episode_view(
         return {"status": "success"}
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error recording view: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to record view")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to record view"
+        )

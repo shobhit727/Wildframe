@@ -4,6 +4,7 @@ Structured-ish logging with a per-request correlation id carried in a
 contextvar so log lines emitted anywhere in the request path can be tied back
 to the same upload session. Mirrors the billing/streaming pattern.
 """
+
 import logging
 import uuid
 from contextvars import ContextVar

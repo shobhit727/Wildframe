@@ -9,6 +9,7 @@ Endpoints:
     GET  /moderation/strikes/{creator_id} — get strike history for a creator
     GET  /health                    — health check
 """
+
 from typing import Annotated
 from uuid import UUID
 
@@ -126,6 +127,7 @@ async def health() -> dict:
 # ---------------------------------------------------------------------------
 # Response mappers.
 # ---------------------------------------------------------------------------
+
 
 def _flag_to_response(flag) -> FlagResponse:
     return FlagResponse(

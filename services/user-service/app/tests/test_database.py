@@ -8,6 +8,7 @@ These cover two confirmed bugs:
 2. ``app/main.py`` imports ``HealthCheckResponse`` from ``app.schemas``, which
    never defined it, raising ``ImportError`` at import time.
 """
+
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine
 

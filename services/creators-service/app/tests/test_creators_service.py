@@ -8,6 +8,7 @@ exercises the repository/service logic faithfully for the invariants we care
 about: idempotency, floor >= 0, kill rolls back only unreleased tranches, and
 onboarding defaults KYC to pending.
 """
+
 import os
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -77,8 +78,7 @@ async def test_accrual_is_idempotent(session):
     from app.models import PayoutLedger
 
     user_id = uuid4()
-    acct = await CreatorAccountRepository(session).create(user_id=user_id,
-                                                           display_name="Ida")
+    acct = await CreatorAccountRepository(session).create(user_id=user_id, display_name="Ida")
     await session.flush()
     svc = _svc(session)
 
@@ -86,12 +86,20 @@ async def test_accrual_is_idempotent(session):
     period_end = datetime(2026, 1, 31, tzinfo=UTC)
 
     row1 = await svc.accrue_payout(
-        creator_id=acct.id, period_start=period_start, period_end=period_end,
-        view_minutes=100, earned_cents=500, stripe_fee_cents=10,
+        creator_id=acct.id,
+        period_start=period_start,
+        period_end=period_end,
+        view_minutes=100,
+        earned_cents=500,
+        stripe_fee_cents=10,
     )
     row2 = await svc.accrue_payout(
-        creator_id=acct.id, period_start=period_start, period_end=period_end,
-        view_minutes=100, earned_cents=500, stripe_fee_cents=10,
+        creator_id=acct.id,
+        period_start=period_start,
+        period_end=period_end,
+        view_minutes=100,
+        earned_cents=500,
+        stripe_fee_cents=10,
     )
     await session.flush()
 
@@ -112,8 +120,7 @@ async def test_floor_must_be_non_negative(session):
     NOT publishing, which breaks the pool math. Rejected at the service layer.
     """
     user_id = uuid4()
-    acct = await CreatorAccountRepository(session).create(user_id=user_id,
-                                                           display_name="Flo")
+    acct = await CreatorAccountRepository(session).create(user_id=user_id, display_name="Flo")
     await session.flush()
     svc = _svc(session)
 
@@ -136,20 +143,15 @@ async def test_kill_rolls_back_only_unreleased_tranches(session):
     remaining locked tranches revert to the pool.
     """
     user_id = uuid4()
-    acct = await CreatorAccountRepository(session).create(user_id=user_id,
-                                                           display_name="Kil")
+    acct = await CreatorAccountRepository(session).create(user_id=user_id, display_name="Kil")
     await session.flush()
     svc = _svc(session)
 
     ms = await svc.create_milestone("Series A", acct.id, total_cents=100_00)
-    await svc.add_tranche(ms.id, threshold=10, amount_cents=10_00,
-                          release_condition="script")
-    await svc.add_tranche(ms.id, threshold=30, amount_cents=30_00,
-                          release_condition="animatic")
-    await svc.add_tranche(ms.id, threshold=60, amount_cents=40_00,
-                          release_condition="first cut")
-    await svc.add_tranche(ms.id, threshold=100, amount_cents=20_00,
-                          release_condition="final")
+    await svc.add_tranche(ms.id, threshold=10, amount_cents=10_00, release_condition="script")
+    await svc.add_tranche(ms.id, threshold=30, amount_cents=30_00, release_condition="animatic")
+    await svc.add_tranche(ms.id, threshold=60, amount_cents=40_00, release_condition="first cut")
+    await svc.add_tranche(ms.id, threshold=100, amount_cents=20_00, release_condition="final")
     await session.flush()
 
     # Release the first two tranches (script + animatic done).
@@ -167,6 +169,7 @@ async def test_kill_rolls_back_only_unreleased_tranches(session):
     from sqlalchemy import select
 
     from app.models import MilestoneTranche
+
     stmt = select(MilestoneTranche).where(MilestoneTranche.milestone_id == ms.id)
     result = await session.execute(stmt)
     tranches = sorted(result.scalars().all(), key=lambda t: t.threshold)
@@ -188,8 +191,7 @@ async def test_onboarding_defaults_kyc_pending(session):
     after an explicit admin/verification step.
     """
     user_id = uuid4()
-    acct = await CreatorAccountRepository(session).create(user_id=user_id,
-                                                           display_name="New")
+    acct = await CreatorAccountRepository(session).create(user_id=user_id, display_name="New")
     await session.flush()
     assert acct.kyc_status == KYCStatus.PENDING
     assert acct.kyc_verified_at is None

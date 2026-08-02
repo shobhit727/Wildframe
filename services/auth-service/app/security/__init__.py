@@ -31,10 +31,10 @@ class PasswordManager:
     @staticmethod
     def hash_password(password: str) -> str:
         """Hash a password using bcrypt.
-        
+
         Args:
             password: Plain text password
-        
+
         Returns:
             str: Hashed password
         """
@@ -43,11 +43,11 @@ class PasswordManager:
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
         """Verify a password against its hash.
-        
+
         Args:
             plain_password: Plain text password to verify
             hashed_password: Hashed password to verify against
-        
+
         Returns:
             bool: True if passwords match, False otherwise
         """
@@ -60,11 +60,11 @@ class TokenManager:
     @staticmethod
     def create_access_token(user_id: UUID, email: str) -> str:
         """Create JWT access token.
-        
+
         Args:
             user_id: User ID
             email: User email
-        
+
         Returns:
             str: JWT access token
         """
@@ -90,10 +90,10 @@ class TokenManager:
     @staticmethod
     def create_refresh_token(user_id: UUID) -> str:
         """Create JWT refresh token.
-        
+
         Args:
             user_id: User ID
-        
+
         Returns:
             str: JWT refresh token
         """
@@ -118,14 +118,14 @@ class TokenManager:
     @staticmethod
     def verify_token(token: str, token_type: str = "access") -> dict[str, Any]:
         """Verify and decode JWT token.
-        
+
         Args:
             token: JWT token to verify
             token_type: Expected token type (access or refresh)
-        
+
         Returns:
             dict: Decoded token payload
-        
+
         Raises:
             JWTError: If token is invalid
         """
@@ -148,10 +148,10 @@ class TokenManager:
     @staticmethod
     def extract_user_id(token: str) -> UUID | None:
         """Extract user ID from token without verification.
-        
+
         Args:
             token: JWT token
-        
+
         Returns:
             UUID | None: User ID if extractable, None otherwise
         """
@@ -208,11 +208,11 @@ class RateLimiter:
         action: str,
     ) -> str:
         """Generate rate limit cache key.
-        
+
         Args:
             identifier: User identifier (email or IP)
             action: Action type (login, registration, etc.)
-        
+
         Returns:
             str: Cache key
         """
@@ -221,10 +221,10 @@ class RateLimiter:
     @staticmethod
     def get_window_size(action: str) -> tuple[int, int]:
         """Get rate limit window and attempts.
-        
+
         Args:
             action: Action type
-        
+
         Returns:
             tuple: (attempts_allowed, window_seconds)
         """

@@ -1,4 +1,5 @@
 """Main FastAPI application for Creators Service."""
+
 import logging
 
 from fastapi import FastAPI
@@ -15,7 +16,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.SERVICE_NAME,
         version=settings.SERVICE_VERSION,
-        description="Creators Service — onboarding, KYC/Stripe Connect, floor, pool, milestones/tranches, payouts ledger"
+        description="Creators Service — onboarding, KYC/Stripe Connect, floor, pool, milestones/tranches, payouts ledger",
     )
 
     @app.get("/health")

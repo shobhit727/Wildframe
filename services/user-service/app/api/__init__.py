@@ -1,4 +1,5 @@
 """API routes initialization."""
+
 from fastapi import APIRouter
 
 router = APIRouter()

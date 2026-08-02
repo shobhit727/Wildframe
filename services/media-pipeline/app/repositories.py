@@ -1,4 +1,5 @@
 """Media pipeline service repositories."""
+
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -24,18 +25,12 @@ class PipelineJobRepository:
         return job
 
     async def get(self, job_id: UUID) -> PipelineJob | None:
-        result = await self.session.execute(
-            select(PipelineJob).where(PipelineJob.id == job_id)
-        )
+        result = await self.session.execute(select(PipelineJob).where(PipelineJob.id == job_id))
         return result.scalar_one_or_none()
 
-    async def get_by_upload_session(
-        self, upload_session_id: UUID
-    ) -> PipelineJob | None:
+    async def get_by_upload_session(self, upload_session_id: UUID) -> PipelineJob | None:
         result = await self.session.execute(
-            select(PipelineJob).where(
-                PipelineJob.upload_session_id == upload_session_id
-            )
+            select(PipelineJob).where(PipelineJob.upload_session_id == upload_session_id)
         )
         return result.scalar_one_or_none()
 
@@ -44,9 +39,7 @@ class PipelineJobRepository:
         await self.session.flush()
         return job
 
-    async def list_by_status(
-        self, status: PipelineJobStatus, limit: int = 50
-    ) -> list[PipelineJob]:
+    async def list_by_status(self, status: PipelineJobStatus, limit: int = 50) -> list[PipelineJob]:
         result = await self.session.execute(
             select(PipelineJob)
             .where(PipelineJob.status == status)

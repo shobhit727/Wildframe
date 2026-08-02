@@ -1,4 +1,3 @@
-
 """
 Database connection management for Content Service.
 Handles SQLAlchemy async engine and session factory.
@@ -18,22 +17,22 @@ logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     """Manages database connections and sessions."""
-    
+
     _instance = None
     _engine = None
     _session_factory = None
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     def get_engine(self):
         """Get or create database engine."""
         if self._engine is None:
             # Use NullPool for development, QueuePool for production
             pool_class = NullPool if settings.ENVIRONMENT == "development" else QueuePool
-            
+
             self._engine = create_async_engine(
                 settings.DATABASE_URL,
                 echo=settings.DEBUG,
@@ -44,7 +43,7 @@ class DatabaseManager:
                 max_overflow=settings.DB_MAX_OVERFLOW,
             )
         return self._engine
-    
+
     def get_session_factory(self):
         """Get or create session factory."""
         if self._session_factory is None:
@@ -56,13 +55,13 @@ class DatabaseManager:
                 autoflush=False,
             )
         return self._session_factory
-    
+
     async def get_session(self):
         """Get async database session."""
         factory = self.get_session_factory()
         async with factory() as session:
             yield session
-    
+
     async def health_check(self) -> bool:
         """Check database health."""
         try:
@@ -73,7 +72,7 @@ class DatabaseManager:
         except Exception as e:  # noqa: BLE001
             logger.error(f"Database health check failed: {e}")
             return False
-    
+
     async def close(self):
         """Close database connections."""
         if self._engine:

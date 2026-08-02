@@ -8,6 +8,7 @@ Endpoints:
     POST /pipeline/jobs/{upload_id}/start  — start (or fetch) a pipeline job
     GET  /pipeline/jobs/{id}               — get job status + stage log
 """
+
 from typing import Annotated
 from uuid import UUID
 
@@ -149,9 +150,7 @@ async def start_transcoding(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Legacy entry point: create a TranscodingJob (compatibility)."""
-    service = MediaPipelineService(
-        PipelineJobRepository(db), PipelineStageLogRepository(db)
-    )
+    service = MediaPipelineService(PipelineJobRepository(db), PipelineStageLogRepository(db))
     job = await service.start_transcoding(content_id, source_url)
     return {"job_id": str(job.id), "status": "pending"}
 
@@ -162,9 +161,7 @@ async def get_transcoding_status(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Legacy entry point: fetch a TranscodingJob by content id."""
-    service = MediaPipelineService(
-        PipelineJobRepository(db), PipelineStageLogRepository(db)
-    )
+    service = MediaPipelineService(PipelineJobRepository(db), PipelineStageLogRepository(db))
     job = await service.get_job_status(content_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")

@@ -9,6 +9,7 @@ Endpoints:
     POST /uploads/sessions/{id}/complete — verify + finalize
     POST /uploads/sessions/{id}/abort — abort
 """
+
 from typing import Annotated
 from uuid import UUID
 
@@ -166,9 +167,7 @@ async def complete_session(
 ):
     """Verify all chunks + checksum and finalize the upload."""
     try:
-        session = await service.complete_session(
-            session_id, checksum_sha256=checksum_sha256
-        )
+        session = await service.complete_session(session_id, checksum_sha256=checksum_sha256)
     except UploadError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _session_to_response(session)

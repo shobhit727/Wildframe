@@ -1,4 +1,5 @@
 """Analytics service tests."""
+
 from uuid import uuid4
 
 import pytest
@@ -13,14 +14,15 @@ async def test_log_event(db: AsyncSession):
     user_id = uuid4()
     content_id = uuid4()
     service = AnalyticsService(None)
-    
+
     await service.log_event(user_id, "play_started", {"quality": "1080p"}, content_id)
+
 
 @pytest.mark.asyncio
 async def test_get_user_events(db: AsyncSession):
     """Test getting user events."""
     user_id = uuid4()
     service = AnalyticsService(None)
-    
+
     events = await service.get_user_events(user_id, 100)
     assert isinstance(events, list)

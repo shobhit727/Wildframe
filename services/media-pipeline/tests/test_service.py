@@ -1,4 +1,5 @@
 """Tests for Media Pipeline Service."""
+
 import pytest
 
 
@@ -7,7 +8,7 @@ async def test_health_check():
     """Test health check endpoint."""
     from app.main import app
     from fastapi.testclient import TestClient
-    
+
     client = TestClient(app)
     response = client.get("/health")
     assert response.status_code == 200

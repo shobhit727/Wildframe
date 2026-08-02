@@ -77,9 +77,7 @@ def as_stage(
     """Decorate an async ``(ctx) -> ctx`` function into a ``Stage``."""
 
     def deco(fn: Callable) -> _CallableStage:
-        return _CallableStage(
-            name=name, success_event=success_event, critical=critical, fn=fn
-        )
+        return _CallableStage(name=name, success_event=success_event, critical=critical, fn=fn)
 
     return deco
 
@@ -222,17 +220,13 @@ class MultiBitrateEncoder(ABC):
     """Port: ffmpeg multi-bitrate encode."""
 
     @abstractmethod
-    async def encode(
-        self, path: str, out_dir: str, bitrates: list[int]
-    ) -> dict[int, str]:
+    async def encode(self, path: str, out_dir: str, bitrates: list[int]) -> dict[int, str]:
         """Return bitrate_kbps -> output path."""
         raise NotImplementedError
 
 
 class StubMultiBitrateEncoder(MultiBitrateEncoder):
-    async def encode(
-        self, path: str, out_dir: str, bitrates: list[int]
-    ) -> dict[int, str]:
+    async def encode(self, path: str, out_dir: str, bitrates: list[int]) -> dict[int, str]:
         return {br: f"{out_dir}/v_{br}.mp4" for br in bitrates}
 
 
@@ -325,9 +319,7 @@ async def virus_scan(ctx: dict[str, Any]) -> dict[str, Any]:
     clean = await scanner.scan(ctx["quarantine_path"])
     ctx["scan_clean"] = clean
     if not clean:
-        raise RuntimeError(
-            f"virus detected in {ctx['quarantine_path']} (job {ctx['job_id']})"
-        )
+        raise RuntimeError(f"virus detected in {ctx['quarantine_path']} (job {ctx['job_id']})")
     return ctx
 
 
@@ -416,9 +408,7 @@ async def s3_upload(ctx: dict[str, Any]) -> dict[str, Any]:
     storage: ObjectStorage = ctx["object_storage"]
     job_id = ctx["job_id"]
     hls_key = await storage.upload(ctx["hls_url"], f"media/{job_id}/hls/master.m3u8")
-    dash_key = await storage.upload(
-        ctx["dash_url"], f"media/{job_id}/dash/manifest.mpd"
-    )
+    dash_key = await storage.upload(ctx["dash_url"], f"media/{job_id}/dash/manifest.mpd")
     ctx["storage"] = {"hls": hls_key, "dash": dash_key}
     return ctx
 

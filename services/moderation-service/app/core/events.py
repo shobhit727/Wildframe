@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 # Domain event base.
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Event:
     """A small, self-describing domain event.
@@ -47,9 +48,7 @@ class Event:
     key: str
     payload: dict[str, Any] = field(default_factory=dict)
     event_id: str = field(default_factory=lambda: str(uuid4()))
-    occurred_at: str = field(
-        default_factory=lambda: datetime.now(UTC).isoformat()
-    )
+    occurred_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -64,6 +63,7 @@ class Event:
 # ---------------------------------------------------------------------------
 # Publisher port + adapters.
 # ---------------------------------------------------------------------------
+
 
 class EventPublisher(ABC):
     """Port (interface) for publishing domain events.

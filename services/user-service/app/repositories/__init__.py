@@ -1,4 +1,5 @@
 """Repository layer for User Service."""
+
 import logging
 from datetime import UTC, datetime
 from uuid import UUID
@@ -89,12 +90,7 @@ class UserDeviceRepository(BaseRepository):
     """Repository for UserDevice model."""
 
     async def create(
-        self,
-        user_id: UUID,
-        device_id: str,
-        device_name: str,
-        device_type: str,
-        **kwargs
+        self, user_id: UUID, device_id: str, device_name: str, device_type: str, **kwargs
     ) -> UserDevice:
         """Create device."""
         try:
@@ -103,7 +99,7 @@ class UserDeviceRepository(BaseRepository):
                 device_id=device_id,
                 device_name=device_name,
                 device_type=device_type,
-                **kwargs
+                **kwargs,
             )
             self.session.add(device)
             await self.flush()
@@ -256,7 +252,9 @@ class UserSubscriptionProfileRepository(BaseRepository):
 
             # Update tier and related limits
             subscription.subscription_tier = new_tier
-            subscription.max_concurrent_streams = 1 if new_tier == "free" else (2 if new_tier == "basic" else 4)
+            subscription.max_concurrent_streams = (
+                1 if new_tier == "free" else (2 if new_tier == "basic" else 4)
+            )
             subscription.can_download = new_tier != "free"
             subscription.can_use_4k = new_tier == "premium"
             subscription.ad_free = new_tier != "free"

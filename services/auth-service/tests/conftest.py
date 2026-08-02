@@ -1,5 +1,5 @@
-
 """Shared test fixtures and configuration."""
+
 import asyncio
 from datetime import UTC, datetime
 from uuid import uuid4

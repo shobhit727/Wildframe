@@ -18,6 +18,7 @@ the assembled checksum matches, then flips to ``complete`` and emits
 ``content.uploaded``. ``abort`` (or expiry) flips to ``aborted`` and emits
 ``content.uploaded.aborted``.
 """
+
 from datetime import UTC, datetime
 from enum import Enum
 from uuid import uuid4

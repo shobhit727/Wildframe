@@ -22,16 +22,16 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Application lifespan management."""
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
-    
+
     # Database health check
     db_healthy = await db_manager.health_check()
     if not db_healthy:
         logger.warning("Database health check failed on startup")
     else:
         logger.info("Database connection established")
-    
+
     yield
-    
+
     # Shutdown
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
     await db_manager.close()
@@ -68,4 +68,5 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host=settings.SERVER_HOST, port=settings.SERVER_PORT)

@@ -39,12 +39,16 @@ from app.services import ContentService
 router = APIRouter(prefix="/api/v1", tags=["content"])
 
 
-async def get_content_service(session: Annotated[AsyncSession, Depends(db_manager.get_session)]) -> ContentService:
+async def get_content_service(
+    session: Annotated[AsyncSession, Depends(db_manager.get_session)],
+) -> ContentService:
     """Dependency injection for ContentService."""
     return ContentService(session)
 
 
-async def get_current_user(authorization: Annotated[str | None, Header(alias="Authorization")] = None) -> UUID:
+async def get_current_user(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> UUID:
     """Extract and verify current user from JWT token.
 
     Identity is read from the verified JWT ``sub`` claim, never from a
@@ -77,6 +81,7 @@ async def get_current_user(authorization: Annotated[str | None, Header(alias="Au
 
 
 # Genre endpoints
+
 
 @router.post("/genres", response_model=GenreResponse, status_code=status.HTTP_201_CREATED)
 async def create_genre(
@@ -132,6 +137,7 @@ async def delete_genre(
 
 
 # Content endpoints
+
 
 @router.post("/content", response_model=ContentResponse, status_code=status.HTTP_201_CREATED)
 async def create_content(
@@ -206,7 +212,12 @@ async def publish_content(
 
 # Season endpoints
 
-@router.post("/content/{content_id}/seasons", response_model=SeasonResponse, status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/content/{content_id}/seasons",
+    response_model=SeasonResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_season(
     content_id: UUID,
     request: SeasonCreateRequest,
@@ -266,7 +277,12 @@ async def delete_season(
 
 # Episode endpoints
 
-@router.post("/content/{content_id}/seasons/{season_id}/episodes", response_model=EpisodeResponse, status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/content/{content_id}/seasons/{season_id}/episodes",
+    response_model=EpisodeResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_episode(
     content_id: UUID,
     season_id: UUID,
@@ -277,7 +293,9 @@ async def create_episode(
     return await service.create_episode(content_id, season_id, request)
 
 
-@router.get("/content/{content_id}/seasons/{season_id}/episodes", response_model=list[EpisodeResponse])
+@router.get(
+    "/content/{content_id}/seasons/{season_id}/episodes", response_model=list[EpisodeResponse]
+)
 async def list_episodes(
     content_id: UUID,
     season_id: UUID,
@@ -287,7 +305,10 @@ async def list_episodes(
     return await service.list_episodes(content_id, season_id)
 
 
-@router.get("/content/{content_id}/seasons/{season_id}/episodes/{episode_id}", response_model=EpisodeResponse)
+@router.get(
+    "/content/{content_id}/seasons/{season_id}/episodes/{episode_id}",
+    response_model=EpisodeResponse,
+)
 async def get_episode(
     content_id: UUID,
     season_id: UUID,
@@ -301,7 +322,10 @@ async def get_episode(
     return episode
 
 
-@router.put("/content/{content_id}/seasons/{season_id}/episodes/{episode_id}", response_model=EpisodeResponse)
+@router.put(
+    "/content/{content_id}/seasons/{season_id}/episodes/{episode_id}",
+    response_model=EpisodeResponse,
+)
 async def update_episode(
     content_id: UUID,
     season_id: UUID,
@@ -316,7 +340,10 @@ async def update_episode(
     return episode
 
 
-@router.delete("/content/{content_id}/seasons/{season_id}/episodes/{episode_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/content/{content_id}/seasons/{season_id}/episodes/{episode_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
 async def delete_episode(
     content_id: UUID,
     season_id: UUID,
@@ -331,7 +358,12 @@ async def delete_episode(
 
 # Rating endpoints
 
-@router.post("/content/{content_id}/ratings", response_model=ContentRatingResponse, status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/content/{content_id}/ratings",
+    response_model=ContentRatingResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def rate_content(
     content_id: UUID,
     request: ContentRatingCreateRequest,
@@ -353,7 +385,12 @@ async def list_ratings(
 
 # Recommendation endpoints
 
-@router.post("/content/{content_id}/recommendations", response_model=ContentRecommendationResponse, status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/content/{content_id}/recommendations",
+    response_model=ContentRecommendationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def add_recommendation(
     content_id: UUID,
     request: ContentRecommendationCreateRequest,
@@ -363,7 +400,9 @@ async def add_recommendation(
     return await service.add_recommendation(content_id, request)
 
 
-@router.get("/content/{content_id}/recommendations", response_model=list[ContentRecommendationResponse])
+@router.get(
+    "/content/{content_id}/recommendations", response_model=list[ContentRecommendationResponse]
+)
 async def list_recommendations(
     content_id: UUID,
     service: Annotated[ContentService, Depends(get_content_service)],
@@ -374,7 +413,12 @@ async def list_recommendations(
 
 # Cast endpoints
 
-@router.post("/content/{content_id}/cast", response_model=CastMemberResponse, status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/content/{content_id}/cast",
+    response_model=CastMemberResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def add_cast_member(
     content_id: UUID,
     request: CastMemberCreateRequest,

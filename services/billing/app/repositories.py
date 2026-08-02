@@ -3,6 +3,7 @@
 One repository per aggregate root. All database access goes through these
 classes — the service layer never touches the session directly for queries.
 """
+
 from decimal import Decimal
 from uuid import UUID
 
@@ -33,13 +34,17 @@ class SubscriptionRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def create(self, user_id: UUID, tier: RevenueTier, monthly_price: Decimal) -> Subscription:
+    async def create(
+        self, user_id: UUID, tier: RevenueTier, monthly_price: Decimal
+    ) -> Subscription:
         sub = Subscription(user_id=user_id, tier=tier, monthly_price=monthly_price)
         self.session.add(sub)
         await self.session.flush()
         return sub
 
-    async def update_tier(self, user_id: UUID, tier: RevenueTier, monthly_price: Decimal) -> Subscription | None:
+    async def update_tier(
+        self, user_id: UUID, tier: RevenueTier, monthly_price: Decimal
+    ) -> Subscription | None:
         sub = await self.get_by_user(user_id)
         if sub:
             sub.tier = tier
@@ -61,10 +66,14 @@ class PurchaseRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def create(self, user_id: UUID, content_id: UUID, price: Decimal, idempotency_key: str) -> Purchase:
+    async def create(
+        self, user_id: UUID, content_id: UUID, price: Decimal, idempotency_key: str
+    ) -> Purchase:
         purchase = Purchase(
-            user_id=user_id, content_id=content_id,
-            price=price, idempotency_key=idempotency_key,
+            user_id=user_id,
+            content_id=content_id,
+            price=price,
+            idempotency_key=idempotency_key,
         )
         self.session.add(purchase)
         await self.session.flush()
@@ -77,7 +86,13 @@ class InvoiceRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create(self, user_id: UUID, amount: Decimal, subscription_id: UUID | None = None, purchase_id: UUID | None = None) -> Invoice:
+    async def create(
+        self,
+        user_id: UUID,
+        amount: Decimal,
+        subscription_id: UUID | None = None,
+        purchase_id: UUID | None = None,
+    ) -> Invoice:
         inv = Invoice(
             subscription_id=subscription_id,
             purchase_id=purchase_id,
@@ -122,7 +137,9 @@ class CreatorPoolRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def create_entry(self, cycle_start, cycle_end, net_revenue: Decimal, pool_percentage: Decimal) -> CreatorPoolEntry:
+    async def create_entry(
+        self, cycle_start, cycle_end, net_revenue: Decimal, pool_percentage: Decimal
+    ) -> CreatorPoolEntry:
         entry = CreatorPoolEntry(
             cycle_start=cycle_start,
             cycle_end=cycle_end,
@@ -146,7 +163,9 @@ class MilestoneRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def create(self, creator_id: UUID, project_title: str, total_commitment: Decimal) -> Milestone:
+    async def create(
+        self, creator_id: UUID, project_title: str, total_commitment: Decimal
+    ) -> Milestone:
         ms = Milestone(
             creator_id=creator_id,
             project_title=project_title,

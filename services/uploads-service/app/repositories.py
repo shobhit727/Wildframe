@@ -1,4 +1,5 @@
 """Uploads service repositories."""
+
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -32,9 +33,7 @@ class UploadChunkRepository:
         )
         return result.scalar_one_or_none()
 
-    async def list_by_creator(
-        self, creator_id: UUID, limit: int = 50
-    ) -> list[UploadSession]:
+    async def list_by_creator(self, creator_id: UUID, limit: int = 50) -> list[UploadSession]:
         result = await self.session.execute(
             select(UploadSession)
             .where(UploadSession.creator_id == creator_id)

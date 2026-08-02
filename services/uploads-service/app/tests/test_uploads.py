@@ -12,6 +12,7 @@ Two layers:
    constructs the real ``UploadService`` against a ``db`` session. This only
    runs where Postgres is available; it asserts the service wires up.
 """
+
 from uuid import UUID, uuid4
 
 import pytest
@@ -102,9 +103,7 @@ async def test_register_chunk_advances_status_and_counts():
         chunk_size=5 * 1024 * 1024,
     )
     assert session.total_chunks == 1
-    await service.register_chunk(
-        session_id=session.id, index=0, size_bytes=5 * 1024 * 1024
-    )
+    await service.register_chunk(session_id=session.id, index=0, size_bytes=5 * 1024 * 1024)
     assert session.status == UploadSessionStatus.UPLOADING
     assert session.uploaded_chunks == 1
 
@@ -121,9 +120,7 @@ async def test_complete_happy_path_emits_content_uploaded():
         chunk_size=5 * 1024 * 1024,
         checksum_sha256="abc123",
     )
-    await service.register_chunk(
-        session_id=session.id, index=0, size_bytes=5 * 1024 * 1024
-    )
+    await service.register_chunk(session_id=session.id, index=0, size_bytes=5 * 1024 * 1024)
     completed = await service.complete_session(session.id, checksum_sha256="abc123")
     assert completed.status == UploadSessionStatus.COMPLETE
     assert completed.storage_key == f"uploads/{session.id}/clip.mp4"
@@ -150,9 +147,7 @@ async def test_complete_rejects_missing_chunks():
         chunk_size=5 * 1024 * 1024,
     )
     # Only register chunk 0 of 3.
-    await service.register_chunk(
-        session_id=session.id, index=0, size_bytes=5 * 1024 * 1024
-    )
+    await service.register_chunk(session_id=session.id, index=0, size_bytes=5 * 1024 * 1024)
     with pytest.raises(UploadError) as exc:
         await service.complete_session(session.id)
     assert "missing chunks" in str(exc.value)
@@ -201,9 +196,7 @@ async def test_complete_rejects_checksum_mismatch():
         chunk_size=5 * 1024 * 1024,
         checksum_sha256="right-hash",
     )
-    await service.register_chunk(
-        session_id=session.id, index=0, size_bytes=5 * 1024 * 1024
-    )
+    await service.register_chunk(session_id=session.id, index=0, size_bytes=5 * 1024 * 1024)
     with pytest.raises(UploadError) as exc:
         await service.complete_session(session.id, checksum_sha256="wrong-hash")
     assert "checksum mismatch" in str(exc.value)
@@ -244,9 +237,7 @@ async def test_complete_is_idempotent_guard():
         size_bytes=5 * 1024 * 1024,
         chunk_size=5 * 1024 * 1024,
     )
-    await service.register_chunk(
-        session_id=session.id, index=0, size_bytes=5 * 1024 * 1024
-    )
+    await service.register_chunk(session_id=session.id, index=0, size_bytes=5 * 1024 * 1024)
     await service.complete_session(session.id)
     with pytest.raises(UploadError) as exc:
         await service.complete_session(session.id)

@@ -301,9 +301,7 @@ class MediaPipelineService:
                 ctx = await self._run_stage_with_retries(job, stage, ctx)
             except PipelineNonRetryable as exc:
                 # Immediate, non-retryable failure (e.g. virus). Fail the job.
-                await self._record_stage(
-                    job, stage.name, PipelineStageStatus.FAILED, 0, str(exc)
-                )
+                await self._record_stage(job, stage.name, PipelineStageStatus.FAILED, 0, str(exc))
                 return await self._fail_job(job, stage.name, str(exc))
             # _run_stage_with_retries returns an updated ctx on success or after
             # skipping a non-critical stage. If a critical stage exhausted
@@ -336,10 +334,7 @@ class MediaPipelineService:
                 )
 
         # HLS + DASH packaging are reported as one packaged event.
-        if (
-            "hls_package" in job.stage_versions
-            and "dash_package" in job.stage_versions
-        ):
+        if "hls_package" in job.stage_versions and "dash_package" in job.stage_versions:
             await self.publisher.publish(
                 Event(
                     topic="content.packaged",
@@ -418,9 +413,7 @@ class MediaPipelineService:
                     exc,
                 )
                 if attempt < self.max_attempts:
-                    delay = min(
-                        self.backoff_base * (2 ** (attempt - 1)), self.backoff_cap
-                    )
+                    delay = min(self.backoff_base * (2 ** (attempt - 1)), self.backoff_cap)
                     await asyncio.sleep(delay)
 
         # Retries exhausted.
@@ -444,9 +437,7 @@ class MediaPipelineService:
         )
         return ctx
 
-    async def _fail_job(
-        self, job: PipelineJob, stage_name: str, message: str
-    ) -> PipelineJob:
+    async def _fail_job(self, job: PipelineJob, stage_name: str, message: str) -> PipelineJob:
         """Mark a job failed and emit the ``content.pipeline.failed`` DLQ event."""
         job.status = PipelineJobStatus.FAILED
         job.current_stage = stage_name
@@ -464,9 +455,7 @@ class MediaPipelineService:
                 },
             )
         )
-        logger.error(
-            "pipeline job %s FAILED at stage %s: %s", job.id, stage_name, message
-        )
+        logger.error("pipeline job %s FAILED at stage %s: %s", job.id, stage_name, message)
         return job
 
     async def _record_stage(
@@ -495,14 +484,10 @@ class MediaPipelineService:
         """Legacy entry point kept for import/test compatibility."""
         from app.repositories import TranscodingJobRepository
 
-        return await TranscodingJobRepository(self.job_repo.session).create(
-            content_id, source_url
-        )
+        return await TranscodingJobRepository(self.job_repo.session).create(content_id, source_url)
 
     async def get_job_status(self, content_id: UUID):
         """Legacy entry point kept for import/test compatibility."""
         from app.repositories import TranscodingJobRepository
 
-        return await TranscodingJobRepository(self.job_repo.session).get_by_content_id(
-            content_id
-        )
+        return await TranscodingJobRepository(self.job_repo.session).get_by_content_id(content_id)

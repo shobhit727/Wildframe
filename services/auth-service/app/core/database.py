@@ -1,4 +1,3 @@
-
 """
 Database configuration and session management for Auth Service.
 Implements async SQLAlchemy with connection pooling and health checks.
@@ -30,7 +29,7 @@ class DatabaseManager:
     @classmethod
     def get_engine(cls) -> AsyncEngine:
         """Get or create async SQLAlchemy engine.
-        
+
         Returns:
             AsyncEngine: The async database engine
         """
@@ -56,7 +55,7 @@ class DatabaseManager:
     @classmethod
     def get_session_factory(cls) -> async_sessionmaker:
         """Get or create async session factory.
-        
+
         Returns:
             async_sessionmaker: The session factory
         """
@@ -73,7 +72,7 @@ class DatabaseManager:
     @classmethod
     async def get_session(cls) -> AsyncGenerator[AsyncSession, None]:
         """Get database session for dependency injection.
-        
+
         Yields:
             AsyncSession: Database session
         """
@@ -91,7 +90,7 @@ class DatabaseManager:
     @classmethod
     async def health_check(cls) -> bool:
         """Check database connectivity.
-        
+
         Returns:
             bool: True if database is healthy, False otherwise
         """

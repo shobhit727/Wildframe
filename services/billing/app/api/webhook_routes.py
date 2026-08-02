@@ -41,15 +41,16 @@ router = APIRouter(prefix="/billing", tags=["billing", "webhooks"])
 # DI helpers
 # ---------------------------------------------------------------------------
 
+
 async def get_billing_service(db: Annotated[AsyncSession, Depends(get_db)]) -> BillingService:
     """Wire up BillingService with all its repositories."""
     return BillingService(
         sub_repo=SubscriptionRepository(db),
         purchase_repo=PurchaseRepository(db),
         inv_repo=InvoiceRepository(db),
-        floor_repo=None,       # Not needed for webhook handlers
-        pool_repo=None,        # Not needed for webhook handlers
-        milestone_repo=None,    # Not needed for webhook handlers
+        floor_repo=None,  # Not needed for webhook handlers
+        pool_repo=None,  # Not needed for webhook handlers
+        milestone_repo=None,  # Not needed for webhook handlers
         payout_repo=PayoutLedgerRepository(db),
     )
 
@@ -75,6 +76,7 @@ def _mark_event_processed(event_id: str) -> None:
 # Event handlers
 # ---------------------------------------------------------------------------
 
+
 async def _handle_checkout_session_completed(
     event: dict[str, Any],
     service: BillingService,
@@ -98,6 +100,7 @@ async def _handle_checkout_session_completed(
     if tier:
         # SVOD subscription activation / upgrade.
         from app.models import RevenueTier
+
         try:
             tier_enum = RevenueTier(tier.lower())
         except ValueError:
@@ -105,6 +108,7 @@ async def _handle_checkout_session_completed(
             return
 
         from app.services import TIER_PRICES
+
         price = TIER_PRICES.get(tier_enum, Decimal("0.00"))
         sub = await service.sub_repo.get_by_user(user_id)
         if sub:
@@ -124,8 +128,12 @@ async def _handle_checkout_session_completed(
         content_id = UUID(content_id_str)
         amount = Decimal(str(session["amount_total"])) / Decimal(100)
         await service.purchase_title(user_id, content_id, amount)
-        logger.info("TVOD purchase recorded for user %s (content=%s, amount=%s)",
-                     user_id, content_id, amount)
+        logger.info(
+            "TVOD purchase recorded for user %s (content=%s, amount=%s)",
+            user_id,
+            content_id,
+            amount,
+        )
 
 
 async def _handle_subscription_updated(
@@ -146,8 +154,10 @@ async def _handle_subscription_updated(
     stripe_status = sub_obj.get("status")  # active, past_due, canceled, etc.
 
     from app.models import RevenueTier
+
     tier = RevenueTier.SVOD if stripe_status == "active" else RevenueTier.AVOD
     from app.services import TIER_PRICES
+
     price = TIER_PRICES[tier]
 
     existing = await service.sub_repo.get_by_user(user_id)
@@ -205,8 +215,7 @@ async def _handle_invoice_paid(
             # Check if invoice already exists for this amount + user.
             existing_invoices = await service.inv_repo.get_by_user(user_id)
             already_recorded = any(
-                inv.amount == amount and inv.status.value == "paid"
-                for inv in existing_invoices
+                inv.amount == amount and inv.status.value == "paid" for inv in existing_invoices
             )
             if not already_recorded:
                 await service.inv_repo.create(
@@ -218,6 +227,7 @@ async def _handle_invoice_paid(
                 inv = await service.inv_repo.get_by_user(user_id)
                 # We just created it — mark paid.
                 from app.models import InvoiceStatus
+
                 new_inv = inv[-1] if inv else None
                 if new_inv and new_inv.status == InvoiceStatus.PENDING:
                     new_inv.status = InvoiceStatus.PAID
@@ -254,7 +264,9 @@ async def _handle_payment_intent_succeeded(
     # content metadata. For now we log the accrual intent.
     logger.info(
         "Payout accrual triggered: gross=%s, creator_share=%s (event=%s)",
-        amount, creator_share, event_id,
+        amount,
+        creator_share,
+        event_id,
     )
 
 
@@ -274,6 +286,7 @@ _EVENT_HANDLERS = {
 # ---------------------------------------------------------------------------
 # Webhook endpoint
 # ---------------------------------------------------------------------------
+
 
 @router.post("/webhooks/stripe", include_in_schema=False)
 async def stripe_webhook(

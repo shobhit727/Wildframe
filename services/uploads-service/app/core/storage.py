@@ -8,6 +8,7 @@ This keeps storage swappable and testable via dependency injection:
     * ``S3StoragePort``    — real AWS S3 / MinIO via ``boto3`` presigned URLs.
       Only instantiated when ``settings.STORAGE_BACKEND == "s3"``.
 """
+
 from __future__ import annotations
 
 import logging

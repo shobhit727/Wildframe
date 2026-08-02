@@ -12,6 +12,7 @@ Invariant: the 55% creator share is calculated BEFORE platform costs.
 A creator's *effective floor* is a minimum guarantee, not a cap — top
 performers always earn their full pro-rata share above the floor.
 """
+
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -80,6 +81,7 @@ class MilestoneKillError(BillingError):
 # BillingService
 # ---------------------------------------------------------------------------
 
+
 class BillingService:
     """Orchestrates all billing-domain operations.
 
@@ -124,9 +126,7 @@ class BillingService:
         try:
             tier = RevenueTier(tier_str.lower())
         except ValueError:
-            raise TierInvalidError(
-                f"Invalid tier '{tier_str}'. Must be one of: avod, svod, tvod"
-            )
+            raise TierInvalidError(f"Invalid tier '{tier_str}'. Must be one of: avod, svod, tvod")
 
         price = TIER_PRICES[tier]
         existing = await self.sub_repo.get_by_user(user_id)
@@ -150,7 +150,10 @@ class BillingService:
     # -----------------------------------------------------------------------
 
     async def purchase_title(
-        self, user_id: UUID, content_id: UUID, price: Decimal,
+        self,
+        user_id: UUID,
+        content_id: UUID,
+        price: Decimal,
     ) -> Purchase:
         """Record a one-off TVOD purchase (pay-per-view).
 
@@ -192,7 +195,10 @@ class BillingService:
         return await self.pool_repo.get_latest()
 
     async def accrue_pool(
-        self, cycle_start: datetime, cycle_end: datetime, net_revenue: Decimal,
+        self,
+        cycle_start: datetime,
+        cycle_end: datetime,
+        net_revenue: Decimal,
     ) -> CreatorPoolEntry:
         """Accrue a Creator Pool entry for a payout cycle.
 
@@ -202,7 +208,10 @@ class BillingService:
         """
         pool_pct = CREATOR_POOL_PERCENTAGE
         entry = await self.pool_repo.create_entry(
-            cycle_start, cycle_end, net_revenue, pool_pct,
+            cycle_start,
+            cycle_end,
+            net_revenue,
+            pool_pct,
         )
         return entry
 
@@ -211,7 +220,10 @@ class BillingService:
     # -----------------------------------------------------------------------
 
     async def create_milestone(
-        self, creator_id: UUID, project_title: str, total_commitment: Decimal,
+        self,
+        creator_id: UUID,
+        project_title: str,
+        total_commitment: Decimal,
     ) -> Milestone:
         """Create a milestone commitment with 4 tranches (10/20/30/40%).
 
@@ -237,7 +249,9 @@ class BillingService:
         if not tranche:
             raise BillingError(f"Tranche {tranche_number} not found for milestone {milestone_id}")
         if tranche.status != TrancheStatus.LOCKED:
-            raise BillingError(f"Tranche {tranche_number} is not locked (status={tranche.status.value})")
+            raise BillingError(
+                f"Tranche {tranche_number} is not locked (status={tranche.status.value})"
+            )
 
         tranche.status = TrancheStatus.RELEASED
         tranche.released_at = datetime.now(UTC)

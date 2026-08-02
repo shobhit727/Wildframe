@@ -1,4 +1,5 @@
 """Pytest configuration and fixtures with testcontainers for integration tests."""
+
 import asyncio
 
 import pytest

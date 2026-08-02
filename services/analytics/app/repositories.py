@@ -1,4 +1,5 @@
 """Analytics service repositories."""
+
 from datetime import datetime
 from uuid import UUID
 
@@ -16,11 +17,21 @@ from app.models import (
 class EventRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
-    async def create(self, user_id: UUID, event_type: str, event_data: dict | None = None, content_id: UUID | None = None):
-        event = Event(user_id=user_id, event_type=event_type, event_data=event_data, content_id=content_id)
+
+    async def create(
+        self,
+        user_id: UUID,
+        event_type: str,
+        event_data: dict | None = None,
+        content_id: UUID | None = None,
+    ):
+        event = Event(
+            user_id=user_id, event_type=event_type, event_data=event_data, content_id=content_id
+        )
         self.session.add(event)
         await self.session.flush()
         return event
+
     async def get_by_user(self, user_id: UUID, limit: int = 100) -> list[Event]:
         stmt = select(Event).where(Event.user_id == user_id).limit(limit)
         result = await self.session.execute(stmt)
@@ -57,12 +68,22 @@ class ContentViewEventRepository:
         return event
 
     async def get_by_content(self, content_id: UUID, limit: int = 100) -> list[ContentViewEvent]:
-        stmt = select(ContentViewEvent).where(ContentViewEvent.content_id == content_id).order_by(ContentViewEvent.created_at.desc()).limit(limit)
+        stmt = (
+            select(ContentViewEvent)
+            .where(ContentViewEvent.content_id == content_id)
+            .order_by(ContentViewEvent.created_at.desc())
+            .limit(limit)
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
     async def get_by_viewer(self, viewer_id: UUID, limit: int = 100) -> list[ContentViewEvent]:
-        stmt = select(ContentViewEvent).where(ContentViewEvent.viewer_id == viewer_id).order_by(ContentViewEvent.created_at.desc()).limit(limit)
+        stmt = (
+            select(ContentViewEvent)
+            .where(ContentViewEvent.viewer_id == viewer_id)
+            .order_by(ContentViewEvent.created_at.desc())
+            .limit(limit)
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -97,22 +118,29 @@ class CreatorAnalyticsSnapshotRepository:
         return snapshot
 
     async def get_latest_for_creator(self, creator_id: UUID) -> CreatorAnalyticsSnapshot | None:
-        stmt = select(CreatorAnalyticsSnapshot).where(
-            CreatorAnalyticsSnapshot.creator_id == creator_id
-        ).order_by(CreatorAnalyticsSnapshot.period_end.desc()).limit(1)
+        stmt = (
+            select(CreatorAnalyticsSnapshot)
+            .where(CreatorAnalyticsSnapshot.creator_id == creator_id)
+            .order_by(CreatorAnalyticsSnapshot.period_end.desc())
+            .limit(1)
+        )
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
     async def get_for_creator_in_range(
         self, creator_id: UUID, period_start: datetime, period_end: datetime
     ) -> list[CreatorAnalyticsSnapshot]:
-        stmt = select(CreatorAnalyticsSnapshot).where(
-            and_(
-                CreatorAnalyticsSnapshot.creator_id == creator_id,
-                CreatorAnalyticsSnapshot.period_start >= period_start,
-                CreatorAnalyticsSnapshot.period_end <= period_end,
+        stmt = (
+            select(CreatorAnalyticsSnapshot)
+            .where(
+                and_(
+                    CreatorAnalyticsSnapshot.creator_id == creator_id,
+                    CreatorAnalyticsSnapshot.period_start >= period_start,
+                    CreatorAnalyticsSnapshot.period_end <= period_end,
+                )
             )
-        ).order_by(CreatorAnalyticsSnapshot.period_start)
+            .order_by(CreatorAnalyticsSnapshot.period_start)
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -143,7 +171,9 @@ class ContentPerformanceMetricsRepository:
         return metrics
 
     async def get_by_content(self, content_id: UUID) -> ContentPerformanceMetrics | None:
-        stmt = select(ContentPerformanceMetrics).where(ContentPerformanceMetrics.content_id == content_id)
+        stmt = select(ContentPerformanceMetrics).where(
+            ContentPerformanceMetrics.content_id == content_id
+        )
         result = await self.session.execute(stmt)
         return result.scalars().first()
 

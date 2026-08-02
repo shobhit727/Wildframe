@@ -1,4 +1,5 @@
 """Pydantic v2 schemas for the Creators service."""
+
 from datetime import datetime
 from uuid import UUID
 

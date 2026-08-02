@@ -1,4 +1,5 @@
 """Logging configuration for User Service."""
+
 import logging
 import logging.config
 from contextvars import ContextVar

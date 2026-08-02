@@ -267,7 +267,7 @@ class PaymentService:
                 amount=amount,
                 currency=settings.DEFAULT_CURRENCY,
                 idempotency_key=idempotency_key,
-                cycle_start=None,   # Caller should provide real dates
+                cycle_start=None,  # Caller should provide real dates
                 cycle_end=None,
                 breakdown={"type": "stripe_connect_transfer"},
             )

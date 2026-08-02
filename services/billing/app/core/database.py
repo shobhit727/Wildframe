@@ -1,9 +1,9 @@
-
 """Database connection management for the Billing Service.
 
 Provides the DatabaseManager singleton and the get_db() async generator
 used as a FastAPI dependency for injecting AsyncSession instances.
 """
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -25,7 +25,9 @@ class DatabaseManager:
         """Initialize the async engine and session factory."""
         cls.engine = create_async_engine(settings.DATABASE_URL, echo=False, future=True)
         cls.session_factory = async_sessionmaker(
-            cls.engine, class_=AsyncSession, expire_on_commit=False,
+            cls.engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
         )
 
     @classmethod

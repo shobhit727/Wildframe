@@ -23,7 +23,9 @@ from app.services.admin import AdminService
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 
-async def get_current_admin_id(authorization: Annotated[str | None, Header(alias="Authorization")] = None) -> str:
+async def get_current_admin_id(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization.replace("Bearer ", "")
@@ -43,7 +45,9 @@ async def moderate_user(
 ):
     """Moderate a user (suspend/ban/activate)"""
     service = AdminService(db)
-    return await service.moderate_user(request.user_id, request.status, request.reason, admin_id, "0.0.0.0")
+    return await service.moderate_user(
+        request.user_id, request.status, request.reason, admin_id, "0.0.0.0"
+    )
 
 
 @router.get("/users/moderation/{user_id}", response_model=UserModerationResponse)
@@ -80,7 +84,9 @@ async def flag_content(
 ):
     """Flag inappropriate content"""
     service = AdminService(db)
-    return await service.flag_content(request.content_id, request.content_type, request.reason, admin_id, "0.0.0.0")
+    return await service.flag_content(
+        request.content_id, request.content_type, request.reason, admin_id, "0.0.0.0"
+    )
 
 
 @router.post("/content/resolve", response_model=ContentModerationResponse)
@@ -117,7 +123,9 @@ async def create_alert(
 ):
     """Create system alert"""
     service = AdminService(db)
-    return await service.create_alert(request.alert_type, request.severity, request.message, request.service)
+    return await service.create_alert(
+        request.alert_type, request.severity, request.message, request.service
+    )
 
 
 @router.get("/alerts", response_model=list[SystemAlertResponse])
@@ -160,7 +168,9 @@ async def set_config(
 ):
     """Set system configuration"""
     service = AdminService(db)
-    return await service.set_config(request.key, request.value, request.config_type, request.description, admin_id, "0.0.0.0")
+    return await service.set_config(
+        request.key, request.value, request.config_type, request.description, admin_id, "0.0.0.0"
+    )
 
 
 @router.get("/config/{key}", response_model=SystemConfigResponse)
@@ -198,7 +208,9 @@ async def get_audit_by_admin(
     return await service.get_audit_logs_by_admin(admin_id, limit)
 
 
-@router.get("/audit/resource/{resource_type}/{resource_id}", response_model=list[AdminAuditLogResponse])
+@router.get(
+    "/audit/resource/{resource_type}/{resource_id}", response_model=list[AdminAuditLogResponse]
+)
 async def get_audit_by_resource(
     resource_type: str,
     resource_id: str,

@@ -15,6 +15,7 @@ PipelineJob.status machine::
 resumed job can skip stages already done. ``retries`` counts attempts at the
 *current* stage (reset when the job advances past it).
 """
+
 from datetime import UTC, datetime
 from enum import Enum
 from uuid import uuid4

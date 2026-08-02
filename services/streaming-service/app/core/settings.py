@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     """Application settings."""
+
     SERVICE_NAME: str = "streaming-service"
     SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
@@ -18,7 +19,7 @@ class Settings(BaseSettings):
     SERVER_PORT: int = 8004
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
-    
+
     class Config:
         env_file = ".env"
         case_sensitive = True

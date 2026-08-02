@@ -18,6 +18,7 @@ A flag starts ``pending``. A moderator picks it up (``reviewing``) before
 rendering a decision (``resolved``) or escalating to a senior moderator
 (``escalated``).
 """
+
 from datetime import UTC, datetime
 from enum import Enum
 from uuid import uuid4
@@ -41,6 +42,7 @@ Base = declarative_base()
 
 class FlagReason(str, Enum):
     """Why a piece of content was flagged."""
+
     SPAM = "spam"
     INAPPROPRIATE = "inappropriate"
     COPYRIGHT = "copyright"
@@ -49,6 +51,7 @@ class FlagReason(str, Enum):
 
 class FlagStatus(str, Enum):
     """Review status of a flag."""
+
     PENDING = "pending"
     REVIEWING = "reviewing"
     RESOLVED = "resolved"
@@ -57,6 +60,7 @@ class FlagStatus(str, Enum):
 
 class DecisionType(str, Enum):
     """Moderator decision on a flag."""
+
     APPROVE = "approve"
     REJECT = "reject"
     ESCALATE = "escalate"
@@ -64,6 +68,7 @@ class DecisionType(str, Enum):
 
 class StrikeReason(str, Enum):
     """Why a creator received a strike."""
+
     CONTENT_VIOLATION = "content_violation"
     COPYRIGHT = "copyright"
     REPEATED_FLAGS = "repeated_flags"
@@ -99,9 +104,7 @@ class ContentFlag(Base):
         nullable=False,
     )
 
-    __table_args__ = (
-        Index("idx_content_flag_status_created", "status", "created_at"),
-    )
+    __table_args__ = (Index("idx_content_flag_status_created", "status", "created_at"),)
 
 
 class ModerationDecision(Base):
@@ -125,9 +128,7 @@ class ModerationDecision(Base):
         nullable=False,
     )
 
-    __table_args__ = (
-        Index("idx_decision_flag_created", "flag_id", "created_at"),
-    )
+    __table_args__ = (Index("idx_decision_flag_created", "flag_id", "created_at"),)
 
 
 class CreatorStrike(Base):
@@ -151,6 +152,4 @@ class CreatorStrike(Base):
         nullable=False,
     )
 
-    __table_args__ = (
-        Index("idx_strike_creator_active", "creator_id", "is_active"),
-    )
+    __table_args__ = (Index("idx_strike_creator_active", "creator_id", "is_active"),)

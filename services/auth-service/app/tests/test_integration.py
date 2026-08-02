@@ -1,4 +1,5 @@
 """Integration tests for Auth Service."""
+
 import json
 
 import pytest
@@ -22,6 +23,7 @@ async def client():
 async def db_session():
     """Database session for direct testing."""
     from app.core.database import async_session
+
     async with async_session() as session:
         yield session
         await session.rollback()
@@ -51,14 +53,15 @@ class TestUserRegistrationIntegration:
             last_name="Doe",
         )
         user = await auth_service.register(request)
-        
+
         assert user.email == "test@example.com"
         assert user.first_name == "John"
         assert user.last_name == "Doe"
         assert user.email_verified is False
-        
+
         # Verify user exists in DB
         from app.repositories import UserRepository
+
         repo = UserRepository(db_session)
         db_user = await repo.get_by_email("test@example.com")
         assert db_user is not None
@@ -73,10 +76,10 @@ class TestUserRegistrationIntegration:
             last_name="Doe",
         )
         await auth_service.register(request)
-        
+
         with pytest.raises(Exception) as exc_info:
             await auth_service.register(request)
-        
+
         assert "already exists" in str(exc_info.value).lower()
 
 
@@ -86,7 +89,7 @@ class TestUserLoginIntegration:
     async def test_login_success(self, auth_service, db_session):
         """Test successful login."""
         from app.schemas import UserLoginRequest, UserRegisterRequest
-        
+
         # Register user first
         reg_request = UserRegisterRequest(
             email="login_test@example.com",
@@ -95,13 +98,13 @@ class TestUserLoginIntegration:
             last_name="Test",
         )
         await auth_service.register(reg_request)
-        
+
         # Login
         UserLoginRequest(
             email="login_test@example.com",
             password="SecurePass123!",
         )
-        
+
         # We need to use the service's login method which expects different args
         # Let's test via the API endpoint instead
         # Will test via API client
@@ -113,7 +116,7 @@ class TestEmailVerificationIntegration:
     async def test_send_verification_code(self, auth_service, db_session):
         """Test sending email verification code."""
         from app.schemas import UserRegisterRequest
-        
+
         # Register user
         reg_request = UserRegisterRequest(
             email="verify_test@example.com",
@@ -122,12 +125,13 @@ class TestEmailVerificationIntegration:
             last_name="Test",
         )
         await auth_service.register(reg_request)
-        
+
         # Get user ID
         from app.repositories import UserRepository
+
         repo = UserRepository(db_session)
         user = await repo.get_by_email("verify_test@example.com")
-        
+
         # Send verification code
         result = await auth_service.send_email_verification(user.id)
         assert "code" in result
@@ -137,7 +141,7 @@ class TestEmailVerificationIntegration:
     async def test_verify_email_code(self, auth_service, db_session):
         """Test verifying email code."""
         from app.schemas import UserRegisterRequest
-        
+
         # Register user
         reg_request = UserRegisterRequest(
             email="verify_code_test@example.com",
@@ -146,22 +150,24 @@ class TestEmailVerificationIntegration:
             last_name="Code",
         )
         await auth_service.register(reg_request)
-        
+
         # Get user
         from app.repositories import UserRepository
+
         repo = UserRepository(db_session)
         user = await repo.get_by_email("verify_code_test@example.com")
-        
+
         # Send code
         code_result = await auth_service.send_email_verification(user.id)
         code = code_result["code"]
-        
+
         # Verify code
         result = await auth_service.verify_email(user.id, code)
         assert result["message"] == "Email verified successfully"
-        
+
         # Verify user is marked as verified
         from app.repositories import UserRepository
+
         repo = UserRepository(db_session)
         user = await repo.get_by_id(user.id)
         assert user.email_verified is True
@@ -173,7 +179,7 @@ class TestMFAIntegration:
     async def test_setup_mfa(self, auth_service, db_session):
         """Test MFA setup."""
         from app.schemas import UserRegisterRequest
-        
+
         # Register user
         reg_request = UserRegisterRequest(
             email="mfa_test@example.com",
@@ -182,21 +188,23 @@ class TestMFAIntegration:
             last_name="Test",
         )
         await auth_service.register(reg_request)
-        
+
         # Get user
         from app.repositories import UserRepository
+
         repo = UserRepository(db_session)
         user = await repo.get_by_email("mfa_test@example.com")
-        
+
         # Setup MFA
         result = await auth_service.setup_mfa(user.id)
         assert "secret" in result
         assert "totp_uri" in result
         assert "backup_codes" in result
         assert len(result["backup_codes"]) == 10
-        
+
         # Verify secret stored
         from app.repositories import UserRepository
+
         repo = UserRepository(db_session)
         user = await repo.get_by_id(user.id)
         assert user.mfa_secret is not None
@@ -206,7 +214,7 @@ class TestMFAIntegration:
         """Test MFA verification with TOTP code."""
         import pyotp
         from app.schemas import UserRegisterRequest
-        
+
         # Register user
         reg_request = UserRegisterRequest(
             email="mfa_verify_test@example.com",
@@ -215,26 +223,28 @@ class TestMFAIntegration:
             last_name="Verify",
         )
         await auth_service.register(reg_request)
-        
+
         # Get user
         from app.repositories import UserRepository
+
         repo = UserRepository(db_session)
         user = await repo.get_by_email("mfa_verify_test@example.com")
-        
+
         # Setup MFA
         setup_result = await auth_service.setup_mfa(user.id)
         secret = setup_result["secret"]
-        
+
         # Generate valid TOTP code
         totp = pyotp.TOTP(secret)
         code = totp.now()
-        
+
         # Verify code
         result = await auth_service.verify_mfa(user.id, code)
         assert result["message"] == "MFA enabled successfully"
-        
+
         # Verify MFA enabled in DB
         from app.repositories import UserRepository
+
         repo = UserRepository(db_session)
         user = await repo.get_by_id(user.id)
         assert user.mfa_enabled is True
@@ -242,7 +252,7 @@ class TestMFAIntegration:
     async def test_verify_mfa_backup_code(self, auth_service, db_session):
         """Test MFA verification with backup code."""
         from app.schemas import UserRegisterRequest
-        
+
         # Register user
         reg_request = UserRegisterRequest(
             email="mfa_backup_test@example.com",
@@ -251,22 +261,24 @@ class TestMFAIntegration:
             last_name="Backup",
         )
         await auth_service.register(reg_request)
-        
+
         # Get user
         from app.repositories import UserRepository
+
         repo = UserRepository(db_session)
         user = await repo.get_by_email("mfa_backup_test@example.com")
-        
+
         # Setup MFA
         setup_result = await auth_service.setup_mfa(user.id)
         backup_code = setup_result["backup_codes"][0]
-        
+
         # Verify with backup code
         result = await auth_service.verify_mfa(user.id, backup_code)
         assert result["message"] == "MFA enabled successfully"
-        
+
         # Verify backup code removed
         from app.repositories import UserRepository
+
         repo = UserRepository(db_session)
         user = await repo.get_by_id(user.id)
         backup_codes = json.loads(user.backup_codes) if user.backup_codes else []

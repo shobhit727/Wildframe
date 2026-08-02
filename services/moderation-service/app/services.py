@@ -7,6 +7,7 @@ suspension when a creator accumulates 3 active strikes.
 Infrastructure (event bus) is injected via ports so this class is pure
 domain logic and unit-testable with stubs.
 """
+
 from __future__ import annotations
 
 import logging
@@ -192,9 +193,7 @@ class ModerationService:
     # _issue_strike (private)
     # ------------------------------------------------------------------
 
-    async def _issue_strike(
-        self, flag: ContentFlag, moderator_id: UUID
-    ) -> CreatorStrike:
+    async def _issue_strike(self, flag: ContentFlag, moderator_id: UUID) -> CreatorStrike:
         """Issue a strike for a rejected flag and check suspension threshold.
 
         The strike is linked to the flag that caused it (``related_flag_id``)
@@ -231,8 +230,7 @@ class ModerationService:
                     payload={
                         "creator_id": str(flag.content_id),
                         "active_strikes": active_count,
-                        "reason": "auto-suspended after "
-                        f"{active_count} strikes",
+                        "reason": "auto-suspended after " f"{active_count} strikes",
                         "triggering_flag_id": str(flag.id),
                     },
                 )

@@ -1,4 +1,5 @@
 """Recommendation service repositories."""
+
 from uuid import UUID
 
 from sqlalchemy import desc, select
@@ -10,6 +11,7 @@ from app.models import Recommendation, UserPreferences
 class UserPreferencesRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
+
     async def get_or_create(self, user_id: UUID) -> UserPreferences:
         stmt = select(UserPreferences).where(UserPreferences.user_id == user_id)
         result = await self.session.execute(stmt)
@@ -20,15 +22,27 @@ class UserPreferencesRepository:
             await self.session.flush()
         return pref
 
+
 class RecommendationRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
-    async def create(self, user_id: UUID, content_id: UUID, score: float, reason: str = "", algorithm: str = "cf") -> Recommendation:
-        rec = Recommendation(user_id=user_id, content_id=content_id, score=score, reason=reason, algorithm=algorithm)
+
+    async def create(
+        self, user_id: UUID, content_id: UUID, score: float, reason: str = "", algorithm: str = "cf"
+    ) -> Recommendation:
+        rec = Recommendation(
+            user_id=user_id, content_id=content_id, score=score, reason=reason, algorithm=algorithm
+        )
         self.session.add(rec)
         await self.session.flush()
         return rec
+
     async def get_for_user(self, user_id: UUID, limit: int = 20) -> list[Recommendation]:
-        stmt = select(Recommendation).where(Recommendation.user_id == user_id).order_by(desc(Recommendation.score)).limit(limit)
+        stmt = (
+            select(Recommendation)
+            .where(Recommendation.user_id == user_id)
+            .order_by(desc(Recommendation.score))
+            .limit(limit)
+        )
         result = await self.session.execute(stmt)
         return result.scalars().all()

@@ -5,6 +5,7 @@ implementation passed a ``lambda`` to ``conn.execute`` (``conn.execute(lambda:
 "SELECT 1")``) which is not a valid SQLAlchemy statement and would always
 raise, making the health check fail and preventing the app from starting.
 """
+
 import pytest
 from app.core.database import DatabaseManager
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -58,6 +59,4 @@ def test_health_check_uses_text_statement_not_lambda():
         "health_check must execute a sqlalchemy.text() statement; the lambda "
         "form ``conn.execute(lambda: ...)`` is invalid and always raises."
     )
-    assert "lambda:" not in source, (
-        "health_check must not pass a lambda to conn.execute."
-    )
+    assert "lambda:" not in source, "health_check must not pass a lambda to conn.execute."

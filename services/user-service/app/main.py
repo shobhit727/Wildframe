@@ -1,5 +1,5 @@
-
 """Main FastAPI application for User Service."""
+
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager

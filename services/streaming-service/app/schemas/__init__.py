@@ -2,7 +2,6 @@
 Pydantic v2 schemas for Streaming Service API requests/responses.
 """
 
-
 from datetime import datetime
 from uuid import UUID
 
@@ -11,6 +10,7 @@ from pydantic import BaseModel, Field
 
 class PlaybackSessionResponse(BaseModel):
     """Playback session response schema."""
+
     id: UUID
     user_id: UUID
     content_id: UUID
@@ -27,12 +27,13 @@ class PlaybackSessionResponse(BaseModel):
     started_at: datetime
     last_activity_at: datetime
     ended_at: datetime | None = None
-    
+
     model_config = {"from_attributes": True}
 
 
 class PlaybackSessionCreateRequest(BaseModel):
     """Playback session creation request schema."""
+
     user_id: UUID
     content_id: UUID
     episode_id: UUID | None = None
@@ -46,6 +47,7 @@ class PlaybackSessionCreateRequest(BaseModel):
 
 class PlaybackSessionUpdateRequest(BaseModel):
     """Playback session update request schema."""
+
     current_position_seconds: int | None = Field(None, ge=0)
     status: str | None = None
     resolution: str | None = None
@@ -56,6 +58,7 @@ class PlaybackSessionUpdateRequest(BaseModel):
 
 class VideoManifestResponse(BaseModel):
     """Video manifest response schema."""
+
     id: UUID
     episode_id: UUID
     content_id: UUID
@@ -65,12 +68,13 @@ class VideoManifestResponse(BaseModel):
     available_bitrates: list[int]
     generated_at: datetime
     expires_at: datetime | None = None
-    
+
     model_config = {"from_attributes": True}
 
 
 class TranscodingJobResponse(BaseModel):
     """Transcoding job response schema."""
+
     id: UUID
     episode_id: UUID
     content_id: UUID
@@ -84,12 +88,13 @@ class TranscodingJobResponse(BaseModel):
     completed_at: datetime | None = None
     error_message: str | None = None
     estimated_time_remaining_seconds: int | None = None
-    
+
     model_config = {"from_attributes": True}
 
 
 class TranscodingJobCreateRequest(BaseModel):
     """Transcoding job creation request schema."""
+
     episode_id: UUID
     content_id: UUID
     input_file_path: str = Field(..., min_length=1)
@@ -100,6 +105,7 @@ class TranscodingJobCreateRequest(BaseModel):
 
 class QualityProfileResponse(BaseModel):
     """Quality profile response schema."""
+
     id: UUID
     name: str
     description: str | None = None
@@ -113,12 +119,13 @@ class QualityProfileResponse(BaseModel):
     min_bandwidth_kbps: int
     max_bandwidth_kbps: int
     is_active: bool
-    
+
     model_config = {"from_attributes": True}
 
 
 class QualityProfileCreateRequest(BaseModel):
     """Quality profile creation request schema."""
+
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = None
     resolution: str = Field(..., pattern="^[0-9]+p$")
@@ -134,6 +141,7 @@ class QualityProfileCreateRequest(BaseModel):
 
 class CDNRegionResponse(BaseModel):
     """CDN region response schema."""
+
     id: UUID
     region_code: str
     region_name: str
@@ -143,12 +151,13 @@ class CDNRegionResponse(BaseModel):
     current_active_streams: int
     bandwidth_capacity_gbps: float
     is_active: bool
-    
+
     model_config = {"from_attributes": True}
 
 
 class CDNRegionCreateRequest(BaseModel):
     """CDN region creation request schema."""
+
     region_code: str = Field(..., min_length=1, max_length=10)
     region_name: str = Field(..., min_length=1, max_length=100)
     country: str = Field(..., min_length=1, max_length=100)
@@ -161,6 +170,7 @@ class CDNRegionCreateRequest(BaseModel):
 
 class StreamingStatisticsResponse(BaseModel):
     """Streaming statistics response schema."""
+
     id: UUID
     content_id: UUID
     period_start: datetime
@@ -176,12 +186,13 @@ class StreamingStatisticsResponse(BaseModel):
     average_buffer_ratio: float
     total_errors: int
     top_regions: dict[str, int]
-    
+
     model_config = {"from_attributes": True}
 
 
 class DownloadSessionResponse(BaseModel):
     """Download session response schema."""
+
     id: UUID
     user_id: UUID
     episode_id: UUID
@@ -194,12 +205,13 @@ class DownloadSessionResponse(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     expires_at: datetime | None = None
-    
+
     model_config = {"from_attributes": True}
 
 
 class DownloadSessionCreateRequest(BaseModel):
     """Download session creation request schema."""
+
     user_id: UUID
     episode_id: UUID
     device_id: str = Field(..., min_length=1, max_length=255)
@@ -209,6 +221,7 @@ class DownloadSessionCreateRequest(BaseModel):
 
 class ManifestGenerationRequest(BaseModel):
     """Request to generate video manifest."""
+
     episode_id: UUID
     content_id: UUID
     protocol: str = Field(default="hls", pattern="^(hls|dash|smooth_streaming)$")
@@ -219,6 +232,7 @@ class ManifestGenerationRequest(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Error response schema."""
+
     status_code: int
     message: str
     detail: str | None = None
@@ -226,6 +240,7 @@ class ErrorResponse(BaseModel):
 
 class HealthCheckResponse(BaseModel):
     """Health check response schema."""
+
     status: str
     version: str
     database: str

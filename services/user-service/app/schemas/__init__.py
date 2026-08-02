@@ -1,4 +1,5 @@
 """Request and response schemas for User Service."""
+
 from datetime import datetime
 from uuid import UUID
 

@@ -2,6 +2,7 @@
 Request and response schemas for Auth Service.
 Implements Pydantic models for input validation and API contracts.
 """
+
 import re
 from datetime import datetime
 from uuid import UUID
@@ -11,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 class TokenResponse(BaseModel):
     """JWT token response.
-    
+
     Attributes:
         access_token: Short-lived JWT access token
         refresh_token: Long-lived refresh token
@@ -38,7 +39,7 @@ class TokenResponse(BaseModel):
 
 class UserRegisterRequest(BaseModel):
     """User registration request.
-    
+
     Attributes:
         email: User email address
         password: User password
@@ -55,13 +56,13 @@ class UserRegisterRequest(BaseModel):
     @classmethod
     def validate_password(cls, v: str) -> str:
         """Validate password strength.
-        
+
         Args:
             v: Password to validate
-        
+
         Returns:
             str: Validated password
-        
+
         Raises:
             ValueError: If password doesn't meet requirements
         """
@@ -87,7 +88,7 @@ class UserRegisterRequest(BaseModel):
 
 class UserLoginRequest(BaseModel):
     """User login request.
-    
+
     Attributes:
         email: User email address
         password: User password
@@ -111,7 +112,7 @@ class UserLoginRequest(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     """Refresh token request.
-    
+
     Attributes:
         refresh_token: The refresh token
     """
@@ -125,7 +126,7 @@ class RefreshTokenRequest(BaseModel):
 
 class UserResponse(BaseModel):
     """User profile response.
-    
+
     Attributes:
         id: User ID
         email: User email
@@ -156,13 +157,13 @@ class UserResponse(BaseModel):
                 "last_login_at": "2026-05-12T10:30:00Z",
                 "created_at": "2026-05-01T10:30:00Z",
             }
-        }
+        },
     )
 
 
 class ChangePasswordRequest(BaseModel):
     """Change password request.
-    
+
     Attributes:
         old_password: Current password
         new_password: New password
@@ -186,7 +187,7 @@ class ChangePasswordRequest(BaseModel):
 
 class VerifyEmailRequest(BaseModel):
     """Email verification request.
-    
+
     Attributes:
         email: Email to verify
         token: Verification token
@@ -198,19 +199,19 @@ class VerifyEmailRequest(BaseModel):
 
 class MFASetupRequest(BaseModel):
     """MFA setup request."""
-    
+
     method: str = Field(..., description="MFA method (totp, sms)")
 
 
 class MFAVerifyRequest(BaseModel):
     """MFA verification request."""
-    
+
     code: str = Field(..., min_length=6, description="Verification code")
 
 
 class ErrorResponse(BaseModel):
     """Error response.
-    
+
     Attributes:
         error: Error code
         message: Error description
@@ -233,7 +234,7 @@ class ErrorResponse(BaseModel):
 
 class HealthCheckResponse(BaseModel):
     """Health check response.
-    
+
     Attributes:
         status: Service status (healthy/unhealthy)
         service: Service name

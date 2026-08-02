@@ -1,4 +1,5 @@
 """Creators service business logic."""
+
 from datetime import datetime
 from uuid import UUID
 
@@ -17,11 +18,14 @@ class CreatorService:
     milestones/tranches, and idempotent payout accrual.
     """
 
-    def __init__(self, acct_repo: CreatorAccountRepository,
-                 floor_repo: EffectiveFloorRepository,
-                 pool_repo: CreatorPoolBalanceRepository,
-                 milestone_repo: MilestoneRepository,
-                 ledger_repo: PayoutLedgerRepository):
+    def __init__(
+        self,
+        acct_repo: CreatorAccountRepository,
+        floor_repo: EffectiveFloorRepository,
+        pool_repo: CreatorPoolBalanceRepository,
+        milestone_repo: MilestoneRepository,
+        ledger_repo: PayoutLedgerRepository,
+    ):
         self.acct_repo = acct_repo
         self.floor_repo = floor_repo
         self.pool_repo = pool_repo
@@ -42,30 +46,44 @@ class CreatorService:
     async def get_floor(self, creator_id: UUID):
         return await self.floor_repo.get_floor_for_creator(creator_id)
 
-    async def set_floor(self, creator_id: UUID, per_minute_amount: float,
-                        currency: str = "USD", reason: str | None = None):
+    async def set_floor(
+        self,
+        creator_id: UUID,
+        per_minute_amount: float,
+        currency: str = "USD",
+        reason: str | None = None,
+    ):
         # Invariant: floor is a minimum guarantee, never negative.
         # A negative floor would imply the platform owes the creator for NOT
         # publishing, which is nonsensical and would break the pool math.
         assert per_minute_amount >= 0, "effective floor must be >= 0"
-        return await self.floor_repo.set_floor(creator_id, per_minute_amount,
-                                               currency, reason)
+        return await self.floor_repo.set_floor(creator_id, per_minute_amount, currency, reason)
 
     # --------------------------------------------------------------------- pool
     async def record_pool_contribution(self, creator_id: UUID, cents: int):
         return await self.pool_repo.record_contribution(creator_id, cents)
 
     # --------------------------------------------------------------- milestones
-    async def create_milestone(self, title: str, creator_id: UUID,
-                               total_cents: int = 0, currency: str = "USD",
-                               goal: str | None = None):
-        return await self.milestone_repo.create(title, creator_id, total_cents,
-                                                currency, goal)
+    async def create_milestone(
+        self,
+        title: str,
+        creator_id: UUID,
+        total_cents: int = 0,
+        currency: str = "USD",
+        goal: str | None = None,
+    ):
+        return await self.milestone_repo.create(title, creator_id, total_cents, currency, goal)
 
-    async def add_tranche(self, milestone_id: UUID, threshold: int,
-                          amount_cents: int, release_condition: str | None = None):
-        return await self.milestone_repo.add_tranche(milestone_id, threshold,
-                                                     amount_cents, release_condition)
+    async def add_tranche(
+        self,
+        milestone_id: UUID,
+        threshold: int,
+        amount_cents: int,
+        release_condition: str | None = None,
+    ):
+        return await self.milestone_repo.add_tranche(
+            milestone_id, threshold, amount_cents, release_condition
+        )
 
     async def release_tranche(self, milestone_id: UUID, threshold: int):
         return await self.milestone_repo.release_tranche(milestone_id, threshold)
@@ -74,9 +92,15 @@ class CreatorService:
         return await self.milestone_repo.kill_milestone(milestone_id, reason)
 
     # ------------------------------------------------------------------- payout
-    async def accrue_payout(self, creator_id: UUID, period_start: datetime,
-                            period_end: datetime, view_minutes: int,
-                            earned_cents: int, stripe_fee_cents: int = 0):
+    async def accrue_payout(
+        self,
+        creator_id: UUID,
+        period_start: datetime,
+        period_end: datetime,
+        view_minutes: int,
+        earned_cents: int,
+        stripe_fee_cents: int = 0,
+    ):
         """Accrue one payout period for a creator, idempotently.
 
         Formulas
@@ -124,9 +148,9 @@ class CreatorService:
         # Contractual invariant: creator keeps >= 55% of net.
         # Why: the ≥55% creator share is a contractual floor, not a target
         # (PRODUCT_VISION §3). If this fails, the platform is mispricing fees.
-        assert net_cents <= 0 or share_cents >= 0.55 * net_cents, (
-            "creator share must be >= 55% of net (contractual floor)"
-        )
+        assert (
+            net_cents <= 0 or share_cents >= 0.55 * net_cents
+        ), "creator share must be >= 55% of net (contractual floor)"
 
         # Idempotency key: one ledger row per (creator, period). A retried
         # payout / retried webhook resolves to the same key and therefore the
