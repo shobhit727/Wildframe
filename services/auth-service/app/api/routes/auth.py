@@ -1,3 +1,4 @@
+
 """
 Authentication API routes.
 All endpoints implement proper error handling, logging, and validation.

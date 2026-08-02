@@ -1,9 +1,11 @@
+from typing import Any
+
 """Security utilities for authentication and authorization."""
+
 
 import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 import jwt
 from passlib.context import CryptContext

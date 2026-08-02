@@ -1,9 +1,11 @@
+import enum
+
 """
 SQLAlchemy ORM models for Streaming Service.
 Manages playback sessions, video manifests, transcoding, and delivery.
 """
 
-import enum
+
 import uuid
 from datetime import datetime
 

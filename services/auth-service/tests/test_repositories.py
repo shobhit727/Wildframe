@@ -1,6 +1,6 @@
 
 """Unit tests for repository layer."""
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from app.models import LoginAudit
 

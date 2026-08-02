@@ -1,3 +1,5 @@
+from typing import Any
+
 """Stripe Connect client for the Wildframe billing service.
 
 Wraps the Stripe SDK to provide:
@@ -12,7 +14,6 @@ into domain-specific errors.
 """
 import logging
 from decimal import Decimal
-from typing import Any
 from uuid import UUID
 
 import stripe

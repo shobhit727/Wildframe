@@ -1,3 +1,5 @@
+import re
+
 """OpenTelemetry tracing setup for distributed tracing."""
 
 import logging

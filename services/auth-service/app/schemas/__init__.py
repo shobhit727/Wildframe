@@ -2,10 +2,8 @@
 Request and response schemas for Auth Service.
 Implements Pydantic models for input validation and API contracts.
 """
-
 import re
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator

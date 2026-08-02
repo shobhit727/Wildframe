@@ -1,3 +1,5 @@
+from typing import Any
+
 """Pipeline stages: a ``Stage`` port + registry + the concrete stages.
 
 Each stage is an independently-retryable, callable unit of work. Stages are
@@ -30,7 +32,6 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Any
 
 logger = logging.getLogger(__name__)
 

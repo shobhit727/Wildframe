@@ -1,3 +1,5 @@
+from typing import Any
+
 """Payment orchestration service.
 
 Sits between the API layer and the StripeClient + BillingService,
@@ -22,7 +24,6 @@ coordinating the full payment lifecycle:
 """
 import logging
 from decimal import Decimal
-from typing import Any
 from uuid import UUID
 
 from app.core.settings import settings

@@ -1,3 +1,5 @@
+from typing import Any
+
 """Lightweight domain events + event-bus publisher port.
 
 Shared event backbone for the media-pipeline (see PRODUCT_VISION §7). The
@@ -24,7 +26,6 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)

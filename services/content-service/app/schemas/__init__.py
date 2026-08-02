@@ -1,10 +1,11 @@
+import re
+
 """
 Pydantic v2 schemas for Content Service API requests/responses.
 """
 
-import re
+
 from datetime import datetime
-from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator

@@ -4,8 +4,7 @@ Implements User and RefreshToken entities with audit columns.
 """
 
 import uuid
-from datetime import datetime
-from typing import Optional
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     Boolean,

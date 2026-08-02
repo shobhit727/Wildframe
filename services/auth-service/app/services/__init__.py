@@ -1,11 +1,8 @@
-from datetime import timezone
-
 """Service layer for Auth Service."""
 import json
 import logging
 import secrets
-from datetime import UTC, datetime, timedelta
-from typing import Optional, Tuple
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from app.repositories import (

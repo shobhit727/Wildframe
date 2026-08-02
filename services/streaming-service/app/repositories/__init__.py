@@ -1,4 +1,4 @@
-from datetime import timezone
+import re
 
 """
 Repository layer for Streaming Service data access.
@@ -6,7 +6,6 @@ Repository layer for Streaming Service data access.
 
 import logging
 from datetime import UTC, datetime
-from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy import and_, desc, select

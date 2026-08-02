@@ -1,3 +1,4 @@
+
 """
 Database configuration and session management for Auth Service.
 Implements async SQLAlchemy with connection pooling and health checks.

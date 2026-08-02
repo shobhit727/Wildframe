@@ -1,14 +1,14 @@
-from datetime import timezone
+import re
+from typing import Any
 
 """
 Security utilities for Auth Service.
 Implements JWT token handling, password hashing, and validation.
 """
 
-import hashlib
+
 import logging
-from datetime import UTC, datetime, timedelta
-from typing import Any, Optional
+from datetime import UTC, datetime
 from uuid import UUID
 
 from app.core.settings import settings

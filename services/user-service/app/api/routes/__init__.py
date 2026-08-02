@@ -1,6 +1,7 @@
+import re
+
 """API routes for User Service."""
 import logging
-from typing import Annotated, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status

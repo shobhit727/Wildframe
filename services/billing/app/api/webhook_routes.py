@@ -1,3 +1,6 @@
+import enum
+from typing import Any
+
 """Stripe webhook handler for the billing service.
 
 Receives events from Stripe, verifies their signature, and dispatches
@@ -15,7 +18,6 @@ Handled events:
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request

@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, timezone
 
 from fastapi import HTTPException
@@ -8,7 +9,6 @@ Orchestrates repositories and business rules.
 """
 
 import logging
-from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession

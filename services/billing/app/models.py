@@ -1,3 +1,4 @@
+import enum
 """Billing service domain models.
 
 Implements the Sustenance Engine architecture from PRODUCT_VISION.md:

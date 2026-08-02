@@ -1,3 +1,4 @@
+import enum
 """Creators service models."""
 from datetime import UTC, datetime
 from enum import Enum

@@ -2,9 +2,8 @@
 Pydantic v2 schemas for Streaming Service API requests/responses.
 """
 
-import re
+
 from datetime import datetime
-from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator

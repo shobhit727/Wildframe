@@ -1,3 +1,4 @@
+import enum
 """Billing service business logic — the Sustenance Engine core.
 
 This module implements the economic model from PRODUCT_VISION.md:

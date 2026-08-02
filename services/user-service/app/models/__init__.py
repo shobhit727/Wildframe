@@ -1,5 +1,5 @@
 """SQLAlchemy models for User Service."""
-import enum
+
 from datetime import datetime
 from uuid import uuid4
 

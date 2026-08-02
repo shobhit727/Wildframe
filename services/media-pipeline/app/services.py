@@ -1,3 +1,5 @@
+from typing import Any
+
 """Media pipeline service business logic — the pipeline ORCHESTRATOR.
 
 The pipeline is an event-driven state machine over ``PipelineJob``. The
@@ -44,7 +46,6 @@ import asyncio
 import logging
 import time
 from datetime import UTC, datetime
-from typing import Any
 from uuid import UUID
 
 from app.core.events import Event, EventPublisher, get_event_publisher

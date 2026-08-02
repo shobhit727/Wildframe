@@ -3,7 +3,7 @@ Comprehensive unit tests for Auth Service.
 Tests cover registration, login, token refresh, and password management.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 

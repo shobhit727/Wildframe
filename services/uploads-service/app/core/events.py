@@ -1,3 +1,5 @@
+from typing import Any
+
 """Lightweight domain events + event-bus publisher port.
 
 The event bus is the integration surface between services (see
@@ -18,7 +20,6 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)

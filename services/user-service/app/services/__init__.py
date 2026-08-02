@@ -1,9 +1,6 @@
-from datetime import timezone
-
 """Service layer for User Service."""
 import logging
-from datetime import UTC, datetime, timedelta
-from typing import List, Optional
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status

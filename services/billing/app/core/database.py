@@ -1,3 +1,4 @@
+
 """Database connection management for the Billing Service.
 
 Provides the DatabaseManager singleton and the get_db() async generator

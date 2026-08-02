@@ -1,10 +1,11 @@
+import re
+
 """
 Repository layer for Content Service data access.
 Provides abstraction over database operations with transaction management.
 """
 
 import logging
-from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select

@@ -1,3 +1,5 @@
+from typing import Any
+
 """Media pipeline service tests.
 
 Two layers:
@@ -13,7 +15,7 @@ Two layers:
 2. A thin DB-backed smoke test mirroring billing/streaming that constructs
    the real ``MediaPipelineService`` against a ``db`` session.
 """
-from typing import Any
+
 from uuid import UUID, uuid4
 
 import pytest

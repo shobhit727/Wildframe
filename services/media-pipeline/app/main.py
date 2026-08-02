@@ -1,3 +1,4 @@
+
 """Main FastAPI application for the Media Pipeline Service."""
 import logging
 from collections.abc import AsyncGenerator
