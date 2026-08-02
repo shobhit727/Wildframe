@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy pyproject.toml and install dependencies
 COPY services/auth-service/pyproject.toml .
-RUN pip install --user --no-cache-dir poetry && \
+RUN pip install --no-cache-dir poetry && \
     poetry config virtualenvs.create false && \
     poetry install --no-dev --no-interaction --no-ansi
 

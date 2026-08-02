@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from app.services.streaming import StreamingService
+from app.services import StreamingService
 
 
 @pytest.fixture

@@ -21,7 +21,7 @@ from app.schemas.streaming import (
     SubtitleRequest,
     SubtitleResponse,
 )
-from app.services.streaming import StreamingService
+from app.services import StreamingService
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from app.services.content import ContentService
+from app.services import ContentService
 
 
 @pytest.fixture

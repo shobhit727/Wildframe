@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import pytest
 from app.security import PasswordManager, TokenManager
-from app.services.auth_service import AuthService
+from app.services import AuthService
 
 
 @pytest.fixture

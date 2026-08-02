@@ -25,7 +25,7 @@ from app.schemas.content import (
     ShowResponse,
     UpdateMovieRequest,
 )
-from app.services.content import ContentService
+from app.services import ContentService
 
 logger = logging.getLogger(__name__)
 

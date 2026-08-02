@@ -8,7 +8,7 @@ WORKDIR /build
 RUN apt-get update && apt-get install -y --no-install-recommends     gcc libpq-dev && rm -rf /var/lib/apt/lists/*
 
 COPY services/user-service/pyproject.toml .
-RUN pip install --user --no-cache-dir poetry &&     poetry config virtualenvs.create false &&     poetry install --no-dev --no-interaction --no-ansi
+RUN pip install --no-cache-dir poetry &&     poetry config virtualenvs.create false &&     poetry install --no-dev --no-interaction --no-ansi
 
 # Stage 2: Development
 FROM python:3.14-slim as development
