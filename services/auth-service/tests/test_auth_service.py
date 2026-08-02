@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from app.security.manager import PasswordManager, TokenManager
+from app.security import PasswordManager, TokenManager
 from app.services.auth_service import AuthService
 
 
