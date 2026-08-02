@@ -26,7 +26,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.14"
+python = "^3.13"
 
 # FastAPI ecosystem
 fastapi = "^0.104.0"
