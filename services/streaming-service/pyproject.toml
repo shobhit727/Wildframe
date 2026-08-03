@@ -5,7 +5,7 @@ description = "Video streaming service with playback session management and mani
 authors = ["Your Name <you@example.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.13"
+python = ">=3.11,<3.16"
 fastapi = "^0.104.1"
 uvicorn = {version = "^0.24.0", extras = ["standard"]}
 pydantic = "^2.4.2"

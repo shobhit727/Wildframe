@@ -4,7 +4,7 @@ import logging
 from datetime import UTC
 from uuid import UUID
 
-from app.models import LoginAudit, RefreshToken, User
+from app.models import LoginAudit, RefreshToken, TokenBlacklist, User
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -190,3 +190,46 @@ class LoginAuditRepository(BaseRepository):
         result = await self.session.execute(stmt)
         audits = result.scalars().all()
         return len(audits)
+
+
+class TokenBlacklistRepository(BaseRepository):
+    """Repository for TokenBlacklist model operations."""
+
+    async def create(self, token_hash: str, user_id: UUID, expires_at) -> TokenBlacklist:
+        """Add token to blacklist."""
+        try:
+            entry = TokenBlacklist(token_hash=token_hash, user_id=user_id, expires_at=expires_at)
+            self.session.add(entry)
+            await self.flush()
+            logger.info(f"Blacklisted token for user: {user_id}")
+            return entry
+        except Exception as e:
+            await self.rollback()
+            logger.error(f"Error blacklisting token: {e!s}")
+            raise
+
+    async def is_blacklisted(self, token_hash: str) -> bool:
+        """Check if token is blacklisted."""
+        stmt = select(TokenBlacklist).where(TokenBlacklist.token_hash == token_hash)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+    async def delete_expired(self) -> int:
+        """Delete expired blacklist entries."""
+        from datetime import datetime
+
+        try:
+            stmt = select(TokenBlacklist).where(TokenBlacklist.expires_at < datetime.now(UTC))
+            result = await self.session.execute(stmt)
+            entries = result.scalars().all()
+
+            for entry in entries:
+                await self.session.delete(entry)
+
+            await self.flush()
+            logger.info(f"Deleted {len(entries)} expired blacklist entries")
+            return len(entries)
+        except Exception as e:
+            await self.rollback()
+            logger.error(f"Error deleting expired blacklist entries: {e!s}")
+            raise

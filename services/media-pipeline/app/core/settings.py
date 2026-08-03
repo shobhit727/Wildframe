@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/media-pipeline_db"
+    DATABASE_URL: str = "postgresql+asyncpg://wildframe:wildframe_dev_password@localhost:5432/media_db"
 
     # Security
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"

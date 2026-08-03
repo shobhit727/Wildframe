@@ -1,6 +1,7 @@
 """Main FastAPI application for Api Gateway Service."""
 
 import logging
+from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
 from fastapi import FastAPI
@@ -18,12 +19,35 @@ auth_middleware = None
 rate_limiter = None
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage FastAPI application lifespan."""
+    global auth_middleware, rate_limiter
+    # Startup
+    logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
+    logger.info(f"Environment: {settings.ENVIRONMENT}")
+
+    auth_middleware = AuthenticationMiddleware(settings.JWT_SECRET_KEY)
+    redis_client = await redis.from_url(settings.REDIS_URL)
+    rate_limiter = RateLimiter(redis_client)
+
+    logger.info("API Gateway started successfully")
+
+    yield
+
+    # Shutdown
+    logger.info(f"Shutting down {settings.SERVICE_NAME}")
+    await redis_client.close()
+    logger.info("Shutdown complete")
+
+
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
     app = FastAPI(
         title=settings.SERVICE_NAME,
         version=settings.SERVICE_VERSION,
         description="API Gateway Service - Request routing, authentication, rate limiting",
+        lifespan=lifespan,
     )
 
     # CORS middleware
@@ -43,15 +67,6 @@ def create_app() -> FastAPI:
 
     # Include gateway routes
     app.include_router(gateway_router)
-
-    @app.on_event("startup")
-    async def startup():
-        """Initialize middleware on startup."""
-        global auth_middleware, rate_limiter
-        auth_middleware = AuthenticationMiddleware(settings.JWT_SECRET)
-        redis_client = await redis.from_url(settings.REDIS_URL)
-        rate_limiter = RateLimiter(redis_client)
-        logger.info("API Gateway started successfully")
 
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
     wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)

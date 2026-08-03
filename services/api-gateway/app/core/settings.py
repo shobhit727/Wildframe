@@ -1,5 +1,6 @@
 """Configuration settings for Api Gateway Service."""
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -10,8 +11,7 @@ class Settings(BaseSettings):
     SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
 
-    # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/api-gateway_db"
+    # Database (api-gateway is stateless — no DB)
 
     # Security
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
@@ -27,6 +27,21 @@ class Settings(BaseSettings):
     # CORS
     CORS_ALLOWED_ORIGINS: list[str] = ["*"]
     CORS_ALLOW_CREDENTIALS: bool = True
+
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        """Fail fast if running in production with default insecure secrets."""
+        default_secrets = [
+            "your-secret-key-change-in-production",
+            "dev-secret-key",
+        ]
+        if self.ENVIRONMENT == "production" and self.JWT_SECRET_KEY in default_secrets:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value in production. "
+                "Refusing to start with default insecure secret."
+            )
+        return self
 
     class Config:
         env_file = ".env"

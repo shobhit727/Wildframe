@@ -1,33 +1,46 @@
-"""Main FastAPI application for the Moderation Service.
-
-Handles content review queue, flag decisions, escalation, and
-creator strike management. Part of the Wildframe Sustenance Engine platform.
-"""
-
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from wildframe_observability.wire import wire_observability
 
 from app.api.moderation_routes import router as moderation_router
 from app.core.database import DatabaseManager
-from app.core.logging import setup_logging
 from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
 
-def create_app() -> FastAPI:
-    """Create and configure the Moderation Service FastAPI application."""
-    setup_logging()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage FastAPI application lifespan."""
+    # Startup
+    logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
+    logger.info(f"Environment: {settings.ENVIRONMENT}")
 
+    # Verify database connectivity
+    db_healthy = await DatabaseManager.health_check()
+    if not db_healthy:
+        logger.error("Database health check failed")
+        raise RuntimeError("Database is not healthy on startup")
+
+    logger.info("All startup checks passed")
+
+    yield
+
+    # Shutdown
+    logger.info(f"Shutting down {settings.SERVICE_NAME}")
+    await DatabaseManager.close()
+    logger.info("Shutdown complete")
+
+
+def create_app() -> FastAPI:
+    """Create and configure FastAPI application."""
     app = FastAPI(
         title=settings.SERVICE_NAME,
         version=settings.SERVICE_VERSION,
-        description=(
-            "Moderation Service — content review queue, flag decisions, "
-            "escalation, and creator strikes."
-        ),
+        description="Moderation Service",
+        lifespan=lifespan,
     )
 
     @app.get("/health")
@@ -42,18 +55,6 @@ def create_app() -> FastAPI:
         }
 
     app.include_router(moderation_router)
-
-    @app.on_event("startup")
-    async def startup() -> None:
-        """Initialize database connection pool on startup."""
-        await DatabaseManager.init()
-        logger.info("Moderation service started")
-
-    @app.on_event("shutdown")
-    async def shutdown() -> None:
-        """Close database connections on shutdown."""
-        await DatabaseManager.close()
-        logger.info("Moderation service stopped")
 
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
     wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)

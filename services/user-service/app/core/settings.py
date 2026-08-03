@@ -1,5 +1,6 @@
 """Core configuration for User Service."""
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -13,7 +14,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/user_db"
+    DATABASE_URL: str = "postgresql+asyncpg://wildframe:wildframe_dev_password@localhost:5432/users_db"
     DATABASE_POOL_SIZE: int = 20
     DATABASE_MAX_OVERFLOW: int = 0
     DATABASE_POOL_TIMEOUT: int = 30
@@ -52,6 +53,21 @@ class Settings(BaseSettings):
     # Rate limiting
     LOGIN_RATE_LIMIT_ATTEMPTS: int = 10
     LOGIN_RATE_LIMIT_WINDOW: int = 900  # 15 minutes
+
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        """Fail fast if running in production with default insecure secrets."""
+        default_secrets = [
+            "your-secret-key-change-in-production",
+            "dev-secret-key",
+        ]
+        if self.ENVIRONMENT == "production" and self.JWT_SECRET_KEY in default_secrets:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value in production. "
+                "Refusing to start with default insecure secret."
+            )
+        return self
 
     class Config:
         env_file = ".env"

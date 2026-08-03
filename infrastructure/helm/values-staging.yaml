@@ -1,0 +1,8 @@
+# Placeholder Helm values for staging. Real values go here once the
+# infrastructure/helm/ chart exists. Until then, the deploy job in
+# .github/workflows/ci-cd.yml is effectively a no-op against this file.
+image:
+  repository: ghcr.io/wildframe/wildframe
+  tag: staging
+
+replicaCount: 1

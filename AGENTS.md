@@ -25,7 +25,7 @@ cd apps/web && npm install && npm run dev   # http://localhost:3000
 
 ```
 wildframe/
-├── services/                       # 12 independent FastAPI microservices
+├── services/                       # 16 independent FastAPI microservices
 │   ├── api-gateway/               # routing, auth, rate limiting (host :8000)
 │   ├── auth-service/              # JWT auth, refresh tokens, rate limiting
 │   ├── user-service/              # profiles, devices, sessions, preferences
@@ -37,23 +37,29 @@ wildframe/
 │   ├── analytics-service/         # event analytics
 │   ├── notification-service/      # multi-channel notifications
 │   ├── admin-service/             # moderation, flags, alerts, config
-│   └── media-pipeline/            # video transcoding
+│   ├── media-pipeline/            # video transcoding
+│   ├── creators-service/          # creator onboarding & profiles
+│   ├── moderation-service/        # content moderation
+│   └── uploads-service/           # file uploads & processing
 ├── apps/web/                       # Next.js 15 frontend (viewer + admin)
 ├── deployments/
 │   └── docker-compose.dev.yml      # local dev orchestration
 ├── infrastructure/
 │   ├── kubernetes/                 # auth-service Helm-style manifests
 │   ├── terraform/                  # AWS: VPC, EKS, RDS, ElastiCache, S3/CF
-│   └── database/init-databases.sql # 12 service databases
-├── packages/                       # shared libs (sdk, shared-types)
+│   └── database/init-databases.sql # 16 service databases
+├── packages/
+│   └── sdk/
+│       ├── wildframe_events/       # Kafka event publishing/subscribing
+│       └── wildframe_observability/ # OpenTelemetry, metrics, logging, health
 └── docs/                           # architecture, quickstart, API reference
 ```
 
 ## Architecture
 
-- **12 microservices**, each with its own FastAPI `app`, SQLAlchemy 2.0 async
+- **16 microservices**, each with its own FastAPI `app`, SQLAlchemy 2.0 async
   ORM, and (where it matters) its own PostgreSQL database
-  (`infrastructure/database/init-databases.sql` creates all 12).
+  (`infrastructure/database/init-databases.sql` creates all 16).
 - **Database-per-service**: never share a DB across services.
 - **Async everything**: endpoints, SQLAlchemy sessions, and the Redis client
   (`redis.asyncio`) are all async. Do **not** use the unmaintained `aioredis`
@@ -81,6 +87,9 @@ wildframe/
 | 8009 | analytics-service |
 | 8010 | notification-service |
 | 8011 | media-pipeline |
+| 8012 | creators-service |
+| 8013 | moderation-service |
+| 8014 | uploads-service |
 
 Inside the Docker network every service is reachable at the container port it
 actually binds (8000 for most; 8003 for content, 8004 for streaming).

@@ -365,106 +365,52 @@ async def change_password(
         )
 
 
-@router.post("/verify-email", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/verify-email", status_code=status.HTTP_501_NOT_IMPLEMENTED)
 async def verify_email(
     request: VerifyEmailRequest,
     user_id: Annotated[UUID, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    """Verify user email address.
+    """Stub: real email verification flow not yet implemented.
 
-    Args:
-        request: Email verification request with code
-        user_id: Current user ID from JWT
-        db: Database session
+    The previous implementation abused the User model's `mfa_secret` and
+    `locked_until` columns as temporary storage for verification codes and
+    expiry, which silently flipped `email_verified` on without proof of
+    ownership. Per AGENTS.md, return 501 until the flow exists.
     """
-    auth_service = AuthService(
-        user_repo=UserRepository(db),
-        token_repo=RefreshTokenRepository(db),
-        audit_repo=LoginAuditRepository(db),
-        password_manager=PasswordManager(),
-        token_manager=TokenManager(),
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Email verification is not yet implemented",
     )
 
-    try:
-        await auth_service.verify_email(user_id, request.token)
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        logger.error(f"Email verification error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error"
-        )
 
-
-@router.post("/mfa/setup", status_code=status.HTTP_201_CREATED)
+@router.post("/mfa/setup", status_code=status.HTTP_501_NOT_IMPLEMENTED)
 async def setup_mfa(
     request: MFASetupRequest,
     user_id: Annotated[UUID, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Setup MFA for user account.
+    """Stub: real MFA setup flow not yet implemented.
 
-    Args:
-        request: MFA setup request
-        user_id: Current user ID
-        db: Database session
-
-    Returns:
-        MFA setup details (secret, QR code URI, backup codes)
-
-    Raises:
-        HTTPException: If user not found
+    The previous implementation stored the TOTP secret in plaintext on
+    the User row and returned it in the response. Per AGENTS.md, return
+    501 until a real TOTP provisioning flow with secure secret storage
+    exists.
     """
-    auth_service = AuthService(
-        user_repo=UserRepository(db),
-        token_repo=RefreshTokenRepository(db),
-        audit_repo=LoginAuditRepository(db),
-        password_manager=PasswordManager(),
-        token_manager=TokenManager(),
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="MFA setup is not yet implemented",
     )
 
-    try:
-        return await auth_service.setup_mfa(user_id)
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        logger.error(f"MFA setup error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error"
-        )
 
-
-@router.post("/mfa/verify", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/mfa/verify", status_code=status.HTTP_501_NOT_IMPLEMENTED)
 async def verify_mfa(
     request: MFAVerifyRequest,
     user_id: Annotated[UUID, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    """Verify MFA code and complete MFA setup.
-
-    Args:
-        request: MFA verification request
-        user_id: Current user ID
-        db: Database session
-
-    Raises:
-        HTTPException: If verification fails
-    """
-    auth_service = AuthService(
-        user_repo=UserRepository(db),
-        token_repo=RefreshTokenRepository(db),
-        audit_repo=LoginAuditRepository(db),
-        password_manager=PasswordManager(),
-        token_manager=TokenManager(),
-    )
-
-    try:
-        await auth_service.verify_mfa(user_id, request.code)
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        logger.error(f"MFA verification error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error"
+    """Stub: real MFA verification flow not yet implemented."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="MFA verification is not yet implemented",
         )

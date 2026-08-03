@@ -149,12 +149,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install pnpm
+        if: steps.check.outputs.exists == 'true'
+        run: npm install -g pnpm@9
 
       - name: Install dependencies
         if: steps.check.outputs.exists == 'true'
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
         if: steps.check.outputs.exists == 'true'

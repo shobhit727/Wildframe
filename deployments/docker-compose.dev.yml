@@ -143,7 +143,8 @@ services:
     volumes:
     - ./infrastructure/loki/loki-config.yml:/etc/loki/local-config.yaml
     - loki_data:/loki
-    command: -config.file=/etc/loki/local-config.yaml
+    command:
+    - -config.file=/etc/loki/local-config.yaml
     networks:
     - wildframe-network
   jaeger:
@@ -188,8 +189,7 @@ services:
     volumes:
     - ./services/auth-service:/app
     - ./packages/sdk:/app/packages/sdk
-    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0
-      --reload"
+    command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
   user-service:
@@ -218,8 +218,7 @@ services:
     volumes:
     - ./services/user-service:/app
     - ./packages/sdk:/app/packages/sdk
-    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0
-      --reload"
+    command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
   admin-service:
@@ -248,8 +247,7 @@ services:
     volumes:
     - ./services/admin-service:/app
     - ./packages/sdk:/app/packages/sdk
-    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0
-      --reload"
+    command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
   content-service:
@@ -278,8 +276,7 @@ services:
     volumes:
     - ./services/content-service:/app
     - ./packages/sdk:/app/packages/sdk
-    command: bash -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0
-      --reload"
+    command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
   api-gateway:
@@ -337,7 +334,7 @@ services:
   search-service:
     build:
       context: .
-      dockerfile: services/search/Dockerfile
+      dockerfile: services/search-service/Dockerfile
       target: development
     ports:
     - 8005:8000
@@ -352,7 +349,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-    - ./services/search:/app
+    - ./services/search-service:/app
     - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
@@ -360,7 +357,7 @@ services:
   recommendation-service:
     build:
       context: .
-      dockerfile: services/recommendation/Dockerfile
+      dockerfile: services/recommendation-service/Dockerfile
       target: development
     ports:
     - 8007:8000
@@ -376,7 +373,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-    - ./services/recommendation:/app
+    - ./services/recommendation-service:/app
     - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
@@ -384,7 +381,7 @@ services:
   billing-service:
     build:
       context: .
-      dockerfile: services/billing/Dockerfile
+      dockerfile: services/billing-service/Dockerfile
       target: development
     ports:
     - 8008:8000
@@ -400,7 +397,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-    - ./services/billing:/app
+    - ./services/billing-service:/app
     - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
@@ -408,7 +405,7 @@ services:
   analytics-service:
     build:
       context: .
-      dockerfile: services/analytics/Dockerfile
+      dockerfile: services/analytics-service/Dockerfile
       target: development
     ports:
     - 8009:8000
@@ -424,7 +421,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-    - ./services/analytics:/app
+    - ./services/analytics-service:/app
     - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
@@ -432,7 +429,7 @@ services:
   notification-service:
     build:
       context: .
-      dockerfile: services/notification/Dockerfile
+      dockerfile: services/notification-service/Dockerfile
       target: development
     ports:
     - 8010:8000
@@ -448,7 +445,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-    - ./services/notification:/app
+    - ./services/notification-service:/app
     - ./packages/sdk:/app/packages/sdk
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:

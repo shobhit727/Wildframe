@@ -163,3 +163,4 @@ Thumbs.db
 # Test coverage
 htmlcov/
 .coverage
+netflix_backend/

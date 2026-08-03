@@ -1,6 +1,7 @@
 """Database connection management."""
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import text
 
 from app.core.settings import settings
 
@@ -32,7 +33,7 @@ class DatabaseManager:
             if not cls.engine:
                 await cls.init()
             async with cls.engine.connect() as conn:
-                await conn.execute("SELECT 1")
+                await conn.execute(text("SELECT 1"))
             return True
         except Exception:  # noqa: BLE001
             return False

@@ -1,5 +1,6 @@
 """Configuration settings for the Uploads Service."""
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -58,6 +59,21 @@ class Settings(BaseSettings):
     S3_SECRET_ACCESS_KEY: str = ""
     # Pre-signed URL lifetime in seconds.
     S3_PRESIGNED_URL_TTL_SECONDS: int = 3600
+
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        """Fail fast if running in production with default insecure secrets."""
+        default_secrets = [
+            "your-secret-key-change-in-production",
+            "dev-secret-key",
+        ]
+        if self.ENVIRONMENT == "production" and self.JWT_SECRET_KEY in default_secrets:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value in production. "
+                "Refusing to start with default insecure secret."
+            )
+        return self
 
     class Config:
         env_file = ".env"

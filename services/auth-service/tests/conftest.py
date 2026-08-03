@@ -62,6 +62,11 @@ async def test_session(test_session_factory):
         # Rollback after test
         await session.rollback()
 
+@pytest.fixture
+async def db_session(test_session):
+    """Alias for test_session for backward compatibility."""
+    yield test_session
+
 
 @pytest.fixture
 def password_manager():

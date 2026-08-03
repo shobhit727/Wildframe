@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for user-service
 
 # Stage 1: Builder
-FROM python:3.14-slim as builder
+FROM python:3.13-slim as builder
 
 WORKDIR /build
 
@@ -11,7 +11,7 @@ COPY services/user-service/pyproject.toml .
 RUN pip install --no-cache-dir poetry==1.8.3 &&     poetry config virtualenvs.create false &&     poetry install --no-dev --no-interaction --no-ansi
 
 # Stage 2: Development
-FROM python:3.14-slim as development
+FROM python:3.13-slim as development
 
 WORKDIR /app
 
@@ -28,7 +28,7 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3     CMD c
 EXPOSE 8000
 
 # Stage 3: Production
-FROM python:3.14-slim as production
+FROM python:3.13-slim as production
 
 WORKDIR /app
 

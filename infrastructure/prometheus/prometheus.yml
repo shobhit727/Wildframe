@@ -1,0 +1,36 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: wildframe-services
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - api-gateway:8000
+          - auth-service:8000
+          - user-service:8000
+          - content-service:8003
+          - streaming-service:8004
+          - search-service:8000
+          - recommendation-service:8000
+          - billing-service:8000
+          - analytics-service:8000
+          - notification-service:8000
+          - admin-service:8000
+          - media-pipeline:8000
+          - creators-service:8000
+          - moderation-service:8000
+          - uploads-service:8000
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]

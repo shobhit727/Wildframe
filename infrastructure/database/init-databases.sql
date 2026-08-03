@@ -122,6 +122,34 @@ GRANT CREATE ON SCHEMA public TO uploads_user;
 ALTER DEFAULT PRIVILEGES FOR USER uploads_user IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO uploads_user;
 ALTER DEFAULT PRIVILEGES FOR USER uploads_user IN SCHEMA public GRANT USAGE ON SEQUENCES TO uploads_user;
 
+\c search_db
+ALTER SCHEMA public OWNER TO search_user;
+GRANT USAGE ON SCHEMA public TO search_user;
+GRANT CREATE ON SCHEMA public TO search_user;
+ALTER DEFAULT PRIVILEGES FOR USER search_user IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO search_user;
+ALTER DEFAULT PRIVILEGES FOR USER search_user IN SCHEMA public GRANT USAGE ON SEQUENCES TO search_user;
+
+\c recommendation_db
+ALTER SCHEMA public OWNER TO recommendation_user;
+GRANT USAGE ON SCHEMA public TO recommendation_user;
+GRANT CREATE ON SCHEMA public TO recommendation_user;
+ALTER DEFAULT PRIVILEGES FOR USER recommendation_user IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO recommendation_user;
+ALTER DEFAULT PRIVILEGES FOR USER recommendation_user IN SCHEMA public GRANT USAGE ON SEQUENCES TO recommendation_user;
+
+\c notification_db
+ALTER SCHEMA public OWNER TO notification_user;
+GRANT USAGE ON SCHEMA public TO notification_user;
+GRANT CREATE ON SCHEMA public TO notification_user;
+ALTER DEFAULT PRIVILEGES FOR USER notification_user IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO notification_user;
+ALTER DEFAULT PRIVILEGES FOR USER notification_user IN SCHEMA public GRANT USAGE ON SEQUENCES TO notification_user;
+
+\c media_db
+ALTER SCHEMA public OWNER TO media_user;
+GRANT USAGE ON SCHEMA public TO media_user;
+GRANT CREATE ON SCHEMA public TO media_user;
+ALTER DEFAULT PRIVILEGES FOR USER media_user IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO media_user;
+ALTER DEFAULT PRIVILEGES FOR USER media_user IN SCHEMA public GRANT USAGE ON SEQUENCES TO media_user;
+
 -- Create shared read-only user for analytics/reporting
 CREATE USER analytics_reader WITH PASSWORD 'analytics_reader_password';
 GRANT CONNECT ON DATABASE auth_db TO analytics_reader;
@@ -132,6 +160,10 @@ GRANT CONNECT ON DATABASE billing_db TO analytics_reader;
 GRANT CONNECT ON DATABASE creators_db TO analytics_reader;
 GRANT CONNECT ON DATABASE moderation_db TO analytics_reader;
 GRANT CONNECT ON DATABASE uploads_db TO analytics_reader;
+GRANT CONNECT ON DATABASE search_db TO analytics_reader;
+GRANT CONNECT ON DATABASE recommendation_db TO analytics_reader;
+GRANT CONNECT ON DATABASE notification_db TO analytics_reader;
+GRANT CONNECT ON DATABASE media_db TO analytics_reader;
 
 -- Enable required extensions
 \c auth_db
@@ -169,6 +201,10 @@ GRANT CONNECT ON DATABASE billing_db TO metrics_user;
 GRANT CONNECT ON DATABASE creators_db TO metrics_user;
 GRANT CONNECT ON DATABASE moderation_db TO metrics_user;
 GRANT CONNECT ON DATABASE uploads_db TO metrics_user;
+GRANT CONNECT ON DATABASE search_db TO metrics_user;
+GRANT CONNECT ON DATABASE recommendation_db TO metrics_user;
+GRANT CONNECT ON DATABASE notification_db TO metrics_user;
+GRANT CONNECT ON DATABASE media_db TO metrics_user;
 
 -- Performance tuning
 \c auth_db

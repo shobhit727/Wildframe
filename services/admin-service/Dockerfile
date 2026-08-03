@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for Admin Service
 
-FROM python:3.11-slim as builder
+FROM python:3.13-slim as builder
 
 WORKDIR /build
 
@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir poetry==1.8.3 && \
     poetry config virtualenvs.create false && \
     poetry install --no-dev --no-interaction --no-ansi
 
-FROM python:3.11-slim as development
+FROM python:3.13-slim as development
 
 WORKDIR /app
 
@@ -33,7 +33,7 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
-FROM python:3.11-slim as production
+FROM python:3.13-slim as production
 
 WORKDIR /app
 

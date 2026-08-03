@@ -150,13 +150,17 @@ class LoadBalancer:
 
 
 async def get_current_user(request: Request) -> dict:
-    """Dependency to get current authenticated user."""
-    from starlette.middleware.authentication import AuthenticationMiddleware
+    """Dependency to get current authenticated user.
 
-    auth = AuthenticationMiddleware
-    user_info = await auth(request)
-    if not user_info:
+    Reads the bearer token from the Authorization header and validates it.
+    Used by gateway routes that need to know the caller. For routes that
+    should bypass auth (public paths) use a different dependency.
+    """
+    from .main import auth_middleware  # late import: set in startup
+
+    token_payload = await auth_middleware.verify_token(request)
+    if not token_payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
         )
-    return user_info
+    return token_payload

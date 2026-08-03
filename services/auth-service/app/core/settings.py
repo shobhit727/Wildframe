@@ -5,6 +5,7 @@ Manages environment-based settings and dependency injection.
 
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -76,6 +77,21 @@ class Settings(BaseSettings):
     MFA_ISSUER_NAME: str = "Wildframe"
     MFA_BACKUP_CODES_COUNT: int = 10
     MFA_BACKUP_CODE_LENGTH: int = 8
+
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        """Fail fast if running in production with default insecure secrets."""
+        default_secrets = [
+            "your-secret-key-change-in-production",
+            "dev-secret-key",
+        ]
+        if self.ENVIRONMENT == "production" and self.JWT_SECRET_KEY in default_secrets:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value in production. "
+                "Refusing to start with default insecure secret."
+            )
+        return self
 
     class Config:
         env_file = ".env"
