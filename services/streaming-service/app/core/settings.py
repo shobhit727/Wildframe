@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     SERVER_PORT: int = 8004
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
+    LOG_LEVEL: str = "INFO"
 
 
     @model_validator(mode="after")

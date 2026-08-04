@@ -7,7 +7,7 @@ import pytest
 import pytest_asyncio
 from app.core.database import get_db
 from app.main import app
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest_asyncio.fixture
@@ -19,7 +19,8 @@ async def client(db_session):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 
     app.dependency_overrides.clear()

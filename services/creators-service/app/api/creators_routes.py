@@ -331,8 +331,8 @@ async def admin_add_tranche(
 async def admin_release_tranche(
     creator_id: UUID,
     mid: UUID,
-    threshold: Annotated[int, Body(...)],
-    service: Annotated[CreatorService, Depends(get_service)],
+    threshold: int = Body(...),
+    service: CreatorService = Depends(get_service),
 ):
     ms = await service.milestone_repo.get(mid)
     if ms is None or ms.creator_id != creator_id:
@@ -347,8 +347,8 @@ async def admin_release_tranche(
 async def admin_kill_milestone(
     creator_id: UUID,
     mid: UUID,
-    reason: Annotated[str, Body(None)],
-    service: Annotated[CreatorService, Depends(get_service)],
+    reason: str | None = Body(None),
+    service: CreatorService = Depends(get_service),
 ):
     ms = await service.milestone_repo.get(mid)
     if ms is None or ms.creator_id != creator_id:

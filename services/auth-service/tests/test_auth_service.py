@@ -23,9 +23,8 @@ def mock_repositories():
     """Create mock repositories."""
     return {
         "user_repo": AsyncMock(),
-        "refresh_token_repo": AsyncMock(),
-        "token_blacklist_repo": AsyncMock(),
-        "login_audit_repo": AsyncMock(),
+        "token_repo": AsyncMock(),
+        "audit_repo": AsyncMock(),
     }
 
 
@@ -43,10 +42,10 @@ def auth_service(mock_repositories, mock_rate_limiter):
     """Create AuthService instance with mocks."""
     return AuthService(
         user_repo=mock_repositories["user_repo"],
-        refresh_token_repo=mock_repositories["refresh_token_repo"],
-        token_blacklist_repo=mock_repositories["token_blacklist_repo"],
-        login_audit_repo=mock_repositories["login_audit_repo"],
-        rate_limiter=mock_rate_limiter,
+        token_repo=mock_repositories["token_repo"],
+        audit_repo=mock_repositories["audit_repo"],
+        password_manager=PasswordManager(),
+        token_manager=TokenManager(),
     )
 
 
@@ -227,13 +226,13 @@ class TestAuthServiceTokenRefresh:
         mock_token = MagicMock()
         mock_token.device_id = None
         mock_token.revoked_at = None
-        mock_repositories["refresh_token_repo"].get_by_hash.return_value = mock_token
+        mock_repositories["token_repo"].get_by_hash.return_value = mock_token
 
         token_response, new_refresh_token = await auth_service.refresh_access_token(refresh_token)
 
         assert token_response["access_token"] is not None
         assert new_refresh_token is not None
-        mock_repositories["refresh_token_repo"].get_by_hash.assert_called_once()
+        mock_repositories["token_repo"].get_by_hash.assert_called_once()
 
     async def test_refresh_invalid_token(self, auth_service):
         """Test refresh with invalid token."""
@@ -251,5 +250,4 @@ class TestAuthServiceLogout:
 
         await auth_service.logout(access_token, user_id)
 
-        mock_repositories["token_blacklist_repo"].add.assert_called_once()
-        mock_repositories["refresh_token_repo"].revoke_all_for_user.assert_called_once_with(user_id)
+        mock_repositories["token_repo"].revoke.assert_called_once()

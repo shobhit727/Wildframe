@@ -1,6 +1,5 @@
 """Notification service API routes."""
 
-from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends
@@ -13,17 +12,17 @@ from app.services import NotificationService
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
-async def get_notif_service(db: Annotated[AsyncSession, Depends(get_db)]) -> NotificationService:
+async def get_notif_service(db: AsyncSession = Depends(get_db)) -> NotificationService:
     return NotificationService(NotificationRepository(db))
 
 
-@router.post("/send")
+@router.post("/send", response_model=dict)
 async def send_notification(
-    user_id: Annotated[UUID, Body(...)],
-    title: Annotated[str, Body(...)],
-    message: Annotated[str, Body(...)],
-    channel: Annotated[str, Body(default="in-app")],
-    service: Annotated[NotificationService, Depends(get_notif_service)],
+    service: NotificationService = Depends(get_notif_service),
+    user_id: UUID = Body(...),
+    title: str = Body(...),
+    message: str = Body(...),
+    channel: str = Body(default="in-app"),
 ):
     """Send notification."""
     await service.send_notification(user_id, title, message, channel)
@@ -32,7 +31,7 @@ async def send_notification(
 
 @router.get("/unread/{user_id}")
 async def get_unread_notifications(
-    user_id: UUID, service: Annotated[NotificationService, Depends(get_notif_service)]
+    user_id: UUID, service: NotificationService = Depends(get_notif_service)
 ):
     """Get unread notifications."""
     return {"notifications": [], "total": 0}

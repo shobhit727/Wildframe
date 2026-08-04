@@ -121,7 +121,7 @@ async def get_manifest(
 async def get_episode_manifest(
     episode_id: UUID,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
-    protocol: Annotated[str, Query(default="hls", regex="^(hls|dash|smooth_streaming)$")],
+    protocol: str = Query(default="hls", pattern="^(hls|dash|smooth_streaming)$"),
 ):
     """Get manifest for episode and protocol."""
     manifest = await service.get_manifest_for_episode(episode_id, protocol)

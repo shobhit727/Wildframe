@@ -13,14 +13,14 @@ from app.services import RecommendationService
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
 
-async def get_rec_service(db: Annotated[AsyncSession, Depends(get_db)]) -> RecommendationService:
+async def get_rec_service(db: AsyncSession = Depends(get_db)) -> RecommendationService:
     return RecommendationService(UserPreferencesRepository(db), RecommendationRepository(db))
 
 
 @router.get("/for-user/{user_id}")
 async def get_recommendations(
     user_id: UUID,
-    service: Annotated[RecommendationService, Depends(get_rec_service)],
+    service: RecommendationService = Depends(get_rec_service),
     limit: int = 20,
 ):
     """Get personalized recommendations."""
@@ -31,8 +31,8 @@ async def get_recommendations(
 @router.put("/preferences/{user_id}")
 async def update_preferences(
     user_id: UUID,
-    liked_genres: Annotated[list, Body(None)],
-    service: Annotated[RecommendationService, Depends(get_rec_service)],
+    service: RecommendationService = Depends(get_rec_service),
+    liked_genres: list | None = Body(None),
 ):
     """Update user preferences."""
     await service.update_preferences(user_id, liked_genres)
