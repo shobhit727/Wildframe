@@ -153,10 +153,8 @@ class AuthService:
         await self.audit_repo.commit()
 
         # Generate tokens
-        access_token = self.token_manager.create_access_token(user)
-        refresh_token_str, refresh_token_hash, expires_at = self.token_manager.create_refresh_token(
-            user
-        )
+        access_token = self.token_manager.create_access_token(str(user.id), getattr(user, "email", ""))
+        refresh_token_str, refresh_token_hash, expires_at = self.token_manager.create_refresh_token_for_user(user)
 
         # Store refresh token
         await self.token_repo.create(
@@ -209,10 +207,8 @@ class AuthService:
         await self.token_repo.commit()
 
         # Create new tokens
-        access_token = self.token_manager.create_access_token(user)
-        new_refresh_token, new_token_hash, new_expires_at = self.token_manager.create_refresh_token(
-            user
-        )
+        access_token = self.token_manager.create_access_token(str(user.id), getattr(user, "email", ""))
+        new_refresh_token, new_token_hash, new_expires_at = self.token_manager.create_refresh_token_for_user(user)
 
         # Store new refresh token
         await self.token_repo.create(

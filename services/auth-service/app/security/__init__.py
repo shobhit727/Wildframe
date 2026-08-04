@@ -11,18 +11,17 @@ Implements JWT token handling, password hashing, and validation.
 
 import logging
 
+import bcrypt
 from app.core.settings import settings
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+from jose.exceptions import ExpiredSignatureError
 
 logger = logging.getLogger(__name__)
 
-# Password hashing context
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto",
-    bcrypt__rounds=settings.PASSWORD_BCRYPT_ROUNDS,
-)
+
+def _normalize_password(password: str) -> bytes:
+    """Bcrypt has a 72-byte limit; truncate deterministically."""
+    return password.encode("utf-8")[:72]
 
 
 class PasswordManager:
@@ -38,7 +37,8 @@ class PasswordManager:
         Returns:
             str: Hashed password
         """
-        return pwd_context.hash(password)
+        salt = bcrypt.gensalt(rounds=settings.PASSWORD_BCRYPT_ROUNDS)
+        return bcrypt.hashpw(_normalize_password(password), salt).decode("utf-8")
 
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -51,7 +51,13 @@ class PasswordManager:
         Returns:
             bool: True if passwords match, False otherwise
         """
-        return pwd_context.verify(plain_password, hashed_password)
+        try:
+            return bcrypt.checkpw(
+                _normalize_password(plain_password),
+                hashed_password.encode("utf-8"),
+            )
+        except (ValueError, TypeError):
+            return False
 
 
 class TokenManager:
@@ -116,7 +122,12 @@ class TokenManager:
         return token
 
     @staticmethod
-    def verify_token(token: str, token_type: str = "access") -> dict[str, Any]:
+    def hash_token(token: str) -> str:
+        """Hash a token for secure storage using SHA-256."""
+        return hashlib.sha256(token.encode()).hexdigest()
+
+    @staticmethod
+    def verify_token(token: str, token_type: str = "access") -> dict[str, Any] | None:
         """Verify and decode JWT token.
 
         Args:
@@ -124,10 +135,7 @@ class TokenManager:
             token_type: Expected token type (access or refresh)
 
         Returns:
-            dict: Decoded token payload
-
-        Raises:
-            JWTError: If token is invalid
+            dict | None: Decoded token payload, or None if invalid/expired
         """
         try:
             payload = jwt.decode(
@@ -137,13 +145,17 @@ class TokenManager:
             )
 
             if payload.get("type") != token_type:
-                raise JWTError(f"Invalid token type: expected {token_type}")
+                logger.warning(f"Invalid token type: expected {token_type}")
+                return None
 
             return payload
 
+        except ExpiredSignatureError:
+            logger.debug("Token expired")
+            return None
         except JWTError as e:
             logger.warning(f"Token verification failed: {e}")
-            raise
+            return None
 
     @staticmethod
     def extract_user_id(token: str) -> UUID | None:

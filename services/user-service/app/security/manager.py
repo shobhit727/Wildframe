@@ -7,15 +7,17 @@ import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
 
+import bcrypt
 import jwt
-from passlib.context import CryptContext
 
 from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
-# Password hashing context using bcrypt
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def _normalize_password(password: str) -> bytes:
+    """Bcrypt has a 72-byte limit; truncate deterministically."""
+    return password.encode("utf-8")[:72]
 
 
 class PasswordManager:
@@ -25,12 +27,19 @@ class PasswordManager:
     def hash_password(password: str, rounds: int | None = None) -> str:
         """Hash a password using bcrypt."""
         rounds = rounds or settings.PASSWORD_BCRYPT_ROUNDS
-        return pwd_context.hash(password, rounds=rounds)
+        salt = bcrypt.gensalt(rounds=rounds)
+        return bcrypt.hashpw(_normalize_password(password), salt).decode("utf-8")
 
     @staticmethod
     def verify_password(password: str, password_hash: str) -> bool:
         """Verify a password against its hash."""
-        return pwd_context.verify(password, password_hash)
+        try:
+            return bcrypt.checkpw(
+                _normalize_password(password),
+                password_hash.encode("utf-8"),
+            )
+        except (ValueError, TypeError):
+            return False
 
 
 class TokenManager:
