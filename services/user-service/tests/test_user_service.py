@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from app.services.user import UserService
+from app.services import UserService
 
 
 @pytest.fixture
@@ -26,12 +26,6 @@ def content_id():
 
 
 @pytest.fixture
-def mock_db():
-    """Create mock database session."""
-    return AsyncMock()
-
-
-@pytest.fixture
 def mock_repositories():
     """Create mock repositories."""
     return {
@@ -40,18 +34,19 @@ def mock_repositories():
         "session_repo": AsyncMock(),
         "history_repo": AsyncMock(),
         "preference_repo": AsyncMock(),
+        "subscription_repo": AsyncMock(),
     }
 
 
 @pytest.fixture
-def user_service(mock_db, mock_repositories):
+def user_service(mock_repositories):
     """Create UserService instance with mocks."""
-    service = UserService(mock_db)
-    service.profile_repo = mock_repositories["profile_repo"]
-    service.device_repo = mock_repositories["device_repo"]
-    service.session_repo = mock_repositories["session_repo"]
-    service.history_repo = mock_repositories["history_repo"]
-    service.preference_repo = mock_repositories["preference_repo"]
+    service = UserService(
+        profile_repo=mock_repositories["profile_repo"],
+        device_repo=mock_repositories["device_repo"],
+        preference_repo=mock_repositories["preference_repo"],
+        subscription_repo=mock_repositories["subscription_repo"],
+    )
     return service
 
 
@@ -61,23 +56,55 @@ class TestProfileManagement:
     @pytest.mark.asyncio
     async def test_create_profile(self, user_service, user_id, mock_repositories):
         """Test creating user profile."""
+        from datetime import datetime, UTC
         mock_profile = MagicMock()
+        mock_profile.id = uuid4()
         mock_profile.user_id = user_id
+        mock_profile.avatar_url = None
+        mock_profile.bio = None
+        mock_profile.phone_number = None
+        mock_profile.date_of_birth = None
+        mock_profile.country = None
+        mock_profile.language = "en"
+        mock_profile.timezone = "UTC"
+        mock_profile.public_profile = True
+        mock_profile.newsletter_subscribed = False
+        mock_profile.marketing_emails = False
+        mock_profile.completed_onboarding = False
+        mock_profile.profile_completeness = 0
+        mock_profile.created_at = datetime.now(UTC)
+        mock_profile.updated_at = datetime.now(UTC)
         mock_repositories["profile_repo"].create.return_value = mock_profile
 
-        profile = await user_service.create_profile(user_id)
+        profile = await user_service.create_user_profile(user_id)
 
         assert profile.user_id == user_id
-        mock_repositories["profile_repo"].create.assert_called_once_with(user_id)
+        mock_repositories["profile_repo"].create.assert_called_once_with(user_id=user_id)
 
     @pytest.mark.asyncio
     async def test_get_profile(self, user_service, user_id, mock_repositories):
         """Test retrieving user profile."""
+        from datetime import datetime, UTC
         mock_profile = MagicMock()
+        mock_profile.id = uuid4()
         mock_profile.user_id = user_id
+        mock_profile.avatar_url = None
+        mock_profile.bio = None
+        mock_profile.phone_number = None
+        mock_profile.date_of_birth = None
+        mock_profile.country = None
+        mock_profile.language = "en"
+        mock_profile.timezone = "UTC"
+        mock_profile.public_profile = True
+        mock_profile.newsletter_subscribed = False
+        mock_profile.marketing_emails = False
+        mock_profile.completed_onboarding = False
+        mock_profile.profile_completeness = 0
+        mock_profile.created_at = datetime.now(UTC)
+        mock_profile.updated_at = datetime.now(UTC)
         mock_repositories["profile_repo"].get_by_user_id.return_value = mock_profile
 
-        profile = await user_service.get_profile(user_id)
+        profile = await user_service.get_user_profile(user_id)
 
         assert profile.user_id == user_id
         mock_repositories["profile_repo"].get_by_user_id.assert_called_once_with(user_id)
@@ -87,19 +114,38 @@ class TestProfileManagement:
         """Test profile not found."""
         mock_repositories["profile_repo"].get_by_user_id.return_value = None
 
-        with pytest.raises(ValueError, match="Profile not found"):
-            await user_service.get_profile(user_id)
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as exc_info:
+            await user_service.get_user_profile(user_id)
+        assert exc_info.value.status_code == 404
 
     @pytest.mark.asyncio
     async def test_update_profile(self, user_service, user_id, mock_repositories):
         """Test updating user profile."""
+        from datetime import datetime, UTC
         mock_profile = MagicMock()
+        mock_profile.id = uuid4()
         mock_profile.user_id = user_id
+        mock_profile.avatar_url = None
+        mock_profile.bio = None
+        mock_profile.phone_number = None
+        mock_profile.date_of_birth = None
+        mock_profile.country = None
+        mock_profile.language = "en"
+        mock_profile.timezone = "UTC"
+        mock_profile.public_profile = True
+        mock_profile.newsletter_subscribed = False
+        mock_profile.marketing_emails = False
+        mock_profile.completed_onboarding = False
+        mock_profile.profile_completeness = 0
+        mock_profile.created_at = datetime.now(UTC)
+        mock_profile.updated_at = datetime.now(UTC)
         mock_repositories["profile_repo"].get_by_user_id.return_value = mock_profile
         mock_repositories["profile_repo"].update.return_value = mock_profile
 
-        profile_data = {"first_name": "John", "last_name": "Doe"}
-        profile = await user_service.update_profile(user_id, profile_data)
+        from app.schemas import UserProfileUpdateRequest
+        profile_data = UserProfileUpdateRequest(first_name="John", last_name="Doe")
+        profile = await user_service.update_user_profile(user_id, profile_data)
 
         assert profile.user_id == user_id
         mock_repositories["profile_repo"].update.assert_called_once()
@@ -111,39 +157,116 @@ class TestDeviceManagement:
     @pytest.mark.asyncio
     async def test_register_device(self, user_service, user_id, mock_repositories):
         """Test registering device."""
+        from datetime import datetime, UTC
         mock_device = MagicMock()
+        mock_device.id = uuid4()
         mock_device.user_id = user_id
         mock_device.device_id = "device123"
+        mock_device.device_name = "Test Device"
+        mock_device.device_type = "web"
+        mock_device.os_name = "Linux"
+        mock_device.os_version = "20.04"
+        mock_device.browser_name = "Chrome"
+        mock_device.browser_version = "120.0"
+        mock_device.ip_address = "192.168.1.1"
+        mock_device.is_active = True
+        mock_device.is_trusted = False
+        mock_device.can_stream = True
+        mock_device.can_download = True
+        mock_device.last_active_at = datetime.now(UTC)
+        mock_device.registration_date = datetime.now(UTC)
+        mock_device.created_at = datetime.now(UTC)
+        mock_device.updated_at = datetime.now(UTC)
         mock_repositories["device_repo"].create.return_value = mock_device
 
-        device_data = {"device_id": "device123", "device_type": "web"}
-        device = await user_service.register_device(user_id, device_data)
+        from app.schemas import UserDeviceRegisterRequest
+        device_data = UserDeviceRegisterRequest(
+            device_id="device123", device_name="Test Device", device_type="web",
+            os_name="Linux", os_version="20.04", browser_name="Chrome",
+            browser_version="120.0", ip_address="192.168.1.1", user_agent="Mozilla/5.0"
+        )
+        device = await user_service.register_device(user_id, device_data, "192.168.1.1")
 
-        assert device.user_id == user_id
+        assert device.device_id == "device123"
         mock_repositories["device_repo"].create.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_list_devices(self, user_service, user_id, mock_repositories):
-        """Test listing user devices."""
+    async def test_get_user_devices(self, user_service, user_id, mock_repositories):
+        """Test getting user devices."""
+        from datetime import datetime, UTC
         mock_device1 = MagicMock()
-        mock_device2 = MagicMock()
-        mock_repositories["device_repo"].list_by_user.return_value = [mock_device1, mock_device2]
+        mock_device1.id = uuid4()
+        mock_device1.device_id = "device1"
+        mock_device1.device_name = "Device 1"
+        mock_device1.device_type = "web"
+        mock_device1.os_name = "Linux"
+        mock_device1.os_version = "20.04"
+        mock_device1.browser_name = "Chrome"
+        mock_device1.browser_version = "120.0"
+        mock_device1.ip_address = "192.168.1.1"
+        mock_device1.is_active = True
+        mock_device1.is_trusted = False
+        mock_device1.can_stream = True
+        mock_device1.can_download = True
+        mock_device1.last_active_at = datetime.now(UTC)
+        mock_device1.registration_date = datetime.now(UTC)
+        mock_device1.created_at = datetime.now(UTC)
+        mock_device1.updated_at = datetime.now(UTC)
 
-        devices = await user_service.list_devices(user_id)
+        mock_device2 = MagicMock()
+        mock_device2.id = uuid4()
+        mock_device2.device_id = "device2"
+        mock_device2.device_name = "Device 2"
+        mock_device2.device_type = "ios"
+        mock_device2.os_name = "iOS"
+        mock_device2.os_version = "17.0"
+        mock_device2.browser_name = "Safari"
+        mock_device2.browser_version = "17.0"
+        mock_device2.ip_address = "192.168.1.2"
+        mock_device2.is_active = True
+        mock_device2.is_trusted = True
+        mock_device2.can_stream = True
+        mock_device2.can_download = True
+        mock_device2.last_active_at = datetime.now(UTC)
+        mock_device2.registration_date = datetime.now(UTC)
+        mock_device2.created_at = datetime.now(UTC)
+        mock_device2.updated_at = datetime.now(UTC)
+
+        mock_repositories["device_repo"].get_user_devices.return_value = [mock_device1, mock_device2]
+
+        devices = await user_service.get_user_devices(user_id)
 
         assert len(devices) == 2
-        mock_repositories["device_repo"].list_by_user.assert_called_once_with(user_id, True)
+        mock_repositories["device_repo"].get_user_devices.assert_called_once_with(user_id)
 
     @pytest.mark.asyncio
     async def test_deactivate_device(self, user_service, user_id, device_id, mock_repositories):
         """Test deactivating device."""
+        from datetime import datetime, UTC
         mock_device = MagicMock()
-        mock_device.user_id = user_id
-        mock_repositories["device_repo"].get_by_id.return_value = mock_device
+        mock_device.id = uuid4()
+        mock_device.device_id = "device123"
+        mock_device.device_name = "Test Device"
+        mock_device.device_type = "web"
+        mock_device.os_name = "Linux"
+        mock_device.os_version = "20.04"
+        mock_device.browser_name = "Chrome"
+        mock_device.browser_version = "120.0"
+        mock_device.ip_address = "192.168.1.1"
+        mock_device.is_active = False
+        mock_device.is_trusted = False
+        mock_device.can_stream = True
+        mock_device.can_download = True
+        mock_device.last_active_at = datetime.now(UTC)
+        mock_device.registration_date = datetime.now(UTC)
+        mock_device.created_at = datetime.now(UTC)
+        mock_device.updated_at = datetime.now(UTC)
+        mock_repositories["device_repo"].mark_device_inactive.return_value = mock_device
 
-        await user_service.deactivate_device(device_id, user_id)
+        device = await user_service.deactivate_device(device_id)
 
-        mock_repositories["device_repo"].deactivate.assert_called_once_with(device_id)
+        assert device.is_active is False
+        mock_repositories["device_repo"].mark_device_inactive.assert_called_once_with(device_id)
 
 
 class TestSessionManagement:
@@ -200,7 +323,7 @@ class TestSessionManagement:
         """Test ending all sessions."""
         await user_service.end_all_sessions(user_id)
 
-        mock_repositories["session_repo"].end_all_sessions.assert_called_once_with(user_id, None)
+        mock_repositories["session_repo"].end_all_sessions.assert_called_once_with(user_id)
 
 
 class TestWatchHistory:
@@ -250,12 +373,12 @@ class TestPreferences:
         """Test getting preferences."""
         mock_pref = MagicMock()
         mock_pref.user_id = user_id
-        mock_repositories["preference_repo"].get_or_create.return_value = mock_pref
+        mock_repositories["preference_repo"].get_by_user_id.return_value = mock_pref
 
         prefs = await user_service.get_preferences(user_id)
 
         assert prefs.user_id == user_id
-        mock_repositories["preference_repo"].get_or_create.assert_called_once_with(user_id)
+        mock_repositories["preference_repo"].get_by_user_id.assert_called_once_with(user_id)
 
     @pytest.mark.asyncio
     async def test_update_preferences(self, user_service, user_id, mock_repositories):
@@ -264,8 +387,55 @@ class TestPreferences:
         mock_pref.user_id = user_id
         mock_repositories["preference_repo"].update.return_value = mock_pref
 
-        pref_data = {"preferred_quality": "1080p", "autoplay_next_episode": True}
+        from app.schemas import UserPreferenceUpdateRequest
+        pref_data = UserPreferenceUpdateRequest(
+            preferred_quality="1080p", autoplay_next_episode=True
+        )
         prefs = await user_service.update_preferences(user_id, pref_data)
 
         assert prefs.user_id == user_id
         mock_repositories["preference_repo"].update.assert_called_once()
+
+
+class TestSubscription:
+    """Test subscription management."""
+
+    @pytest.mark.asyncio
+    async def test_get_subscription(self, user_service, user_id, mock_repositories):
+        """Test getting subscription."""
+        mock_sub = MagicMock()
+        mock_sub.user_id = user_id
+        mock_repositories["subscription_repo"].get_by_user_id.return_value = mock_sub
+
+        sub = await user_service.get_subscription(user_id)
+
+        assert sub.user_id == user_id
+        mock_repositories["subscription_repo"].get_by_user_id.assert_called_once_with(user_id)
+
+    @pytest.mark.asyncio
+    async def test_upgrade_subscription(self, user_service, user_id, mock_repositories):
+        """Test upgrading subscription."""
+        mock_sub = MagicMock()
+        mock_sub.user_id = user_id
+        mock_repositories["subscription_repo"].update_tier.return_value = mock_sub
+
+        sub = await user_service.upgrade_subscription(user_id, "premium")
+
+        assert sub.user_id == user_id
+        mock_repositories["subscription_repo"].update_tier.assert_called_once_with(user_id, "premium")
+
+
+class TestOnboarding:
+    """Test onboarding completion."""
+
+    @pytest.mark.asyncio
+    async def test_mark_onboarding_complete(self, user_service, user_id, mock_repositories):
+        """Test marking onboarding complete."""
+        mock_profile = MagicMock()
+        mock_profile.user_id = user_id
+        mock_repositories["profile_repo"].mark_onboarding_complete.return_value = mock_profile
+
+        profile = await user_service.mark_onboarding_complete(user_id)
+
+        assert profile.user_id == user_id
+        mock_repositories["profile_repo"].mark_onboarding_complete.assert_called_once_with(user_id)
