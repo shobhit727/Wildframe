@@ -171,6 +171,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/auth_db
       REDIS_URL: redis://redis:6379/0
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ADMIN_EMAILS: demo@wildframe.com
       JWT_ALGORITHM: HS256
       JWT_EXPIRATION_MINUTES: 15
       REFRESH_TOKEN_EXPIRATION_DAYS: 7

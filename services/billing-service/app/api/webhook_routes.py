@@ -15,7 +15,7 @@ Handled events:
   - payment_intent.succeeded    → trigger payout ledger accrual
 """
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -231,7 +231,7 @@ async def _handle_invoice_paid(
                 new_inv = inv[-1] if inv else None
                 if new_inv and new_inv.status == InvoiceStatus.PENDING:
                     new_inv.status = InvoiceStatus.PAID
-                    new_inv.paid_at = datetime.now(UTC)
+                    new_inv.paid_at = datetime.utcnow()
             logger.info("Invoice payment recorded for user %s (amount=%s)", user_id, amount)
             break
 

@@ -11,7 +11,9 @@ class DatabaseManager:
     @classmethod
     async def init(cls):
         cls.engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG)
-        cls.session_factory = async_sessionmaker(cls.engine, class_=AsyncSession)
+        cls.session_factory = async_sessionmaker(
+            cls.engine, class_=AsyncSession, expire_on_commit=False
+        )
 
     @classmethod
     async def health_check(cls) -> bool:

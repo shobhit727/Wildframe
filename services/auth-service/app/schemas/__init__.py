@@ -144,6 +144,7 @@ class UserResponse(BaseModel):
     email_verified: bool
     last_login_at: datetime | None
     created_at: datetime
+    role: str = "user"
 
     model_config = ConfigDict(
         from_attributes=True,

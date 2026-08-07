@@ -62,7 +62,12 @@ async def get_db() -> AsyncSession:
     if not DatabaseManager.session_factory:
         await DatabaseManager.init()
     async with DatabaseManager.session_factory() as session:
-        yield session
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 
 # Alias for backward compatibility with existing route imports.

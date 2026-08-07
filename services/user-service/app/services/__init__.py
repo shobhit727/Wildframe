@@ -190,10 +190,7 @@ class UserService:
         """Get user preferences."""
         preferences = await self.preference_repo.get_by_user_id(user_id)
         if not preferences:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Preferences not found",
-            )
+            preferences = await self.preference_repo.create_default(user_id)
         return UserPreferenceResponse.from_orm(preferences)
 
     async def update_preferences(
@@ -203,6 +200,9 @@ class UserService:
     ) -> UserPreferenceResponse:
         """Update user preferences."""
         update_data = request.model_dump(exclude_unset=True)
+        preferences = await self.preference_repo.get_by_user_id(user_id)
+        if not preferences:
+            preferences = await self.preference_repo.create_default(user_id)
         preferences = await self.preference_repo.update(user_id, **update_data)
         if not preferences:
             raise HTTPException(

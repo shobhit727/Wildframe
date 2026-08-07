@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRATION_DAYS: int = 7
     TOKEN_BLACKLIST_ENABLED: bool = True
 
+    # Admin roles — comma-separated emails whose tokens/me carry role "admin".
+    ADMIN_EMAILS: str = ""
+
     # Kafka Configuration
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
     KAFKA_GROUP_ID: str = "auth-service"

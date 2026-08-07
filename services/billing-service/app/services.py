@@ -13,7 +13,7 @@ A creator's *effective floor* is a minimum guarantee, not a cap — top
 performers always earn their full pro-rata share above the floor.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -141,7 +141,7 @@ class BillingService:
             return None
         sub.tier = RevenueTier.AVOD
         sub.monthly_price = Decimal("0.00")
-        sub.cancelled_at = datetime.now(UTC)
+        sub.cancelled_at = datetime.utcnow()
         sub.is_active = False
         return sub
 
@@ -254,7 +254,7 @@ class BillingService:
             )
 
         tranche.status = TrancheStatus.RELEASED
-        tranche.released_at = datetime.now(UTC)
+        tranche.released_at = datetime.utcnow()
 
         # Accrue payout for the released tranche amount.
         idem_key = f"tranche:{milestone_id}:{tranche_number}"
@@ -264,7 +264,7 @@ class BillingService:
             currency="USD",
             idempotency_key=idem_key,
             cycle_start=milestone.created_at,
-            cycle_end=datetime.now(UTC),
+            cycle_end=datetime.utcnow(),
             breakdown={"type": "milestone_tranche", "tranche_number": tranche_number},
         )
         return tranche
@@ -283,7 +283,7 @@ class BillingService:
         milestone.status = MilestoneStatus.KILLED
 
         tranches = await self.milestone_repo.get_tranches(milestone_id)
-        now = datetime.now(UTC)
+        now = datetime.utcnow()
         for tranche in tranches:
             if tranche.status == TrancheStatus.LOCKED:
                 tranche.status = TrancheStatus.REVERTED

@@ -36,6 +36,8 @@ class AdminService:
             "reason": moderation.reason,
             "moderated_by": moderation.moderated_by,
             "moderated_at": moderation.moderated_at,
+            "created_at": moderation.created_at,
+            "updated_at": moderation.updated_at,
         }
 
     async def get_user_moderation_history(self, user_id: str) -> dict | None:
@@ -49,6 +51,8 @@ class AdminService:
             "reason": moderation.reason,
             "moderated_by": moderation.moderated_by,
             "moderated_at": moderation.moderated_at,
+            "created_at": moderation.created_at,
+            "updated_at": moderation.updated_at,
         }
 
     async def list_moderated_users(
@@ -61,7 +65,10 @@ class AdminService:
                 "user_id": u.user_id,
                 "status": u.status,
                 "reason": u.reason,
+                "moderated_by": u.moderated_by,
                 "moderated_at": u.moderated_at,
+                "created_at": u.created_at,
+                "updated_at": u.updated_at,
             }
             for u in users
         ]
@@ -84,8 +91,12 @@ class AdminService:
         return {
             "id": moderation.id,
             "content_id": moderation.content_id,
+            "content_type": moderation.content_type,
             "status": moderation.status,
             "reason": moderation.reason,
+            "flagged_at": moderation.flagged_at,
+            "resolved_at": moderation.resolved_at,
+            "created_at": moderation.created_at,
         }
 
     async def resolve_content_flag(
@@ -100,8 +111,12 @@ class AdminService:
             {
                 "id": moderation.id,
                 "content_id": moderation.content_id,
+                "content_type": moderation.content_type,
                 "status": moderation.status,
+                "reason": moderation.reason,
+                "flagged_at": moderation.flagged_at,
                 "resolved_at": moderation.resolved_at,
+                "created_at": moderation.created_at,
             }
             if moderation
             else None
@@ -114,8 +129,11 @@ class AdminService:
                 "id": c.id,
                 "content_id": c.content_id,
                 "content_type": c.content_type,
+                "status": c.status,
                 "reason": c.reason,
                 "flagged_at": c.flagged_at,
+                "resolved_at": c.resolved_at,
+                "created_at": c.created_at,
             }
             for c in content
         ]
@@ -131,6 +149,8 @@ class AdminService:
             "severity": alert.severity,
             "message": alert.message,
             "service": alert.service,
+            "acknowledged": alert.acknowledged,
+            "acknowledged_by": alert.acknowledged_by,
             "created_at": alert.created_at,
         }
 
@@ -144,6 +164,7 @@ class AdminService:
                 "message": a.message,
                 "service": a.service,
                 "acknowledged": a.acknowledged,
+                "acknowledged_by": a.acknowledged_by,
                 "created_at": a.created_at,
             }
             for a in alerts
@@ -167,9 +188,11 @@ class AdminService:
             {
                 "id": a.id,
                 "alert_type": a.alert_type,
+                "severity": a.severity,
                 "message": a.message,
                 "service": a.service,
-                "severity": a.severity,
+                "acknowledged": a.acknowledged,
+                "acknowledged_by": a.acknowledged_by,
                 "created_at": a.created_at,
             }
             for a in alerts
@@ -199,6 +222,9 @@ class AdminService:
             "key": config.key,
             "value": config.value,
             "config_type": config.config_type,
+            "description": config.description,
+            "updated_by": config.updated_by,
+            "created_at": config.created_at,
             "updated_at": config.updated_at,
         }
 
@@ -212,6 +238,9 @@ class AdminService:
             "value": config.value,
             "config_type": config.config_type,
             "description": config.description,
+            "updated_by": config.updated_by,
+            "created_at": config.created_at,
+            "updated_at": config.updated_at,
         }
 
     async def list_configs(self, limit: int = 100) -> list[dict]:
@@ -223,6 +252,9 @@ class AdminService:
                 "value": c.value,
                 "config_type": c.config_type,
                 "description": c.description,
+                "updated_by": c.updated_by,
+                "created_at": c.created_at,
+                "updated_at": c.updated_at,
             }
             for c in configs
         ]
@@ -237,6 +269,7 @@ class AdminService:
                 "action": l.action,
                 "resource_type": l.resource_type,
                 "resource_id": l.resource_id,
+                "changes": l.changes,
                 "ip_address": l.ip_address,
                 "created_at": l.created_at,
             }
@@ -254,6 +287,8 @@ class AdminService:
                 "action": l.action,
                 "resource_type": l.resource_type,
                 "resource_id": l.resource_id,
+                "changes": l.changes,
+                "ip_address": l.ip_address,
                 "created_at": l.created_at,
             }
             for l in logs

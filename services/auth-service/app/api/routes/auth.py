@@ -31,7 +31,7 @@ from app.schemas import (
     UserResponse,
     VerifyEmailRequest,
 )
-from app.security import PasswordManager, RateLimiter, SecretCipher, TokenManager
+from app.security import PasswordManager, RateLimiter, SecretCipher, TokenManager, role_for_email
 from app.services import AuthService
 
 logger = logging.getLogger(__name__)
@@ -331,7 +331,9 @@ async def get_current_user_info(
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-        return UserResponse.model_validate(user)
+        data = UserResponse.model_validate(user).model_dump()
+        data["role"] = role_for_email(user.email)
+        return data
 
     except HTTPException:
         raise

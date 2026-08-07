@@ -84,6 +84,7 @@ function normalizeUser(payload: Record<string, unknown>): User {
     firstName: (payload.first_name as string) || '',
     lastName: (payload.last_name as string) || '',
     emailVerified: Boolean(payload.email_verified),
+    role: (payload.role as User['role']) || 'user',
   };
 }
 
