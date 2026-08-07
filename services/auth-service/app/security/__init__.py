@@ -13,9 +13,10 @@ Implements JWT token handling, password hashing, and validation.
 import logging
 
 import bcrypt
-from app.core.settings import settings
 from jose import JWTError, jwt
 from jose.exceptions import ExpiredSignatureError
+
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -243,7 +244,7 @@ class SecretCipher:
     to survive cluster-wide rotation. Never store MFA secrets in plaintext."""
 
     @staticmethod
-    def _fernet() -> "Fernet":
+    def _fernet():
         from cryptography.fernet import Fernet
 
         key = base64.urlsafe_b64encode(hashlib.sha256(settings.JWT_SECRET_KEY.encode()).digest())

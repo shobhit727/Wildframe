@@ -9,6 +9,9 @@ from typing import Annotated
 from uuid import UUID
 
 import pyotp
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import get_db
 from app.core.settings import settings
 from app.repositories import (
@@ -30,8 +33,6 @@ from app.schemas import (
 )
 from app.security import PasswordManager, RateLimiter, SecretCipher, TokenManager
 from app.services import AuthService
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
