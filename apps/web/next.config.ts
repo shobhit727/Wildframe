@@ -93,6 +93,8 @@ const nextConfig: NextConfig = {
       "@radix-ui/react-select",
     ],
   },
+
+  turbopack: {},
 };
 
 export default nextConfig;
