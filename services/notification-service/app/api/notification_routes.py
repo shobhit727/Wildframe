@@ -12,14 +12,14 @@ from app.services import NotificationService
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
-async def get_notif_service(db: AsyncSession = Depends(get_db)) -> NotificationService:
+async def get_notif_service(db: AsyncSession = Depends(get_db)) -> NotificationService:  # noqa: B008
     return NotificationService(NotificationRepository(db))
 
 
 @router.post("/send", response_model=dict)
 async def send_notification(
-    service: NotificationService = Depends(get_notif_service),
-    user_id: UUID = Body(...),
+    service: NotificationService = Depends(get_notif_service),  # noqa: B008
+    user_id: UUID = Body(...),  # noqa: B008
     title: str = Body(...),
     message: str = Body(...),
     channel: str = Body(default="in-app"),
@@ -31,7 +31,7 @@ async def send_notification(
 
 @router.get("/unread/{user_id}")
 async def get_unread_notifications(
-    user_id: UUID, service: NotificationService = Depends(get_notif_service)
+    user_id: UUID, service: NotificationService = Depends(get_notif_service)  # noqa: B008
 ):
     """Get unread notifications."""
     return {"notifications": [], "total": 0}

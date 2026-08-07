@@ -26,7 +26,7 @@ asyncpg = "^0.30.0"
 redis = "^5.0.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 httpx = "^0.25.0"
-wildframe-observability-sdk = {path = "../../packages/sdk/wildframe_observability", develop = true}
+wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
 prometheus-client = "^0.18.0"
 stripe = "^7.0.0"
 aiokafka = "^0.9.0"

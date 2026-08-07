@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
 from app.schemas import UserLoginRequest, UserRegisterRequest
 from app.security import PasswordManager, TokenManager
 from app.services import AuthService
+from fastapi import HTTPException
 
 
 @pytest.fixture
@@ -137,7 +137,7 @@ class TestAuthServiceRegister:
         """Test successful registration."""
         email = "test@example.com"
         password = "SecurePassword123!"
-        password_hash = PasswordManager.hash_password(password)
+        PasswordManager.hash_password(password)
 
         # Mock user creation - user doesn't exist
         mock_user = MagicMock()
