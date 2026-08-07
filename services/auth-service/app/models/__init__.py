@@ -32,12 +32,12 @@ class BaseModel:
         nullable=False,
     )
     created_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         nullable=False,
     )
     updated_at = Column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
@@ -79,13 +79,13 @@ class User(Base, BaseModel):
 
     # Email verification
     email_verified = Column(Boolean, default=False, nullable=False)
-    email_verified_at = Column(DateTime, nullable=True)
+    email_verified_at = Column(DateTime(timezone=True), nullable=True)
 
     # Login tracking
-    last_login_at = Column(DateTime, nullable=True)
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
     last_login_ip = Column(String(45), nullable=True)  # Supports IPv6
     login_attempts = Column(Integer, default=0, nullable=False)
-    locked_until = Column(DateTime, nullable=True)
+    locked_until = Column(DateTime(timezone=True), nullable=True)
 
     # MFA
     mfa_enabled = Column(Boolean, default=False, nullable=False)
@@ -126,8 +126,8 @@ class RefreshToken(Base, BaseModel):
     device_id = Column(String(255), nullable=True, index=True)
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(Text, nullable=True)
-    expires_at = Column(DateTime, nullable=False, index=True)
-    revoked_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("idx_refresh_tokens_user_expires", "user_id", "expires_at"),
@@ -150,8 +150,10 @@ class TokenBlacklist(Base, BaseModel):
 
     token_hash = Column(String(255), unique=True, nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    revoked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    expires_at = Column(DateTime, nullable=False, index=True)
+    revoked_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
 
     __table_args__ = (Index("idx_token_blacklist_user_expires", "user_id", "expires_at"),)
 
