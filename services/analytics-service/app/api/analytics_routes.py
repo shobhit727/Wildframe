@@ -18,7 +18,7 @@ from app.services import AnalyticsService
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
-async def get_analytics_service(db: AsyncSession = Depends(get_db)) -> AnalyticsService:
+async def get_analytics_service(db: AsyncSession = Depends(get_db)) -> AnalyticsService:  # noqa: B008
     return AnalyticsService(
         EventRepository(db),
         ContentViewEventRepository(db),
@@ -29,11 +29,11 @@ async def get_analytics_service(db: AsyncSession = Depends(get_db)) -> Analytics
 
 @router.post("/events", response_model=dict)
 async def log_event(
-    service: AnalyticsService = Depends(get_analytics_service),
-    user_id: UUID = Body(...),
+    service: AnalyticsService = Depends(get_analytics_service),  # noqa: B008
+    user_id: UUID = Body(...),  # noqa: B008
     event_type: str = Body(...),
-    event_data: dict | None = Body(None),
-    content_id: UUID | None = Body(None),
+    event_data: dict | None = Body(None),  # noqa: B008
+    content_id: UUID | None = Body(None),  # noqa: B008
 ):
     """Log analytics event."""
     await service.log_event(user_id, event_type, event_data, content_id)
@@ -43,7 +43,7 @@ async def log_event(
 @router.get("/user-events/{user_id}")
 async def get_user_events(
     user_id: UUID,
-    service: AnalyticsService = Depends(get_analytics_service),
+    service: AnalyticsService = Depends(get_analytics_service),  # noqa: B008
     limit: int = 100,
 ):
     """Get user events."""
@@ -53,15 +53,15 @@ async def get_user_events(
 
 @router.post("/view-events", response_model=dict)
 async def record_view_event(
-    service: AnalyticsService = Depends(get_analytics_service),
-    content_id: UUID = Body(...),
-    viewer_id: UUID = Body(...),
+    service: AnalyticsService = Depends(get_analytics_service),  # noqa: B008
+    content_id: UUID = Body(...),  # noqa: B008
+    viewer_id: UUID = Body(...),  # noqa: B008
     watch_duration_seconds: int = Body(0),
     content_duration_seconds: int = Body(0),
     completion_pct: float = Body(0.0),
     playback_quality: str | None = Body(None),
-    started_at: datetime | None = Body(None),
-    completed_at: datetime | None = Body(None),
+    started_at: datetime | None = Body(None),  # noqa: B008
+    completed_at: datetime | None = Body(None),  # noqa: B008
 ):
     """Record a content view/playback event."""
     await service.record_view_event(
@@ -79,7 +79,7 @@ async def record_view_event(
 
 @router.get("/creators/{creator_id}")
 async def get_creator_analytics(
-    creator_id: UUID, service: AnalyticsService = Depends(get_analytics_service)
+    creator_id: UUID, service: AnalyticsService = Depends(get_analytics_service)  # noqa: B008
 ):
     """Get analytics for a creator."""
     analytics = await service.get_creator_analytics(creator_id)
@@ -90,7 +90,7 @@ async def get_creator_analytics(
 
 @router.get("/content/{content_id}")
 async def get_content_performance(
-    content_id: UUID, service: AnalyticsService = Depends(get_analytics_service)
+    content_id: UUID, service: AnalyticsService = Depends(get_analytics_service)  # noqa: B008
 ):
     """Get performance metrics for content."""
     performance = await service.get_content_performance(content_id)

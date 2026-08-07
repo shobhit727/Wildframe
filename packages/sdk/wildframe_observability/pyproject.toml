@@ -13,7 +13,7 @@ version = "1.0.0"
 description = "Structured JSON logging, correlation IDs, Prometheus metrics middleware, health responses"
 authors = ["Wildframe Team <engineering@wildframe.com>"]
 license = "Proprietary"
-packages = [{include = "wildframe_observability"}]
+packages = [{include = "wildframe_observability", from = ".."}]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.16"

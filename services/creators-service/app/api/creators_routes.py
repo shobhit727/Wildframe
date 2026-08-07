@@ -332,7 +332,7 @@ async def admin_release_tranche(
     creator_id: UUID,
     mid: UUID,
     threshold: int = Body(...),
-    service: CreatorService = Depends(get_service),
+    service: CreatorService = Depends(get_service),  # noqa: B008
 ):
     ms = await service.milestone_repo.get(mid)
     if ms is None or ms.creator_id != creator_id:
@@ -348,7 +348,7 @@ async def admin_kill_milestone(
     creator_id: UUID,
     mid: UUID,
     reason: str | None = Body(None),
-    service: CreatorService = Depends(get_service),
+    service: CreatorService = Depends(get_service),  # noqa: B008
 ):
     ms = await service.milestone_repo.get(mid)
     if ms is None or ms.creator_id != creator_id:

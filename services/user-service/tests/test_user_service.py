@@ -56,7 +56,7 @@ class TestProfileManagement:
     @pytest.mark.asyncio
     async def test_create_profile(self, user_service, user_id, mock_repositories):
         """Test creating user profile."""
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
         mock_profile = MagicMock()
         mock_profile.id = uuid4()
         mock_profile.user_id = user_id
@@ -84,7 +84,7 @@ class TestProfileManagement:
     @pytest.mark.asyncio
     async def test_get_profile(self, user_service, user_id, mock_repositories):
         """Test retrieving user profile."""
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
         mock_profile = MagicMock()
         mock_profile.id = uuid4()
         mock_profile.user_id = user_id
@@ -122,7 +122,7 @@ class TestProfileManagement:
     @pytest.mark.asyncio
     async def test_update_profile(self, user_service, user_id, mock_repositories):
         """Test updating user profile."""
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
         mock_profile = MagicMock()
         mock_profile.id = uuid4()
         mock_profile.user_id = user_id
@@ -157,7 +157,7 @@ class TestDeviceManagement:
     @pytest.mark.asyncio
     async def test_register_device(self, user_service, user_id, mock_repositories):
         """Test registering device."""
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
         mock_device = MagicMock()
         mock_device.id = uuid4()
         mock_device.user_id = user_id
@@ -193,7 +193,7 @@ class TestDeviceManagement:
     @pytest.mark.asyncio
     async def test_get_user_devices(self, user_service, user_id, mock_repositories):
         """Test getting user devices."""
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
         mock_device1 = MagicMock()
         mock_device1.id = uuid4()
         mock_device1.device_id = "device1"
@@ -242,7 +242,7 @@ class TestDeviceManagement:
     @pytest.mark.asyncio
     async def test_deactivate_device(self, user_service, user_id, device_id, mock_repositories):
         """Test deactivating device."""
-        from datetime import datetime, UTC
+        from datetime import UTC, datetime
         mock_device = MagicMock()
         mock_device.id = uuid4()
         mock_device.device_id = "device123"
