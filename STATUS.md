@@ -22,9 +22,9 @@
 | **Search/Rec/Billing/Analytics/Notification** | ✅ 75% | Tests green |
 | **Creators/Moderation/Uploads/Api-Gateway** | ✅ 80% | Tests green |
 | **Frontend** | 🟡 20% | Next.js scaffold; CI passing |
-| **Testing** | ✅ 80% | All 16 backend test jobs pass in CI |
+| **Testing** | ✅ 80% | All 15 backend test jobs pass in CI |
 | **Observability** | ✅ 70% | `wildframe-observability-sdk` wired into all 15 services |
-| **CI/CD** | ✅ 100% | Backend Lint ✓, Frontend CI ✓, Docker Build ✓, all 16 Backend Test ✓ |
+| **CI/CD** | ✅ 90% | Backend Lint ✓, Frontend CI ✓, Docker Build ✓, all 15 Backend Test ✓; Deploy jobs blocked on AWS credentials |
 | **Overall Platform** | ✅ 90% | CI/CD fully green |
 
 ---
@@ -59,9 +59,9 @@
 - **Black formatting** — Reformatted 190 files to Black 26.5.1 standard
 
 ### 3. Dependency & Build Fixes
-- `asyncpg` upgraded from `^0.29.0` → `^0.30.0` (Python 3.13 support) across all 16 service `pyproject.toml`
+- `asyncpg` upgraded from `^0.29.0` → `^0.30.0` (Python 3.13 support) across all 15 service `pyproject.toml`
 - `setuptools = "^69.0.0"` added to all services using opentelemetry (`pkg_resources` removed in Python 3.13)
-- `wildframe-observability-sdk` added as path dep to all 16 services
+- `wildframe-observability-sdk` added as path dep to all 15 services
 - `pytest-cov = "^4.1.0"` added to services missing it
 - Poetry pinned to `1.8.3` in all Dockerfiles (Poetry 2.x requires Python 3.14)
 - **Python version standardized**: `>=3.11,<3.16` in root + all 15 pyprojects; Dockerfiles on `3.13-slim`
@@ -166,11 +166,13 @@ services/
 
 ## ✅ CI/CD GREEN (August 7, 2026)
 
-All GitHub Actions checks pass:
+All GitHub Actions checks pass except Deploy:
 - **Backend Lint** ✓ (ruff + black over `services/`)
 - **Frontend CI** ✓ (pnpm install, lint, build)
 - **Docker Build Smoke** ✓ (api-gateway, auth, content, streaming, media-pipeline)
-- **Backend Test** ✓ all 16: auth, user, admin, content, streaming, search, recommendation, billing, analytics, notification, media-pipeline, creators, moderation, uploads, api-gateway
+- **Backend Test** ✓ all 15: auth, user, admin, content, streaming, search, recommendation, billing, analytics, notification, media-pipeline, creators, moderation, uploads, api-gateway
+- **Build & Push Frontend** ✓ (multi-stage Dockerfile, served on :3000)
+- **Deploy Staging / Production** ⚠️ Skipped/failing — no AWS credentials configured (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` repo secrets absent)
 
 **Key fixes to reach green:**
 - Dockerfiles: python:3.13-slim, pip install via `requirements.txt`, SDK copied into `/app`
@@ -192,7 +194,8 @@ All GitHub Actions checks pass:
 3. **Helm chart** — CI deploy jobs are no-ops without it
 4. **Integration tests** — testcontainers-based (Postgres/Redis/Kafka/ES) need Docker
 5. **Frontend** — Next.js scaffold only; real pages/flows
+6. **Deploy credentials** — Add `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` repo secrets + `wildframe-staging` / `wildframe-production` EKS clusters so CI/CD Deploy jobs can run
 
 ---
 
-**Status maintained per session. Last update: August 7, 2026 — CI/CD fully green.**
+**Status maintained per session. Last update: August 7, 2026 — CI/CD green except Deploy (needs AWS creds).**

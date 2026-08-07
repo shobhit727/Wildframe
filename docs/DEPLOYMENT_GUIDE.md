@@ -11,6 +11,24 @@ This guide covers deploying Wildframe to production environments. It includes in
 **Time to read**: 30 minutes  
 **Prerequisites**: Docker, Kubernetes 1.28+, Terraform, kubectl, AWS CLI credentials
 
+## CI/CD Deployment Note (August 2026)
+
+The consolidated GitHub Actions workflow (`.github/workflows/ci-cd.yml`) runs
+`Deploy Staging` and `Deploy Production` jobs on pushes to `main`. These steps
+configure AWS credentials via `aws-actions/configure-aws-credentials@v4` and
+run `aws eks update-kubeconfig` against the `wildframe-staging` /
+`wildframe-production` clusters. They **currently fail** until the following
+exist:
+
+- Repo secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (IAM user with
+  EKS `describe-cluster` + `eks:ListClusters` + `eks:AccessKubernetesApi` or
+  similar)
+- `wildframe-staging` and `wildframe-production` EKS clusters reachable on
+  us-east-1
+- A `deployment.yaml` / image pull secret in each cluster for the GHCR images
+
+Until then the pipeline is green on every check except the two deploy steps.
+
 ## Table of Contents
 
 1. [Pre-Deployment Checklist](#pre-deployment-checklist)

@@ -1,6 +1,6 @@
 # Wildframe OTT Streaming Platform
 
-A FastAPI microservices-based OTT streaming platform. **Not yet production-ready** — core services start and CRUD works; email/MFA stubbed; integration tests being fixed; observability SDK wired but needs real implementation.
+A FastAPI microservices-based OTT streaming platform. **Not yet production-ready** — core services start and CRUD works; email/MFA stubbed; CI/CD green except Deploy (needs AWS credentials); observability SDK wired but needs real implementation.
 
 ## 🎯 Current State (August 2026)
 
@@ -22,9 +22,9 @@ A FastAPI microservices-based OTT streaming platform. **Not yet production-ready
 | recommendation | ✅ Starts |
 | search | ✅ Starts |
 
-**What works**: All 16 services import cleanly. Backend Lint (ruff + black + mypy) passes in CI. Admin-service tests pass. Asyncpg upgraded to 0.30.0 for Python 3.13. `wildframe-observability-sdk` wired into every service.
+**What works**: All 15 services import cleanly. CI is green for Backend Lint (ruff + black + mypy), Frontend CI, Security Scan, 5 Docker Build Smokes, and all 15 backend test jobs. Frontend Docker image builds and pushes. Asyncpg upgraded to 0.30.0 for Python 3.13. `wildframe-observability-sdk` wired into every service.
 
-**What's missing**: Email verification, MFA, integration tests (being fixed), Dockerfile Python 3.11→3.13 bump, secrets management, load testing, security audit.
+**What's missing**: Email verification, MFA (501 stubs), production Deploy jobs (need AWS credentials in repo secrets), secrets management, load testing, security audit.
 
 ## Technology Stack
 
@@ -42,6 +42,7 @@ A FastAPI microservices-based OTT streaming platform. **Not yet production-ready
 - **Next.js 15**: React framework with SSR (scaffold only)
 - **TypeScript**: Type-safe development
 - **TailwindCSS**: Utility-first CSS
+- **Docker**: Multi-stage `apps/web/Dockerfile` builds and pushes to GHCR via CI
 
 ### Infrastructure
 - **Kubernetes**: Container orchestration (manifests exist)
@@ -59,7 +60,7 @@ A FastAPI microservices-based OTT streaming platform. **Not yet production-ready
 wildframe/
 ├── apps/
 │   └── web/                        # Next.js web application (scaffold)
-├── services/                       # 16 Backend microservices
+├── services/                       # 15 Backend microservices
 │   ├── api-gateway/                # Request routing and auth
 │   ├── auth-service/               # Authentication and JWT
 │   ├── user-service/               # User profiles and devices
@@ -99,7 +100,7 @@ wildframe/
 ### Local Development with Docker Compose
 
 ```bash
-# Start all services (infrastructure + 16 services)
+# Start all services (infrastructure + 15 services)
 docker compose -f deployments/docker-compose.dev.yml up -d
 
 # Wait for services to be ready
@@ -158,6 +159,10 @@ npm run dev
 # http://localhost:3000
 ```
 
+### CI/CD
+
+All pipeline checks are green (Backend Lint, Frontend CI, Security Scan, Docker Build Smokes, 15 Backend Test jobs, Build & Push Frontend). Deploy Staging/Production additionally require `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` repo secrets plus `wildframe-staging`/`wildframe-production` EKS clusters — without them the deploy steps fail.
+
 ## Architecture
 
 See `docs/ARCHITECTURE.md` for system design, service patterns, and data architecture.
@@ -189,7 +194,7 @@ black --check services/
 mypy services/
 
 # Tests (per service, uses local pytest.ini)
-cd services/auth-service
+cd services/content-service
 poetry run pytest tests --asyncio-mode=auto
 ```
 
@@ -225,8 +230,7 @@ terraform init && terraform plan
 
 - ❌ Email verification (501)
 - ❌ MFA/TOTP (501)
-- ❌ Integration tests (being fixed)
-- ❌ Dockerfile Python 3.13 bump (in progress)
+- ❌ Deploy jobs — blocked until AWS repo secrets + EKS clusters configured
 - ❌ Secrets management (hardcoded defaults)
 - ❌ Load testing / capacity planning
 - ❌ Security audit

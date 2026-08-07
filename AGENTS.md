@@ -11,7 +11,7 @@ or ViewSets. This is the source of truth for how the repo is actually built.
 pip install poetry
 poetry install
 
-# Bring up the full stack locally (12 app services + infra)
+# Bring up the full stack locally (15 app services + infra)
 docker compose -f deployments/docker-compose.dev.yml up --build -d
 
 # Run the backend test suite
@@ -25,7 +25,7 @@ cd apps/web && npm install && npm run dev   # http://localhost:3000
 
 ```
 wildframe/
-├── services/                       # 16 independent FastAPI microservices
+├── services/                       # 15 independent FastAPI microservices
 │   ├── api-gateway/               # routing, auth, rate limiting (host :8000)
 │   ├── auth-service/              # JWT auth, refresh tokens, rate limiting
 │   ├── user-service/              # profiles, devices, sessions, preferences
@@ -57,7 +57,7 @@ wildframe/
 
 ## Architecture
 
-- **16 microservices**, each with its own FastAPI `app`, SQLAlchemy 2.0 async
+- **15 microservices**, each with its own FastAPI `app`, SQLAlchemy 2.0 async
   ORM, and (where it matters) its own PostgreSQL database
   (`infrastructure/database/init-databases.sql` creates all 16).
 - **Database-per-service**: never share a DB across services.
