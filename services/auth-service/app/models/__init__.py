@@ -172,7 +172,7 @@ class LoginAudit(Base, BaseModel):
     __tablename__ = "login_audit"
 
     user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
-    email = Column(String(255), nullable=False, index=True)
+    email = Column(String(255), nullable=True, index=True)
     status = Column(String(50), nullable=False, index=True)
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(Text, nullable=True)
