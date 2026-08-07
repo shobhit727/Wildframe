@@ -45,9 +45,27 @@ MOVIES = [
 ]
 
 SHOWS = [
-    {"title": "Arc House", "slug": "arc-house", "desc": "Seven strangers share a haunted high-rise, and the house listens.", "genres": ["sci-fi", "thriller"], "seasons": [6, 5, 4]},
-    {"title": "Blue Collar Kings", "slug": "blue-collar-kings", "desc": "A family builds a demolition empire one job at a time.", "genres": ["drama"], "seasons": [5, 5]},
-    {"title": "Toast & Tonic", "slug": "toast-and-tonic", "desc": "Slice-of-life comedy following a late-night diner crew.", "genres": ["comedy"], "seasons": [4, 4, 4]},
+    {
+        "title": "Arc House",
+        "slug": "arc-house",
+        "desc": "Seven strangers share a haunted high-rise, and the house listens.",
+        "genres": ["sci-fi", "thriller"],
+        "seasons": [6, 5, 4],
+    },
+    {
+        "title": "Blue Collar Kings",
+        "slug": "blue-collar-kings",
+        "desc": "A family builds a demolition empire one job at a time.",
+        "genres": ["drama"],
+        "seasons": [5, 5],
+    },
+    {
+        "title": "Toast & Tonic",
+        "slug": "toast-and-tonic",
+        "desc": "Slice-of-life comedy following a late-night diner crew.",
+        "genres": ["comedy"],
+        "seasons": [4, 4, 4],
+    },
 ]
 
 
@@ -149,12 +167,20 @@ def register_user(client: httpx.Client) -> None:
         ok(f"created demo user {DEMO_EMAIL}")
         return
     if r.status_code == 409 or (r.status_code == 400 and "exist" in r.text):
-        ok(f"demo user already exists")
+        ok("demo user already exists")
         return
     warn(f"could not create demo user: {r.status_code} {r.text[:160]}")
 
 
-def create_content(client: httpx.Client, title: str, slug: str, desc: str, ctype: str, genres: list[dict], duration: int | None = None):
+def create_content(
+    client: httpx.Client,
+    title: str,
+    slug: str,
+    desc: str,
+    ctype: str,
+    genres: list[dict],
+    duration: int | None = None,
+):
     payload = {
         "title": title,
         "slug": slug,

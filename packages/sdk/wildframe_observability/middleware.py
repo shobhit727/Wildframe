@@ -21,8 +21,6 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from wildframe_observability.logging import (
-    request_id_var,
-    correlation_id_var,
     set_request_id,
     set_correlation_id,
 )

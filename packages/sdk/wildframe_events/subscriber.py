@@ -18,9 +18,8 @@ from __future__ import annotations
 
 import json
 import logging
-import traceback
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, List, Optional, Any
+from typing import Callable, Dict, List, Any
 
 from wildframe_events.event import DomainEvent
 from wildframe_events.topics import Topic
@@ -160,16 +159,6 @@ class KafkaEventSubscriber(EventSubscriber):
     async def _send_to_dlq(self, event: DomainEvent, error: Exception) -> None:
         """Send a failed event to the dead-letter topic."""
         dlq_topic = event.topic + Topic.DLQ_SUFFIX
-        dlq_event = DomainEvent(
-            topic=dlq_topic,
-            key=event.key,
-            payload={
-                "original_event": event.to_dict(),
-                "error": str(error),
-                "traceback": traceback.format_exc(),
-            },
-            producer="wildframe-events-dlq",
-        )
         logger.error(
             "event sent to DLQ: topic=%s key=%s event_id=%s error=%s",
             dlq_topic,
