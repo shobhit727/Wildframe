@@ -35,6 +35,8 @@ class FakeFlagRepo:
         self.flags: dict[UUID, ContentFlag] = {}
 
     async def create(self, flag: ContentFlag) -> ContentFlag:
+        if flag.id is None:
+            flag.id = uuid4()
         self.flags[flag.id] = flag
         return flag
 
@@ -47,6 +49,8 @@ class FakeFlagRepo:
         return pending[:limit]
 
     async def save(self, flag: ContentFlag) -> ContentFlag:
+        if flag.id is None:
+            flag.id = uuid4()
         self.flags[flag.id] = flag
         return flag
 
