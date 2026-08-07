@@ -124,13 +124,16 @@ async def register(
         HTTPException: If email already exists or validation fails
     """
     try:
-        token_response, refresh_token = await auth_service.register(request.email, request.password)
+        user = await auth_service.register(request)
 
-        # Store refresh token in response headers for security
+        # Commit the transaction
         await db.commit()
 
-        return {**token_response, "refresh_token": refresh_token}
+        return user.model_dump()
 
+    except HTTPException:
+        await db.rollback()
+        raise
     except ValueError as e:
         await db.rollback()
         logger.warning(f"Registration failed: {e}")
@@ -166,21 +169,17 @@ async def login(
     """
     try:
         # Extract client info
-        user_agent = http_request.headers.get("user-agent")
         ip_address = http_request.client.host if http_request.client else None
 
-        token_response, refresh_token = await auth_service.login(
-            request.email,
-            request.password,
-            user_agent=user_agent,
-            ip_address=ip_address,
-            device_id=request.device_id,
-        )
+        token_response = await auth_service.login(request, ip_address=ip_address)
 
         await db.commit()
 
-        return {**token_response, "refresh_token": refresh_token}
+        return token_response.model_dump()
 
+    except HTTPException:
+        await db.rollback()
+        raise
     except ValueError as e:
         await db.rollback()
         logger.warning(f"Login failed: {e}")
@@ -213,14 +212,15 @@ async def refresh(
         HTTPException: If refresh token invalid or expired
     """
     try:
-        token_response, new_refresh_token = await auth_service.refresh_access_token(
-            request.refresh_token
-        )
+        token_response = await auth_service.refresh_token(request.refresh_token)
 
         await db.commit()
 
-        return {**token_response, "refresh_token": new_refresh_token}
+        return token_response.model_dump()
 
+    except HTTPException:
+        await db.rollback()
+        raise
     except ValueError as e:
         await db.rollback()
         logger.warning(f"Token refresh failed: {e}")
@@ -235,14 +235,14 @@ async def refresh(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    request: RefreshTokenRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> None:
-    """Logout user by revoking tokens.
+    """Logout user by revoking the refresh token.
 
     Args:
-        authorization: Authorization header
+        request: Refresh token request
         auth_service: Auth service
         db: Database session
 
@@ -250,22 +250,7 @@ async def logout(
         HTTPException: If token invalid
     """
     try:
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header",
-            )
-
-        token = authorization.replace("Bearer ", "")
-        payload = TokenManager.verify_token(token, token_type="access")
-
-        if not payload:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
-            )
-
-        user_id = UUID(payload["sub"])
-        await auth_service.logout(token, user_id)
+        await auth_service.logout(request.refresh_token)
         await db.commit()
 
     except HTTPException:
