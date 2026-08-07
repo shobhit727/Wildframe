@@ -1,11 +1,12 @@
-"""Streaming service tests."""
+"""Streaming Service tests — covers the actual StreamingService API."""
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 from app.services import StreamingService
+
+pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
@@ -21,8 +22,8 @@ def content_id():
 
 
 @pytest.fixture
-def session_id():
-    """Generate test session ID."""
+def episode_id():
+    """Generate test episode ID."""
     return uuid4()
 
 
@@ -36,253 +37,185 @@ def mock_db():
 def mock_repositories():
     """Create mock repositories."""
     return {
-        "session_repo": AsyncMock(),
+        "playback_repo": AsyncMock(),
         "manifest_repo": AsyncMock(),
-        "metrics_repo": AsyncMock(),
-        "subtitle_repo": AsyncMock(),
-        "audio_repo": AsyncMock(),
+        "transcoding_repo": AsyncMock(),
+        "quality_repo": AsyncMock(),
         "cdn_repo": AsyncMock(),
+        "download_repo": AsyncMock(),
     }
 
 
 @pytest.fixture
 def streaming_service(mock_db, mock_repositories):
-    """Create StreamingService instance with mocks."""
+    """Create StreamingService with mocked repositories."""
     service = StreamingService(mock_db)
-    service.session_repo = mock_repositories["session_repo"]
+    service.playback_repo = mock_repositories["playback_repo"]
     service.manifest_repo = mock_repositories["manifest_repo"]
-    service.metrics_repo = mock_repositories["metrics_repo"]
-    service.subtitle_repo = mock_repositories["subtitle_repo"]
-    service.audio_repo = mock_repositories["audio_repo"]
+    service.transcoding_repo = mock_repositories["transcoding_repo"]
+    service.quality_repo = mock_repositories["quality_repo"]
     service.cdn_repo = mock_repositories["cdn_repo"]
+    service.download_repo = mock_repositories["download_repo"]
     return service
 
 
-class TestSessionManagement:
-    """Test session management."""
+class TestPlaybackSessions:
+    """Test playback session operations."""
 
-    @pytest.mark.asyncio
-    async def test_start_streaming(self, streaming_service, user_id, content_id, mock_repositories):
-        """Test starting streaming."""
-        mock_manifest = MagicMock()
-        mock_manifest.duration_seconds = 7200
-        mock_repositories["manifest_repo"].get_by_media_key.return_value = mock_manifest
-        mock_repositories["manifest_repo"].is_valid.return_value = True
+    async def test_start_playback_session(
+        self, streaming_service, mock_repositories, user_id, content_id
+    ):
+        """Test starting a playback session."""
+        from app.schemas import PlaybackSessionCreateRequest
 
-        mock_session = MagicMock()
-        mock_session.id = uuid4()
-        mock_repositories["session_repo"].create.return_value = mock_session
+        mock_repositories["playback_repo"].create.return_value = MagicMock()
 
-        session = await streaming_service.start_streaming(
-            user_id=user_id,
-            content_id=content_id,
-            media_key="test_media",
-            content_type="movie",
-            device_type="web",
-            ip_address="192.168.1.1",
-            user_agent="Mozilla/5.0",
+        request = PlaybackSessionCreateRequest(
+            user_id=user_id, content_id=content_id, device_id="dev-1"
         )
+        result = await streaming_service.start_playback_session(request)
 
-        assert session.id is not None
+        assert result is not None
+        mock_repositories["playback_repo"].create.assert_called_once()
 
-    @pytest.mark.asyncio
-    async def test_get_streaming_session(self, streaming_service, mock_repositories):
-        """Test getting streaming session."""
-        mock_session = MagicMock()
-        mock_session.id = uuid4()
-        mock_repositories["session_repo"].get_by_token.return_value = mock_session
+    async def test_get_playback_session(self, streaming_service, mock_repositories):
+        """Test getting a playback session."""
+        session_id = uuid4()
+        mock_repositories["playback_repo"].get_by_id.return_value = MagicMock()
 
-        session = await streaming_service.get_streaming_session("token123")
+        result = await streaming_service.get_playback_session(session_id)
 
-        assert session.id is not None
+        assert result is not None
+        mock_repositories["playback_repo"].get_by_id.assert_called_once_with(session_id)
 
-    @pytest.mark.asyncio
-    async def test_heartbeat(self, streaming_service, mock_repositories):
-        """Test heartbeat."""
-        mock_session = MagicMock()
-        mock_session.id = uuid4()
-        mock_repositories["session_repo"].get_by_token.return_value = mock_session
-        mock_repositories["session_repo"].update_heartbeat.return_value = mock_session
+    async def test_end_playback_session(self, streaming_service, mock_repositories):
+        """Test ending a playback session."""
+        session_id = uuid4()
+        mock_repositories["playback_repo"].mark_completed.return_value = MagicMock()
 
-        session = await streaming_service.heartbeat("token123", 3600, 5.0, 2500)
+        result = await streaming_service.end_playback_session(session_id)
 
-        assert session.id is not None
-
-    @pytest.mark.asyncio
-    async def test_end_streaming(self, streaming_service, mock_repositories):
-        """Test ending streaming."""
-        mock_session = MagicMock()
-        mock_session.id = uuid4()
-        mock_repositories["session_repo"].get_by_token.return_value = mock_session
-        mock_repositories["session_repo"].end_session.return_value = mock_session
-
-        session = await streaming_service.end_streaming("token123", 3600)
-
-        assert session.id is not None
-
-
-class TestMetrics:
-    """Test metrics recording."""
-
-    @pytest.mark.asyncio
-    async def test_record_metrics(self, streaming_service, mock_repositories):
-        """Test recording metrics."""
-        mock_session = MagicMock()
-        mock_session.id = uuid4()
-        mock_session.user_id = uuid4()
-        mock_session.content_id = uuid4()
-        mock_repositories["session_repo"].get_by_token.return_value = mock_session
-
-        mock_metrics = MagicMock()
-        mock_metrics.id = uuid4()
-        mock_repositories["metrics_repo"].record.return_value = mock_metrics
-
-        metrics = await streaming_service.record_metrics(
-            "token123",
-            bandwidth_mbps=5.0,
-            bitrate_kbps=2500,
-            quality="1080p",
-            rebuffering_seconds=2.0,
-            packets_lost=5,
-            latency_ms=50,
-        )
-
-        assert metrics.id is not None
-
-    @pytest.mark.asyncio
-    async def test_record_buffering(self, streaming_service, mock_repositories):
-        """Test recording buffering."""
-        mock_session = MagicMock()
-        mock_session.id = uuid4()
-        mock_repositories["session_repo"].get_by_token.return_value = mock_session
-
-        await streaming_service.record_buffering("token123", 2.5)
-
-        mock_repositories["session_repo"].record_buffering.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_get_session_stats(self, streaming_service, mock_repositories):
-        """Test getting session stats."""
-        mock_session = MagicMock()
-        mock_session.id = uuid4()
-        mock_session.played_until_seconds = 3600
-        mock_session.duration_seconds = 7200
-        mock_session.buffering_count = 2
-        mock_session.total_buffer_seconds = 5
-        mock_session.stream_quality = "1080p"
-        mock_session.started_at = datetime.now(UTC)
-        mock_session.last_heartbeat = datetime.now(UTC)
-        mock_repositories["session_repo"].get_by_token.return_value = mock_session
-        mock_repositories["metrics_repo"].get_average_metrics.return_value = {
-            "avg_bandwidth_mbps": 5.0,
-            "avg_bitrate_kbps": 2500,
-            "total_rebuffer_seconds": 5,
-            "packet_loss_total": 10,
-            "avg_latency_ms": 50,
-        }
-
-        stats = await streaming_service.get_session_stats("token123")
-
-        assert stats["completion_percentage"] == 50.0
-        assert stats["buffer_events"] == 2
-
-
-class TestSubtitles:
-    """Test subtitle management."""
-
-    @pytest.mark.asyncio
-    async def test_add_subtitle(self, streaming_service, mock_repositories):
-        """Test adding subtitle."""
-        mock_subtitle = MagicMock()
-        mock_subtitle.id = uuid4()
-        mock_repositories["subtitle_repo"].create.return_value = mock_subtitle
-
-        subtitle = await streaming_service.add_subtitle(
-            media_key="test_media",
-            language="en",
-            language_name="English",
-            subtitle_url="https://example.com/subtitle.vtt",
-            format="vtt",
-        )
-
-        assert subtitle.id is not None
-
-    @pytest.mark.asyncio
-    async def test_list_subtitles(self, streaming_service, mock_repositories):
-        """Test listing subtitles."""
-        mock_subtitle1 = MagicMock()
-        mock_subtitle2 = MagicMock()
-        mock_repositories["subtitle_repo"].list_by_media_key.return_value = [
-            mock_subtitle1,
-            mock_subtitle2,
-        ]
-
-        subtitles = await streaming_service.list_subtitles("test_media")
-
-        assert len(subtitles) == 2
-
-
-class TestAudioTracks:
-    """Test audio track management."""
-
-    @pytest.mark.asyncio
-    async def test_add_audio_track(self, streaming_service, mock_repositories):
-        """Test adding audio track."""
-        mock_track = MagicMock()
-        mock_track.id = uuid4()
-        mock_repositories["audio_repo"].create.return_value = mock_track
-
-        track = await streaming_service.add_audio_track(
-            media_key="test_media",
-            language="en",
-            language_name="English",
-            codec="aac",
-            bitrate_kbps=128,
-            channels=2,
-        )
-
-        assert track.id is not None
-
-    @pytest.mark.asyncio
-    async def test_list_audio_tracks(self, streaming_service, mock_repositories):
-        """Test listing audio tracks."""
-        mock_track1 = MagicMock()
-        mock_track2 = MagicMock()
-        mock_repositories["audio_repo"].list_by_media_key.return_value = [mock_track1, mock_track2]
-
-        tracks = await streaming_service.list_audio_tracks("test_media")
-
-        assert len(tracks) == 2
+        assert result is not None
+        mock_repositories["playback_repo"].mark_completed.assert_called_once_with(session_id)
 
 
 class TestManifests:
-    """Test manifest management."""
+    """Test manifest operations."""
 
-    @pytest.mark.asyncio
-    async def test_create_manifest(self, streaming_service, mock_repositories):
-        """Test creating manifest."""
-        mock_manifest = MagicMock()
-        mock_manifest.id = uuid4()
-        mock_repositories["manifest_repo"].create.return_value = mock_manifest
+    async def test_generate_manifest(self, streaming_service, mock_repositories, episode_id):
+        """Test generating a manifest."""
+        from app.schemas import ManifestGenerationRequest
 
-        manifest = await streaming_service.create_manifest(
-            media_key="test_media",
-            content_type="movie",
-            hls_url="https://example.com/playlist.m3u8",
-            dash_url="https://example.com/manifest.mpd",
-            bitrates=[500, 1000, 2500, 5000],
-            duration_seconds=7200,
-        )
+        mock_repositories["manifest_repo"].get_by_episode_and_protocol.return_value = None
+        mock_repositories["manifest_repo"].create.return_value = MagicMock()
 
-        assert manifest.id is not None
+        request = ManifestGenerationRequest(episode_id=episode_id, content_id=uuid4())
+        result = await streaming_service.generate_manifest(request)
 
-    @pytest.mark.asyncio
+        assert result is not None
+        mock_repositories["manifest_repo"].create.assert_called_once()
+
+    async def test_generate_manifest_existing(
+        self, streaming_service, mock_repositories, episode_id
+    ):
+        """Test generating manifest that already exists."""
+        from app.schemas import ManifestGenerationRequest
+
+        existing = MagicMock()
+        mock_repositories["manifest_repo"].get_by_episode_and_protocol.return_value = existing
+
+        request = ManifestGenerationRequest(episode_id=episode_id, content_id=uuid4())
+        result = await streaming_service.generate_manifest(request)
+
+        assert result is existing
+        mock_repositories["manifest_repo"].create.assert_not_called()
+
     async def test_get_manifest(self, streaming_service, mock_repositories):
-        """Test getting manifest."""
-        mock_manifest = MagicMock()
-        mock_manifest.id = uuid4()
-        mock_repositories["manifest_repo"].get_by_media_key.return_value = mock_manifest
+        """Test getting a manifest."""
+        manifest_id = uuid4()
+        mock_repositories["manifest_repo"].get_by_id.return_value = MagicMock()
 
-        manifest = await streaming_service.get_manifest("test_media")
+        result = await streaming_service.get_manifest(manifest_id)
 
-        assert manifest.id is not None
+        assert result is not None
+        mock_repositories["manifest_repo"].get_by_id.assert_called_once_with(manifest_id)
+
+
+class TestCDNRegions:
+    """Test CDN region operations."""
+
+    async def test_create_cdn_region(self, streaming_service, mock_repositories):
+        """Test creating a CDN region."""
+        from app.schemas import CDNRegionCreateRequest
+
+        mock_repositories["cdn_repo"].create.return_value = MagicMock()
+
+        request = CDNRegionCreateRequest(
+            region_code="us-east",
+            region_name="US East",
+            country="US",
+            cdn_provider="cloudfront",
+            bandwidth_capacity_gbps=100.0,
+        )
+        result = await streaming_service.create_cdn_region(request)
+
+        assert result is not None
+        mock_repositories["cdn_repo"].create.assert_called_once()
+
+    async def test_get_all_cdn_regions(self, streaming_service, mock_repositories):
+        """Test listing CDN regions."""
+        mock_repositories["cdn_repo"].get_all_active.return_value = [MagicMock(), MagicMock()]
+
+        result = await streaming_service.get_all_cdn_regions()
+
+        assert len(result) == 2
+        mock_repositories["cdn_repo"].get_all_active.assert_called_once()
+
+
+class TestQualityProfiles:
+    """Test quality profile operations."""
+
+    async def test_create_quality_profile(self, streaming_service, mock_repositories):
+        """Test creating a quality profile."""
+        from app.schemas import QualityProfileCreateRequest
+
+        mock_repositories["quality_repo"].create.return_value = MagicMock()
+
+        request = QualityProfileCreateRequest(
+            name="1080p",
+            resolution="1080p",
+            bitrate_kbps=5000,
+            min_bandwidth_kbps=5000,
+            max_bandwidth_kbps=10000,
+        )
+        result = await streaming_service.create_quality_profile(request)
+
+        assert result is not None
+        mock_repositories["quality_repo"].create.assert_called_once()
+
+
+class TestTranscoding:
+    """Test transcoding job operations."""
+
+    async def test_create_transcoding_job(self, streaming_service, mock_repositories, episode_id):
+        """Test creating a transcoding job."""
+        from app.schemas import TranscodingJobCreateRequest
+
+        mock_repositories["transcoding_repo"].create.return_value = MagicMock()
+
+        request = TranscodingJobCreateRequest(
+            episode_id=episode_id, content_id=uuid4(), input_file_path="/tmp/video.mp4"
+        )
+        result = await streaming_service.create_transcoding_job(request)
+
+        assert result is not None
+        mock_repositories["transcoding_repo"].create.assert_called_once()
+
+    async def test_get_pending_jobs(self, streaming_service, mock_repositories):
+        """Test getting pending transcoding jobs."""
+        mock_repositories["transcoding_repo"].get_pending_jobs.return_value = [MagicMock()]
+
+        result = await streaming_service.get_pending_jobs()
+
+        assert len(result) == 1
+        mock_repositories["transcoding_repo"].get_pending_jobs.assert_called_once()
