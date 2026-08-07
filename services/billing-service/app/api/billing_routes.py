@@ -29,7 +29,7 @@ from app.repositories import (
 )
 from app.services import BillingError, BillingService, TierInvalidError
 
-router = APIRouter(prefix="/billing", tags=["billing"])
+router = APIRouter(prefix="/api/v1/billing", tags=["billing"])
 
 
 # ---------------------------------------------------------------------------

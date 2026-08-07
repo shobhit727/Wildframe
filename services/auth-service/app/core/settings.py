@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     # Service Configuration
     SERVICE_NAME: str = "auth-service"
     SERVICE_VERSION: str = "1.0.0"
-    ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    ENVIRONMENT: str = "production"
+    DEBUG: bool = False
 
     # Database Configuration
     DATABASE_URL: str = "postgresql+asyncpg://wildframe:password@localhost:5432/auth_db"

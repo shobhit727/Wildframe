@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     # Service info
     SERVICE_NAME: str = "content-service"
     SERVICE_VERSION: str = "1.0.0"
-    ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    ENVIRONMENT: str = "production"
+    DEBUG: bool = False
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/content_db"

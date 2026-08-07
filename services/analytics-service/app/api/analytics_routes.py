@@ -15,7 +15,7 @@ from app.repositories import (
 )
 from app.services import AnalyticsService
 
-router = APIRouter(prefix="/analytics", tags=["analytics"])
+router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 
 
 async def get_analytics_service(

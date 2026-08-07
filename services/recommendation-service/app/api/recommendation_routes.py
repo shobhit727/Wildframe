@@ -9,7 +9,7 @@ from app.core.database import get_db
 from app.repositories import RecommendationRepository, UserPreferencesRepository
 from app.services import RecommendationService
 
-router = APIRouter(prefix="/recommendations", tags=["recommendations"])
+router = APIRouter(prefix="/api/v1/recommendations", tags=["recommendations"])
 
 
 async def get_rec_service(

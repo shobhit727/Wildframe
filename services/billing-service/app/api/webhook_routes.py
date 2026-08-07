@@ -34,7 +34,7 @@ from app.services import BillingService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/billing", tags=["billing", "webhooks"])
+router = APIRouter(prefix="/api/v1/billing", tags=["billing", "webhooks"])
 
 
 # ---------------------------------------------------------------------------

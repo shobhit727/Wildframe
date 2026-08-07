@@ -7,8 +7,8 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     SERVICE_NAME: str = "admin-service"
     SERVICE_VERSION: str = "1.0.0"
-    ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    ENVIRONMENT: str = "production"
+    DEBUG: bool = False
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8006
     DATABASE_URL: str = "postgresql+asyncpg://wildframe:password@localhost:5432/admin_db"
