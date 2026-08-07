@@ -150,9 +150,7 @@ class TokenBlacklist(Base, BaseModel):
 
     token_hash = Column(String(255), unique=True, nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    revoked_at = Column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
-    )
+    revoked_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
 
     __table_args__ = (Index("idx_token_blacklist_user_expires", "user_id", "expires_at"),)

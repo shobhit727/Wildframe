@@ -39,9 +39,7 @@ async def proxy_request(
         async with httpx.AsyncClient(timeout=30.0) as client:
             original_host = request.headers.get("host", "")
             headers = {
-                k: v
-                for k, v in request.headers.items()
-                if k.lower() not in _PROXY_AGENT_HEADERS
+                k: v for k, v in request.headers.items() if k.lower() not in _PROXY_AGENT_HEADERS
             }
             if original_host:
                 headers["host"] = original_host

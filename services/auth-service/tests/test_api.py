@@ -362,7 +362,6 @@ class TestAuthEndpoints:
         )
         assert login_response.status_code == 200
 
-
     def test_resend_and_verify_email(self, client):
         """Email verification token flow (dev returns the token)."""
         email = "verify@example.com"
@@ -375,15 +374,11 @@ class TestAuthEndpoints:
         assert resend.status_code == 202
         token = resend.json()["verification_token"]
 
-        ok = client.post(
-            "/api/v1/auth/verify-email", json={"email": email, "token": token}
-        )
+        ok = client.post("/api/v1/auth/verify-email", json={"email": email, "token": token})
         assert ok.status_code == 200
         assert ok.json()["message"] == "Email verified successfully"
 
-        bad = client.post(
-            "/api/v1/auth/verify-email", json={"email": email, "token": "not.a.jwt"}
-        )
+        bad = client.post("/api/v1/auth/verify-email", json={"email": email, "token": "not.a.jwt"})
         assert bad.status_code == 400
 
     def test_verify_email_rejects_wrong_email(self, client):
@@ -391,9 +386,7 @@ class TestAuthEndpoints:
             "/api/v1/auth/register",
             json={"email": "a@example.com", "password": "SecurePass123!"},
         )
-        res = client.post(
-            "/api/v1/auth/resend-verification", json={"email": "a@example.com"}
-        )
+        res = client.post("/api/v1/auth/resend-verification", json={"email": "a@example.com"})
         token = res.json()["verification_token"]
 
         response = client.post(
@@ -421,9 +414,7 @@ class TestAuthEndpoints:
         secret = setup.json()["secret"]
         assert setup.json()["totp_uri"].startswith("otpauth://totp/")
 
-        wrong = client.post(
-            "/api/v1/auth/mfa/verify", headers=headers, json={"code": "000000"}
-        )
+        wrong = client.post("/api/v1/auth/mfa/verify", headers=headers, json={"code": "000000"})
         assert wrong.status_code == 400
 
         code = pyotp.TOTP(secret).now()

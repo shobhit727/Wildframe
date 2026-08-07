@@ -484,9 +484,7 @@ async def setup_mfa(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     if user.mfa_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="MFA is already enabled"
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MFA is already enabled")
 
     secret = pyotp.random_base32()
     issuer = settings.MFA_ISSUER_NAME

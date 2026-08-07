@@ -228,9 +228,7 @@ class ContentRepository(BaseRepository):
             stmt = stmt.join(Content.genres).where(Genre.id == genre_id)
 
         stmt = (
-            stmt.order_by(Content.created_at.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+            stmt.order_by(Content.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
         )
 
         result = await self.session.execute(stmt)

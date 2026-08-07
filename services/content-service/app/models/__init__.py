@@ -404,6 +404,4 @@ class ContentSeries(Base):
     # Relationships
     episodes = relationship("Content", back_populates="series", foreign_keys="Content.series_id")
 
-    __table_args__ = (
-        Index("ix_content_series_status", "status"),
-    )
+    __table_args__ = (Index("ix_content_series_status", "status"),)

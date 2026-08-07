@@ -181,7 +181,9 @@ class ContentService:
         genre_id: UUID | None = None,
     ):
         """List content with pagination and filters."""
-        return await self.content_repo.list_filtered(page, page_size, content_type, status, genre_id)
+        return await self.content_repo.list_filtered(
+            page, page_size, content_type, status, genre_id
+        )
 
     async def get_content_by_slug(self, slug: str):
         """Get content by slug."""
