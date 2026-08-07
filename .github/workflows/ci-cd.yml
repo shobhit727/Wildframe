@@ -73,11 +73,11 @@ jobs:
           - creators-service
           - moderation-service
           - uploads-service
-          - search
-          - analytics
-          - billing
-          - recommendation
-          - notification
+          - search-service
+          - analytics-service
+          - billing-service
+          - recommendation-service
+          - notification-service
     steps:
       - name: Checkout
         uses: actions/checkout@v4

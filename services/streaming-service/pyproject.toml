@@ -6,7 +6,7 @@ authors = ["Your Name <you@example.com>"]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.16"
-fastapi = "^0.104.1"
+fastapi = "^0.111.0"
 uvicorn = {version = "^0.24.0", extras = ["standard"]}
 pydantic = "^2.4.2"
 pydantic-settings = "^2.0.3"
