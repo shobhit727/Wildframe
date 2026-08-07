@@ -5,7 +5,6 @@ build-backend = "poetry.core.masonry.api"
 [project]
 name = "wildframe-search-service"
 version = "1.0.0"
-requires-python = ">=3.11,<3.16"
 description = "Search service for Wildframe platform"
 
 [tool.poetry]

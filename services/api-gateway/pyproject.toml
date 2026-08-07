@@ -5,7 +5,6 @@ build-backend = "poetry.core.masonry.api"
 [project]
 name = "wildframe-api-gateway-service"
 version = "1.0.0"
-requires-python = ">=3.11,<3.16"
 description = "Api Gateway service for Wildframe platform"
 
 [tool.poetry]
