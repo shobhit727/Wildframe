@@ -287,14 +287,61 @@ class TestDeviceManagement:
         mock_repositories["device_repo"].mark_device_inactive.assert_called_once_with(device_id)
 
 
+def _mock_preferences(user_id):
+    """Build a complete UserPreferenceResponse mock."""
+    from datetime import UTC, datetime
+
+    pref = MagicMock()
+    pref.id = uuid4()
+    pref.user_id = user_id
+    pref.theme = "dark"
+    pref.language = "en"
+    pref.subtitle_language = "en"
+    pref.subtitle_size = "medium"
+    pref.closed_captions = False
+    pref.autoplay = True
+    pref.autoplay_next_episode = True
+    pref.default_video_quality = "1080p"
+    pref.default_audio_language = "en"
+    pref.content_rating = "all"
+    pref.allow_explicit_content = False
+    pref.share_viewing_activity = False
+    pref.allow_recommendations = True
+    pref.data_collection = False
+    pref.email_new_content = False
+    pref.email_recommendations = False
+    pref.created_at = datetime.now(UTC)
+    pref.updated_at = datetime.now(UTC)
+    return pref
+
+
+def _mock_subscription(user_id):
+    """Build a complete UserSubscriptionProfileResponse mock."""
+    from datetime import UTC, datetime
+
+    sub = MagicMock()
+    sub.id = uuid4()
+    sub.user_id = user_id
+    sub.subscription_tier = "free"
+    sub.subscription_status = "active"
+    sub.max_concurrent_streams = 1
+    sub.can_download = False
+    sub.can_use_4k = False
+    sub.ad_free = False
+    sub.current_period_start = None
+    sub.current_period_end = None
+    sub.created_at = datetime.now(UTC)
+    sub.updated_at = datetime.now(UTC)
+    return sub
+
+
 class TestPreferences:
     """Test user preferences management."""
 
     @pytest.mark.asyncio
     async def test_get_preferences(self, user_service, user_id, mock_repositories):
         """Test getting preferences."""
-        mock_pref = MagicMock()
-        mock_pref.user_id = user_id
+        mock_pref = _mock_preferences(user_id)
         mock_repositories["preference_repo"].get_by_user_id.return_value = mock_pref
 
         prefs = await user_service.get_preferences(user_id)
@@ -305,8 +352,7 @@ class TestPreferences:
     @pytest.mark.asyncio
     async def test_update_preferences(self, user_service, user_id, mock_repositories):
         """Test updating preferences."""
-        mock_pref = MagicMock()
-        mock_pref.user_id = user_id
+        mock_pref = _mock_preferences(user_id)
         mock_repositories["preference_repo"].update.return_value = mock_pref
 
         from app.schemas import UserPreferenceUpdateRequest
@@ -326,8 +372,7 @@ class TestSubscription:
     @pytest.mark.asyncio
     async def test_get_subscription(self, user_service, user_id, mock_repositories):
         """Test getting subscription."""
-        mock_sub = MagicMock()
-        mock_sub.user_id = user_id
+        mock_sub = _mock_subscription(user_id)
         mock_repositories["subscription_repo"].get_by_user_id.return_value = mock_sub
 
         sub = await user_service.get_subscription(user_id)
@@ -338,8 +383,7 @@ class TestSubscription:
     @pytest.mark.asyncio
     async def test_upgrade_subscription(self, user_service, user_id, mock_repositories):
         """Test upgrading subscription."""
-        mock_sub = MagicMock()
-        mock_sub.user_id = user_id
+        mock_sub = _mock_subscription(user_id)
         mock_repositories["subscription_repo"].update_tier.return_value = mock_sub
 
         sub = await user_service.upgrade_subscription(user_id, "premium")
@@ -350,14 +394,37 @@ class TestSubscription:
         )
 
 
+def _mock_profile(user_id):
+    """Build a complete UserProfileResponse mock."""
+    from datetime import UTC, datetime
+
+    p = MagicMock()
+    p.id = uuid4()
+    p.user_id = user_id
+    p.avatar_url = None
+    p.bio = None
+    p.phone_number = None
+    p.date_of_birth = None
+    p.country = None
+    p.language = "en"
+    p.timezone = "UTC"
+    p.public_profile = True
+    p.newsletter_subscribed = False
+    p.marketing_emails = False
+    p.completed_onboarding = True
+    p.profile_completeness = 100
+    p.created_at = datetime.now(UTC)
+    p.updated_at = datetime.now(UTC)
+    return p
+
+
 class TestOnboarding:
     """Test onboarding completion."""
 
     @pytest.mark.asyncio
     async def test_mark_onboarding_complete(self, user_service, user_id, mock_repositories):
         """Test marking onboarding complete."""
-        mock_profile = MagicMock()
-        mock_profile.user_id = user_id
+        mock_profile = _mock_profile(user_id)
         mock_repositories["profile_repo"].mark_onboarding_complete.return_value = mock_profile
 
         profile = await user_service.mark_onboarding_complete(user_id)
