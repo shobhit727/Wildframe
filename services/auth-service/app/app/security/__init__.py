@@ -23,14 +23,6 @@ def _normalize_password(password: str) -> bytes:
     return password.encode("utf-8")[:72]
 
 
-def role_for_email(email: str | None) -> str:
-    """Return the role for an email based on the ADMIN_EMAILS allow-list."""
-    if not email:
-        return "user"
-    admins = {a.strip().lower() for a in settings.ADMIN_EMAILS.split(",") if a.strip()}
-    return "admin" if email.strip().lower() in admins else "user"
-
-
 class PasswordManager:
     """Manages password hashing and verification."""
 
@@ -87,7 +79,6 @@ class TokenManager:
         payload = {
             "user_id": str(user_id),
             "email": email,
-            "role": role_for_email(email),
             "type": "access",
             "iat": now,
             "exp": expires_at,
