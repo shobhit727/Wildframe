@@ -1,41 +1,12 @@
-"""Content service tests."""
+"""Content Service tests — covers the actual ContentService API."""
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 from app.services import ContentService
 
-
-@pytest.fixture
-def genre_id():
-    """Generate test genre ID."""
-    return uuid4()
-
-
-@pytest.fixture
-def movie_id():
-    """Generate test movie ID."""
-    return uuid4()
-
-
-@pytest.fixture
-def show_id():
-    """Generate test show ID."""
-    return uuid4()
-
-
-@pytest.fixture
-def season_id():
-    """Generate test season ID."""
-    return uuid4()
-
-
-@pytest.fixture
-def episode_id():
-    """Generate test episode ID."""
-    return uuid4()
+pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
@@ -49,275 +20,170 @@ def mock_repositories():
     """Create mock repositories."""
     return {
         "genre_repo": AsyncMock(),
-        "movie_repo": AsyncMock(),
-        "show_repo": AsyncMock(),
+        "content_repo": AsyncMock(),
+        "cast_repo": AsyncMock(),
         "season_repo": AsyncMock(),
         "episode_repo": AsyncMock(),
+        "rating_repo": AsyncMock(),
+        "recommendation_repo": AsyncMock(),
     }
 
 
 @pytest.fixture
 def content_service(mock_db, mock_repositories):
-    """Create ContentService instance with mocks."""
+    """Create ContentService with mocked repositories."""
     service = ContentService(mock_db)
+    service.content_repo = mock_repositories["content_repo"]
     service.genre_repo = mock_repositories["genre_repo"]
-    service.movie_repo = mock_repositories["movie_repo"]
-    service.show_repo = mock_repositories["show_repo"]
+    service.cast_repo = mock_repositories["cast_repo"]
     service.season_repo = mock_repositories["season_repo"]
     service.episode_repo = mock_repositories["episode_repo"]
+    service.rating_repo = mock_repositories["rating_repo"]
+    service.recommendation_repo = mock_repositories["recommendation_repo"]
     return service
 
 
 class TestGenreManagement:
-    """Test genre management."""
+    """Test genre operations."""
 
-    @pytest.mark.asyncio
     async def test_create_genre(self, content_service, mock_repositories):
-        """Test creating genre."""
-        mock_repositories["genre_repo"].get_by_name.return_value = None
+        """Test creating a genre."""
+        from app.schemas import GenreCreateRequest
+
         mock_genre = MagicMock()
+        mock_genre.id = uuid4()
         mock_genre.name = "Action"
         mock_repositories["genre_repo"].create.return_value = mock_genre
 
-        genre = await content_service.create_genre("Action", "Action movies")
+        result = await content_service.create_genre(
+            GenreCreateRequest(name="Action", slug="action")
+        )
 
-        assert genre.name == "Action"
+        assert result is not None
         mock_repositories["genre_repo"].create.assert_called_once()
 
-    @pytest.mark.asyncio
-    async def test_create_genre_duplicate(self, content_service, mock_repositories):
-        """Test creating duplicate genre."""
-        mock_genre = MagicMock()
-        mock_repositories["genre_repo"].get_by_name.return_value = mock_genre
-
-        with pytest.raises(ValueError, match="already exists"):
-            await content_service.create_genre("Action")
-
-    @pytest.mark.asyncio
-    async def test_list_genres(self, content_service, mock_repositories, genre_id):
+    async def test_list_genres(self, content_service, mock_repositories):
         """Test listing genres."""
-        mock_genre1 = MagicMock()
-        mock_genre2 = MagicMock()
-        mock_repositories["genre_repo"].list_all.return_value = [mock_genre1, mock_genre2]
+        mock_repositories["genre_repo"].get_all.return_value = [MagicMock(), MagicMock()]
 
-        genres = await content_service.list_genres()
+        result = await content_service.list_genres()
 
-        assert len(genres) == 2
+        assert len(result) == 2
+        mock_repositories["genre_repo"].get_all.assert_called_once()
 
+    async def test_get_genre(self, content_service, mock_repositories):
+        """Test getting a genre."""
+        genre_id = uuid4()
+        mock_repositories["genre_repo"].get_by_id.return_value = MagicMock()
 
-class TestMovieManagement:
-    """Test movie management."""
+        result = await content_service.get_genre(genre_id)
 
-    @pytest.mark.asyncio
-    async def test_create_movie(self, content_service, mock_repositories):
-        """Test creating movie."""
-        mock_repositories["movie_repo"].get_by_media_key.return_value = None
-        mock_movie = MagicMock()
-        mock_movie.title = "Test Movie"
-        mock_repositories["movie_repo"].create.return_value = mock_movie
-
-        movie_data = {
-            "title": "Test Movie",
-            "description": "A test movie",
-            "poster_url": "http://example.com/poster.jpg",
-            "release_date": datetime.now(UTC),
-            "duration_seconds": 7200,
-            "genre_ids": [uuid4()],
-            "director": "Test Director",
-            "language": "en",
-            "media_key": "test_movie_123",
-        }
-
-        movie = await content_service.create_movie(movie_data)
-
-        assert movie.title == "Test Movie"
-
-    @pytest.mark.asyncio
-    async def test_get_movie(self, content_service, movie_id, mock_repositories):
-        """Test getting movie."""
-        mock_movie = MagicMock()
-        mock_movie.id = movie_id
-        mock_repositories["movie_repo"].get_by_id.return_value = mock_movie
-
-        movie = await content_service.get_movie(movie_id)
-
-        assert movie.id == movie_id
-
-    @pytest.mark.asyncio
-    async def test_search_movies(self, content_service, mock_repositories):
-        """Test searching movies."""
-        mock_movie = MagicMock()
-        mock_repositories["movie_repo"].search.return_value = ([mock_movie], 1)
-
-        movies, total = await content_service.search_movies("action", 20, 0)
-
-        assert len(movies) == 1
-        assert total == 1
-
-    @pytest.mark.asyncio
-    async def test_search_movies_too_short(self, content_service):
-        """Test search query too short."""
-        with pytest.raises(ValueError, match="at least 2 characters"):
-            await content_service.search_movies("a", 20, 0)
-
-    @pytest.mark.asyncio
-    async def test_list_trending_movies(self, content_service, mock_repositories):
-        """Test listing trending movies."""
-        mock_movie = MagicMock()
-        mock_repositories["movie_repo"].list_trending.return_value = ([mock_movie], 1)
-
-        movies, _total = await content_service.list_trending_movies(20, 0)
-
-        assert len(movies) == 1
-
-    @pytest.mark.asyncio
-    async def test_update_movie(self, content_service, movie_id, mock_repositories):
-        """Test updating movie."""
-        mock_movie = MagicMock()
-        mock_movie.id = movie_id
-        mock_repositories["movie_repo"].get_by_id.return_value = mock_movie
-        mock_repositories["movie_repo"].update.return_value = mock_movie
-
-        updated = await content_service.update_movie(movie_id, {"rating": 8.5})
-
-        assert updated.id == movie_id
+        assert result is not None
+        mock_repositories["genre_repo"].get_by_id.assert_called_once_with(genre_id)
 
 
-class TestShowManagement:
-    """Test show management."""
+class TestContentManagement:
+    """Test content operations."""
 
-    @pytest.mark.asyncio
-    async def test_create_show(self, content_service, mock_repositories):
-        """Test creating show."""
-        mock_repositories["show_repo"].get_by_media_key.return_value = None
-        mock_show = MagicMock()
-        mock_show.title = "Test Show"
-        mock_repositories["show_repo"].create.return_value = mock_show
+    async def test_create_content(self, content_service, mock_repositories):
+        """Test creating content."""
+        from app.schemas import ContentCreateRequest
 
-        show_data = {
-            "title": "Test Show",
-            "description": "A test show",
-            "poster_url": "http://example.com/poster.jpg",
-            "first_air_date": datetime.now(UTC),
-            "episode_runtime_seconds": 3600,
-            "genre_ids": [uuid4()],
-            "language": "en",
-            "media_key": "test_show_123",
-        }
+        mock_content = MagicMock()
+        mock_content.id = uuid4()
+        mock_repositories["content_repo"].create.return_value = mock_content
 
-        show = await content_service.create_show(show_data)
+        request = ContentCreateRequest(
+            title="Test Movie", content_type="movie", description="desc", slug="test-movie"
+        )
+        result = await content_service.create_content(request)
 
-        assert show.title == "Test Show"
+        assert result is not None
+        mock_repositories["content_repo"].create.assert_called_once()
 
-    @pytest.mark.asyncio
-    async def test_get_show(self, content_service, show_id, mock_repositories):
-        """Test getting show."""
-        mock_show = MagicMock()
-        mock_show.id = show_id
-        mock_repositories["show_repo"].get_by_id.return_value = mock_show
+    async def test_get_content(self, content_service, mock_repositories):
+        """Test getting content."""
+        content_id = uuid4()
+        mock_repositories["content_repo"].get_by_id.return_value = MagicMock()
 
-        show = await content_service.get_show(show_id)
+        result = await content_service.get_content(content_id)
 
-        assert show.id == show_id
+        assert result is not None
+        mock_repositories["content_repo"].get_by_id.assert_called_once_with(content_id)
 
-    @pytest.mark.asyncio
-    async def test_list_ongoing_shows(self, content_service, mock_repositories):
-        """Test listing ongoing shows."""
-        mock_show = MagicMock()
-        mock_repositories["show_repo"].list_ongoing.return_value = ([mock_show], 1)
+    async def test_get_content_not_found(self, content_service, mock_repositories):
+        """Test getting missing content returns None."""
+        content_id = uuid4()
+        mock_repositories["content_repo"].get_by_id.return_value = None
 
-        shows, _total = await content_service.list_ongoing_shows(20, 0)
+        result = await content_service.get_content(content_id)
 
-        assert len(shows) == 1
+        assert result is None
 
-    @pytest.mark.asyncio
-    async def test_search_shows(self, content_service, mock_repositories):
-        """Test searching shows."""
-        mock_show = MagicMock()
-        mock_repositories["show_repo"].search.return_value = ([mock_show], 1)
+    async def test_search_content(self, content_service, mock_repositories):
+        """Test searching content."""
+        mock_repositories["content_repo"].search.return_value = [MagicMock(), MagicMock()]
 
-        shows, total = await content_service.search_shows("drama", 20, 0)
+        result = await content_service.search_content("matrix")
 
-        assert len(shows) == 1
-        assert total == 1
+        assert len(result) == 2
+        mock_repositories["content_repo"].search.assert_called_once_with("matrix")
+
+    async def test_update_content(self, content_service, mock_repositories):
+        """Test updating content."""
+        from app.schemas import ContentUpdateRequest
+
+        content_id = uuid4()
+        mock_content = MagicMock()
+        mock_repositories["content_repo"].update.return_value = mock_content
+
+        request = ContentUpdateRequest(title="Updated")
+        result = await content_service.update_content(content_id, request)
+
+        assert result is not None
+        mock_repositories["content_repo"].update.assert_called_once()
 
 
 class TestSeasonManagement:
-    """Test season management."""
+    """Test season operations."""
 
-    @pytest.mark.asyncio
-    async def test_create_season(self, content_service, show_id, mock_repositories):
-        """Test creating season."""
-        mock_show = MagicMock()
-        mock_show.id = show_id
-        mock_repositories["show_repo"].get_by_id.return_value = mock_show
+    async def test_create_season(self, content_service, mock_repositories):
+        """Test creating a season."""
+        from app.schemas import SeasonCreateRequest
 
-        mock_season = MagicMock()
-        mock_season.id = uuid4()
-        mock_repositories["season_repo"].create.return_value = mock_season
+        content_id = uuid4()
+        mock_repositories["season_repo"].create.return_value = MagicMock()
 
-        season = await content_service.create_season(show_id, 1, {})
+        request = SeasonCreateRequest(season_number=1, title="Season 1")
+        result = await content_service.create_season(content_id, request)
 
-        assert season.id is not None
-
-    @pytest.mark.asyncio
-    async def test_list_seasons(self, content_service, show_id, mock_repositories):
-        """Test listing seasons."""
-        mock_show = MagicMock()
-        mock_show.id = show_id
-        mock_repositories["show_repo"].get_by_id.return_value = mock_show
-
-        mock_season = MagicMock()
-        mock_repositories["season_repo"].list_by_show.return_value = [mock_season]
-
-        seasons = await content_service.list_seasons(show_id)
-
-        assert len(seasons) == 1
+        assert result is not None
+        mock_repositories["season_repo"].create.assert_called_once()
 
 
 class TestEpisodeManagement:
-    """Test episode management."""
+    """Test episode operations."""
 
-    @pytest.mark.asyncio
-    async def test_create_episode(self, content_service, show_id, season_id, mock_repositories):
-        """Test creating episode."""
-        mock_show = MagicMock()
-        mock_show.id = show_id
-        mock_repositories["show_repo"].get_by_id.return_value = mock_show
+    async def test_create_episode(self, content_service, mock_repositories):
+        """Test creating an episode."""
+        from app.schemas import EpisodeCreateRequest
 
-        mock_season = MagicMock()
-        mock_season.id = season_id
-        mock_repositories["season_repo"].get_by_id.return_value = mock_season
+        content_id = uuid4()
+        season_id = uuid4()
+        mock_repositories["episode_repo"].create.return_value = MagicMock()
 
-        mock_episode = MagicMock()
-        mock_episode.id = uuid4()
-        mock_repositories["episode_repo"].create.return_value = mock_episode
+        request = EpisodeCreateRequest(title="Pilot", episode_number=1, duration_minutes=45)
+        result = await content_service.create_episode(content_id, season_id, request)
 
-        episode = await content_service.create_episode(season_id, show_id, {})
+        assert result is not None
+        mock_repositories["episode_repo"].create.assert_called_once()
 
-        assert episode.id is not None
+    async def test_get_episode(self, content_service, mock_repositories):
+        """Test getting an episode."""
+        episode_id = uuid4()
+        mock_repositories["episode_repo"].get_by_id.return_value = MagicMock()
 
-    @pytest.mark.asyncio
-    async def test_list_episodes_by_season(self, content_service, season_id, mock_repositories):
-        """Test listing episodes by season."""
-        mock_season = MagicMock()
-        mock_season.id = season_id
-        mock_repositories["season_repo"].get_by_id.return_value = mock_season
+        result = await content_service.get_episode(episode_id)
 
-        mock_episode = MagicMock()
-        mock_repositories["episode_repo"].list_by_season.return_value = [mock_episode]
-
-        episodes = await content_service.list_episodes_by_season(season_id)
-
-        assert len(episodes) == 1
-
-    @pytest.mark.asyncio
-    async def test_get_episode(self, content_service, episode_id, mock_repositories):
-        """Test getting episode."""
-        mock_episode = MagicMock()
-        mock_episode.id = episode_id
-        mock_repositories["episode_repo"].get_by_id.return_value = mock_episode
-
-        episode = await content_service.get_episode(episode_id)
-
-        assert episode.id == episode_id
+        assert result is not None
+        mock_repositories["episode_repo"].get_by_id.assert_called_once_with(episode_id)
