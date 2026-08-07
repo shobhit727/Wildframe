@@ -67,7 +67,7 @@ prometheus-client = ">=0.18,<0.27"
 python-json-logger = "^2.0.0"
 
 # Utils
-httpx = "^0.25.0"
+httpx = ">=0.25,<0.29"
 requests = "^2.31.0"
 python-dotenv = "^1.0.0"
 email-validator = "^2.1.0"
