@@ -5,6 +5,7 @@ build-backend = "poetry.core.masonry.api"
 [project]
 name = "wildframe-admin-service"
 version = "1.0.0"
+requires-python = ">=3.11,<3.16"
 description = "Administration and moderation service"
 
 [tool.poetry]

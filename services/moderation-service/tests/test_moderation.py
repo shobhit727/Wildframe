@@ -10,7 +10,6 @@ from datetime import UTC
 from uuid import UUID, uuid4
 
 import pytest
-
 from app.core.events import InMemoryEventPublisher, set_event_publisher
 from app.models import (
     ContentFlag,

@@ -1,6 +1,7 @@
 [tool.poetry]
 name = "streaming-service"
 version = "1.0.0"
+requires-python = ">=3.11,<3.16"
 description = "Video streaming service with playback session management and manifest generation"
 authors = ["Your Name <you@example.com>"]
 

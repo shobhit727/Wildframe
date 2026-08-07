@@ -19,8 +19,6 @@ import pytest_asyncio
 # Use in-memory SQLite for tests BEFORE importing app code that reads settings.
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
 from app.models import Base, KYCStatus, MilestoneStatus, TrancheStatus
 from app.repositories import (
     CreatorAccountRepository,
@@ -30,6 +28,7 @@ from app.repositories import (
     PayoutLedgerRepository,
 )
 from app.services import CreatorService
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
 @pytest_asyncio.fixture
@@ -73,9 +72,8 @@ async def test_accrual_is_idempotent(session):
     (PRODUCT_VISION §4). The idempotency_key is unique; a second call must
     return the existing row, not insert a new one.
     """
-    from sqlalchemy import select
-
     from app.models import PayoutLedger
+    from sqlalchemy import select
 
     user_id = uuid4()
     acct = await CreatorAccountRepository(session).create(user_id=user_id, display_name="Ida")
@@ -166,9 +164,8 @@ async def test_kill_rolls_back_only_unreleased_tranches(session):
     assert killed.status == MilestoneStatus.KILLED
 
     # Inspect tranches.
-    from sqlalchemy import select
-
     from app.models import MilestoneTranche
+    from sqlalchemy import select
 
     stmt = select(MilestoneTranche).where(MilestoneTranche.milestone_id == ms.id)
     result = await session.execute(stmt)
