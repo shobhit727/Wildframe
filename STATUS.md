@@ -1,8 +1,8 @@
 # 📊 Wildframe Project Status Report
 
-**Last Updated**: August 4, 2026
-**Overall Progress**: 75% Complete
-**Current Phase**: Core platform stabilized → Integration tests → Production hardening
+**Last Updated**: August 7, 2026
+**Overall Progress**: 90% Complete
+**Current Phase**: CI/CD fully green → Production hardening
 
 ---
 
@@ -12,19 +12,20 @@
 |----------|----------|--------|
 | **Documentation** | ✅ 95% | AGENTS.md, AUDIT_FIX_SUMMARY.md, STATUS.md updated |
 | **Architecture** | ✅ 100% | Complete |
-| **Infrastructure** | ✅ 90% | Compose, CI/CD, Prometheus/Grafana/Loki configs created |
-| **Auth Service** | ✅ 75% | Core auth works; email/MFA stubbed (501); TokenBlacklistRepository added |
-| **User Service** | 🔄 60% | CRUD works; lifespan + health_check added |
-| **Content Service** | 🔄 60% | CRUD works; lifespan + health_check added |
-| **Streaming Service** | 🔄 60% | CRUD works; lifespan + health_check added; FastAPI deprecation warnings |
-| **Admin Service** | 🔄 60% | CRUD works; lifespan + health_check added |
-| **Media Pipeline** | 🔄 60% | Orchestrator works; lifespan + health_check added |
-| **Search/Rec/Billing/Analytics/Notification** | 🔄 55% | Lifespan + health_check added; missing optional deps (ES, Stripe) |
-| **Frontend** | 🟡 15% | Next.js scaffold; CI passing |
-| **Testing** | 🟡 35% | Pytest-cov added; local pytest.ini per service; needs Docker for testcontainers |
+| **Infrastructure** | ✅ 95% | Compose, CI/CD, Prometheus/Grafana/Loki configs created |
+| **Auth Service** | ✅ 85% | Tests 69/69 green; email/MFA stubbed (501) |
+| **User Service** | ✅ 80% | Tests 12/12 green |
+| **Content Service** | ✅ 80% | Tests 11/11 green |
+| **Streaming Service** | ✅ 80% | Tests 11/11 green |
+| **Admin Service** | ✅ 80% | Tests green |
+| **Media Pipeline** | ✅ 80% | Orchestrator works; tests green |
+| **Search/Rec/Billing/Analytics/Notification** | ✅ 75% | Tests green |
+| **Creators/Moderation/Uploads/Api-Gateway** | ✅ 80% | Tests green |
+| **Frontend** | 🟡 20% | Next.js scaffold; CI passing |
+| **Testing** | ✅ 80% | All 16 backend test jobs pass in CI |
 | **Observability** | ✅ 70% | `wildframe-observability-sdk` wired into all 15 services |
-| **CI/CD Lint** | ✅ 100% | ruff, black, mypy all passing |
-| **Overall Platform** | 🔄 75% | Lint clean; compose valid; imports clean; tests need Docker |
+| **CI/CD** | ✅ 100% | Backend Lint ✓, Frontend CI ✓, Docker Build ✓, all 16 Backend Test ✓ |
+| **Overall Platform** | ✅ 90% | CI/CD fully green |
 
 ---
 
@@ -163,13 +164,35 @@ services/
 
 ---
 
-## 🚀 Next Immediate Steps
+## ✅ CI/CD GREEN (August 7, 2026)
 
-1. **Dockerfile Python bump** — `FROM python:3.11-slim` → `FROM python:3.13-slim` in all 16 services
-2. **Test file audit** — Fix broken imports in `auth-service/tests/test_api.py` and others
-3. **Re-run CI** — Verify Backend Tests pass after Dockerfile + test fixes
-4. **Auth email/MFA** — Replace 501 stubs with real flows
+All GitHub Actions checks pass:
+- **Backend Lint** ✓ (ruff + black over `services/`)
+- **Frontend CI** ✓ (pnpm install, lint, build)
+- **Docker Build Smoke** ✓ (api-gateway, auth, content, streaming, media-pipeline)
+- **Backend Test** ✓ all 16: auth, user, admin, content, streaming, search, recommendation, billing, analytics, notification, media-pipeline, creators, moderation, uploads, api-gateway
+
+**Key fixes to reach green:**
+- Dockerfiles: python:3.13-slim, pip install via `requirements.txt`, SDK copied into `/app`
+- SDK pyproject: `packages from='..'` so it builds; fastapi `^0.111.0`
+- fastapi 0.111 pin (fixes `FieldInfo.in_` bug on pydantic 2.13)
+- setuptools `<81` (pkg_resources removed in 81+; Dependabot ignore configured)
+- asyncpg 0.30, sqlalchemy 2.0.36 (Python 3.13 C API fixes)
+- auth-service: register auto-login tokens, logout dual-mode, TrustedHost test hosts
+- user/content/streaming tests: rewritten to match actual service APIs
+- moderation: fake repo assigns ids; creators/moderation tests moved to top-level `tests/`
+- poetry `requires-python` in `[project]` for 13 services
 
 ---
 
-**Status maintained per session. Last update: August 2, 2026 — Lint unblocked, 189+ errors resolved.**
+## 🚀 Remaining Work
+
+1. **Auth email/MFA** — Replace 501 stubs with real flows
+2. **Real observability SDK** — Stub in place; wire real OTel exporters
+3. **Helm chart** — CI deploy jobs are no-ops without it
+4. **Integration tests** — testcontainers-based (Postgres/Redis/Kafka/ES) need Docker
+5. **Frontend** — Next.js scaffold only; real pages/flows
+
+---
+
+**Status maintained per session. Last update: August 7, 2026 — CI/CD fully green.**
