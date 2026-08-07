@@ -23,12 +23,12 @@ def event_loop():
     loop.close()
 
 
-@pytest.fixture(scope="session")
-async def test_engine():
-    """Create test database engine."""
-    # Use in-memory SQLite for testing
+@pytest.fixture
+async def test_engine(tmp_path):
+    """Create a fresh per-test database engine using a temp-file SQLite DB."""
+    db_path = tmp_path / "test.db"
     engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
+        f"sqlite+aiosqlite:///{db_path}",
         echo=False,
         connect_args={"timeout": 15},
     )
@@ -42,7 +42,7 @@ async def test_engine():
     await engine.dispose()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 async def test_session_factory(test_engine):
     """Create test session factory."""
     return async_sessionmaker(
