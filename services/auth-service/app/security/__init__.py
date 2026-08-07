@@ -85,6 +85,7 @@ class TokenManager:
         expires_at = now + timedelta(minutes=settings.JWT_EXPIRATION_MINUTES)
 
         payload = {
+            "sub": str(user_id),
             "user_id": str(user_id),
             "email": email,
             "role": role_for_email(email),
@@ -115,6 +116,7 @@ class TokenManager:
         expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRATION_DAYS)
 
         payload = {
+            "sub": str(user_id),
             "user_id": str(user_id),
             "type": "refresh",
             "iat": now,
