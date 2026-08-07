@@ -33,14 +33,20 @@ class DatabaseManager:
             # Use NullPool for development, QueuePool for production
             pool_class = NullPool if settings.ENVIRONMENT == "development" else QueuePool
 
+            pool_kwargs: dict = {}
+            if settings.ENVIRONMENT != "development":
+                pool_kwargs = {
+                    "pool_size": settings.DB_POOL_SIZE,
+                    "max_overflow": settings.DB_MAX_OVERFLOW,
+                }
+
             self._engine = create_async_engine(
                 settings.DATABASE_URL,
                 echo=settings.DEBUG,
                 future=True,
                 pool_pre_ping=True,
                 poolclass=pool_class,
-                pool_size=settings.DB_POOL_SIZE,
-                max_overflow=settings.DB_MAX_OVERFLOW,
+                **pool_kwargs,
             )
         return self._engine
 

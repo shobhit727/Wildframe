@@ -9,7 +9,7 @@ services:
     - 5432:5432
     volumes:
     - postgres_data:/var/lib/postgresql/data
-    - /home/phoenix/Desktop/wildframe/infrastructure/database/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql
+    - ../infrastructure/database/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
       test:
       - CMD-SHELL
@@ -114,7 +114,7 @@ services:
     ports:
     - 9090:9090
     volumes:
-    - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    - ../infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     - prometheus_data:/prometheus
     command:
     - --config.file=/etc/prometheus/prometheus.yml
@@ -131,7 +131,7 @@ services:
       GF_SECURITY_ADMIN_USER: admin
       GF_INSTALL_PLUGINS: grafana-piechart-panel
     volumes:
-    - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+    - ../infrastructure/grafana/provisioning:/etc/grafana/provisioning
     - grafana_data:/var/lib/grafana
     depends_on:
     - prometheus
@@ -142,7 +142,7 @@ services:
     ports:
     - 3100:3100
     volumes:
-    - ./infrastructure/loki/loki-config.yml:/etc/loki/local-config.yaml
+    - ../infrastructure/loki/loki-config.yml:/etc/loki/local-config.yaml
     - loki_data:/loki
     command:
     - -config.file=/etc/loki/local-config.yaml
@@ -188,8 +188,9 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-    - ./services/auth-service:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/auth-service:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -217,8 +218,9 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-    - ./services/user-service:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/user-service:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -246,8 +248,9 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-    - ./services/admin-service:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/admin-service:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -275,8 +278,9 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-    - ./services/content-service:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/content-service:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -303,8 +307,9 @@ services:
     - content-service
     - redis
     volumes:
-    - ./services/api-gateway:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/api-gateway:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -327,8 +332,9 @@ services:
       redis:
         condition: service_healthy
     volumes:
-    - ./services/streaming-service:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/streaming-service:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -342,6 +348,7 @@ services:
     environment:
       ELASTICSEARCH_URL: http://elasticsearch:9200
       REDIS_URL: redis://redis:6379/5
+      DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/search_db
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
     depends_on:
@@ -350,8 +357,9 @@ services:
       redis:
         condition: service_healthy
     volumes:
-    - ./services/search-service:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/search-service:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -374,8 +382,9 @@ services:
       redis:
         condition: service_healthy
     volumes:
-    - ./services/recommendation-service:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/recommendation-service:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -398,8 +407,9 @@ services:
       redis:
         condition: service_healthy
     volumes:
-    - ./services/billing-service:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/billing-service:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -422,8 +432,9 @@ services:
       redis:
         condition: service_healthy
     volumes:
-    - ./services/analytics-service:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/analytics-service:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -446,8 +457,9 @@ services:
       redis:
         condition: service_healthy
     volumes:
-    - ./services/notification-service:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/notification-service:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -472,8 +484,9 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-    - ./services/creators-service:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/creators-service:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -498,8 +511,9 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-    - ./services/moderation-service:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/moderation-service:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -524,8 +538,9 @@ services:
       kafka:
         condition: service_healthy
     volumes:
-    - ./services/uploads-service:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/uploads-service:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -548,8 +563,9 @@ services:
       redis:
         condition: service_healthy
     volumes:
-    - ./services/media-pipeline:/app
-    - ./packages/sdk:/app/packages/sdk
+    - ../services/media-pipeline:/app
+    - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network

@@ -14,6 +14,7 @@ from wildframe_observability.wire import wire_observability
 from app.api.routes import router as api_router
 from app.core.database import db_manager
 from app.core.settings import settings
+from app.schemas import HealthCheckResponse
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,22 @@ def create_app() -> FastAPI:
 
     # Include API routes with /api/v1 prefix
     app.include_router(api_router)
+
+    # Health check endpoint
+    @app.get("/health", tags=["Health"], response_model=HealthCheckResponse)
+    async def health_check() -> HealthCheckResponse:
+        """Health check endpoint.
+
+        Returns:
+            HealthCheckResponse: Service health status
+        """
+        db_health = await db_manager.health_check()
+        return HealthCheckResponse(
+            status="healthy" if db_health else "unhealthy",
+            version=settings.SERVICE_VERSION,
+            database="healthy" if db_health else "unhealthy",
+            redis="healthy",
+        )
 
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics)
     wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
