@@ -17,7 +17,7 @@ packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.16"
-fastapi = "^0.104.0"
+fastapi = "^0.111.0"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}
 pydantic = "^2.4.0"
 pydantic-settings = "^2.0.0"
