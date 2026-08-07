@@ -28,7 +28,7 @@ redis = "^5.0.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 pyjwt = "^2.8.0"
 bcrypt = "^4.1.0"
-python-multipart = "^0.0.6"
+python-multipart = ">=0.0.6,<0.0.32"
 aiokafka = "^0.10.0"
 python-json-logger = "^2.0.0"
 httpx = "^0.25.0"
@@ -39,7 +39,7 @@ opentelemetry-exporter-jaeger = "^1.20.0"
 opentelemetry-instrumentation-fastapi = "^0.41b0"
 opentelemetry-instrumentation-sqlalchemy = "^0.41b0"
 prometheus-client = "^0.18.0"
-setuptools = "^69.0.0"
+setuptools = ">=69,<84"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
