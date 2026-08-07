@@ -4,7 +4,7 @@ Implements User and RefreshToken entities with audit columns.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
@@ -33,13 +33,13 @@ class BaseModel:
     )
     created_at = Column(
         DateTime,
-        default=lambda: datetime.now(UTC),
+        default=datetime.utcnow,
         nullable=False,
     )
     updated_at = Column(
         DateTime,
-        default=lambda: datetime.now(UTC),
-        onupdate=lambda: datetime.now(UTC),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
         nullable=False,
     )
     is_active = Column(Boolean, default=True, nullable=False)

@@ -177,10 +177,6 @@ class Content(Base):
 
     __table_args__ = (
         Index("ix_content_type_status", "content_type", "status"),
-        Index("ix_content_release_date", "release_date"),
-        Index("ix_content_animation_style", "animation_style"),
-        Index("ix_content_creator_id", "creator_id"),
-        Index("ix_content_series_id", "series_id"),
         Index("ix_content_maturity_rating", "maturity_rating"),
     )
 
@@ -373,8 +369,6 @@ class ContentCreator(Base):
 
     __table_args__ = (
         UniqueConstraint("content_id", "creator_id", "role", name="_content_creator_uc"),
-        Index("ix_content_creator_creator_id", "creator_id"),
-        Index("ix_content_creator_content_id", "content_id"),
     )
 
 
@@ -411,7 +405,5 @@ class ContentSeries(Base):
     episodes = relationship("Content", back_populates="series", foreign_keys="Content.series_id")
 
     __table_args__ = (
-        Index("ix_content_series_animation_style", "animation_style"),
         Index("ix_content_series_status", "status"),
-        Index("ix_content_series_creator_id", "creator_id"),
     )

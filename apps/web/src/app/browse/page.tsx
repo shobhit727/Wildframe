@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@/api/client';
+import { apiClient, normalizeContent } from '@/api/client';
 import { HomeShell } from '@/components/layout/HomeShell';
 import { HeroBanner } from '@/components/browse/HeroBanner';
 import { Row } from '@/components/browse/Row';
@@ -18,13 +18,13 @@ export default function BrowsePage() {
 
   const { data: moviesData, isLoading: moviesLoading } = useQuery({
     queryKey: ['movies'],
-    queryFn: () => apiClient.getMovies(30),
+    queryFn: () => apiClient.getContentList({ content_type: 'movie', page_size: 30 }),
     enabled: isAuthenticated,
   });
 
   const { data: showsData, isLoading: showsLoading } = useQuery({
     queryKey: ['shows'],
-    queryFn: () => apiClient.getShows(30),
+    queryFn: () => apiClient.getContentList({ content_type: 'series', page_size: 30 }),
     enabled: isAuthenticated,
   });
 
@@ -36,7 +36,7 @@ export default function BrowsePage() {
 
   const { data: recommendedData, isLoading: recommendedLoading } = useQuery({
     queryKey: ['recommendations', user?.id],
-    queryFn: () => user ? apiClient.getRecommendations(user.id, 20) : Promise.reject(new Error('No user')),
+    queryFn: () => (user ? apiClient.getRecommendations(user.id, 20) : Promise.resolve([])),
     enabled: isAuthenticated && !!user,
   });
 
@@ -46,20 +46,24 @@ export default function BrowsePage() {
     enabled: isAuthenticated && searchQuery.length >= 2,
   });
 
-  const movies: Content[] = moviesData?.data?.movies || [];
-  const shows: Content[] = showsData?.data?.shows || [];
-  const trending: Content[] = trendingData?.data || [];
-  const recommended: Content[] = recommendedData?.data || [];
-  const searchResults: Content[] = searchData?.data?.results || [];
+  const movies: Content[] = useMemo(
+    () => (moviesData || []).map(normalizeContent),
+    [moviesData]
+  );
+  const shows: Content[] = useMemo(() => (showsData || []).map(normalizeContent), [showsData]);
+  const trending: Content[] = useMemo(() => (trendingData || []).map(normalizeContent), [trendingData]);
+  const recommended: Content[] = useMemo(() => (recommendedData || []).map(normalizeContent), [recommendedData]);
+  const searchResults: Content[] = useMemo(() => (searchData || []).map(normalizeContent), [searchData]);
 
-  // Group movies by genre for genre rows
-  const genreRows: Record<string, Content[]> = {};
-  const allContent = [...movies, ...shows];
-  for (const item of allContent) {
-    const genre = item.genre || 'Other';
-    if (!genreRows[genre]) genreRows[genre] = [];
-    genreRows[genre].push(item);
-  }
+  const genreRows: Record<string, Content[]> = useMemo(() => {
+    const rows: Record<string, Content[]> = {};
+    for (const item of [...movies, ...shows]) {
+      const genre = item.genre || 'Other';
+      if (!rows[genre]) rows[genre] = [];
+      rows[genre].push(item);
+    }
+    return rows;
+  }, [movies, shows]);
 
   const isSearchActive = searchQuery.length >= 2;
 

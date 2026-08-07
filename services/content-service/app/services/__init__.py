@@ -4,7 +4,6 @@ Orchestrates repositories and business rules.
 """
 
 import logging
-from datetime import UTC
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -79,6 +78,18 @@ class ContentService:
         """List all genres."""
         return await self.genre_repo.get_all()
 
+    async def update_genre(self, genre_id: UUID, request: GenreCreateRequest):
+        """Update a genre."""
+        try:
+            update_data = request.model_dump(exclude_unset=True)
+            genre = await self.genre_repo.update(genre_id, **update_data)
+            await self.content_repo.commit()
+            return genre
+        except Exception as e:
+            await self.content_repo.rollback()
+            logger.error(f"Failed to update genre: {e}")
+            raise
+
     async def delete_genre(self, genre_id: UUID):
         """Delete genre."""
         try:
@@ -122,6 +133,13 @@ class ContentService:
     async def create_content(self, request: ContentCreateRequest):
         """Create new content."""
         try:
+            genres: list = []
+            if request.genre_ids:
+                for genre_id in request.genre_ids:
+                    genre = await self.genre_repo.get_by_id(genre_id)
+                    if genre:
+                        genres.append(genre)
+
             content = await self.content_repo.create(
                 title=request.title,
                 slug=request.slug,
@@ -139,16 +157,11 @@ class ContentService:
                 is_premium=request.is_premium,
                 can_download=request.can_download,
                 can_stream=request.can_stream,
+                genres=genres,
             )
 
-            # Add genres if provided
-            if request.genre_ids:
-                for genre_id in request.genre_ids:
-                    genre = await self.genre_repo.get_by_id(genre_id)
-                    if genre:
-                        content.genres.append(genre)
-
             await self.content_repo.commit()
+            content = await self.content_repo.get_by_id(content.id)
             return content
         except Exception as e:
             await self.content_repo.rollback()
@@ -158,6 +171,17 @@ class ContentService:
     async def get_content(self, content_id: UUID):
         """Get content by ID."""
         return await self.content_repo.get_by_id(content_id)
+
+    async def list_content(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        content_type: str | None = None,
+        status: str | None = None,
+        genre_id: UUID | None = None,
+    ):
+        """List content with pagination and filters."""
+        return await self.content_repo.list_filtered(page, page_size, content_type, status, genre_id)
 
     async def get_content_by_slug(self, slug: str):
         """Get content by slug."""
@@ -211,7 +235,7 @@ class ContentService:
 
             update_data = {"status": ContentStatus(request.status)}
             if request.status == "published":
-                update_data["published_at"] = datetime.now(UTC)
+                update_data["published_at"] = datetime.utcnow()
 
             content = await self.content_repo.update(content_id, **update_data)
             await self.content_repo.commit()
@@ -246,7 +270,7 @@ class ContentService:
                 release_date=request.release_date,
             )
             await self.content_repo.commit()
-            return season
+            return await self.season_repo.get_by_id(season.id)
         except Exception as e:
             await self.content_repo.rollback()
             logger.error(f"Failed to create season: {e}")
@@ -259,6 +283,24 @@ class ContentService:
     async def list_content_seasons(self, content_id: UUID):
         """List all seasons for content."""
         return await self.season_repo.get_content_seasons(content_id)
+
+    async def list_seasons(self, content_id: UUID):
+        """List all seasons for content."""
+        return await self.season_repo.get_content_seasons(content_id)
+
+    async def delete_season(self, content_id: UUID, season_id: UUID):
+        """Delete a season."""
+        try:
+            season = await self.season_repo.get_by_id(season_id)
+            if not season or season.content_id != content_id:
+                return False
+            success = await self.season_repo.delete(season_id)
+            await self.content_repo.commit()
+            return success
+        except Exception as e:
+            await self.content_repo.rollback()
+            logger.error(f"Failed to delete season: {e}")
+            raise
 
     async def update_season(self, season_id: UUID, request: SeasonUpdateRequest):
         """Update season."""
@@ -312,6 +354,32 @@ class ContentService:
         """List all episodes in season."""
         return await self.episode_repo.get_season_episodes(season_id)
 
+    async def list_episodes(self, content_id: UUID, season_id: UUID):
+        """List all episodes for a content's season."""
+        season = await self.season_repo.get_by_id(season_id)
+        if not season or season.content_id != content_id:
+            return []
+        return await self.episode_repo.get_season_episodes(season_id)
+
+    async def delete_episode(self, content_id: UUID, season_id: UUID, episode_id: UUID):
+        """Delete an episode."""
+        try:
+            season = await self.season_repo.get_by_id(season_id)
+            if not season or season.content_id != content_id:
+                return False
+            episode = await self.episode_repo.get_by_id(episode_id)
+            if not episode or episode.season_id != season_id:
+                return False
+            success = await self.episode_repo.delete(episode_id)
+            if season:
+                season.episode_count = len(await self.episode_repo.get_season_episodes(season_id))
+            await self.content_repo.commit()
+            return success
+        except Exception as e:
+            await self.content_repo.rollback()
+            logger.error(f"Failed to delete episode: {e}")
+            raise
+
     async def update_episode(self, episode_id: UUID, request: EpisodeUpdateRequest):
         """Update episode."""
         try:
@@ -355,6 +423,10 @@ class ContentService:
         """Get all ratings for content."""
         return await self.rating_repo.get_content_ratings(content_id)
 
+    async def list_ratings(self, content_id: UUID):
+        """List all ratings for content."""
+        return await self.rating_repo.get_content_ratings(content_id)
+
     # Recommendation operations
 
     async def add_recommendation(
@@ -389,6 +461,42 @@ class ContentService:
             await self.content_repo.rollback()
             logger.error(f"Failed to remove recommendation: {e}")
             raise
+
+    async def list_recommendations(self, content_id: UUID, limit: int = 10):
+        """List content recommendations."""
+        return await self.recommendation_repo.get_recommendations(content_id, limit)
+
+    async def add_cast_member(self, content_id: UUID, request: CastMemberCreateRequest):
+        """Add a cast member to content (creating the member if needed)."""
+        try:
+            content = await self.content_repo.get_by_id(content_id)
+            if not content:
+                return None
+
+            member = await self.cast_repo.get_by_slug(request.slug) if request.slug else None
+            if not member:
+                member = await self.cast_repo.create(
+                    name=request.name,
+                    slug=request.slug,
+                    bio=request.bio,
+                    birth_date=request.birth_date,
+                    image_url=request.image_url,
+                )
+
+            if member not in content.cast_members:
+                content.cast_members.append(member)
+
+            await self.content_repo.commit()
+            return member
+        except Exception as e:
+            await self.content_repo.rollback()
+            logger.error(f"Failed to add cast member: {e}")
+            raise
+
+    async def list_cast(self, content_id: UUID):
+        """List cast members for content."""
+        content = await self.content_repo.get_by_id(content_id)
+        return content.cast_members if content else []
 
     # Animation-specific queries
 

@@ -21,8 +21,8 @@ export function SignupForm() {
 
     try {
       await register(email, password, firstName, lastName);
-      toast.success('Account created! Please sign in.');
-      router.push('/login');
+      toast.success('Welcome to Wildframe!');
+      router.push('/browse');
     } catch {
       setErrors({ email: 'Failed to create account' });
       toast.error('Sign up failed');

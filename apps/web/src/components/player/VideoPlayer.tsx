@@ -6,10 +6,12 @@ import { apiClient } from '@/api/client';
 interface VideoPlayerProps {
   contentId: string;
   sessionId: string;
+  src?: string;
+  srcType?: 'hls' | 'dash' | 'mp4';
   onEnded?: () => void;
 }
 
-export function VideoPlayer({ contentId, sessionId, onEnded }: VideoPlayerProps) {
+export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnded }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<unknown>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -37,10 +39,16 @@ export function VideoPlayer({ contentId, sessionId, onEnded }: VideoPlayerProps)
   useEffect(() => {
     const initPlayer = async () => {
       try {
-        const response = await apiClient.getManifest(contentId, quality);
-        const { url, type } = response.data;
-
-        if (!videoRef.current) return;
+        let url = src;
+        let type = srcType;
+        if (!url) {
+          const response = await apiClient.getManifestForEpisode(contentId);
+          if (response?.manifest_url) {
+            url = response.manifest_url;
+            type = response.protocol === 'dash' ? 'dash' : 'hls';
+          }
+        }
+        if (!url || !videoRef.current) return;
 
         if (type === 'hls') {
           // Dynamic import to avoid SSR issues
@@ -79,7 +87,7 @@ export function VideoPlayer({ contentId, sessionId, onEnded }: VideoPlayerProps)
       }
       playerRef.current = null;
     };
-  }, [contentId, quality]);
+  }, [contentId, quality, src, srcType]);
 
   const handleTimeUpdate = () => {
     if (!videoRef.current) return;
@@ -88,14 +96,14 @@ export function VideoPlayer({ contentId, sessionId, onEnded }: VideoPlayerProps)
 
     // Save position every 30 seconds
     if (Math.floor(t) % 30 === 0 && Math.floor(t) > 0) {
-      apiClient.updateWatchPosition(sessionId, t).catch(() => {});
+      apiClient.updatePlaybackPosition(sessionId, t).catch(() => {});
     }
   };
 
   const handleEnded = async () => {
     setIsPlaying(false);
     try {
-      await apiClient.endSession(sessionId);
+      await apiClient.endPlaybackSession(sessionId);
     } catch {}
     onEnded?.();
   };

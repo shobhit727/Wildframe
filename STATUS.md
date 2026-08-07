@@ -116,6 +116,7 @@
 | AuthService signature | Tests pass `refresh_token_repo`, code expects `token_repo` | Low |
 | User/Content/Admin | Use deprecated `@app.on_event` instead of lifespan | Low |
 | GitHub advisories | 96 Dependabot alerts (5 critical, 41 high) | Medium |
+| **DRM / content protection** | No Widevine/FairPlay/PlayReady — plaintext HLS/DASH only; no license server, keys, or EME in frontend. See [docs/DRM_SCOPE.md](docs/DRM_SCOPE.md) for the scoped plan | Large |
 
 ---
 
@@ -195,6 +196,7 @@ All GitHub Actions checks pass except Deploy:
 4. **Integration tests** — testcontainers-based (Postgres/Redis/Kafka/ES) need Docker
 5. **Frontend** — Next.js scaffold only; real pages/flows
 6. **Deploy credentials** — Add `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` repo secrets + `wildframe-staging` / `wildframe-production` EKS clusters so CI/CD Deploy jobs can run
+7. **DRM (Widevine + FairPlay + PlayReady)** — Packaging w/ CENC encryption, key management (KMS), DRM license endpoints in streaming-service, and Shaka Player EME in the frontend. Blocked first on Google/Apple/Microsoft certificate + agreements (FPS grant, Widevine licence, PlayReady provisioning). Full scope: [docs/DRM_SCOPE.md](docs/DRM_SCOPE.md)
 
 ---
 

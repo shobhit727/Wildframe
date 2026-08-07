@@ -71,6 +71,19 @@ class GenreRepository(BaseRepository):
         result = await self.session.execute(select(Genre))
         return result.scalars().all()
 
+    async def update(self, genre_id: UUID, **kwargs) -> Genre | None:
+        """Update a genre."""
+        genre = await self.get_by_id(genre_id)
+        if not genre:
+            return None
+
+        for key, value in kwargs.items():
+            if hasattr(genre, key) and value is not None:
+                setattr(genre, key, value)
+
+        await self.flush()
+        return genre
+
     async def delete(self, genre_id: UUID) -> bool:
         """Delete a genre."""
         genre = await self.get_by_id(genre_id)
@@ -138,6 +151,7 @@ class ContentRepository(BaseRepository):
         is_premium: bool = False,
         can_download: bool = True,
         can_stream: bool = True,
+        genres: list[Genre] | None = None,
     ) -> Content:
         """Create a new content."""
         content = Content(
@@ -157,6 +171,7 @@ class ContentRepository(BaseRepository):
             is_premium=is_premium,
             can_download=can_download,
             can_stream=can_stream,
+            genres=genres or [],
         )
         self.session.add(content)
         await self.flush()
@@ -170,7 +185,7 @@ class ContentRepository(BaseRepository):
             .options(
                 selectinload(Content.genres),
                 selectinload(Content.cast_members),
-                selectinload(Content.seasons),
+                selectinload(Content.seasons).selectinload(Season.episodes),
                 selectinload(Content.episodes),
             )
         )
@@ -188,6 +203,37 @@ class ContentRepository(BaseRepository):
             .where(Content.status == ContentStatus.PUBLISHED)
             .options(selectinload(Content.genres), selectinload(Content.cast_members))
         )
+        return result.scalars().unique().all()
+
+    async def list_filtered(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        content_type: str | None = None,
+        status: str | None = None,
+        genre_id: UUID | None = None,
+    ) -> list[Content]:
+        """Get paginated content with optional type/status/genre filters."""
+        stmt = select(Content).options(selectinload(Content.genres))
+
+        conditions = []
+        if content_type:
+            conditions.append(Content.content_type == ContentType(content_type))
+        if status:
+            conditions.append(Content.status == ContentStatus(status))
+        if conditions:
+            stmt = stmt.where(and_(*conditions))
+
+        if genre_id:
+            stmt = stmt.join(Content.genres).where(Genre.id == genre_id)
+
+        stmt = (
+            stmt.order_by(Content.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+
+        result = await self.session.execute(stmt)
         return result.scalars().unique().all()
 
     async def get_by_type(self, content_type: ContentType) -> list[Content]:
@@ -385,6 +431,15 @@ class SeasonRepository(BaseRepository):
         await self.flush()
         return season
 
+    async def delete(self, season_id: UUID) -> bool:
+        """Delete a season."""
+        season = await self.get_by_id(season_id)
+        if season:
+            await self.session.delete(season)
+            await self.flush()
+            return True
+        return False
+
 
 class EpisodeRepository(BaseRepository):
     """Repository for episode operations."""
@@ -440,6 +495,15 @@ class EpisodeRepository(BaseRepository):
 
         await self.flush()
         return episode
+
+    async def delete(self, episode_id: UUID) -> bool:
+        """Delete an episode."""
+        episode = await self.get_by_id(episode_id)
+        if episode:
+            await self.session.delete(episode)
+            await self.flush()
+            return True
+        return False
 
 
 class ContentRatingRepository(BaseRepository):

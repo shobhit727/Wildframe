@@ -171,12 +171,12 @@ services:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/auth_db
       REDIS_URL: redis://redis:6379/0
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      JWT_SECRET_KEY: dev-secret-key-do-not-use-in-production
       JWT_ALGORITHM: HS256
       JWT_EXPIRATION_MINUTES: 15
       REFRESH_TOKEN_EXPIRATION_DAYS: 7
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
@@ -207,6 +207,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
@@ -237,6 +238,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
@@ -267,6 +269,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
@@ -298,6 +301,7 @@ services:
       REDIS_URL: redis://redis:6379/3
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
@@ -326,6 +330,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
     depends_on:
       postgres:
         condition: service_healthy
@@ -351,6 +356,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/search_db
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -376,6 +382,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
     depends_on:
       postgres:
         condition: service_healthy
@@ -401,6 +408,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
     depends_on:
       postgres:
         condition: service_healthy
@@ -426,6 +434,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
     depends_on:
       postgres:
         condition: service_healthy
@@ -451,6 +460,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
     depends_on:
       postgres:
         condition: service_healthy
@@ -476,6 +486,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
     depends_on:
       postgres:
         condition: service_healthy
@@ -503,6 +514,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
     depends_on:
       postgres:
         condition: service_healthy
@@ -530,6 +542,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
     depends_on:
       postgres:
         condition: service_healthy
@@ -557,6 +570,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
+      JWT_SECRET_KEY: dev-secret-key
     depends_on:
       postgres:
         condition: service_healthy

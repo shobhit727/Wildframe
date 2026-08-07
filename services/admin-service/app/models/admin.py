@@ -56,7 +56,7 @@ class ContentModeration(Base):
 
     __table_args__ = (
         Index("idx_content_id", "content_id"),
-        Index("idx_status", "status"),
+        Index("idx_content_status", "status"),
         Index("idx_flagged_at", "flagged_at"),
     )
 

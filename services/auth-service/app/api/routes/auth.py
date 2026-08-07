@@ -4,7 +4,7 @@ All endpoints implement proper error handling, logging, and validation.
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -292,7 +292,7 @@ async def logout(
 
         user_id = UUID(payload.get("user_id") or payload.get("sub"))
         token_hash = TokenManager.hash_token(token)
-        expires_at = datetime.fromtimestamp(payload["exp"], tz=UTC)
+        expires_at = datetime.utcfromtimestamp(payload["exp"])
         blacklist_repo = TokenBlacklistRepository(db)
         await blacklist_repo.create(token_hash=token_hash, user_id=user_id, expires_at=expires_at)
         await db.commit()
@@ -432,7 +432,7 @@ async def verify_email(
 
     if not user.email_verified:
         user.email_verified = True
-        user.email_verified_at = datetime.now(UTC)
+        user.email_verified_at = datetime.utcnow()
         await db.commit()
         logger.info(f"Email verified for user: {user.email}")
 

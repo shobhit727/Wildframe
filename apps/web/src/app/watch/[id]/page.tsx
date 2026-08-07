@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@/api/client';
+import { apiClient, normalizeContent, DEMO_HLS_URL } from '@/api/client';
 import { useIsAuthenticated, useUser } from '@/hooks';
 import { MediaCard } from '@/components/browse/MediaCard';
-import { Content, Content as ContentType } from '@/types';
+import { Content } from '@/types';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -17,6 +17,17 @@ const VideoPlayer = dynamic(
   { ssr: false }
 );
 
+const MY_LIST_KEY = 'wildframe_my_list';
+
+function isInMyList(contentId: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return (JSON.parse(localStorage.getItem(MY_LIST_KEY) || '[]') as string[]).includes(contentId);
+  } catch {
+    return false;
+  }
+}
+
 export default function WatchPage() {
   const params = useParams();
   const contentId = params.id as string;
@@ -24,19 +35,67 @@ export default function WatchPage() {
   const user = useUser();
   const router = useRouter();
   const [sessionId, setSessionId] = useState<string>('');
+  const [selectedEpisode, setSelectedEpisode] = useState<{ id: string; number: number } | null>(null);
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(true);
+  const [inMyList, setInMyList] = useState(false);
+
+  // Fetch content details
+  const { data: contentData } = useQuery({
+    queryKey: ['content', contentId],
+    queryFn: () => apiClient.getContentById(contentId),
+    enabled: isAuthenticated && !!contentId,
+  });
+
+  const { data: seasonsData } = useQuery({
+    queryKey: ['seasons', contentId],
+    queryFn: () => apiClient.getSeasons(contentId),
+    enabled: isAuthenticated && !!contentData && contentData.content_type === 'series',
+  });
+
+  const { data: similarData } = useQuery({
+    queryKey: ['similar', contentId],
+    queryFn: () => apiClient.getContentList({ page_size: 12 }),
+    enabled: isAuthenticated,
+  });
+
+  const content = useMemo<Content | null>(() => (contentData ? normalizeContent(contentData) : null), [contentData]);
+  const genres = useMemo(() => contentData?.genres?.map((g) => g.name).join(', ') || '—', [contentData]);
+
+  const activeSeason = seasonsData?.[0] ?? null;
 
   useEffect(() => {
     if (!isAuthenticated) {
       router.push('/login');
       return;
     }
+    setInMyList(isInMyList(contentId));
+  }, [contentId, isAuthenticated, router]);
+
+  // Start a real playback session against streaming-service.
+  useEffect(() => {
+    if (!isAuthenticated || !user || !contentId) return;
+    if (isStarting === false) return;
 
     const startSession = async () => {
       try {
-        const response = await apiClient.startStreaming(contentId, 'web-player');
-        setSessionId(response.data.session_id);
+        const session = await apiClient.startPlaybackSession({
+          user_id: user.id,
+          content_id: contentId,
+          episode_id: selectedEpisode?.id,
+          device_id: 'web-player',
+        });
+        setSessionId(session.id);
         setIsStarting(false);
+
+        // Resolve a playable URL: prefer a real packaged manifest, else the
+        // public HLS test stream (media-pipeline emits stub manifests today).
+        if (selectedEpisode) {
+          const manifest = await apiClient.getManifestForEpisode(selectedEpisode.id);
+          setStreamUrl(manifest?.manifest_url || DEMO_HLS_URL);
+        } else {
+          setStreamUrl(DEMO_HLS_URL);
+        }
       } catch (error) {
         toast.error('Failed to start playback. Please try again.');
         router.push('/browse');
@@ -44,40 +103,43 @@ export default function WatchPage() {
     };
 
     startSession();
-  }, [contentId, isAuthenticated, router]);
+  }, [contentId, selectedEpisode, user, isAuthenticated, router, isStarting]);
 
-  // Fetch content details
-  const { data: contentData } = useQuery({
-    queryKey: ['content', contentId],
-    queryFn: () => apiClient.getContentById(contentId),
-    enabled: isAuthenticated,
-  });
+  const similarContent: Content[] = useMemo(
+    () => (similarData || []).filter((c) => c.id !== contentId).slice(0, 12).map(normalizeContent),
+    [similarData, contentId]
+  );
 
-  const content: Content | null = contentData?.data || null;
+  const selectEpisode = (episodeId: string, number: number) => {
+    setSelectedEpisode({ id: episodeId, number });
+    setSessionId('');
+    setIsStarting(true);
+  };
 
-  // Fetch continue watching / watch history for related content
-  const { data: historyData } = useQuery({
-    queryKey: ['watch-history', user?.id],
-    queryFn: () => user ? apiClient.getWatchHistory(user.id) : Promise.reject(new Error('No user')),
-    enabled: isAuthenticated && !!user,
-  });
-
-  // Fetch recommendations
-  const { data: similarData } = useQuery({
-    queryKey: ['recommendations', contentId],
-    queryFn: () => apiClient.getRecommendations(contentId, 12),
-    enabled: isAuthenticated,
-  });
-
-  const similarContent: ContentType[] = similarData?.data || [];
-  const historyItems: ContentType[] = historyData?.data?.items || [];
+  const toggleMyList = () => {
+    try {
+      const list = JSON.parse(localStorage.getItem(MY_LIST_KEY) || '[]') as string[];
+      const idx = list.indexOf(contentId);
+      if (idx >= 0) {
+        list.splice(idx, 1);
+        toast.success('Removed from My List');
+      } else {
+        list.push(contentId);
+        toast.success('Added to My List');
+      }
+      localStorage.setItem(MY_LIST_KEY, JSON.stringify(list));
+      setInMyList(list.includes(contentId));
+    } catch {
+      toast.error('Could not update My List');
+    }
+  };
 
   if (isStarting) {
     return (
       <div className="min-h-screen bg-dark-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-400 text-sm">Loading player...</p>
+          <p className="text-gray-400 text-sm">Starting playback...</p>
         </div>
       </div>
     );
@@ -86,8 +148,13 @@ export default function WatchPage() {
   return (
     <div className="min-h-screen bg-dark-950">
       {/* Video Player */}
-      <div className="w-full max-h-[80vh] bg-black">
-        <VideoPlayer contentId={contentId} sessionId={sessionId} />
+      <div className="relative w-full">
+        <VideoPlayer contentId={contentId} sessionId={sessionId} src={streamUrl || undefined} />
+        {streamUrl === DEMO_HLS_URL && (
+          <div className="absolute bottom-16 left-4 bg-black/60 backdrop-blur-sm text-xs text-gray-300 px-3 py-1.5 rounded border border-white/10">
+            Preview stream — no packaged media for this title yet.
+          </div>
+        )}
       </div>
 
       {/* Content Info */}
@@ -96,7 +163,12 @@ export default function WatchPage() {
           <div className="mb-8">
             <div className="flex items-start justify-between gap-4 mb-4">
               <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">{content.title}</h1>
+                <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
+                  {content.title}
+                  {selectedEpisode && content.type === 'show' && (
+                    <span className="text-xl text-gray-400"> · Ep {selectedEpisode.number}</span>
+                  )}
+                </h1>
                 <div className="flex items-center gap-3 text-sm text-gray-400">
                   {content.rating > 0 && (
                     <span className="flex items-center gap-1">
@@ -107,8 +179,13 @@ export default function WatchPage() {
                     </span>
                   )}
                   <span>{content.releaseDate?.split('-')[0]}</span>
-                  {content.duration > 0 && (
+                  {content.duration > 0 && content.type === 'movie' && (
                     <span>{Math.floor(content.duration / 60)}h {content.duration % 60}m</span>
+                  )}
+                  {content.maturityRating && (
+                    <span className="uppercase text-xs font-medium px-2 py-0.5 border border-dark-600 rounded text-gray-400">
+                      {content.maturityRating}
+                    </span>
                   )}
                   <span className="uppercase text-xs font-medium px-2 py-0.5 border border-dark-600 rounded text-gray-400">
                     {content.type}
@@ -117,20 +194,12 @@ export default function WatchPage() {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
-                  onClick={() => toast.success('Added to My List')}
-                  className="p-2 rounded-full bg-dark-800 hover:bg-dark-700 text-gray-300 hover:text-white transition-colors"
-                  aria-label="Add to my list"
+                  onClick={toggleMyList}
+                  className={`p-2 rounded-full bg-dark-800 hover:bg-dark-700 transition-colors ${inMyList ? 'text-red-500' : 'text-gray-300 hover:text-white'}`}
+                  aria-label="Toggle my list"
                 >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                  </svg>
-                </button>
-                <button
-                  className="p-2 rounded-full bg-dark-800 hover:bg-dark-700 text-gray-300 hover:text-white transition-colors"
-                  aria-label="Share"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 21.75a.923.923 0 00-.284-.075.913.913 0 01-.097-.023l-3.446-1.38a.915.915 0 01-.534-1.186l1.38-3.446a.913.913 0 01.097-.023.923.923 0 00.284-.075M7.217 21.75l3.033-3.033M7.217 21.75A.912.912 0 017 21.75H4.5a.912.912 0 01-.912-.912V18.25M10.25 18.75l3.033 3.033M10.25 18.75l-3.033-3.033M16.783 2.25a.923.923 0 00.284.075.913.913 0 01.097.023l3.446 1.38a.915.915 0 01.534 1.186l-1.38 3.446a.913.913 0 01-.097.023.923.923 0 00-.284.075M16.783 2.25l-3.033 3.033M16.783 2.25A.912.912 0 0117 2.25h2.5a.912.912 0 01.912.912V5.75M13.75 5.75l-3.033-3.033M13.75 5.75l3.033 3.033" />
+                  <svg className="w-5 h-5" fill={inMyList ? 'currentColor' : 'none'} viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
@@ -139,32 +208,46 @@ export default function WatchPage() {
               {content.description}
             </p>
             <div className="mt-3 text-sm text-gray-500">
-              <span className="text-gray-400">Genre:</span> {content.genre}
+              <span className="text-gray-400">Genres:</span> {genres}
             </div>
           </div>
         )}
 
-        {/* Episodes / Seasons Placeholder (for shows) */}
-        {content?.type === 'show' && (
+        {/* Episodes / Seasons (for shows) */}
+        {contentData?.content_type === 'series' && (
           <div className="mb-8">
-            <h2 className="text-lg font-bold text-white mb-4">Episodes</h2>
+            <h2 className="text-lg font-bold text-white mb-4">
+              {activeSeason
+                ? `Season ${activeSeason.season_number} · ${activeSeason.episode_count} episodes`
+                : 'Episodes'}
+            </h2>
             <div className="space-y-2">
-              {[1, 2, 3, 4, 5, 6].map((ep) => (
-                <div
-                  key={ep}
-                  className="flex items-center gap-4 p-3 rounded-lg hover:bg-dark-800 transition-colors cursor-pointer group"
+              {(activeSeason?.episodes?.length ? activeSeason.episodes : []).map((ep) => (
+                <button
+                  key={ep.id}
+                  onClick={() => selectEpisode(ep.id, ep.episode_number)}
+                  className="w-full flex items-center gap-4 p-3 rounded-lg hover:bg-dark-800 transition-colors cursor-pointer group text-left"
                 >
-                  <span className="text-sm text-gray-500 w-8 text-center">{ep}</span>
+                  <span className={selectedEpisode?.id === ep.id ? 'text-red-500 w-8 text-center' : 'text-sm text-gray-500 w-8 text-center'}>
+                    {ep.episode_number}
+                  </span>
                   <div className="w-28 h-16 bg-dark-800 rounded-md overflow-hidden flex-shrink-0">
-                    <div className="w-full h-full bg-dark-700 shimmer" />
+                    {ep.thumbnail_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={ep.thumbnail_url} alt={ep.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-dark-700 shimmer" />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-white font-medium truncate group-hover:text-red-500 transition-colors">
-                      Episode {ep}: {content.title}
+                      Episode {ep.episode_number}: {ep.title}
                     </p>
-                    <p className="text-xs text-gray-500">{Math.floor(Math.random() * 20 + 35)}m</p>
+                    <p className="text-xs text-gray-500">
+                      {ep.duration_minutes}m{ep.release_date ? ` · ${new Date(ep.release_date).getFullYear()}` : ''}
+                    </p>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -175,20 +258,8 @@ export default function WatchPage() {
           <div className="mb-8">
             <h2 className="text-lg font-bold text-white mb-4">More Like This</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              {similarContent.map((item: ContentType) => (
+              {similarContent.map((item: Content) => (
                 <MediaCard key={item.id} content={item} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Continue Watching */}
-        {historyItems.length > 0 && (
-          <div>
-            <h2 className="text-lg font-bold text-white mb-4">Continue Watching</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {historyItems.slice(0, 5).map((item: ContentType) => (
-                <MediaCard key={item.id} content={item} variant="backdrop" />
               ))}
             </div>
           </div>

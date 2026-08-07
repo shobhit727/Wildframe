@@ -148,7 +148,7 @@ async def create_content(
     return await service.create_content(request)
 
 
-@router.get("/content", response_model=ContentListResponse)
+@router.get("/content", response_model=list[ContentListResponse])
 async def list_content(
     service: Annotated[ContentService, Depends(get_content_service)],
     page: Annotated[int, Query(ge=1)] = 1,

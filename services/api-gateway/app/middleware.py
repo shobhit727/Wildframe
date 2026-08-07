@@ -15,16 +15,16 @@ class ServiceRegistry:
     """Registry of backend services."""
 
     # Inside the Docker network each service is reachable on the port its
-    # container actually listens on. Most bind 8000; content binds 8003 and
-    # streaming binds 8004 (their settings.SERVER_PORT). The hostnames are the
-    # stable TLS/DNS names docker-compose assigns; keep them, but fix the ports
-    # so the gateway stops sending proxied requests to the wrong port.
+    # container actually listens on. The dev compose files map host
+    # ports 8003/8004 to the content/streaming containers, but inside the
+    # network every service's uvicorn binds 8000 (the Dockerfile CMD or the
+    # compose command override with no --port flag).
     SERVICES: MappingProxyType[str, str] = MappingProxyType(
         {
             "auth": "http://auth-service:8000",
             "users": "http://user-service:8000",
-            "content": "http://content-service:8003",
-            "streaming": "http://streaming-service:8004",
+            "content": "http://content-service:8000",
+            "streaming": "http://streaming-service:8000",
             "search": "http://search-service:8000",
             "recommendations": "http://recommendation-service:8000",
             "billing": "http://billing-service:8000",
@@ -164,3 +164,16 @@ async def get_current_user(request: Request) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
         )
     return token_payload
+
+
+async def get_optional_user(request: Request) -> dict | None:
+    """Optional auth dependency.
+
+    Returns the verified token payload when a valid bearer token is present,
+    otherwise None. Never raises — used by the transparent gateway proxy so
+    public catalog reads work without a token while authenticated services
+    upstream enforce their own auth.
+    """
+    from .main import auth_middleware  # late import: set in startup
+
+    return await auth_middleware.verify_token(request)

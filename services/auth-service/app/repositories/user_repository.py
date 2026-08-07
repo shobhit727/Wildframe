@@ -4,7 +4,7 @@ Uses SQLAlchemy 2.0 async patterns with proper error handling.
 """
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from app.models.user import LoginAudit, RefreshToken, TokenBlacklist, User
@@ -88,7 +88,7 @@ class UserRepository:
             user: User to update
         """
         user.login_attempts += 1
-        user.last_login_attempt_at = datetime.now(UTC)
+        user.last_login_attempt_at = datetime.utcnow()
         await self.db.flush()
 
     async def reset_login_attempts(self, user: User) -> None:
@@ -99,7 +99,7 @@ class UserRepository:
         """
         user.login_attempts = 0
         user.last_login_attempt_at = None
-        user.last_login_at = datetime.now(UTC)
+        user.last_login_at = datetime.utcnow()
         await self.db.flush()
 
     async def lock_account(self, user: User, hours: int = 1) -> None:
@@ -112,7 +112,7 @@ class UserRepository:
         from datetime import datetime, timedelta
 
         user.is_locked = True
-        user.locked_until = datetime.now(UTC) + timedelta(hours=hours)
+        user.locked_until = datetime.utcnow() + timedelta(hours=hours)
         await self.db.flush()
 
     async def unlock_account(self, user: User) -> None:
@@ -134,7 +134,7 @@ class UserRepository:
         from datetime import datetime
 
         user.email_verified = True
-        user.email_verified_at = datetime.now(UTC)
+        user.email_verified_at = datetime.utcnow()
         await self.db.flush()
 
 
@@ -174,7 +174,7 @@ class RefreshTokenRepository:
         refresh_token = RefreshToken(
             user_id=user_id,
             token_hash=token_hash,
-            expires_at=datetime.now(UTC) + timedelta(days=7),
+            expires_at=datetime.utcnow() + timedelta(days=7),
             device_id=device_id,
             user_agent=user_agent,
             ip_address=ip_address,
@@ -206,7 +206,7 @@ class RefreshTokenRepository:
         """
         from datetime import datetime
 
-        refresh_token.revoked_at = datetime.now(UTC)
+        refresh_token.revoked_at = datetime.utcnow()
         await self.db.flush()
         logger.info(f"Refresh token revoked: {refresh_token.id}")
 
@@ -225,7 +225,7 @@ class RefreshTokenRepository:
         tokens = result.scalars().all()
 
         for token in tokens:
-            token.revoked_at = datetime.now(UTC)
+            token.revoked_at = datetime.utcnow()
 
         await self.db.flush()
         logger.info(f"All refresh tokens revoked for user: {user_id}")

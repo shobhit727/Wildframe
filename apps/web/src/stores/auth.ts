@@ -1,7 +1,7 @@
 // Zustand store for auth state.
 import { create } from 'zustand';
 import { User } from '@/types';
-import { apiClient } from '@/api/client';
+import { apiClient, clearTokens } from '@/api/client';
 
 export interface AuthStore {
   user: User | null;
@@ -14,10 +14,11 @@ export interface AuthStore {
   logout: () => Promise<void>;
   setUser: (user: User | null) => void;
   setToken: (token: string | null) => void;
-  hydrate: () => void;
+  hydrate: () => Promise<void>;
+  refreshMe: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthStore>((set) => ({
+export const useAuthStore = create<AuthStore>((set, get) => ({
   user: null,
   token: null,
   isLoading: false,
@@ -26,15 +27,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
   login: async (email: string, password: string) => {
     set({ isLoading: true });
     try {
-      const response = await apiClient.login(email, password);
-      const { accessToken, refreshToken, user } = response.data;
-
-      localStorage.setItem('accessToken', accessToken);
-      localStorage.setItem('refreshToken', refreshToken);
+      const tokens = await apiClient.login(email, password);
+      const user = await apiClient.getMe();
       localStorage.setItem('user', JSON.stringify(user));
-
       set({
-        token: accessToken,
+        token: tokens.access_token,
         user,
         isAuthenticated: true,
         isLoading: false,
@@ -48,8 +45,15 @@ export const useAuthStore = create<AuthStore>((set) => ({
   register: async (email: string, password: string, firstName: string, lastName: string) => {
     set({ isLoading: true });
     try {
-      await apiClient.register(email, password, firstName, lastName);
-      set({ isLoading: false });
+      const tokens = await apiClient.register(email, password, firstName, lastName);
+      const user = await apiClient.getMe();
+      localStorage.setItem('user', JSON.stringify(user));
+      set({
+        token: tokens.access_token,
+        user,
+        isAuthenticated: true,
+        isLoading: false,
+      });
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -63,8 +67,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
       console.error('Logout error:', error);
     }
 
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
+    clearTokens();
     localStorage.removeItem('user');
 
     set({
@@ -77,21 +80,39 @@ export const useAuthStore = create<AuthStore>((set) => ({
   setUser: (user: User | null) => set({ user }),
   setToken: (token: string | null) => set({ token }),
 
-  hydrate: () => {
-    const token = localStorage.getItem('accessToken');
-    const userStr = localStorage.getItem('user');
+  hydrate: async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    if (!token) {
+      set({ user: null, token: null, isAuthenticated: false });
+      return;
+    }
+    set({ token, isAuthenticated: true });
+    try {
+      const user = await apiClient.getMe();
+      localStorage.setItem('user', JSON.stringify(user));
+      set({ user });
+    } catch {
+      // Token invalid/expired — keep token; getMe will 401 and the client
+      // interceptor will refresh or bounce to /login on the next call.
+    }
+  },
 
-    if (token && userStr) {
-      try {
-        const user = JSON.parse(userStr) as User;
-        set({
-          token,
-          user,
-          isAuthenticated: true,
-        });
-      } catch {
-        localStorage.removeItem('user');
-      }
+  refreshMe: async () => {
+    if (!get().isAuthenticated) return;
+    try {
+      const user = await apiClient.getMe();
+      localStorage.setItem('user', JSON.stringify(user));
+      set({ user });
+    } catch {
+      // ignore
     }
   },
 }));
+
+export function useIsAuthenticated(): boolean {
+  return useAuthStore((s) => s.isAuthenticated);
+}
+
+export function useUser(): User | null {
+  return useAuthStore((s) => s.user);
+}

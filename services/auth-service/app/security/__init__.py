@@ -1,6 +1,6 @@
 import base64
 import hashlib
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -76,10 +76,11 @@ class TokenManager:
         Returns:
             str: JWT access token
         """
-        now = datetime.now(UTC)
+        now = datetime.utcnow()
         expires_at = now + timedelta(minutes=settings.JWT_EXPIRATION_MINUTES)
 
         payload = {
+            "sub": str(user_id),
             "user_id": str(user_id),
             "email": email,
             "type": "access",
@@ -105,10 +106,11 @@ class TokenManager:
         Returns:
             str: JWT refresh token
         """
-        now = datetime.now(UTC)
+        now = datetime.utcnow()
         expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRATION_DAYS)
 
         payload = {
+            "sub": str(user_id),
             "user_id": str(user_id),
             "type": "refresh",
             "iat": now,
@@ -215,7 +217,7 @@ class TokenManager:
 
     def create_refresh_token_for_user(self, user) -> tuple[str, str, datetime]:
         """Create refresh token and return token, hash, and expires_at."""
-        now = datetime.now(UTC)
+        now = datetime.utcnow()
         expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRATION_DAYS)
         # Use existing static method to build token
         token = TokenManager.create_refresh_token(str(user.id))

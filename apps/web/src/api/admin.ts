@@ -41,7 +41,7 @@ export async function listUsers(params: ListParams & { status?: string; search?:
   // Backend: GET /api/admin/users/moderated?status=&limit=&offset=
   // We also support a client-side `search` filter (applied in the UI) since the
   // backend endpoint does not expose a query param for it.
-  const { data } = await api().get<AdminUser[]>('/api/admin/users/moderated', {
+  const { data } = await api().get<AdminUser[]>('/admin/api/v1/admin/users/moderated', {
     params: { limit: params.limit ?? 50, offset: params.offset ?? 0, status: params.status || undefined },
     headers: authHeaders(),
   });
@@ -49,7 +49,7 @@ export async function listUsers(params: ListParams & { status?: string; search?:
 }
 
 export async function moderateUser(user_id: string, status: UserStatus, reason?: string) {
-  const { data } = await api().post('/api/admin/users/moderate', {
+  const { data } = await api().post('/admin/api/v1/admin/users/moderate', {
     user_id,
     status,
     reason,
@@ -59,7 +59,7 @@ export async function moderateUser(user_id: string, status: UserStatus, reason?:
 
 // ---- Content flags ----
 export async function listFlags(params: ListParams = {}) {
-  const { data } = await api().get<ContentFlag[]>('/api/admin/content/flagged', {
+  const { data } = await api().get<ContentFlag[]>('/admin/api/v1/admin/content/flagged', {
     params: { limit: params.limit ?? 50, offset: params.offset ?? 0 },
     headers: authHeaders(),
   });
@@ -67,7 +67,7 @@ export async function listFlags(params: ListParams = {}) {
 }
 
 export async function resolveFlag(content_id: string, status: ContentStatus) {
-  const { data } = await api().post('/api/admin/content/resolve', null, {
+  const { data } = await api().post('/admin/api/v1/admin/content/resolve', null, {
     params: { content_id, status },
     headers: authHeaders(),
   });
@@ -76,7 +76,7 @@ export async function resolveFlag(content_id: string, status: ContentStatus) {
 
 // ---- System alerts ----
 export async function listAlerts(params: ListParams = {}) {
-  const { data } = await api().get<SystemAlert[]>('/api/admin/alerts', {
+  const { data } = await api().get<SystemAlert[]>('/admin/api/v1/admin/alerts', {
     params: { limit: params.limit ?? 50 },
     headers: authHeaders(),
   });
@@ -89,14 +89,14 @@ export async function createAlert(input: {
   message: string;
   service: string;
 }) {
-  const { data } = await api().post('/api/admin/alerts', input, {
+  const { data } = await api().post('/admin/api/v1/admin/alerts', input, {
     headers: authHeaders(),
   });
   return data;
 }
 
 export async function acknowledgeAlert(alert_id: number) {
-  const { data } = await api().post(`/api/admin/alerts/${alert_id}/acknowledge`, null, {
+  const { data } = await api().post(`/admin/api/v1/admin/alerts/${alert_id}/acknowledge`, null, {
     headers: authHeaders(),
   });
   return data;
@@ -104,7 +104,7 @@ export async function acknowledgeAlert(alert_id: number) {
 
 // ---- System config ----
 export async function listConfigs(params: ListParams = {}) {
-  const { data } = await api().get<SystemConfig[]>('/api/admin/config', {
+  const { data } = await api().get<SystemConfig[]>('/admin/api/v1/admin/config', {
     params: { limit: params.limit ?? 100 },
     headers: authHeaders(),
   });
@@ -112,7 +112,7 @@ export async function listConfigs(params: ListParams = {}) {
 }
 
 export async function getConfig(key: string) {
-  const { data } = await api().get<SystemConfig>(`/api/admin/config/${key}`, {
+  const { data } = await api().get<SystemConfig>(`/admin/api/v1/admin/config/${key}`, {
     headers: authHeaders(),
   });
   return data;
@@ -124,7 +124,7 @@ export async function setConfig(input: {
   config_type: ConfigType;
   description?: string;
 }) {
-  const { data } = await api().post('/api/admin/config', input, {
+  const { data } = await api().post('/admin/api/v1/admin/config', input, {
     headers: authHeaders(),
   });
   return data;
@@ -134,7 +134,7 @@ export async function setConfig(input: {
 export async function listAuditLogs(params: { admin_id?: string; resource_type?: string; resource_id?: string; limit?: number } = {}) {
   const { admin_id, resource_type, resource_id, limit = 50 } = params;
   if (admin_id) {
-    const { data } = await api().get<AuditLog[]>(`/api/admin/audit/admin/${admin_id}`, {
+    const { data } = await api().get<AuditLog[]>(`/admin/api/v1/admin/audit/admin/${admin_id}`, {
       params: { limit },
       headers: authHeaders(),
     });
@@ -142,7 +142,7 @@ export async function listAuditLogs(params: { admin_id?: string; resource_type?:
   }
   if (resource_type && resource_id) {
     const { data } = await api().get<AuditLog[]>(
-      `/api/admin/audit/resource/${resource_type}/${resource_id}`,
+      `/admin/api/v1/admin/audit/resource/${resource_type}/${resource_id}`,
       { params: { limit }, headers: authHeaders() },
     );
     return data;
@@ -152,7 +152,7 @@ export async function listAuditLogs(params: { admin_id?: string; resource_type?:
 
 // ---- System stats ----
 export async function getSystemStats() {
-  const { data } = await api().get<SystemStats>('/api/admin/stats', {
+  const { data } = await api().get<SystemStats>('/admin/api/v1/admin/stats', {
     headers: authHeaders(),
   });
   return data;
