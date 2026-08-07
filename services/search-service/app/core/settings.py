@@ -29,7 +29,6 @@ class Settings(BaseSettings):
     CORS_ALLOWED_ORIGINS: list[str] = ["*"]
     CORS_ALLOW_CREDENTIALS: bool = True
 
-
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if running in production with default insecure secrets."""

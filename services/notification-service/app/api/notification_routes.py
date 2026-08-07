@@ -12,7 +12,9 @@ from app.services import NotificationService
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
-async def get_notif_service(db: AsyncSession = Depends(get_db)) -> NotificationService:  # noqa: B008
+async def get_notif_service(
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> NotificationService:
     return NotificationService(NotificationRepository(db))
 
 

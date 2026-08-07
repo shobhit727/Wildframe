@@ -60,7 +60,6 @@ class Settings(BaseSettings):
     # Pre-signed URL lifetime in seconds.
     S3_PRESIGNED_URL_TTL_SECONDS: int = 3600
 
-
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if running in production with default insecure secrets."""

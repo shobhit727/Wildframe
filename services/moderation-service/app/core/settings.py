@@ -52,7 +52,6 @@ class Settings(BaseSettings):
     # Kafka bootstrap (only used when EVENT_PUBLISHER=kafka).
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
 
-
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if running in production with default insecure secrets."""

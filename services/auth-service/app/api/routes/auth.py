@@ -413,4 +413,4 @@ async def verify_mfa(
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="MFA verification is not yet implemented",
-        )
+    )

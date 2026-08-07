@@ -12,7 +12,9 @@ from app.services import RecommendationService
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
 
-async def get_rec_service(db: AsyncSession = Depends(get_db)) -> RecommendationService:  # noqa: B008
+async def get_rec_service(
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> RecommendationService:
     return RecommendationService(UserPreferencesRepository(db), RecommendationRepository(db))
 
 

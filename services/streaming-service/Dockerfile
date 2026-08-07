@@ -1,61 +1,97 @@
-# Multi-stage Dockerfile for Streaming Service
+# Multi-stage Dockerfile for streaming-service
 
 # Stage 1: Builder
 FROM python:3.13-slim as builder
 
 WORKDIR /build
 
+# Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev && rm -rf /var/lib/apt/lists/*
+    gcc \
+    libpq-dev \
+    pkg-config \
+    libsasl2-dev \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY services/streaming-service/pyproject.toml .
-RUN pip install --no-cache-dir poetry==1.8.3 && \
-    poetry config virtualenvs.create false && \
-    poetry install --no-dev --no-interaction --no-ansi
+# Install dependencies with pip
+COPY services/streaming-service/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Development
 FROM python:3.13-slim as development
 
 WORKDIR /app
 
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    postgresql-client curl && rm -rf /var/lib/apt/lists/*
+    postgresql-client \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+# Copy Python dependencies from builder
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
+# Copy application code
 COPY services/streaming-service /app
+
+# Copy SDK directly into app
+COPY packages/sdk/wildframe_observability /app/wildframe_observability
+
+# Create logs directory
 RUN mkdir -p logs
 
+# Health check
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8004/health || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
-EXPOSE 8004
+# Run application
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # Stage 3: Production
 FROM python:3.13-slim as production
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    postgresql-client curl && rm -rf /var/lib/apt/lists/*
+# Create non-root user
+RUN useradd -m -u 1000 appuser
 
-COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python dependencies from builder
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
+# Copy application code
 COPY services/streaming-service /app
-RUN mkdir -p logs && \
-    adduser --disabled-password --gecos '' appuser && \
-    chown -R appuser:appuser /app
 
+# Copy SDK directly into app
+COPY packages/sdk/wildframe_observability /app/wildframe_observability
+
+# Create logs directory and set permissions
+RUN mkdir -p logs && chown -R appuser:appuser /app
+
+# Switch to non-root user
 USER appuser
 
-HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8004/health || exit 1
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
-EXPOSE 8004
+# Expose port
+EXPOSE 8000
 
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8004"]
+# Run with gunicorn for production
+CMD ["gunicorn", \
+     "--workers", "4", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--bind", "0.0.0.0:8000", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "--log-level", "info", \
+     "app.main:app"]

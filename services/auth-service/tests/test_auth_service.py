@@ -148,7 +148,9 @@ class TestAuthServiceRegister:
         mock_repositories["user_repo"].create.return_value = mock_user
         mock_repositories["user_repo"].get_by_email.return_value = None
 
-        request = UserRegisterRequest(email=email, password=password, first_name="Test", last_name="User")
+        request = UserRegisterRequest(
+            email=email, password=password, first_name="Test", last_name="User"
+        )
         result = await auth_service.register(request)
 
         assert result is not None
@@ -172,7 +174,12 @@ class TestAuthServiceRegister:
         mock_user.last_name = "User"
         mock_repositories["user_repo"].create.return_value = mock_user
         mock_repositories["user_repo"].get_by_email.return_value = None
-        request = UserRegisterRequest(email="test@example.com", password="SecurePassword123!", first_name="Test", last_name="User")
+        request = UserRegisterRequest(
+            email="test@example.com",
+            password="SecurePassword123!",
+            first_name="Test",
+            last_name="User",
+        )
 
         # Without rate limiter integration, this currently succeeds.
         result = await auth_service.register(request)

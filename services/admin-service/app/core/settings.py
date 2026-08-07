@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     LOG_LEVEL: str = "INFO"
 
-
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if running in production with default insecure secrets."""

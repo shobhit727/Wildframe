@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://wildframe:wildframe_dev_password@localhost:5432/users_db"
+    DATABASE_URL: str = (
+        "postgresql+asyncpg://wildframe:wildframe_dev_password@localhost:5432/users_db"
+    )
     DATABASE_POOL_SIZE: int = 20
     DATABASE_MAX_OVERFLOW: int = 0
     DATABASE_POOL_TIMEOUT: int = 30
@@ -53,7 +55,6 @@ class Settings(BaseSettings):
     # Rate limiting
     LOGIN_RATE_LIMIT_ATTEMPTS: int = 10
     LOGIN_RATE_LIMIT_WINDOW: int = 900  # 15 minutes
-
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

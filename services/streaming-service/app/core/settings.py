@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 10
     LOG_LEVEL: str = "INFO"
 
-
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if running in production with default insecure secrets."""

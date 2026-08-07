@@ -78,7 +78,6 @@ class Settings(BaseSettings):
     MFA_BACKUP_CODES_COUNT: int = 10
     MFA_BACKUP_CODE_LENGTH: int = 8
 
-
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if running in production with default insecure secrets."""

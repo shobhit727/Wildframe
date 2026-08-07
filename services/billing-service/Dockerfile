@@ -1,52 +1,97 @@
-# Multi-stage Dockerfile for Billing
+# Multi-stage Dockerfile for billing-service
 
 # Stage 1: Builder
-FROM python:3.14-slim as builder
+FROM python:3.13-slim as builder
 
 WORKDIR /build
 
+# Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev && rm -rf /var/lib/apt/lists/*
+    gcc \
+    libpq-dev \
+    pkg-config \
+    libsasl2-dev \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY services/billing/pyproject.toml .
-RUN pip install --no-cache-dir poetry==1.8.3 && \
-    poetry config virtualenvs.create false && \
-    poetry install --no-dev --no-interaction --no-ansi
+# Install dependencies with pip
+COPY services/billing-service/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Development
-FROM python:3.14-slim as development
+FROM python:3.13-slim as development
 
 WORKDIR /app
 
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    postgresql-client curl && rm -rf /var/lib/apt/lists/*
+    postgresql-client \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+# Copy Python dependencies from builder
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-COPY services/billing /app
+# Copy application code
+COPY services/billing-service /app
+
+# Copy SDK directly into app
+COPY packages/sdk/wildframe_observability /app/wildframe_observability
+
+# Create logs directory
 RUN mkdir -p logs
 
+# Health check
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Run application
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # Stage 3: Production
-FROM python:3.14-slim as production
+FROM python:3.13-slim as production
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    postgresql-client curl && rm -rf /var/lib/apt/lists/*
+# Create non-root user
+RUN useradd -m -u 1000 appuser
 
-COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python dependencies from builder
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-COPY services/billing /app
-RUN mkdir -p logs
+# Copy application code
+COPY services/billing-service /app
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+# Copy SDK directly into app
+COPY packages/sdk/wildframe_observability /app/wildframe_observability
+
+# Create logs directory and set permissions
+RUN mkdir -p logs && chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# Expose port
+EXPOSE 8000
+
+# Run with gunicorn for production
+CMD ["gunicorn", \
+     "--workers", "4", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--bind", "0.0.0.0:8000", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "--log-level", "info", \
+     "app.main:app"]

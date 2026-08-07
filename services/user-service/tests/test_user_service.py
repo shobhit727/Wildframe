@@ -57,6 +57,7 @@ class TestProfileManagement:
     async def test_create_profile(self, user_service, user_id, mock_repositories):
         """Test creating user profile."""
         from datetime import UTC, datetime
+
         mock_profile = MagicMock()
         mock_profile.id = uuid4()
         mock_profile.user_id = user_id
@@ -85,6 +86,7 @@ class TestProfileManagement:
     async def test_get_profile(self, user_service, user_id, mock_repositories):
         """Test retrieving user profile."""
         from datetime import UTC, datetime
+
         mock_profile = MagicMock()
         mock_profile.id = uuid4()
         mock_profile.user_id = user_id
@@ -115,6 +117,7 @@ class TestProfileManagement:
         mock_repositories["profile_repo"].get_by_user_id.return_value = None
 
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             await user_service.get_user_profile(user_id)
         assert exc_info.value.status_code == 404
@@ -123,6 +126,7 @@ class TestProfileManagement:
     async def test_update_profile(self, user_service, user_id, mock_repositories):
         """Test updating user profile."""
         from datetime import UTC, datetime
+
         mock_profile = MagicMock()
         mock_profile.id = uuid4()
         mock_profile.user_id = user_id
@@ -144,6 +148,7 @@ class TestProfileManagement:
         mock_repositories["profile_repo"].update.return_value = mock_profile
 
         from app.schemas import UserProfileUpdateRequest
+
         profile_data = UserProfileUpdateRequest(first_name="John", last_name="Doe")
         profile = await user_service.update_user_profile(user_id, profile_data)
 
@@ -158,6 +163,7 @@ class TestDeviceManagement:
     async def test_register_device(self, user_service, user_id, mock_repositories):
         """Test registering device."""
         from datetime import UTC, datetime
+
         mock_device = MagicMock()
         mock_device.id = uuid4()
         mock_device.user_id = user_id
@@ -180,10 +186,17 @@ class TestDeviceManagement:
         mock_repositories["device_repo"].create.return_value = mock_device
 
         from app.schemas import UserDeviceRegisterRequest
+
         device_data = UserDeviceRegisterRequest(
-            device_id="device123", device_name="Test Device", device_type="web",
-            os_name="Linux", os_version="20.04", browser_name="Chrome",
-            browser_version="120.0", ip_address="192.168.1.1", user_agent="Mozilla/5.0"
+            device_id="device123",
+            device_name="Test Device",
+            device_type="web",
+            os_name="Linux",
+            os_version="20.04",
+            browser_name="Chrome",
+            browser_version="120.0",
+            ip_address="192.168.1.1",
+            user_agent="Mozilla/5.0",
         )
         device = await user_service.register_device(user_id, device_data, "192.168.1.1")
 
@@ -194,6 +207,7 @@ class TestDeviceManagement:
     async def test_get_user_devices(self, user_service, user_id, mock_repositories):
         """Test getting user devices."""
         from datetime import UTC, datetime
+
         mock_device1 = MagicMock()
         mock_device1.id = uuid4()
         mock_device1.device_id = "device1"
@@ -232,7 +246,10 @@ class TestDeviceManagement:
         mock_device2.created_at = datetime.now(UTC)
         mock_device2.updated_at = datetime.now(UTC)
 
-        mock_repositories["device_repo"].get_user_devices.return_value = [mock_device1, mock_device2]
+        mock_repositories["device_repo"].get_user_devices.return_value = [
+            mock_device1,
+            mock_device2,
+        ]
 
         devices = await user_service.get_user_devices(user_id)
 
@@ -243,6 +260,7 @@ class TestDeviceManagement:
     async def test_deactivate_device(self, user_service, user_id, device_id, mock_repositories):
         """Test deactivating device."""
         from datetime import UTC, datetime
+
         mock_device = MagicMock()
         mock_device.id = uuid4()
         mock_device.device_id = "device123"
@@ -388,6 +406,7 @@ class TestPreferences:
         mock_repositories["preference_repo"].update.return_value = mock_pref
 
         from app.schemas import UserPreferenceUpdateRequest
+
         pref_data = UserPreferenceUpdateRequest(
             preferred_quality="1080p", autoplay_next_episode=True
         )
@@ -422,7 +441,9 @@ class TestSubscription:
         sub = await user_service.upgrade_subscription(user_id, "premium")
 
         assert sub.user_id == user_id
-        mock_repositories["subscription_repo"].update_tier.assert_called_once_with(user_id, "premium")
+        mock_repositories["subscription_repo"].update_tier.assert_called_once_with(
+            user_id, "premium"
+        )
 
 
 class TestOnboarding:

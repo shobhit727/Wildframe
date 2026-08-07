@@ -18,7 +18,9 @@ from app.services import AnalyticsService
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
-async def get_analytics_service(db: AsyncSession = Depends(get_db)) -> AnalyticsService:  # noqa: B008
+async def get_analytics_service(
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> AnalyticsService:
     return AnalyticsService(
         EventRepository(db),
         ContentViewEventRepository(db),
