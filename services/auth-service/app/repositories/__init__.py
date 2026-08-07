@@ -160,6 +160,24 @@ class RefreshTokenRepository(BaseRepository):
             logger.error(f"Error deleting expired tokens: {e!s}")
             raise
 
+    async def revoke_all_for_user(self, user_id: UUID) -> int:
+        """Revoke (delete) all refresh tokens for a user."""
+        try:
+            stmt = select(RefreshToken).where(RefreshToken.user_id == user_id)
+            result = await self.session.execute(stmt)
+            tokens = result.scalars().all()
+
+            for token in tokens:
+                await self.session.delete(token)
+
+            await self.flush()
+            logger.info(f"Revoked {len(tokens)} tokens for user: {user_id}")
+            return len(tokens)
+        except Exception as e:
+            await self.rollback()
+            logger.error(f"Error revoking tokens for user {user_id}: {e!s}")
+            raise
+
 
 class LoginAuditRepository(BaseRepository):
     """Repository for LoginAudit model operations."""

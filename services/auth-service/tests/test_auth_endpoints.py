@@ -57,7 +57,7 @@ class TestAuthEndpoints:
             "/api/v1/auth/register", json={"email": email, "password": "DifferentPassword456!"}
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 409
 
     async def test_login_endpoint(self, client, db_session):
         """Test user login endpoint."""

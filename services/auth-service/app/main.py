@@ -94,7 +94,14 @@ def create_app() -> FastAPI:
     # Trusted host middleware
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=["localhost", "127.0.0.1", "*.wildframe.com"],
+        allowed_hosts=[
+            "localhost",
+            "127.0.0.1",
+            "*.wildframe.com",
+            "test",
+            "testserver",
+            "testclient",
+        ],
     )
 
     # Custom middleware for request tracing

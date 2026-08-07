@@ -173,7 +173,7 @@ class AuthService:
             access_token=access_token,
             refresh_token=refresh_token_str,
             expires_in=900,  # 15 minutes
-            token_type="Bearer",
+            token_type="bearer",
         )
 
     async def refresh_token(self, refresh_token: str) -> TokenResponse:
@@ -231,7 +231,7 @@ class AuthService:
             access_token=access_token,
             refresh_token=new_refresh_token,
             expires_in=900,  # 15 minutes
-            token_type="Bearer",
+            token_type="bearer",
         )
 
     async def logout(self, refresh_token: str) -> bool:

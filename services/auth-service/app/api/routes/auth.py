@@ -4,6 +4,7 @@ All endpoints implement proper error handling, logging, and validation.
 """
 
 import logging
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -49,10 +50,10 @@ async def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> Auth
     """
     return AuthService(
         user_repo=UserRepository(db),
-        refresh_token_repo=RefreshTokenRepository(db),
-        token_blacklist_repo=TokenBlacklistRepository(db),
-        login_audit_repo=LoginAuditRepository(db),
-        rate_limiter=rate_limiter,
+        token_repo=RefreshTokenRepository(db),
+        audit_repo=LoginAuditRepository(db),
+        password_manager=PasswordManager(),
+        token_manager=TokenManager(),
     )
 
 
@@ -82,7 +83,7 @@ async def get_current_user(
 
     # Check if blacklisted
     token_blacklist_repo = TokenBlacklistRepository(db)
-    if await token_blacklist_repo.is_blacklisted(token):
+    if await token_blacklist_repo.is_blacklisted(TokenManager.hash_token(token)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked"
         )
@@ -95,8 +96,8 @@ async def get_current_user(
         )
 
     try:
-        user_id = UUID(payload["sub"])
-    except (ValueError, KeyError):
+        user_id = UUID(payload.get("user_id") or payload.get("sub"))
+    except (ValueError, KeyError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload"
         )
@@ -104,13 +105,13 @@ async def get_current_user(
     return user_id
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     request: UserRegisterRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Register a new user account.
+    """Register a new user account and auto-login.
 
     Args:
         request: Registration request
@@ -125,11 +126,24 @@ async def register(
     """
     try:
         user = await auth_service.register(request)
-
-        # Commit the transaction
         await db.commit()
 
-        return user.model_dump()
+        # Auto-login: generate tokens for the new user
+        user_id = user.id
+        email = user.email
+        access_token = TokenManager.create_access_token(user_id, email)
+        token_manager = TokenManager()
+        refresh_token, refresh_hash, expires_at = token_manager.create_refresh_token_for_user(user)
+        token_repo = RefreshTokenRepository(db)
+        await token_repo.create(user_id=user_id, token_hash=refresh_hash, expires_at=expires_at)
+        await db.commit()
+
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_in=900,
+            token_type="bearer",
+        ).model_dump()
 
     except HTTPException:
         await db.rollback()
@@ -235,14 +249,19 @@ async def refresh(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    request: RefreshTokenRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    request: RefreshTokenRequest | None = None,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> None:
-    """Logout user by revoking the refresh token.
+    """Logout by revoking the refresh token or blacklisting the access token.
+
+    Accepts either a JSON body with a refresh_token or an Authorization
+    header with a Bearer access token.
 
     Args:
-        request: Refresh token request
+        request: Optional refresh token body
+        authorization: Authorization header (Bearer access token)
         auth_service: Auth service
         db: Database session
 
@@ -250,7 +269,29 @@ async def logout(
         HTTPException: If token invalid
     """
     try:
-        await auth_service.logout(request.refresh_token)
+        if request and request.refresh_token:
+            await auth_service.logout(request.refresh_token)
+            await db.commit()
+            return
+
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header",
+            )
+
+        token = authorization.replace("Bearer ", "")
+        payload = TokenManager.verify_token(token, token_type="access")
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+            )
+
+        user_id = UUID(payload.get("user_id") or payload.get("sub"))
+        token_hash = TokenManager.hash_token(token)
+        expires_at = datetime.fromtimestamp(payload["exp"], tz=UTC)
+        blacklist_repo = TokenBlacklistRepository(db)
+        await blacklist_repo.create(token_hash=token_hash, user_id=user_id, expires_at=expires_at)
         await db.commit()
 
     except HTTPException:

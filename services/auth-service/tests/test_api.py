@@ -68,9 +68,9 @@ class TestAuthEndpoints:
 
         assert response.status_code == 201
         data = response.json()
-        assert data["email"] == "newuser@example.com"
-        assert data["first_name"] == "John"
-        assert data["last_name"] == "Doe"
+        assert data["access_token"]
+        assert data["refresh_token"]
+        assert data["token_type"] == "bearer"
 
     def test_register_duplicate_email(self, client):
         """Test registration with duplicate email."""
@@ -332,9 +332,9 @@ class TestAuthEndpoints:
 
         # Change password
         response = client.post(
-            "/api/v1/users/change-password",
+            "/api/v1/auth/change-password",
             json={
-                "old_password": "SecurePass123!",
+                "current_password": "SecurePass123!",
                 "new_password": "NewSecurePass456!",
             },
             headers={"Authorization": f"Bearer {access_token}"},

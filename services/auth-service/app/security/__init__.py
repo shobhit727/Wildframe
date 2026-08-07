@@ -146,7 +146,7 @@ class TokenManager:
 
             if payload.get("type") != token_type:
                 logger.warning(f"Invalid token type: expected {token_type}")
-                return None
+                raise JWTError(f"Invalid token type: expected {token_type}")
 
             return payload
 
@@ -154,6 +154,8 @@ class TokenManager:
             logger.debug("Token expired")
             return None
         except JWTError as e:
+            if "Invalid token type" in str(e):
+                raise
             logger.warning(f"Token verification failed: {e}")
             return None
 
