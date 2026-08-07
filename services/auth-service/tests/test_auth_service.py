@@ -145,6 +145,7 @@ class TestAuthServiceRegister:
         mock_user.email = email
         mock_user.first_name = "Test"
         mock_user.last_name = "User"
+        mock_user.role = "user"
         mock_repositories["user_repo"].create.return_value = mock_user
         mock_repositories["user_repo"].get_by_email.return_value = None
 
@@ -172,6 +173,7 @@ class TestAuthServiceRegister:
         mock_user.email = "test@example.com"
         mock_user.first_name = "Test"
         mock_user.last_name = "User"
+        mock_user.role = "user"
         mock_repositories["user_repo"].create.return_value = mock_user
         mock_repositories["user_repo"].get_by_email.return_value = None
         request = UserRegisterRequest(

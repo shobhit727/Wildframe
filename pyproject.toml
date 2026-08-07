@@ -118,6 +118,30 @@ profile = "black"
 line_length = 100
 skip_glob = ["*/migrations/*"]
 
+# Lint is pinned so an unpinned `pip install ruff` in CI cannot change the
+# result between runs (ruff has been changing its default select set between
+# releases). We enforce the stable, real-code rules and fix violations rather
+# than chase flaky floaters (DTZ, I001, preview) that newer ruff enables by
+# default.
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+extend-exclude = ["*/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+# E402 (module-level import placed after a docstring/code): legacy cosmetic
+# decoration used across the 15 services' app entrypoints.
+ignore = ["E402"]
+
+[tool.ruff.lint.per-file-ignores]
+# E712 `col == True` is the *correct* SQLAlchemy expression in where() clauses;
+# `if col:` would pass the Column object truthily and never filter.
+"**/repositories/**/*.py" = ["E712", "E711"]
+"**/repositories.py" = ["E712", "E711"]
+# E741 single-letter loop vars in tests are an established convention.
+"**/tests/**/*.py" = ["E741"]
+
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true

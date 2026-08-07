@@ -264,16 +264,16 @@ class AdminService:
         logs = await self.audit_repo.list_by_admin(admin_id, limit)
         return [
             {
-                "id": l.id,
-                "admin_id": l.admin_id,
-                "action": l.action,
-                "resource_type": l.resource_type,
-                "resource_id": l.resource_id,
-                "changes": l.changes,
-                "ip_address": l.ip_address,
-                "created_at": l.created_at,
+                "id": log.id,
+                "admin_id": log.admin_id,
+                "action": log.action,
+                "resource_type": log.resource_type,
+                "resource_id": log.resource_id,
+                "changes": log.changes,
+                "ip_address": log.ip_address,
+                "created_at": log.created_at,
             }
-            for l in logs
+            for log in logs
         ]
 
     async def get_audit_logs_by_resource(
@@ -282,16 +282,16 @@ class AdminService:
         logs = await self.audit_repo.list_by_resource(resource_type, resource_id, limit)
         return [
             {
-                "id": l.id,
-                "admin_id": l.admin_id,
-                "action": l.action,
-                "resource_type": l.resource_type,
-                "resource_id": l.resource_id,
-                "changes": l.changes,
-                "ip_address": l.ip_address,
-                "created_at": l.created_at,
+                "id": log.id,
+                "admin_id": log.admin_id,
+                "action": log.action,
+                "resource_type": log.resource_type,
+                "resource_id": log.resource_id,
+                "changes": log.changes,
+                "ip_address": log.ip_address,
+                "created_at": log.created_at,
             }
-            for l in logs
+            for log in logs
         ]
 
     # System Stats
