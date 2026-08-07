@@ -7,7 +7,7 @@ import logging
 import logging.config
 import uuid
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from app.core.settings import settings
@@ -38,7 +38,7 @@ class CorrelationIdJsonFormatter(jsonlogger.JsonFormatter):
         super().add_fields(log_record, record, message_dict)
 
         # Add timestamp in ISO format
-        log_record["timestamp"] = datetime.utcnow().isoformat()
+        log_record["timestamp"] = datetime.now(UTC).isoformat()
 
         # Add correlation information
         log_record["correlation_id"] = correlation_id_var.get()

@@ -1,7 +1,7 @@
 """Repository layer for Auth Service."""
 
 import logging
-from datetime import datetime
+from datetime import UTC
 from uuid import UUID
 
 from app.models import LoginAudit, RefreshToken, TokenBlacklist, User
@@ -145,7 +145,7 @@ class RefreshTokenRepository(BaseRepository):
         from datetime import datetime
 
         try:
-            stmt = select(RefreshToken).where(RefreshToken.expires_at < datetime.utcnow())
+            stmt = select(RefreshToken).where(RefreshToken.expires_at < datetime.now(UTC))
             result = await self.session.execute(stmt)
             tokens = result.scalars().all()
 
@@ -198,7 +198,7 @@ class LoginAuditRepository(BaseRepository):
         """Get count of failed login attempts in last N minutes."""
         from datetime import datetime, timedelta
 
-        cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+        cutoff = datetime.now(UTC) - timedelta(minutes=minutes)
 
         stmt = select(LoginAudit).where(
             (LoginAudit.user_id == user_id)
@@ -237,7 +237,7 @@ class TokenBlacklistRepository(BaseRepository):
         from datetime import datetime
 
         try:
-            stmt = select(TokenBlacklist).where(TokenBlacklist.expires_at < datetime.utcnow())
+            stmt = select(TokenBlacklist).where(TokenBlacklist.expires_at < datetime.now(UTC))
             result = await self.session.execute(stmt)
             entries = result.scalars().all()
 

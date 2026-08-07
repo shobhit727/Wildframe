@@ -84,11 +84,10 @@ class TokenManager:
         Returns:
             str: JWT access token
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         expires_at = now + timedelta(minutes=settings.JWT_EXPIRATION_MINUTES)
 
         payload = {
-            "sub": str(user_id),
             "user_id": str(user_id),
             "email": email,
             "role": role_for_email(email),
@@ -115,11 +114,10 @@ class TokenManager:
         Returns:
             str: JWT refresh token
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRATION_DAYS)
 
         payload = {
-            "sub": str(user_id),
             "user_id": str(user_id),
             "type": "refresh",
             "iat": now,
@@ -226,7 +224,7 @@ class TokenManager:
 
     def create_refresh_token_for_user(self, user) -> tuple[str, str, datetime]:
         """Create refresh token and return token, hash, and expires_at."""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRATION_DAYS)
         # Use existing static method to build token
         token = TokenManager.create_refresh_token(str(user.id))

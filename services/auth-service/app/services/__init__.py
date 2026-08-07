@@ -3,7 +3,7 @@
 import json
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from app.repositories import (
@@ -100,7 +100,7 @@ class AuthService:
             )
 
         # Check if user is locked
-        if user.locked_until and user.locked_until > datetime.utcnow():
+        if user.locked_until and user.locked_until > datetime.now(UTC):
             logger.warning(f"Login failed: user locked: {user.email}")
             await self.audit_repo.create(
                 user_id=user.id,
@@ -122,7 +122,7 @@ class AuthService:
 
             # Lock user if too many attempts
             if user.login_attempts >= self.max_login_attempts:
-                locked_until = datetime.utcnow() + timedelta(minutes=self.lockout_minutes)
+                locked_until = datetime.now(UTC) + timedelta(minutes=self.lockout_minutes)
                 user = await self.user_repo.update(user.id, locked_until=locked_until)
 
             await self.user_repo.commit()
@@ -141,7 +141,7 @@ class AuthService:
 
         # Reset login attempts on successful login
         await self.user_repo.reset_login_attempts(user.id)
-        user = await self.user_repo.update(user.id, last_login_at=datetime.utcnow())
+        user = await self.user_repo.update(user.id, last_login_at=datetime.now(UTC))
         await self.user_repo.commit()
 
         # Create audit record
@@ -304,7 +304,7 @@ class AuthService:
 
         # Generate verification code
         code = f"{secrets.randbelow(1000000):06d}"
-        expires_at = datetime.utcnow() + timedelta(hours=24)
+        expires_at = datetime.now(UTC) + timedelta(hours=24)
 
         # Store code in user record (in production, use Redis with TTL)
         user.mfa_secret = code  # Reusing mfa_secret field temporarily for email code
@@ -338,7 +338,7 @@ class AuthService:
                 detail="Invalid verification code",
             )
 
-        if datetime.utcnow() > expires_at:
+        if datetime.now(UTC) > expires_at:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Verification code expired",
@@ -346,7 +346,7 @@ class AuthService:
 
         # Mark email as verified
         user.email_verified = True
-        user.email_verified_at = datetime.utcnow()
+        user.email_verified_at = datetime.now(UTC)
         user.mfa_secret = None  # Clear code
         user.locked_until = None  # Clear expiry
         await self.user_repo.commit()

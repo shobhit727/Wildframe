@@ -6,7 +6,7 @@ Entry point with lifespan management, middleware, and route configuration.
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.core.database import DatabaseManager
 from app.core.logging import set_correlation_id, set_request_id, setup_logging
@@ -170,7 +170,7 @@ def create_app() -> FastAPI:
             status="healthy" if db_health else "unhealthy",
             service=settings.SERVICE_NAME,
             version=settings.SERVICE_VERSION,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             checks={
                 "database": {
                     "status": "healthy" if db_health else "unhealthy",
