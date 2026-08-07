@@ -1,8 +1,27 @@
-# Placeholder Helm values for staging. Real values go here once the
-# infrastructure/helm/ chart exists. Until then, the deploy job in
-# .github/workflows/ci-cd.yml is effectively a no-op against this file.
-image:
-  repository: ghcr.io/wildframe/wildframe
-  tag: staging
+namespace: wildframe-staging
 
 replicaCount: 1
+
+image:
+  repository: ghcr.io/shobhit727/wildframe
+  pullPolicy: IfNotPresent
+
+infra:
+  postgresHost: "postgres-staging"
+  redisHost: "redis-master-staging"
+  kafkaBootstrap: "kafka-staging:9092"
+
+secrets:
+  jwtSecret: "change-me-staging"
+
+ingress:
+  enabled: true
+  host: staging.wildframe.com
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

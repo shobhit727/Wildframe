@@ -1,0 +1,24 @@
+namespace: wildframe-production
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/shobhit727/wildframe
+  pullPolicy: IfNotPresent
+
+infra:
+  postgresHost: "postgres-prod"
+  redisHost: "redis-master-prod"
+  kafkaBootstrap: "kafka-prod:9092"
+
+ingress:
+  enabled: true
+  host: app.wildframe.com
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1024Mi

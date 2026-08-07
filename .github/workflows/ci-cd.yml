@@ -54,6 +54,36 @@ jobs:
         continue-on-error: true
 
   # ---------------------------------------------------------------------------
+  # Helm chart lint/render: validates infrastructure/helm/wildframe
+  # ---------------------------------------------------------------------------
+  helm-lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Lint chart
+        run: helm lint infrastructure/helm/wildframe
+
+      - name: Render manifests
+        run: helm template wildframe infrastructure/helm/wildframe --namespace wildframe > /tmp/helm-out.yaml
+
+      - name: Check all services rendered
+        run: |
+          for svc in api-gateway auth-service user-service content-service streaming-service \
+                      search-service recommendation-service billing-service analytics-service \
+                      notification-service media-pipeline creators-service moderation-service \
+                      uploads-service admin-service; do
+            grep -q "name: $svc" /tmp/helm-out.yaml || { echo "missing service: $svc"; exit 1; }
+          done
+
+  # ---------------------------------------------------------------------------
   # Backend tests: pytest + coverage per service
   # ---------------------------------------------------------------------------
   backend-test:

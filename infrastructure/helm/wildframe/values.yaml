@@ -1,0 +1,112 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/shobhit727/wildframe
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+namespace: wildframe
+
+# Shared infra connection endpoints (cluster-internal)
+infra:
+  postgresHost: "postgres"
+  postgresPort: 5432
+  redisHost: "redis-master"
+  redisPort: 6379
+  kafkaBootstrap: "kafka:9092"
+  jaegerAgentHost: "jaeger-agent"
+
+# Per-service overrides. `databases` defines the Postgres DBs to provision.
+services:
+  api-gateway:
+    containerPort: 8000
+    replicas: 2
+    env:
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000"
+  auth-service:
+    containerPort: 8000
+    replicas: 1
+    db: auth_db
+    env:
+      PASSWORD_BCRYPT_ROUNDS: "12"
+  user-service:
+    containerPort: 8000
+    replicas: 1
+    db: user_db
+  content-service:
+    containerPort: 8000
+    replicas: 1
+    db: content_db
+  streaming-service:
+    containerPort: 8000
+    replicas: 1
+    db: streaming_db
+  search-service:
+    containerPort: 8000
+    replicas: 1
+    db: search_db
+  recommendation-service:
+    containerPort: 8000
+    replicas: 1
+    db: recommendation_db
+  billing-service:
+    containerPort: 8000
+    replicas: 1
+    db: billing_db
+  analytics-service:
+    containerPort: 8000
+    replicas: 1
+    db: analytics_db
+  notification-service:
+    containerPort: 8000
+    replicas: 1
+    db: notification_db
+  media-pipeline:
+    containerPort: 8000
+    replicas: 1
+    db: media_pipeline_db
+  creators-service:
+    containerPort: 8000
+    replicas: 1
+    db: creators_db
+  moderation-service:
+    containerPort: 8000
+    replicas: 1
+    db: moderation_db
+  uploads-service:
+    containerPort: 8000
+    replicas: 1
+    db: uploads_db
+  admin-service:
+    containerPort: 8000
+    replicas: 1
+    db: admin_db
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: nginx
+  host: wildframe.example.com
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Default JWT secret (override via --set secrets.jwtSecret or a Secret)
+secrets:
+  jwtSecret: "change-me-in-production"
+
+kafka:
+  enabled: true
+  topics:
+    - user.registered
+    - user.login
+    - token.revoked
