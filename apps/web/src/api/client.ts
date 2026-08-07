@@ -77,7 +77,7 @@ export function normalizeContent(item: BackendContent): Content {
   };
 }
 
-function normalizeUser(payload: Record<string, unknown>): User {
+export function normalizeUser(payload: Record<string, unknown>): User {
   return {
     id: String(payload.id),
     email: String(payload.email || ''),
