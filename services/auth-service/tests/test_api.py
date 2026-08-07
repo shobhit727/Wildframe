@@ -9,11 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 
 @pytest.fixture
-async def test_app():
+async def test_app(tmp_path):
     """Create test FastAPI app with test database."""
-    # Use in-memory SQLite for testing
+    # Use a temp-file SQLite so all pooled connections share one DB
     test_engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
+        f"sqlite+aiosqlite:///{tmp_path}/test.db",
         connect_args={"timeout": 15},
     )
 
