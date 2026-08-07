@@ -9,7 +9,7 @@ services:
     - 5432:5432
     volumes:
     - postgres_data:/var/lib/postgresql/data
-    - ./infrastructure/database/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql
+    - /home/phoenix/Desktop/wildframe/infrastructure/database/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql
     healthcheck:
       test:
       - CMD-SHELL
@@ -57,12 +57,13 @@ services:
     healthcheck:
       test:
       - CMD
-      - kafka-broker-api-versions.sh
+      - kafka-broker-api-versions
       - --bootstrap-server
       - localhost:29092
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
     networks:
     - wildframe-network
   zookeeper:
@@ -161,7 +162,7 @@ services:
     - wildframe-network
   auth-service:
     build:
-      context: .
+      context: ..
       dockerfile: services/auth-service/Dockerfile
       target: development
     ports:
@@ -194,7 +195,7 @@ services:
     - wildframe-network
   user-service:
     build:
-      context: .
+      context: ..
       dockerfile: services/user-service/Dockerfile
       target: development
     ports:
@@ -223,7 +224,7 @@ services:
     - wildframe-network
   admin-service:
     build:
-      context: .
+      context: ..
       dockerfile: services/admin-service/Dockerfile
       target: development
     ports:
@@ -252,7 +253,7 @@ services:
     - wildframe-network
   content-service:
     build:
-      context: .
+      context: ..
       dockerfile: services/content-service/Dockerfile
       target: development
     ports:
@@ -281,7 +282,7 @@ services:
     - wildframe-network
   api-gateway:
     build:
-      context: .
+      context: ..
       dockerfile: services/api-gateway/Dockerfile
       target: development
     ports:
@@ -309,7 +310,7 @@ services:
     - wildframe-network
   streaming-service:
     build:
-      context: .
+      context: ..
       dockerfile: services/streaming-service/Dockerfile
       target: development
     ports:
@@ -333,7 +334,7 @@ services:
     - wildframe-network
   search-service:
     build:
-      context: .
+      context: ..
       dockerfile: services/search-service/Dockerfile
       target: development
     ports:
@@ -356,7 +357,7 @@ services:
     - wildframe-network
   recommendation-service:
     build:
-      context: .
+      context: ..
       dockerfile: services/recommendation-service/Dockerfile
       target: development
     ports:
@@ -380,7 +381,7 @@ services:
     - wildframe-network
   billing-service:
     build:
-      context: .
+      context: ..
       dockerfile: services/billing-service/Dockerfile
       target: development
     ports:
@@ -404,7 +405,7 @@ services:
     - wildframe-network
   analytics-service:
     build:
-      context: .
+      context: ..
       dockerfile: services/analytics-service/Dockerfile
       target: development
     ports:
@@ -428,7 +429,7 @@ services:
     - wildframe-network
   notification-service:
     build:
-      context: .
+      context: ..
       dockerfile: services/notification-service/Dockerfile
       target: development
     ports:
@@ -452,7 +453,7 @@ services:
     - wildframe-network
   creators-service:
     build:
-      context: .
+      context: ..
       dockerfile: services/creators-service/Dockerfile
       target: development
     ports:
@@ -478,7 +479,7 @@ services:
     - wildframe-network
   moderation-service:
     build:
-      context: .
+      context: ..
       dockerfile: services/moderation-service/Dockerfile
       target: development
     ports:
@@ -504,7 +505,7 @@ services:
     - wildframe-network
   uploads-service:
     build:
-      context: .
+      context: ..
       dockerfile: services/uploads-service/Dockerfile
       target: development
     ports:
@@ -530,7 +531,7 @@ services:
     - wildframe-network
   media-pipeline:
     build:
-      context: .
+      context: ..
       dockerfile: services/media-pipeline/Dockerfile
       target: development
     ports:

@@ -1,21 +1,26 @@
 # Multi-stage Dockerfile for Auth Service
 
+# Multi-stage Dockerfile for Auth Service
+
 # Stage 1: Builder
 FROM python:3.13-slim as builder
 
 WORKDIR /build
 
-# Install build dependencies
+# Install build dependencies - added build-essential and libffi-dev for asyncpg
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
+    pkg-config \
+    libsasl2-dev \
+    libssl-dev \
+    build-essential \
+    libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy pyproject.toml and install dependencies
-COPY services/auth-service/pyproject.toml .
-RUN pip install --no-cache-dir poetry==1.8.3 && \
-    poetry config virtualenvs.create false && \
-    poetry install --no-dev --no-interaction --no-ansi
+# Install dependencies with pip
+COPY services/auth-service/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Development
 FROM python:3.13-slim as development
@@ -29,11 +34,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python dependencies from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
 COPY services/auth-service /app
+
+# Copy SDK directly into app
+COPY packages/sdk/wildframe_observability /app/wildframe_observability
 
 # Create logs directory
 RUN mkdir -p logs
@@ -60,11 +68,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python dependencies from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
 COPY services/auth-service /app
+
+# Copy SDK directly into app
+COPY packages/sdk/wildframe_observability /app/wildframe_observability
 
 # Create logs directory and set permissions
 RUN mkdir -p logs && chown -R appuser:appuser /app

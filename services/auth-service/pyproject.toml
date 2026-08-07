@@ -29,7 +29,7 @@ python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 pyjwt = "^2.8.0"
 bcrypt = "^4.1.0"
 python-multipart = "^0.0.6"
-aiokafka = "^0.10.0"
+aiokafka = "^0.11.0"
 python-json-logger = "^2.0.0"
 email-validator = "^2.1.0"
 httpx = "^0.25.0"
@@ -42,7 +42,6 @@ opentelemetry-instrumentation-redis = "^0.41b0"
 prometheus-client = "^0.18.0"
 pyotp = "^2.9.0"
 setuptools = "^69.0.0"
-wildframe-observability-sdk = {path = "../../packages/sdk/wildframe_observability", develop = true}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

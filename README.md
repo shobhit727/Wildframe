@@ -1,57 +1,57 @@
 # Wildframe OTT Streaming Platform
 
-A FastAPI microservices-based OTT streaming platform. **Core platform stabilized (Aug 2026)** — all 15 services import cleanly, compose/CI valid, JWT security hardened, lifespan health checks added; email/MFA stubbed (501); integration tests need Docker.
+A FastAPI microservices-based OTT streaming platform. **Not yet production-ready** — core services start and CRUD works; email/MFA stubbed; integration tests being fixed; observability SDK wired but needs real implementation.
 
 ## 🎯 Current State (August 2026)
 
 | Service | Status |
 |---------|--------|
-| auth-service | ✅ Starts; JWT auth works; **email/MFA stubbed (501)**; TokenBlacklist added |
-| user-service | ✅ Starts; CRUD works; lifespan + health_check |
-| content-service | ✅ Starts; CRUD works; lifespan + health_check |
-| streaming-service | ✅ Starts; CRUD works; lifespan + health_check; FastAPI deprecation warnings |
-| admin-service | ✅ Starts; CRUD works; lifespan + health_check |
-| media-pipeline | ✅ Starts; orchestrator works; lifespan + health_check |
-| api-gateway | ✅ Starts; routing + auth + rate limiting; lifespan + health_check |
-| creators-service | ✅ Starts; CRUD works; lifespan + health_check |
-| moderation-service | ✅ Starts; CRUD works; lifespan + health_check |
-| uploads-service | ✅ Starts; CRUD works; lifespan + health_check |
-| search-service | ✅ Starts; lifespan + health_check; needs `elasticsearch` dep |
-| recommendation-service | ✅ Starts; lifespan + health_check; FastAPI deprecation warnings |
-| billing-service | ✅ Starts; lifespan + health_check; needs `stripe` dep |
-| analytics-service | ✅ Starts; lifespan + health_check; FastAPI deprecation warnings |
-| notification-service | ✅ Starts; lifespan + health_check; FastAPI deprecation warnings |
+| auth-service | ✅ Starts; JWT auth works; **email/MFA stubbed (501)** |
+| user-service | ✅ Starts; CRUD works |
+| content-service | ✅ Starts; CRUD works |
+| streaming-service | ✅ Starts; CRUD works |
+| admin-service | ✅ Starts; CRUD works; tests passing |
+| media-pipeline | ✅ Starts; orchestrator works |
+| api-gateway | ✅ Starts |
+| creators-service | ✅ Starts |
+| moderation-service | ✅ Starts |
+| uploads-service | ✅ Starts |
+| analytics | ✅ Starts |
+| billing | ✅ Starts |
+| notification | ✅ Starts |
+| recommendation | ✅ Starts |
+| search | ✅ Starts |
 
-**What works**: All 15 services import cleanly, expose CRUD/health endpoints, have lifespan DB health checks. Docker Compose + CI/CD valid.
+**What works**: All 16 services import cleanly. Backend Lint (ruff + black + mypy) passes in CI. Admin-service tests pass. Asyncpg upgraded to 0.30.0 for Python 3.13. `wildframe-observability-sdk` wired into every service.
 
-**What's missing**: Email verification, MFA, integration tests (need Docker), optional deps (elasticsearch, stripe), security audit, load testing.
+**What's missing**: Email verification, MFA, integration tests (being fixed), Dockerfile Python 3.11→3.13 bump, secrets management, load testing, security audit.
 
 ## Technology Stack
 
 ### Backend
 - **FastAPI** 0.100+: Async Python web framework
 - **SQLAlchemy 2.0**: Async ORM
-- **PostgreSQL 14+**: Primary database (per-service, 15 DBs)
+- **PostgreSQL 14+**: Primary database (per-service)
 - **Redis 7.0+**: Caching and sessions
-- **Kafka 3.0+**: Event streaming
-- **Elasticsearch 8.0+**: Search (search-service)
-- **FFmpeg**: Video transcoding (media-pipeline)
+- **Kafka 3.0+**: Event streaming (configured, not verified)
+- **Elasticsearch 8.0+**: Search (configured, not verified)
+- **FFmpeg**: Video transcoding (configured, not verified)
+- **Python 3.13**: Runtime (asyncpg 0.30.0+ required)
 
 ### Frontend
-- **Next.js 15**: React framework with SSR (scaffold)
+- **Next.js 15**: React framework with SSR (scaffold only)
 - **TypeScript**: Type-safe development
 - **TailwindCSS**: Utility-first CSS
 
 ### Infrastructure
 - **Kubernetes**: Container orchestration (manifests exist)
-- **Docker**: Containerization (Dockerfiles on python:3.13-slim)
+- **Docker**: Containerization (Dockerfiles exist)
 - **Helm**: Kubernetes package manager (chart template exists)
 - **Terraform**: Infrastructure as code (modules exist)
-- **GitHub Actions**: CI/CD (consolidated workflow: lint → test → build-smoke)
-- **Prometheus**: Metrics (`/metrics` on all services, config in `infrastructure/prometheus/`)
-- **Grafana**: Dashboards (provisioning in `infrastructure/grafana/`)
-- **Loki**: Log aggregation (config in `infrastructure/loki/`)
-- **Jaeger**: Distributed tracing
+- **GitHub Actions**: CI/CD (consolidated workflow)
+- **Prometheus**: Metrics (exposed, not verified)
+- **Grafana**: Dashboards (not configured)
+- **Loki**: Log aggregation (not configured)
 
 ## Project Structure
 
@@ -59,50 +59,48 @@ A FastAPI microservices-based OTT streaming platform. **Core platform stabilized
 wildframe/
 ├── apps/
 │   └── web/                        # Next.js web application (scaffold)
-├── services/                       # 15 Backend microservices
-│   ├── api-gateway/                # Request routing, auth, rate limiting
+├── services/                       # 16 Backend microservices
+│   ├── api-gateway/                # Request routing and auth
 │   ├── auth-service/               # Authentication and JWT
 │   ├── user-service/               # User profiles and devices
 │   ├── content-service/            # Content metadata
 │   ├── streaming-service/          # Video streaming manifests
-│   ├── search-service/             # Content search (Elasticsearch)
+│   ├── search-service/             # Content search
 │   ├── recommendation-service/     # ML-based recommendations
-│   ├── billing-service/            # Subscriptions and payments (Stripe)
+│   ├── billing-service/            # Subscriptions and payments
 │   ├── analytics-service/          # Event analytics
 │   ├── notification-service/       # Multi-channel notifications
-│   ├── admin-service/              # Administration & moderation
+│   ├── admin-service/              # Administration
 │   ├── media-pipeline/             # Video transcoding
-│   ├── creators-service/           # Creator onboarding & profiles
+│   ├── creators-service/           # Creator onboarding
 │   ├── moderation-service/         # Content moderation
-│   └── uploads-service/            # File uploads & processing
+│   └── uploads-service/            # File uploads
 ├── packages/
 │   └── sdk/
-│       ├── wildframe_events/       # Kafka event publishing/subscribing
-│       └── wildframe_observability/ # OpenTelemetry, metrics, logging, health
+│       ├── wildframe_observability/ # Observability SDK
+│       └── wildframe_events/        # Event publishing
 ├── infrastructure/                 # Infrastructure as code
 │   ├── kubernetes/                 # K8s manifests and Helm
 │   ├── terraform/                  # Terraform modules
-│   ├── prometheus/                 # Prometheus config
-│   ├── grafana/                    # Grafana provisioning
-│   └── loki/                       # Loki config
+│   └── docker/                     # Docker configurations
 ├── deployments/                    # Docker Compose
 ├── docs/                           # Documentation
-├── scripts/                        # Utility scripts (smoke-tests.sh)
 └── .github/workflows/              # CI/CD
 ```
 
 ## Quick Start
 
 ### Prerequisites
-- Docker & Docker Compose v2
-- Python 3.11+ (project requires `>=3.11,<3.16`)
-- Node.js 18+ (with pnpm)
+- Docker & Docker Compose
+- Python 3.13+
+- Node.js 18+
+- Poetry 1.8.3
 
 ### Local Development with Docker Compose
 
 ```bash
-# Start all services (infrastructure + 15 app services)
-docker compose -f deployments/docker-compose.dev.yml up --build -d
+# Start all services (infrastructure + 16 services)
+docker compose -f deployments/docker-compose.dev.yml up -d
 
 # Wait for services to be ready
 sleep 30
@@ -111,7 +109,10 @@ sleep 30
 curl http://localhost:8000/health   # API Gateway
 curl http://localhost:8001/health   # Auth Service
 curl http://localhost:8002/health   # User Service
-# ... ports 8003-8014 per AGENTS.md port table
+curl http://localhost:8003/health   # Content Service
+curl http://localhost:8004/health   # Streaming Service
+curl http://localhost:8006/health   # Admin Service
+curl http://localhost:8011/health   # Media Pipeline
 ```
 
 ### Run Services Individually (Dev)
@@ -180,20 +181,20 @@ All endpoints under `/api/v1` (mounted by each service).
 
 ### Code Quality
 ```bash
-# Lint
+# Lint (all passing)
 ruff check services/
 black --check services/
 
 # Type check
 mypy services/
 
-# Tests (unit only; no integration tests yet)
-pytest services/auth-service/tests --asyncio-mode=auto
-pytest services/user-service/tests --asyncio-mode=auto
+# Tests (per service, uses local pytest.ini)
+cd services/auth-service
+poetry run pytest tests --asyncio-mode=auto
 ```
 
 ### Adding a Service
-Each service follows: `api/routes` → `services` → `repositories` → `models` with `create_app()` in `main.py`.
+Each service follows: `api/routes` → `services` → `repositories` → `models` with `create_app()` in `main.py`. FastAPI dependency injection uses `Annotated[Type, Depends(...)]` — never `Depends()` in argument defaults.
 
 ## Deployment
 
@@ -218,26 +219,17 @@ terraform init && terraform plan
 
 - Prometheus metrics: `/metrics` on each service
 - Structured JSON logs with correlation IDs
-- OpenTelemetry tracing (stubbed — needs real SDK)
+- OpenTelemetry tracing via `wildframe-observability-sdk`
 
 ## Known Limitations
 
-- ❌ Email verification (501 — stubbed per AGENTS.md)
-- ❌ MFA/TOTP (501 — stubbed per AGENTS.md)
-- ❌ Integration tests (only unit; testcontainers needs Docker)
-- ❌ Real observability SDK (stub in `packages/sdk/wildframe_observability/`)
-- ✅ Secrets management hardened (model_validator fails in production with defaults)
+- ❌ Email verification (501)
+- ❌ MFA/TOTP (501)
+- ❌ Integration tests (being fixed)
+- ❌ Dockerfile Python 3.13 bump (in progress)
+- ❌ Secrets management (hardcoded defaults)
 - ❌ Load testing / capacity planning
-- ❌ Security audit (96 Dependabot alerts)
-
-## Recent Audit (August 2026)
-
-A full audit was performed fixing 22 issues across infra, compose, services, and CI.
-See **[AUDIT_FIX_SUMMARY.md](AUDIT_FIX_SUMMARY.md)** for:
-- 22 fixed items (no Docker required)
-- Tasks requiring Docker (testcontainers, full stack)
-- Optional deps for CI
-- Pre-existing debt not from audit
+- ❌ Security audit
 
 ## License
 
@@ -245,4 +237,4 @@ Proprietary - Wildframe Platform
 
 ## Status
 
-See `STATUS.md` for current progress and `AGENTS.md` for developer guidance.
+See `STATUS.md` for current progress and next steps.

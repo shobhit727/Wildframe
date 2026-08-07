@@ -16,7 +16,7 @@ license = "Proprietary"
 packages = [{include = "wildframe_observability"}]
 
 [tool.poetry.dependencies]
-python = "^3.13"
+python = ">=3.11,<3.16"
 prometheus-client = "^0.18.0"
 starlette = ">=0.27.0"
 fastapi = "^0.104.0"
@@ -29,3 +29,7 @@ black = "^23.11.0"
 isort = "^5.12.0"
 mypy = "^1.7.0"
 httpx = "^0.25.0"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["wildframe_observability*"]

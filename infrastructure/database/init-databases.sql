@@ -1,7 +1,9 @@
 -- Database initialization script for Wildframe services
 -- Run this against the main PostgreSQL instance to create service-specific databases
 
--- Create databases for each service
+-- Create databases for each service (PostgreSQL doesn't support IF NOT EXISTS for CREATE DATABASE)
+-- Use \l meta-command to list databases and conditionally create
+\set ON_ERROR_STOP off
 CREATE DATABASE auth_db;
 CREATE DATABASE users_db;
 CREATE DATABASE content_db;
@@ -16,7 +18,9 @@ CREATE DATABASE admin_db;
 CREATE DATABASE creators_db;
 CREATE DATABASE moderation_db;
 CREATE DATABASE uploads_db;
+CREATE DATABASE wildframe;
 CREATE DATABASE wildframe_db;
+\set ON_ERROR_STOP on
 
 -- Create service users with limited privileges
 CREATE USER auth_user WITH PASSWORD 'auth_service_secure_password';
