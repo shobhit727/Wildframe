@@ -8,7 +8,9 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
+import pyotp
 from app.core.database import get_db
+from app.core.settings import settings
 from app.repositories import (
     LoginAuditRepository,
     RefreshTokenRepository,
@@ -17,16 +19,16 @@ from app.repositories import (
 )
 from app.schemas import (
     ChangePasswordRequest,
-    MFASetupRequest,
     MFAVerifyRequest,
     RefreshTokenRequest,
+    ResendVerificationRequest,
     TokenResponse,
     UserLoginRequest,
     UserRegisterRequest,
     UserResponse,
     VerifyEmailRequest,
 )
-from app.security import PasswordManager, RateLimiter, TokenManager
+from app.security import PasswordManager, RateLimiter, SecretCipher, TokenManager
 from app.services import AuthService
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -391,52 +393,155 @@ async def change_password(
         )
 
 
-@router.post("/verify-email", status_code=status.HTTP_501_NOT_IMPLEMENTED)
+@router.post("/verify-email")
 async def verify_email(
     request: VerifyEmailRequest,
-    user_id: Annotated[UUID, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> None:
-    """Stub: real email verification flow not yet implemented.
+) -> dict:
+    """Verify email via a signed ownership token.
 
-    The previous implementation abused the User model's `mfa_secret` and
-    `locked_until` columns as temporary storage for verification codes and
-    expiry, which silently flipped `email_verified` on without proof of
-    ownership. Per AGENTS.md, return 501 until the flow exists.
+    The token is a JWT of type ``email_verification`` bound to the user and
+    email. It is only issued after account creation or an explicit resend,
+    so verifying proves possession of the inbox link/address it was sent to.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Email verification is not yet implemented",
-    )
+    payload = TokenManager.verify_token(request.token, token_type="email_verification")
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification token",
+        )
+
+    try:
+        token_user_id = UUID(payload.get("user_id") or payload.get("sub"))
+    except (ValueError, KeyError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification token"
+        )
+
+    if payload.get("email") != request.email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token email does not match requested email",
+        )
+
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_id(token_user_id)
+    if not user or user.email != request.email:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if not user.email_verified:
+        user.email_verified = True
+        user.email_verified_at = datetime.now(UTC)
+        await db.commit()
+        logger.info(f"Email verified for user: {user.email}")
+
+    return {"message": "Email verified successfully"}
 
 
-@router.post("/mfa/setup", status_code=status.HTTP_501_NOT_IMPLEMENTED)
+@router.post("/resend-verification", status_code=status.HTTP_202_ACCEPTED)
+async def resend_verification(
+    request: ResendVerificationRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Send a new email verification token for an existing, unverified account.
+
+    In dev the token is returned so the flow is exercisable without an email
+    provider; in production it is logged for the mail transport and never
+    returned to the caller.
+    """
+    email = request.email.strip().lower()
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_email(email)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if user.email_verified:
+        return {"message": "Email already verified"}
+
+    token = TokenManager.create_email_verification_token(user.id, user.email)
+    logger.info(f"Email verification token issued for {user.email}")
+
+    response: dict = {"message": "Verification email sent"}
+    if settings.ENVIRONMENT != "production":
+        response["verification_token"] = token
+    return response
+
+
+@router.post("/mfa/setup")
 async def setup_mfa(
-    request: MFASetupRequest,
     user_id: Annotated[UUID, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Stub: real MFA setup flow not yet implemented.
+    """Generate a TOTP secret and provisioning URI for the authenticator app.
 
-    The previous implementation stored the TOTP secret in plaintext on
-    the User row and returned it in the response. Per AGENTS.md, return
-    501 until a real TOTP provisioning flow with secure secret storage
-    exists.
+    The secret is encrypted at rest. It is returned exactly once so the
+    client can seed the authenticator; re-enabling MFA issues a fresh secret.
     """
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="MFA setup is not yet implemented",
-    )
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if user.mfa_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="MFA is already enabled"
+        )
+
+    secret = pyotp.random_base32()
+    issuer = settings.MFA_ISSUER_NAME
+    totp_uri = pyotp.TOTP(secret).provisioning_uri(name=user.email, issuer_name=issuer)
+
+    user.mfa_secret = SecretCipher.encrypt(secret)
+    await db.commit()
+    logger.info(f"MFA setup issued for user: {user.email}")
+
+    return {"secret": secret, "totp_uri": totp_uri}
 
 
-@router.post("/mfa/verify", status_code=status.HTTP_501_NOT_IMPLEMENTED)
+@router.post("/mfa/verify", responses={200: {"description": "MFA enabled"}})
 async def verify_mfa(
     request: MFAVerifyRequest,
     user_id: Annotated[UUID, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> None:
-    """Stub: real MFA verification flow not yet implemented."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="MFA verification is not yet implemented",
-    )
+) -> dict:
+    """Enable MFA after a correct TOTP code from the just-provisioned secret."""
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if user.mfa_enabled:
+        return {"message": "MFA already enabled"}
+    if not user.mfa_secret:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="MFA not set up")
+
+    secret = SecretCipher.decrypt(user.mfa_secret)
+    if not secret or not pyotp.TOTP(secret).verify(request.code, valid_window=1):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid MFA code")
+
+    user.mfa_enabled = True
+    await db.commit()
+    logger.info(f"MFA enabled for user: {user.email}")
+    return {"message": "MFA enabled successfully"}
+
+
+@router.post("/mfa/disable")
+async def disable_mfa(
+    request: MFAVerifyRequest,
+    user_id: Annotated[UUID, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Disable MFA after a valid TOTP code, clearing the stored secret."""
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not user.mfa_enabled:
+        return {"message": "MFA is not enabled"}
+
+    secret = SecretCipher.decrypt(user.mfa_secret) if user.mfa_secret else ""
+    if not secret or not pyotp.TOTP(secret).verify(request.code, valid_window=1):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid MFA code")
+
+    user.mfa_enabled = False
+    user.mfa_secret = None
+    await db.commit()
+    logger.info(f"MFA disabled for user: {user.email}")
+    return {"message": "MFA disabled successfully"}

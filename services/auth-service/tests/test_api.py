@@ -361,3 +361,75 @@ class TestAuthEndpoints:
             },
         )
         assert login_response.status_code == 200
+
+
+    def test_resend_and_verify_email(self, client):
+        """Email verification token flow (dev returns the token)."""
+        email = "verify@example.com"
+        client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": "SecurePass123!"},
+        )
+
+        resend = client.post("/api/v1/auth/resend-verification", json={"email": email})
+        assert resend.status_code == 202
+        token = resend.json()["verification_token"]
+
+        ok = client.post(
+            "/api/v1/auth/verify-email", json={"email": email, "token": token}
+        )
+        assert ok.status_code == 200
+        assert ok.json()["message"] == "Email verified successfully"
+
+        bad = client.post(
+            "/api/v1/auth/verify-email", json={"email": email, "token": "not.a.jwt"}
+        )
+        assert bad.status_code == 400
+
+    def test_verify_email_rejects_wrong_email(self, client):
+        client.post(
+            "/api/v1/auth/register",
+            json={"email": "a@example.com", "password": "SecurePass123!"},
+        )
+        res = client.post(
+            "/api/v1/auth/resend-verification", json={"email": "a@example.com"}
+        )
+        token = res.json()["verification_token"]
+
+        response = client.post(
+            "/api/v1/auth/verify-email",
+            json={"email": "other@example.com", "token": token},
+        )
+        assert response.status_code == 400
+
+    def test_mfa_setup_verify_disable(self, client):
+        import pyotp
+
+        client.post(
+            "/api/v1/auth/register",
+            json={"email": "mfa@example.com", "password": "SecurePass123!"},
+        )
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"email": "mfa@example.com", "password": "SecurePass123!"},
+        )
+        access_token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        setup = client.post("/api/v1/auth/mfa/setup", headers=headers)
+        assert setup.status_code == 200
+        secret = setup.json()["secret"]
+        assert setup.json()["totp_uri"].startswith("otpauth://totp/")
+
+        wrong = client.post(
+            "/api/v1/auth/mfa/verify", headers=headers, json={"code": "000000"}
+        )
+        assert wrong.status_code == 400
+
+        code = pyotp.TOTP(secret).now()
+        ok = client.post("/api/v1/auth/mfa/verify", headers=headers, json={"code": code})
+        assert ok.status_code == 200
+
+        code2 = pyotp.TOTP(secret).now()
+        dis = client.post("/api/v1/auth/mfa/disable", headers=headers, json={"code": code2})
+        assert dis.status_code == 200

@@ -209,6 +209,12 @@ class MFAVerifyRequest(BaseModel):
     code: str = Field(..., min_length=6, description="Verification code")
 
 
+class ResendVerificationRequest(BaseModel):
+    """Request to (re)issue an email verification token."""
+
+    email: EmailStr
+
+
 class ErrorResponse(BaseModel):
     """Error response.
 

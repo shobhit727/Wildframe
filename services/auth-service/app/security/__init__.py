@@ -1,3 +1,4 @@
+import base64
 import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -122,6 +123,29 @@ class TokenManager:
         return token
 
     @staticmethod
+    def create_email_verification_token(user_id: UUID, email: str) -> str:
+        """Create a JWT used as an email ownership proof.
+
+        Args:
+            user_id: User ID
+            email: User email
+
+        Returns:
+            str: Signed JWT, valid for settings.EMAIL_VERIFICATION_EXPIRATION_HOURS
+        """
+        now = datetime.now(UTC)
+        expires_at = now + timedelta(hours=settings.EMAIL_VERIFICATION_EXPIRATION_HOURS)
+        payload = {
+            "user_id": str(user_id),
+            "email": email,
+            "type": "email_verification",
+            "iat": now,
+            "exp": expires_at,
+            "jti": f"emailverify_{user_id}_{now.timestamp()}",
+        }
+        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+    @staticmethod
     def hash_token(token: str) -> str:
         """Hash a token for secure storage using SHA-256."""
         return hashlib.sha256(token.encode()).hexdigest()
@@ -211,6 +235,30 @@ class TokenManager:
     def hash_refresh_token(self, token: str) -> str:
         """Return sha256 hash of given refresh token for storage."""
         return hashlib.sha256(token.encode()).hexdigest()
+
+
+class SecretCipher:
+    """Index-encrypts at-rest secrets (TOTP MFA) with a key derived from
+    the JWT secret. Keys are unique to this app instance; they do not need
+    to survive cluster-wide rotation. Never store MFA secrets in plaintext."""
+
+    @staticmethod
+    def _fernet() -> "Fernet":
+        from cryptography.fernet import Fernet
+
+        key = base64.urlsafe_b64encode(hashlib.sha256(settings.JWT_SECRET_KEY.encode()).digest())
+        return Fernet(key)
+
+    @classmethod
+    def encrypt(cls, plaintext: str) -> str:
+        return cls._fernet().encrypt(plaintext.encode()).decode()
+
+    @classmethod
+    def decrypt(cls, token: str) -> str:
+        try:
+            return cls._fernet().decrypt(token.encode()).decode()
+        except Exception:  # noqa: BLE001
+            return ""
 
 
 class RateLimiter:
