@@ -28,7 +28,7 @@ redis = "^5.0.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 pyjwt = "^2.8.0"
 bcrypt = "^4.1.0"
-python-multipart = ">=0.0.6,<0.0.32"
+python-multipart = ">=0.0.6,<0.0.33"
 aiokafka = "^0.11.0"
 python-json-logger = "^2.0.0"
 email-validator = "^2.1.0"
@@ -41,7 +41,7 @@ opentelemetry-instrumentation-sqlalchemy = "^0.41b0"
 opentelemetry-instrumentation-redis = "^0.41b0"
 prometheus-client = "^0.18.0"
 pyotp = "^2.9.0"
-setuptools = ">=69,<81"
+setuptools = ">=69,<84"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
 
 [tool.poetry.group.dev.dependencies]
