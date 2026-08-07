@@ -28,7 +28,7 @@ redis = "^5.0.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 pyjwt = "^2.8.0"
 bcrypt = "^4.1.0"
-python-multipart = "^0.0.6"
+python-multipart = ">=0.0.6,<0.0.32"
 aiokafka = "^0.11.0"
 python-json-logger = "^2.0.0"
 email-validator = "^2.1.0"
