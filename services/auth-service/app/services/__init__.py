@@ -306,15 +306,15 @@ class AuthService:
         code = f"{secrets.randbelow(1000000):06d}"
         expires_at = datetime.now(UTC) + timedelta(hours=24)
 
-        # Store code in user record (in production, use Redis with TTL)
-        user.mfa_secret = code  # Reusing mfa_secret field temporarily for email code
-        user.locked_until = expires_at  # Reusing locked_until for code expiry
+        # Store code in user record with dedicated fields
+        user.email_verification_code = code
+        user.email_verification_code_expires_at = expires_at
         await self.user_repo.commit()
 
         # TODO: Send email with code
         logger.info(f"Email verification code sent to {user.email}: {code}")
 
-        return {"message": "Verification code sent", "code": code}  # Return code for dev only
+        return {"message": "Verification code sent"}
 
     async def verify_email(self, user_id: UUID, code: str) -> dict:
         """Verify email verification code."""
@@ -329,8 +329,8 @@ class AuthService:
             return {"message": "Email already verified"}
 
         # Check code
-        stored_code = user.mfa_secret
-        expires_at = user.locked_until
+        stored_code = user.email_verification_code
+        expires_at = user.email_verification_code_expires_at
 
         if not stored_code or stored_code != code:
             raise HTTPException(
@@ -347,8 +347,8 @@ class AuthService:
         # Mark email as verified
         user.email_verified = True
         user.email_verified_at = datetime.now(UTC)
-        user.mfa_secret = None  # Clear code
-        user.locked_until = None  # Clear expiry
+        user.email_verification_code = None  # Clear code
+        user.email_verification_code_expires_at = None  # Clear expiry
         await self.user_repo.commit()
 
         logger.info(f"Email verified for user: {user.email}")

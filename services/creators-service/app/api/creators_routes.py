@@ -30,9 +30,9 @@ from app.schemas.creator import (
 from app.services import CreatorService
 
 # /creators
-router = APIRouter(prefix="/creators", tags=["creators"])
+router = APIRouter(prefix="/api/v1/creators", tags=["creators"])
 # /admin/creators
-admin_router = APIRouter(prefix="/admin/creators", tags=["admin-creators"])
+admin_router = APIRouter(prefix="/api/v1/admin/creators", tags=["admin-creators"])
 
 
 async def current_user() -> UUID:

@@ -21,7 +21,7 @@ from app.core.database import get_db
 from app.repositories import UploadChunkRepository
 from app.services import UploadError, UploadService
 
-router = APIRouter(prefix="/uploads", tags=["uploads"])
+router = APIRouter(prefix="/api/v1/uploads", tags=["uploads"])
 
 
 async def get_upload_service(

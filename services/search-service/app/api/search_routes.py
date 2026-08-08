@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.repositories import SearchIndexRepository, SearchQueryRepository
 from app.services import SearchService
 
-router = APIRouter(prefix="/search", tags=["search"])
+router = APIRouter(prefix="/api/v1/search", tags=["search"])
 
 
 async def get_search_service(db: Annotated[AsyncSession, Depends(get_db)]) -> SearchService:

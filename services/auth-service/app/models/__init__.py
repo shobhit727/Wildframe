@@ -80,6 +80,8 @@ class User(Base, BaseModel):
     # Email verification
     email_verified = Column(Boolean, default=False, nullable=False)
     email_verified_at = Column(DateTime(timezone=True), nullable=True)
+    email_verification_code = Column(String(6), nullable=True)
+    email_verification_code_expires_at = Column(DateTime(timezone=True), nullable=True)
 
     # Login tracking
     last_login_at = Column(DateTime(timezone=True), nullable=True)

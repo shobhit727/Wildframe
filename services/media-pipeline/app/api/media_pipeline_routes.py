@@ -23,7 +23,7 @@ from app.repositories import (
 )
 from app.services import MediaPipelineService, PipelineError
 
-router = APIRouter(prefix="/pipeline", tags=["pipeline"])
+router = APIRouter(prefix="/api/v1/pipeline", tags=["pipeline"])
 
 
 async def get_pipeline_service(

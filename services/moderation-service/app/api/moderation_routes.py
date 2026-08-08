@@ -33,7 +33,7 @@ from app.schemas import (
 )
 from app.services import ModerationError, ModerationService
 
-router = APIRouter(prefix="/moderation", tags=["moderation"])
+router = APIRouter(prefix="/api/v1/moderation", tags=["moderation"])
 
 
 async def get_moderation_service(

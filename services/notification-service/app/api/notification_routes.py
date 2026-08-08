@@ -9,7 +9,7 @@ from app.core.database import get_db
 from app.repositories import NotificationRepository
 from app.services import NotificationService
 
-router = APIRouter(prefix="/notifications", tags=["notifications"])
+router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 
 
 async def get_notif_service(
