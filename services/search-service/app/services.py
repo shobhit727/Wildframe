@@ -19,7 +19,7 @@ class SearchService:
         self.index_repo = index_repo
 
     async def search(
-        self, user_id: UUID, query: str, content_type: str | None = None, limit: int = 20
+        self, user_id: UUID | None, query: str, content_type: str | None = None, limit: int = 20
     ) -> list[dict]:
         """Full-text search via Elasticsearch."""
         must_clauses = [
@@ -36,8 +36,9 @@ class SearchService:
         body = {"query": {"bool": {"must": must_clauses}}, "size": limit}
         results = await self.es.search(index="content", body=body)
 
-        # Log search query
-        await self.query_repo.create(user_id, query, len(results["hits"]["hits"]))
+        # Log search query (only for authenticated callers)
+        if user_id is not None:
+            await self.query_repo.create(user_id, query, len(results["hits"]["hits"]))
 
         return [hit["_source"] for hit in results["hits"]["hits"]]
 

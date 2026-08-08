@@ -16,6 +16,21 @@ router = APIRouter()
 _PROXY_AGENT_HEADERS = frozenset({"host", "content-length"})
 
 
+@router.get("/gateway/health")
+async def gateway_health():
+    """API Gateway health check."""
+    return {"status": "healthy", "service": "api-gateway", "timestamp": "2026-05-29T00:00:00Z"}
+
+
+@router.get("/gateway/services")
+async def list_services():
+    """List available services."""
+    return {
+        "services": list(ServiceRegistry.SERVICES.keys()),
+        "total": len(ServiceRegistry.SERVICES),
+    }
+
+
 @router.api_route("/{service:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_request(
     request: Request,
@@ -81,18 +96,3 @@ async def proxy_request(
         headers=payload_headers,
         media_type=response.headers.get("content-type"),
     )
-
-
-@router.get("/gateway/health")
-async def gateway_health():
-    """API Gateway health check."""
-    return {"status": "healthy", "service": "api-gateway", "timestamp": "2026-05-29T00:00:00Z"}
-
-
-@router.get("/gateway/services")
-async def list_services():
-    """List available services."""
-    return {
-        "services": list(ServiceRegistry.SERVICES.keys()),
-        "total": len(ServiceRegistry.SERVICES),
-    }

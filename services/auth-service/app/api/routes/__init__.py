@@ -7,6 +7,7 @@ from app.core.database import get_db_session
 from app.repositories import (
     LoginAuditRepository,
     RefreshTokenRepository,
+    TokenBlacklistRepository,
     UserRepository,
 )
 from app.schemas import (
@@ -52,8 +53,15 @@ async def get_auth_service(
     )
 
 
-async def get_current_user_id(request: Request) -> str:
-    """Extract user ID from JWT token in Authorization header."""
+async def get_current_user_id(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> str:
+    """Extract user ID from JWT token in Authorization header.
+
+    Rejects blacklisted (revoked) access tokens the same way
+    ``get_current_user`` in auth.py does.
+    """
     auth_header = request.headers.get("Authorization", "")
 
     if not auth_header.startswith("Bearer "):
@@ -66,8 +74,24 @@ async def get_current_user_id(request: Request) -> str:
     token = auth_header[7:]  # Remove "Bearer " prefix
 
     try:
+        # Reject revoked access tokens before anything else.
+        token_blacklist_repo = TokenBlacklistRepository(db)
+        if await token_blacklist_repo.is_blacklisted(TokenManager.hash_token(token)):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         token_manager = TokenManager()
         payload = token_manager.verify_token(token, token_type="access")
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         user_id = payload.get("user_id")
         if not user_id:
             raise HTTPException(
@@ -76,6 +100,8 @@ async def get_current_user_id(request: Request) -> str:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return user_id
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Token verification failed: {e!s}")
         raise HTTPException(
@@ -255,6 +281,6 @@ async def change_password(
 
     await auth_service.change_password(
         UUID(user_id),
-        request.old_password,
+        request.current_password,
         request.new_password,
     )
