@@ -167,28 +167,16 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: ${{ env.POETRY_VERSION }}
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Load cached virtualenv
-        id: cached-poetry-dependencies
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-sdk-${{ hashFiles('pyproject.toml') }}
-
-      - name: Install dependencies
-        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --no-interaction
+      - name: Install test dependencies
+        run: |
+          python -m pip install --quiet \
+            "pytest<8" "pytest-asyncio>=0.21,<0.22" "pytest-cov<5" \
+            "fastapi>=0.104" "prometheus-client>=0.18" "httpx>=0.25"
 
       - name: Run SDK tests
         run: |
           PYTHONPATH="$PWD/packages/sdk:$PYTHONPATH" \
-            poetry run pytest packages/sdk/tests \
+            python -m pytest packages/sdk/tests \
               --asyncio-mode=auto -q \
               --cov=packages --cov-report=term-missing:skip-covered
 
@@ -196,7 +184,7 @@ jobs:
         if: always()
         run: |
           PYTHONPATH="$PWD/packages/sdk:$PYTHONPATH" \
-            poetry run pytest packages/sdk/tests \
+            python -m pytest packages/sdk/tests \
               --asyncio-mode=auto --durations=20 -q
 
   # ---------------------------------------------------------------------------
