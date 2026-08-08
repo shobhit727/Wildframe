@@ -1,6 +1,6 @@
 FROM node:20-alpine AS builder
 WORKDIR /workspace
-RUN npm install -g pnpm@9
+RUN npm install -g pnpm@10
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .pnpmfile.cjs ./
 COPY apps/web ./apps/web
 RUN pnpm install --frozen-lockfile
