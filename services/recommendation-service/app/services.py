@@ -15,7 +15,10 @@ class RecommendationService:
         """Get personalized recommendations for user using collaborative filtering."""
         await self.pref_repo.get_or_create(user_id)
         recommendations = await self.rec_repo.get_for_user(user_id, limit)
-        return [{"content_id": str(r.content_id), "score": r.score, "reason": r.reason} for r in recommendations]
+        return [
+            {"content_id": str(r.content_id), "score": r.score, "reason": r.reason}
+            for r in recommendations
+        ]
 
     async def update_preferences(
         self,

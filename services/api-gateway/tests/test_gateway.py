@@ -159,7 +159,10 @@ class TestProxy:
 
         assert response.status_code == 200
         call_url = fake_client.request_kwargs["url"]
-        assert call_url == "http://content-service:8000/api/v1/content?content_type=movie&page=1&page_size=5"
+        assert (
+            call_url
+            == "http://content-service:8000/api/v1/content?content_type=movie&page=1&page_size=5"
+        )
 
     def test_proxy_without_query_string_has_no_trailing_question_mark(self, client):
         fake_client = FakeAsyncClient(make_fake_response())

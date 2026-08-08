@@ -80,7 +80,9 @@ class CreatorStrikeRepository:
         await self.session.flush()
         return strike
 
-    async def list_active(self, creator_id: UUID, now: datetime | None = None) -> list[CreatorStrike]:
+    async def list_active(
+        self, creator_id: UUID, now: datetime | None = None
+    ) -> list[CreatorStrike]:
         """List active (non-expired) strikes for a creator."""
         now = now or datetime.now(UTC)
         result = await self.session.execute(

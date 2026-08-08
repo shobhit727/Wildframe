@@ -181,7 +181,9 @@ class ContentService:
         genre_id: UUID | None = None,
     ):
         """List content with pagination and filters."""
-        return await self.content_repo.list_filtered(page, page_size, content_type, status, genre_id)
+        return await self.content_repo.list_filtered(
+            page, page_size, content_type, status, genre_id
+        )
 
     async def get_content_by_slug(self, slug: str):
         """Get content by slug."""
@@ -325,7 +327,9 @@ class ContentService:
 
     # Episode operations
 
-    async def create_episode(self, content_id: UUID, season_id: UUID, request: EpisodeCreateRequest):
+    async def create_episode(
+        self, content_id: UUID, season_id: UUID, request: EpisodeCreateRequest
+    ):
         """Create a new episode."""
         try:
             episode = await self.episode_repo.create(
@@ -393,7 +397,9 @@ class ContentService:
             logger.error(f"Failed to delete episode: {e}")
             raise
 
-    async def update_episode(self, content_id: UUID, season_id: UUID, episode_id: UUID, request: EpisodeUpdateRequest):
+    async def update_episode(
+        self, content_id: UUID, season_id: UUID, episode_id: UUID, request: EpisodeUpdateRequest
+    ):
         """Update episode."""
         try:
             season = await self.season_repo.get_by_id(season_id)
@@ -413,7 +419,9 @@ class ContentService:
 
     # Rating operations
 
-    async def rate_content(self, content_id: UUID, user_id: UUID, request: ContentRatingCreateRequest):
+    async def rate_content(
+        self, content_id: UUID, user_id: UUID, request: ContentRatingCreateRequest
+    ):
         """Rate content."""
         try:
             rating = await self.rating_repo.create(
@@ -446,7 +454,9 @@ class ContentService:
 
     # Recommendation operations
 
-    async def add_recommendation(self, content_id: UUID, request: ContentRecommendationCreateRequest):
+    async def add_recommendation(
+        self, content_id: UUID, request: ContentRecommendationCreateRequest
+    ):
         """Add content recommendation."""
         try:
             recommendation = await self.recommendation_repo.create(
@@ -515,7 +525,9 @@ class ContentService:
 
     # Animation-specific queries
 
-    async def get_by_animation_style(self, animation_style: AnimationStyle, limit: int = 50, offset: int = 0):
+    async def get_by_animation_style(
+        self, animation_style: AnimationStyle, limit: int = 50, offset: int = 0
+    ):
         """List content by animation style."""
         return await self.content_repo.get_by_animation_style(animation_style, limit, offset)
 

@@ -155,7 +155,9 @@ class UploadService:
             UploadSessionStatus.COMPLETE,
             UploadSessionStatus.ABORTED,
         ):
-            raise UploadError(f"session {session_id} is {session.status.value}; no more chunks accepted")
+            raise UploadError(
+                f"session {session_id} is {session.status.value}; no more chunks accepted"
+            )
         if datetime.now(UTC) > session.expires_at:
             raise UploadError(f"upload session {session_id} has expired")
         if index < 0 or index >= session.total_chunks:
@@ -192,7 +194,9 @@ class UploadService:
     # complete_session
     # ------------------------------------------------------------------
 
-    async def complete_session(self, session_id: UUID, *, checksum_sha256: str | None = None) -> UploadSession:
+    async def complete_session(
+        self, session_id: UUID, *, checksum_sha256: str | None = None
+    ) -> UploadSession:
         """Verify all chunks + checksum and finalize the upload.
 
         Verification:
@@ -226,8 +230,14 @@ class UploadService:
         # Checksum verification. The strongest check wins: prefer an explicit
         # checksum passed to complete, else the one captured at create.
         expected_checksum = checksum_sha256 or session.checksum_sha256
-        if expected_checksum and session.checksum_sha256 and expected_checksum != session.checksum_sha256:
-            raise UploadError(f"checksum mismatch for session {session_id}: expected {session.checksum_sha256}")
+        if (
+            expected_checksum
+            and session.checksum_sha256
+            and expected_checksum != session.checksum_sha256
+        ):
+            raise UploadError(
+                f"checksum mismatch for session {session_id}: expected {session.checksum_sha256}"
+            )
 
         session.status = UploadSessionStatus.COMPLETE
         session.storage_key = f"uploads/{session.id}/{session.filename}"

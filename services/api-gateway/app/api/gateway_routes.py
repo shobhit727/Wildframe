@@ -55,7 +55,9 @@ async def proxy_request(
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             original_host = request.headers.get("host", "")
-            headers = {k: v for k, v in request.headers.items() if k.lower() not in _PROXY_AGENT_HEADERS}
+            headers = {
+                k: v for k, v in request.headers.items() if k.lower() not in _PROXY_AGENT_HEADERS
+            }
             if original_host:
                 headers["host"] = original_host
             forward_url = f"{url}{path}"
@@ -65,7 +67,9 @@ async def proxy_request(
                 method=request.method,
                 url=forward_url,
                 headers=headers,
-                content=(await request.body() if request.method in ["POST", "PUT", "PATCH"] else None),
+                content=(
+                    await request.body() if request.method in ["POST", "PUT", "PATCH"] else None
+                ),
             )
     except httpx.TimeoutException:
         logger.error(f"Timeout calling {url}{path}")
