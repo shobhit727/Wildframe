@@ -103,6 +103,27 @@ pytest services --asyncio-mode=auto
 
 ---
 
+## 🐛 Aug 8, 2026 — Runtime Bug Sweep (11 fixes, commit `9d8d8a2`)
+
+CI-verified logic audit across all 15 services; no API surface changes.
+
+| Service | Bug | Fix |
+|---------|-----|-----|
+| content-service | `get_season`/`update_season`/`get_episode`/`update_episode` signature mismatch → TypeError 500 | Routes pass `content_id`; services now scope by content/season ownership |
+| content-service | `update_content` on missing ID → `None.genres` AttributeError 500 | Returns None → route 404 |
+| recommendation-service | `update_preferences` used non-existent `self.session` → 500 | Commit via `pref_repo.session` |
+| streaming-service | `/transcoding-jobs/pending` shadowed by `/transcoding-jobs/{job_id}` → 422 | Static route registered first |
+| streaming-service | Metrics repo stuffed `session_id` into `content_id` FK | Param renamed to `content_id` |
+| moderation-service | Strikes never expired → permanent suspension; `active_count` used stale flag | `list_active` filters `expires_at > now`; route counts via repo |
+| api-gateway | `/gateway/health`, `/gateway/services` shadowed by catch-all proxy → 404 | Registered before `/{service:path}` |
+| billing-service | Recurring invoices dropped (amount+status "dedupe"); wrong invoice marked PAID | Always create invoice, mark the returned object PAID |
+| auth-service | `revoke_all_for_user` `column is None` → `WHERE false`, no-op | `column.is_(None)` |
+| uploads-service | Session `expires_at` never enforced | Checked in `register_chunk` + `complete_session` |
+
+Tests: moderation 11/11, streaming 11/11, content 11/11 green (updated `test_get_episode` for new signature). uploads/billing/recommendation verified via bytecode compile + ruff (no matching test container).
+
+---
+
 ## ⏳ Remaining Pre-existing Debt (Not from Audit)
 
 | Area | Issue | Effort |

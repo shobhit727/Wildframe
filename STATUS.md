@@ -1,6 +1,6 @@
 # 📊 Wildframe Project Status Report
 
-**Last Updated**: August 7, 2026
+**Last Updated**: August 8, 2026
 **Overall Progress**: 90% Complete
 **Current Phase**: CI/CD fully green → Production hardening
 
@@ -26,6 +26,20 @@
 | **Observability** | ✅ 70% | `wildframe-observability-sdk` wired into all 15 services |
 | **CI/CD** | ✅ 90% | Backend Lint ✓, Frontend CI ✓, Docker Build ✓, all 15 Backend Test ✓; Deploy jobs blocked on AWS credentials |
 | **Overall Platform** | ✅ 90% | CI/CD fully green |
+
+---
+
+## ✅ COMPLETED (Current — Aug 8, 2026)
+
+### Runtime Bug Sweep (11 fixes, commit `9d8d8a2`)
+- **content-service**: get/update season & episode signature mismatches (TypeError 500s); `update_content` None crash → 404
+- **recommendation-service**: `update_preferences` non-existent `self.session` → 500
+- **streaming-service**: `/transcoding-jobs/pending` shadowed by `/{job_id}` (422); metrics FK mis-mapped
+- **moderation-service**: strikes never expired (permanent suspension); `active_count` stale-flag count
+- **api-gateway**: `/gateway/health` + `/gateway/services` shadowed by catch-all proxy (404)
+- **billing-service**: recurring invoices dropped (amount-dedupe); wrong invoice marked PAID
+- **auth-service**: `revoke_all_for_user` `WHERE false` no-op; **uploads-service**: session expiry unenforced
+- Tests: moderation/streaming/content 11/11 green; details in `AUDIT_FIX_SUMMARY.md`
 
 ---
 
