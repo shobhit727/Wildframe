@@ -1,1 +1,0 @@
-"""Uploads Service test package."""

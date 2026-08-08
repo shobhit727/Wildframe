@@ -76,6 +76,7 @@ def service():
     mock.get_queue = AsyncMock(return_value=[make_flag()])
     mock.make_decision = AsyncMock(return_value=make_decision())
     mock.get_strikes = AsyncMock(return_value=[make_strike()])
+    mock.strike_repo = MagicMock(count_active=AsyncMock(return_value=1))
     return mock
 
 
@@ -238,6 +239,7 @@ class TestStrikes:
 
     def test_get_strikes_inactive_not_counted(self, client, service):
         service.get_strikes = AsyncMock(return_value=[make_strike(is_active=False)])
+        service.strike_repo.count_active = AsyncMock(return_value=0)
         app.dependency_overrides[get_moderation_service] = override(service)
 
         response = client.get(f"/api/v1/moderation/strikes/{uuid4()}")
