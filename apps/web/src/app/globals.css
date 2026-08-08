@@ -20,6 +20,8 @@
       'Helvetica Neue', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    background: #141414;
+    color: #ffffff;
   }
 
   /* Focus styles for accessibility */
@@ -30,7 +32,7 @@
 }
 
 @layer components {
-  /* Scrollbar styling - dark */
+  /* Scrollbar styling - dark, Netflix-style (thin) */
   .scrollbar-thin::-webkit-scrollbar {
     height: 4px;
     width: 4px;
@@ -49,7 +51,7 @@
     background: rgba(255, 255, 255, 0.4);
   }
 
-  /* Hide scrollbar but keep scrolling */
+  /* Hide scrollbar but keep scrolling (Netflix rows use 0-width scrollbars) */
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
@@ -68,7 +70,28 @@
     scroll-snap-align: start;
   }
 
-  /* Hero gradient overlay */
+  /* Netflix billboard gradient (bottom overlay for hero) */
+  .billboard-gradient {
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(0, 0, 0, 0.5) 60%,
+      rgba(0, 0, 0, 0.85) 85%,
+      #141414 100%
+    );
+  }
+
+  .billboard-gradient-left {
+    background: linear-gradient(
+      to right,
+      rgba(0, 0, 0, 0.75) 0%,
+      rgba(0, 0, 0, 0.45) 30%,
+      rgba(0, 0, 0, 0.1) 60%,
+      transparent 100%
+    );
+  }
+
+  /* Hero gradient overlay (legacy) */
   .hero-gradient {
     background: linear-gradient(
       to top,
@@ -125,5 +148,35 @@
   @keyframes scaleIn {
     from { opacity: 0; transform: scale(0.95); }
     to { opacity: 1; transform: scale(1); }
+  }
+
+  /* Netflix row chevron */
+  .nf-chevron {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 20;
+    width: 4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    color: #fff;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    border: none;
+    cursor: pointer;
+  }
+  .nf-chevron:hover {
+    background: rgba(0, 0, 0, 0.7);
+  }
+  .nf-row:hover .nf-chevron {
+    opacity: 1;
+  }
+  .nf-chevron-left {
+    left: 0;
+  }
+  .nf-chevron-right {
+    right: 0;
   }
 }

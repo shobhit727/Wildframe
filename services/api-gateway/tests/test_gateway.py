@@ -151,6 +151,25 @@ class TestProxy:
         assert call_kwargs["method"] == "POST"
         assert call_kwargs["headers"].get("x-request-id") == "req-1"
 
+    def test_proxy_forwards_query_string(self, client):
+        fake_client = FakeAsyncClient(make_fake_response())
+
+        with patch("app.api.gateway_routes.httpx.AsyncClient", return_value=fake_client):
+            response = client.get("/content/api/v1/content?content_type=movie&page=1&page_size=5")
+
+        assert response.status_code == 200
+        call_url = fake_client.request_kwargs["url"]
+        assert call_url == "http://content-service:8000/api/v1/content?content_type=movie&page=1&page_size=5"
+
+    def test_proxy_without_query_string_has_no_trailing_question_mark(self, client):
+        fake_client = FakeAsyncClient(make_fake_response())
+
+        with patch("app.api.gateway_routes.httpx.AsyncClient", return_value=fake_client):
+            response = client.get("/content/genres")
+
+        assert response.status_code == 200
+        assert fake_client.request_kwargs["url"] == "http://content-service:8000/genres"
+
     def test_proxy_unknown_service_returns_404(self, client):
         response = client.get("/nonexistent/users")
 

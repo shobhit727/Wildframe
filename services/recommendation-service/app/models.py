@@ -20,9 +20,11 @@ class UserPreferences(Base):
     disliked_genres = Column(JSON, default=[])
     preferred_languages = Column(JSON, default=["en"])
     watch_frequency = Column(String(50), default="medium")
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at = Column(
-        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
 
@@ -36,5 +38,5 @@ class Recommendation(Base):
     score = Column(Float, nullable=False)
     reason = Column(String(255))
     algorithm = Column(String(50))
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     __table_args__ = (Index("idx_recommendations_user", "user_id", "score"),)

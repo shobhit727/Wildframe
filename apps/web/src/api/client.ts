@@ -42,12 +42,21 @@ export function getRefreshToken(): string | null {
 export function setTokens(tokens: AuthTokens): void {
   localStorage.setItem(ACCESS_KEY, tokens.access_token);
   localStorage.setItem(REFRESH_KEY, tokens.refresh_token);
+  // Keep the middleware's server-side cookie in sync (middleware.ts guards
+  // /browse etc. by checking the accessToken cookie).
+  if (typeof document !== 'undefined') {
+    document.cookie = `${ACCESS_KEY}=${tokens.access_token}; path=/; max-age=900; samesite=strict`;
+  }
 }
 
 export function clearTokens(): void {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
   localStorage.removeItem(USER_KEY);
+  // Expire the auth cookie so middleware stops letting us onto protected routes.
+  if (typeof document !== 'undefined') {
+    document.cookie = `${ACCESS_KEY}=; path=/; max-age=0; samesite=strict`;
+  }
 }
 
 // ---- Normalization: backend DTOs -> UI types ----
@@ -266,7 +275,7 @@ class APIClient {
   async searchContent(query: string): Promise<BackendContent[]> {
     try {
       const results = await this.unwrap<{ query: string; results: Record<string, unknown>[] }>(
-        this.client.get('/search/search/query', { params: { q: query, limit: 30 } })
+        this.client.get('/search/api/v1/search/query', { params: { q: query, limit: 30 } })
       );
       // search-service returns ES _source docs; map loosely to our shape
       return results.results
@@ -298,7 +307,7 @@ class APIClient {
   async getTrending(): Promise<BackendContent[]> {
     try {
       const data = await this.unwrap<{ trending: Record<string, unknown>[]; total: number }>(
-        this.client.get('/search/search/trending', { params: { limit: 20 } })
+        this.client.get('/search/api/v1/search/trending', { params: { limit: 20 } })
       );
       if (data.trending?.length) return data.trending as unknown as BackendContent[];
     } catch {
@@ -313,7 +322,7 @@ class APIClient {
       const data = await this.unwrap<{
         recommendations: { content_id: string; score: number; reason?: string }[];
         total: number;
-      }>(this.client.get(`/recommendations/recommendations/for-user/${userId}`, {
+      }>(this.client.get(`/recommendations/api/v1/recommendations/for-user/${userId}`, {
         params: { limit },
       }));
       if (data.recommendations?.length) {
@@ -404,22 +413,22 @@ class APIClient {
   // ---- Billing ----
 
   async getSubscription(userId: string): Promise<Subscription> {
-    return this.unwrap(this.client.get(`/billing/billing/subscription/${userId}`));
+    return this.unwrap(this.client.get(`/billing/api/v1/billing/subscription/${userId}`));
   }
 
   async subscribe(userId: string, tier: 'avod' | 'svod' | 'tvod') {
-    return this.unwrap(this.client.post(`/billing/billing/subscribe/${userId}`, { tier }));
+    return this.unwrap(this.client.post(`/billing/api/v1/billing/subscribe/${userId}`, { tier }));
   }
 
   async cancelSubscription(userId: string) {
-    return this.unwrap(this.client.post(`/billing/billing/cancel/${userId}`));
+    return this.unwrap(this.client.post(`/billing/api/v1/billing/cancel/${userId}`));
   }
 
   // ---- Analytics ----
 
   async logEvent(userId: string, eventType: string, eventData?: Record<string, unknown>) {
     try {
-      await this.client.post('/analytics/analytics/events', {
+      await this.client.post('/analytics/api/v1/analytics/events', {
         user_id: userId,
         event_type: eventType,
         event_data: eventData || {},

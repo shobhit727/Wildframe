@@ -135,6 +135,24 @@ def create_app() -> FastAPI:
         response.headers["X-Request-ID"] = request_id
         return response
 
+    def _serializable_errors(errors: list[dict]) -> list[dict]:
+        """Sanitize Pydantic error ctx so JSON responses never carry non-serializable objects."""
+        cleaned: list[dict] = []
+        for error in errors:
+            error = dict(error)
+            ctx = error.get("ctx")
+            if isinstance(ctx, dict):
+                error["ctx"] = {
+                    key: (
+                        str(value)
+                        if not isinstance(value, (str, int, float, bool, type(None)))
+                        else value
+                    )
+                    for key, value in ctx.items()
+                }
+            cleaned.append(error)
+        return cleaned
+
     # Global exception handler for validation errors
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -152,7 +170,7 @@ def create_app() -> FastAPI:
             content=ErrorResponse(
                 error="VALIDATION_ERROR",
                 message="Request validation failed",
-                details={"errors": exc.errors()},
+                details={"errors": _serializable_errors(exc.errors())},
             ).model_dump(),
         )
 

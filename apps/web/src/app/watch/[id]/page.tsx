@@ -136,9 +136,9 @@ export default function WatchPage() {
 
   if (isStarting) {
     return (
-      <div className="min-h-screen bg-dark-950 flex items-center justify-center">
+      <div className="min-h-screen bg-[#141414] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+          <div className="w-10 h-10 border-2 border-[#E50914] border-t-transparent rounded-full animate-spin" />
           <p className="text-gray-400 text-sm">Starting playback...</p>
         </div>
       </div>
@@ -146,19 +146,32 @@ export default function WatchPage() {
   }
 
   return (
-    <div className="min-h-screen bg-dark-950">
+    <div className="min-h-screen bg-[#141414] text-white">
+      {/* Back to Browse */}
+      <div className="px-8 pt-4">
+        <Link
+          href="/browse"
+          className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+          </svg>
+          Back to Browse
+        </Link>
+      </div>
+
       {/* Video Player */}
-      <div className="relative w-full">
+      <div className="relative w-full mt-4">
         <VideoPlayer contentId={contentId} sessionId={sessionId} src={streamUrl || undefined} />
         {streamUrl === DEMO_HLS_URL && (
-          <div className="absolute bottom-16 left-4 bg-black/60 backdrop-blur-sm text-xs text-gray-300 px-3 py-1.5 rounded border border-white/10">
+          <div className="absolute bottom-16 left-4 bg-black/70 text-xs text-gray-300 px-3 py-1.5 border border-white/10">
             Preview stream — no packaged media for this title yet.
           </div>
         )}
       </div>
 
       {/* Content Info */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+      <div className="max-w-6xl mx-auto px-8 py-6">
         {content && (
           <div className="mb-8">
             <div className="flex items-start justify-between gap-4 mb-4">
@@ -171,11 +184,13 @@ export default function WatchPage() {
                 </h1>
                 <div className="flex items-center gap-3 text-sm text-gray-400">
                   {content.rating > 0 && (
-                    <span className="flex items-center gap-1">
-                      <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                      </svg>
-                      {content.rating.toFixed(1)}
+                    <span className="text-[#46d369] font-semibold">
+                      {Math.min(99, Math.max(75, content.rating * 10))}% Match
+                    </span>
+                  )}
+                  {content.rating > 0 && (
+                    <span className="text-[#ffd200]">
+                      ★ {content.rating.toFixed(1)}
                     </span>
                   )}
                   <span>{content.releaseDate?.split('-')[0]}</span>
@@ -183,19 +198,21 @@ export default function WatchPage() {
                     <span>{Math.floor(content.duration / 60)}h {content.duration % 60}m</span>
                   )}
                   {content.maturityRating && (
-                    <span className="uppercase text-xs font-medium px-2 py-0.5 border border-dark-600 rounded text-gray-400">
+                    <span className="uppercase text-xs font-medium px-2 py-0.5 border border-white/20 text-gray-300">
                       {content.maturityRating}
                     </span>
                   )}
-                  <span className="uppercase text-xs font-medium px-2 py-0.5 border border-dark-600 rounded text-gray-400">
-                    {content.type}
-                  </span>
+                  {content.isHd && (
+                    <span className="uppercase text-xs font-medium px-2 py-0.5 border border-white/20 text-gray-300">
+                      HD
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
                   onClick={toggleMyList}
-                  className={`p-2 rounded-full bg-dark-800 hover:bg-dark-700 transition-colors ${inMyList ? 'text-red-500' : 'text-gray-300 hover:text-white'}`}
+                  className={`p-2 rounded-full bg-[#2f2f2f] hover:bg-[#454545] transition-colors ${inMyList ? 'text-[#E50914]' : 'text-gray-300 hover:text-white'}`}
                   aria-label="Toggle my list"
                 >
                   <svg className="w-5 h-5" fill={inMyList ? 'currentColor' : 'none'} viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -226,21 +243,16 @@ export default function WatchPage() {
                 <button
                   key={ep.id}
                   onClick={() => selectEpisode(ep.id, ep.episode_number)}
-                  className="w-full flex items-center gap-4 p-3 rounded-lg hover:bg-dark-800 transition-colors cursor-pointer group text-left"
+                  className="w-full flex items-center gap-4 p-3 rounded-lg hover:transition-colors cursor-pointer group text-left hover:bg-white/5"
                 >
-                  <span className={selectedEpisode?.id === ep.id ? 'text-red-500 w-8 text-center' : 'text-sm text-gray-500 w-8 text-center'}>
+                  <span className={selectedEpisode?.id === ep.id ? 'text-[#E50914] w-8 text-center' : 'text-sm text-gray-500 w-8 text-center'}>
                     {ep.episode_number}
                   </span>
-                  <div className="w-28 h-16 bg-dark-800 rounded-md overflow-hidden flex-shrink-0">
-                    {ep.thumbnail_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={ep.thumbnail_url} alt={ep.title} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full bg-dark-700 shimmer" />
-                    )}
+                  <div className="w-28 h-16 bg-[#1f1f1f] overflow-hidden flex-shrink-0">
+                    <div className="w-full h-full shimmer" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white font-medium truncate group-hover:text-red-500 transition-colors">
+                    <p className="text-sm text-white font-medium truncate group-hover:text-[#E50914] transition-colors">
                       Episode {ep.episode_number}: {ep.title}
                     </p>
                     <p className="text-xs text-gray-500">

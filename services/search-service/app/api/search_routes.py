@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.settings import settings
 from app.repositories import SearchIndexRepository, SearchQueryRepository
 from app.services import SearchService
 
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/api/v1/search", tags=["search"])
 
 
 async def get_search_service(db: Annotated[AsyncSession, Depends(get_db)]) -> SearchService:
-    es = AsyncElasticsearch(hosts=["elasticsearch:9200"])
+    es = AsyncElasticsearch(hosts=[settings.ELASTICSEARCH_URL])
     return SearchService(es, SearchQueryRepository(db), SearchIndexRepository(db))
 
 

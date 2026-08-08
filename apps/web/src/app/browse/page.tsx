@@ -72,7 +72,7 @@ export default function BrowsePage() {
       <div className="pt-0">
         {isSearchActive ? (
           /* Search Results View */
-          <div className="pt-24 pb-10 px-4 sm:px-6 lg:px-8">
+          <div className="pt-24 pb-10 px-8">
             <h2 className="text-2xl font-bold text-white mb-6">
               Results for &ldquo;{searchQuery}&rdquo;
             </h2>
@@ -81,7 +81,7 @@ export default function BrowsePage() {
             ) : searchResults.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
                 {searchResults.map((item: Content) => (
-                  <MediaCard key={item.id} content={item} />
+                  <MediaCard key={item.id} content={item} showCaption />
                 ))}
               </div>
             ) : (
@@ -90,21 +90,22 @@ export default function BrowsePage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
                 </svg>
                 <h3 className="text-lg font-medium text-gray-400 mb-1">No results found</h3>
-                <p className="text-sm text-gray-600">Try searching for a different title or genre.</p>
+                <p className="text-sm text-gray-600">Try searching for a different title.</p>
               </div>
             )}
           </div>
         ) : (
           /* Browse View */
           <>
-            {/* Hero Banner */}
+            {/* Billboard Hero */}
             {trendingLoading ? (
               <HeroSkeleton />
             ) : (
               <HeroBanner items={trending.slice(0, 5)} />
             )}
 
-            <div className="-mt-16 relative z-10 space-y-8 pb-10">
+            {/* Rows overlay the billboard bottom */}
+            <div className="relative z-10 -mt-24 space-y-10 pb-16">
               {/* Trending Row */}
               <Row title="Trending Now" items={trending} variant="backdrop" />
 

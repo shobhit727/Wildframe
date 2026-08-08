@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
 
+    # Elasticsearch
+    ELASTICSEARCH_URL: str = "http://elasticsearch:9200"
+
     # Logging
     LOG_LEVEL: str = "INFO"
 

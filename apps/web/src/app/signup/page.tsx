@@ -31,7 +31,7 @@ export default function SignupPage() {
     } else if (password.length < 8) {
       newErrors.password = 'Password must be at least 8 characters';
     } else if (!REGEX.PASSWORD.test(password)) {
-      newErrors.password = 'Include uppercase, lowercase, number & special character';
+      newErrors.password = 'Password must include uppercase, lowercase, a number and a special character';
     }
     if (password !== confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
@@ -55,104 +55,90 @@ export default function SignupPage() {
   };
 
   const inputClass = (field: string) =>
-    `w-full bg-dark-800 text-white px-4 py-3 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-red-600/50 placeholder-gray-500 ${
-      errors[field] ? 'border-red-500' : 'border-dark-600 hover:border-dark-500'
+    `w-full bg-[#333] text-white px-4 py-3.5 rounded border-0 transition-colors focus:outline-none focus:bg-[#454545] placeholder-gray-500 ${
+      errors[field] ? 'border border-red-500' : ''
     }`;
 
   return (
-    <div className="min-h-screen bg-dark-950 flex items-center justify-center px-4 relative">
-      {/* Background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-dark-950 via-dark-900 to-dark-950" />
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-red-600/5 blur-3xl rounded-full" />
-
-      <div className="relative w-full max-w-md">
-        {/* Brand */}
-        <Link href="/" className="block text-center mb-10">
-          <span className="text-3xl font-bold tracking-wider text-red-600">WILDFRAME</span>
+    <div className="min-h-screen bg-[#141414] flex flex-col">
+      {/* Brand */}
+      <header className="px-8 py-6">
+        <Link href="/" className="text-3xl font-bold tracking-tight text-[#E50914] select-none inline-block">
+          WILDFRAME
         </Link>
+      </header>
 
-        {/* Card */}
-        <div className="bg-dark-900/80 backdrop-blur-xl border border-dark-700/50 p-8 rounded-xl shadow-2xl shadow-black/40 animate-fade-in">
-          <h1 className="text-2xl font-bold text-white mb-2">Create Account</h1>
-          <p className="text-sm text-gray-400 mb-8">Start streaming today</p>
+      <div className="flex-1 flex items-center justify-center px-4 pb-16">
+        <div className="w-full max-w-md bg-black/70 border border-white/5 p-14 rounded-lg animate-fade-in">
+          <h1 className="text-3xl font-bold text-white mb-7">Create Account</h1>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-4">
             {/* Name Row */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">First Name</label>
                 <input
                   type="text"
                   value={firstName}
                   onChange={(e) => { setFirstName(e.target.value); setErrors((p) => ({ ...p, firstName: '' })); }}
                   className={inputClass('firstName')}
-                  placeholder="John"
+                  placeholder="First name"
+                  aria-label="First name"
                 />
-                {errors.firstName && <p className="text-red-400 text-xs mt-1.5">{errors.firstName}</p>}
+                {errors.firstName && <p className="text-[#e87c03] text-[13px] mt-1.5">{errors.firstName}</p>}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Last Name</label>
                 <input
                   type="text"
                   value={lastName}
                   onChange={(e) => { setLastName(e.target.value); setErrors((p) => ({ ...p, lastName: '' })); }}
                   className={inputClass('lastName')}
-                  placeholder="Doe"
+                  placeholder="Last name"
+                  aria-label="Last name"
                 />
-                {errors.lastName && <p className="text-red-400 text-xs mt-1.5">{errors.lastName}</p>}
+                {errors.lastName && <p className="text-[#e87c03] text-[13px] mt-1.5">{errors.lastName}</p>}
               </div>
             </div>
 
-            {/* Email */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => { setEmail(e.target.value); setErrors((p) => ({ ...p, email: '' })); }}
                 className={inputClass('email')}
-                placeholder="you@example.com"
+                placeholder="Email or phone number"
+                aria-label="Email"
               />
-              {errors.email && <p className="text-red-400 text-xs mt-1.5">{errors.email}</p>}
+              {errors.email && <p className="text-[#e87c03] text-[13px] mt-1.5">{errors.email}</p>}
             </div>
 
-            {/* Password */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Password</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: '' })); }}
                 className={inputClass('password')}
-                placeholder="Create a password"
+                placeholder="Password"
+                aria-label="Password"
               />
-              {errors.password && <p className="text-red-400 text-xs mt-1.5">{errors.password}</p>}
+              {errors.password && <p className="text-[#e87c03] text-[13px] mt-1.5">{errors.password}</p>}
             </div>
 
-            {/* Confirm Password */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Confirm Password</label>
               <input
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => { setConfirmPassword(e.target.value); setErrors((p) => ({ ...p, confirmPassword: '' })); }}
                 className={inputClass('confirmPassword')}
                 placeholder="Confirm your password"
+                aria-label="Confirm password"
               />
-              {errors.confirmPassword && <p className="text-red-400 text-xs mt-1.5">{errors.confirmPassword}</p>}
+              {errors.confirmPassword && <p className="text-[#e87c03] text-[13px] mt-1.5">{errors.confirmPassword}</p>}
             </div>
 
-            {/* Terms */}
-            <label className="flex items-start gap-3 text-sm text-gray-400 cursor-pointer">
-              <input type="checkbox" required className="w-4 h-4 mt-0.5 rounded border-dark-600 bg-dark-800 text-red-600 focus:ring-red-600/50" />
-              <span>I agree to the <a href="#" className="text-white hover:underline">Terms of Service</a> and <a href="#" className="text-white hover:underline">Privacy Policy</a></span>
-            </label>
-
-            {/* Submit */}
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-[#E50914] hover:bg-[#F6121D] text-white py-3 rounded font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -166,15 +152,29 @@ export default function SignupPage() {
             </button>
           </form>
 
-          {/* Sign in link */}
-          <p className="text-center text-gray-400 text-sm mt-6">
+          <p className="text-[15px] text-gray-400 mt-6">
             Already have an account?{' '}
-            <Link href="/login" className="text-white font-medium hover:text-red-500 transition-colors">
+            <Link href="/login" className="text-white hover:underline">
               Sign in
             </Link>
           </p>
+          <p className="text-[13px] text-gray-500 mt-4 leading-relaxed">
+            By creating an account you agree to our Terms of Service and Privacy Policy.
+          </p>
         </div>
       </div>
+
+      {/* Footer bar */}
+      <footer className="w-full bg-black/80 border-t border-white/5 py-8 px-8">
+        <div className="max-w-md mx-auto">
+          <p className="text-[#737373] text-sm mb-4">Questions? Contact us.</p>
+          <div className="grid grid-cols-2 gap-2 text-[13px] text-[#737373]">
+            {['FAQ', 'Help Center', 'Terms of Use', 'Privacy'].map((l) => (
+              <Link key={l} href="#" className="hover:underline">{l}</Link>
+            ))}
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

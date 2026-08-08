@@ -1,91 +1,80 @@
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
 import { Content } from '@/types';
-import { useState } from 'react';
 
 interface MediaCardProps {
   content: Content;
   variant?: 'poster' | 'backdrop';
   showProgress?: number; // 0-100 watch progress
+  /** Show title + year under the card (grid views like My List / search). */
+  showCaption?: boolean;
 }
 
-export function MediaCard({ content, variant = 'poster', showProgress }: MediaCardProps) {
-  const [imageError, setImageError] = useState(false);
+export function MediaCard({ content, variant = 'poster', showProgress, showCaption = false }: MediaCardProps) {
   const isPoster = variant === 'poster';
 
   return (
     <Link href={`/watch/${content.id}`} className="group block">
       <div
-        className={`relative overflow-hidden rounded-md bg-dark-800 ${
+        className={`relative overflow-hidden bg-[#1f1f1f] transition-transform duration-300 group-hover:scale-[1.03] group-hover:z-20 ${
           isPoster ? 'aspect-[2/3]' : 'aspect-video'
         }`}
       >
-        {/* Image */}
-        {!imageError ? (
-          <Image
-            src={isPoster ? content.poster : content.backdrop}
-            alt={content.title}
-            fill
-            sizes={isPoster ? '(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 16vw' : '(max-width: 768px) 100vw, 50vw'}
-            className="object-cover transition-transform duration-300 group-hover:scale-110"
-            onError={() => setImageError(true)}
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-dark-800">
-            <span className="text-4xl opacity-30">
-              {content.type === 'movie' ? '🎬' : '📺'}
-            </span>
-          </div>
-        )}
-
-        {/* Hover Overlay */}
-        <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
-          <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
-            <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+        {/* Placeholder loading surface (no artwork) */}
+        <div className="absolute inset-0 shimmer flex items-center justify-center">
+          <div className="flex flex-col items-center gap-2">
+            <svg className="w-7 h-7 text-gray-700" fill="currentColor" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z" />
             </svg>
+            <span className="uppercase text-[9px] tracking-widest text-gray-700 font-semibold px-3">
+              {content.type === 'movie' ? 'Film' : 'Series'}
+            </span>
+          </div>
+        </div>
+
+        {/* Hover overlay with title + play */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <h3 className="text-sm font-semibold text-white mb-2 truncate">
+            {content.title}
+          </h3>
+          <div className="flex items-center gap-2">
+            <span className="text-[#46d369] text-xs font-semibold">
+              {Math.min(99, Math.max(75, content.rating * 10))}% Match
+            </span>
+            {content.rating > 0 && (
+              <span className="text-[11px] text-gray-400">{content.rating.toFixed(1)}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="border border-white/60 px-1.5 py-0.5 text-[10px] uppercase text-gray-200">
+              {content.type}
+            </span>
           </div>
         </div>
 
         {/* Watch Progress Bar */}
         {showProgress !== undefined && showProgress > 0 && (
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-dark-900/50">
+          <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-black/60">
             <div
-              className="h-full bg-red-600 rounded-r-full"
+              className="h-full bg-[#E50914]"
               style={{ width: `${Math.min(showProgress, 100)}%` }}
             />
           </div>
         )}
-
-        {/* Rating Badge */}
-        {content.rating > 0 && (
-          <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs font-medium px-1.5 py-0.5 rounded">
-            {content.rating.toFixed(1)}
-          </div>
-        )}
       </div>
 
-      {/* Title & Meta */}
-      <div className="mt-2 space-y-0.5">
-        <h3 className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors truncate">
-          {content.title}
-        </h3>
-        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-          <span>{content.releaseDate?.split('-')[0]}</span>
-          {content.duration > 0 && (
-            <>
-              <span className="opacity-40">&middot;</span>
-              <span>{Math.floor(content.duration / 60)}h {content.duration % 60}m</span>
-            </>
-          )}
-          <span className="opacity-40">&middot;</span>
-          <span className="uppercase text-[10px] font-medium px-1 py-0.5 border border-dark-600 rounded text-gray-400">
-            {content.type}
-          </span>
+      {showCaption && (
+        <div className="mt-2 space-y-0.5">
+          <h3 className="text-sm text-gray-200 group-hover:text-white transition-colors truncate">
+            {content.title}
+          </h3>
+          <p className="text-xs text-gray-500">
+            {content.releaseDate?.split('-')[0]}
+            {content.rating > 0 ? ` · ★ ${content.rating.toFixed(1)}` : ''}
+          </p>
         </div>
-      </div>
+      )}
     </Link>
   );
 }

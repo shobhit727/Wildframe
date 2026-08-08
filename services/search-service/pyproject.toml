@@ -27,6 +27,7 @@ asyncpg = "^0.30.0"
 redis = "^5.0.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 elasticsearch = "^8.11.0"
+aiohttp = "^3.9.0"
 httpx = "^0.25.0"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
 prometheus-client = "^0.18.0"

@@ -81,25 +81,25 @@ export default function MyListPage() {
 
   return (
     <HomeShell>
-      <div className="pt-24 pb-10 px-4 sm:px-6 lg:px-8">
+      <div className="pt-24 pb-10 px-8">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-2xl font-bold text-white mb-6">My List</h1>
+          <h1 className="text-3xl sm:text-4xl font-semibold text-white mb-6">My List</h1>
 
           {/* Tabs */}
-          <div className="flex gap-1 mb-8 border-b border-dark-800">
+          <div className="flex gap-6 mb-8 border-b border-white/10">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                className={`pb-3 text-sm text-base font-medium transition-colors ${
                   activeTab === tab.id
-                    ? 'border-red-600 text-white'
-                    : 'border-transparent text-gray-400 hover:text-white'
+                    ? 'text-white'
+                    : 'text-gray-400 hover:text-white'
                 }`}
               >
                 {tab.label}
                 {tab.count > 0 && (
-                  <span className="ml-2 text-xs bg-dark-800 px-1.5 py-0.5 rounded-full">{tab.count}</span>
+                  <span className="ml-2 text-xs text-[#E50914]">({tab.count})</span>
                 )}
               </button>
             ))}
@@ -111,17 +111,18 @@ export default function MyListPage() {
                 <ContentGridSkeleton count={12} />
               ) : continueWatching.length > 0 ? (
                 <>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                     {continueWatching.map(({ content, progress }) => (
                       <MediaCard
                         key={content.id}
                         content={content}
                         variant="backdrop"
                         showProgress={Math.min(progress, 95)}
+                        showCaption
                       />
                     ))}
                   </div>
-                  <p className="mt-4 text-xs text-gray-600">
+                  <p className="mt-4 text-xs text-gray-500">
                     Resume playback and your position saves automatically.
                   </p>
                 </>
@@ -138,16 +139,16 @@ export default function MyListPage() {
               {myListLoading ? (
                 <ContentGridSkeleton count={12} />
               ) : myList.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                   {myList.map((item) => (
                     <div key={item.id} className="relative group">
-                      <MediaCard content={item} />
+                      <MediaCard content={item} showCaption />
                       <button
                         onClick={() => removeFromList(item.id)}
-                        className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm text-gray-300 hover:text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-2 left-2 bg-black/70 text-gray-200 hover:text-white text-xs px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity"
                         aria-label={`Remove ${item.title} from My List`}
                       >
-                        ✕
+                        Remove ✕
                       </button>
                     </div>
                   ))}
@@ -172,7 +173,7 @@ function EmptyState({ emoji, title, subtitle }: { emoji: string; title: string; 
     <div className="text-center py-20">
       <div className="text-5xl mb-4">{emoji}</div>
       <h3 className="text-lg font-medium text-gray-300">{title}</h3>
-      <p className="text-sm text-gray-600 mt-1">{subtitle}</p>
+      <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
     </div>
   );
 }

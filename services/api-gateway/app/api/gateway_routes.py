@@ -58,9 +58,12 @@ async def proxy_request(
             headers = {k: v for k, v in request.headers.items() if k.lower() not in _PROXY_AGENT_HEADERS}
             if original_host:
                 headers["host"] = original_host
+            forward_url = f"{url}{path}"
+            if request.url.query:
+                forward_url = f"{forward_url}?{request.url.query}"
             response = await client.request(
                 method=request.method,
-                url=f"{url}{path}",
+                url=forward_url,
                 headers=headers,
                 content=(await request.body() if request.method in ["POST", "PUT", "PATCH"] else None),
             )
