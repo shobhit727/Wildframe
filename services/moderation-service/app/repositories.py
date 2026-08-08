@@ -8,7 +8,7 @@ and persists rows.
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import ContentFlag, CreatorStrike, ModerationDecision
@@ -80,13 +80,18 @@ class CreatorStrikeRepository:
         await self.session.flush()
         return strike
 
-    async def list_active(self, creator_id: UUID) -> list[CreatorStrike]:
+    async def list_active(self, creator_id: UUID, now: datetime | None = None) -> list[CreatorStrike]:
         """List active (non-expired) strikes for a creator."""
+        now = now or datetime.now(UTC)
         result = await self.session.execute(
             select(CreatorStrike)
             .where(
                 CreatorStrike.creator_id == creator_id,
                 CreatorStrike.is_active.is_(True),
+                or_(
+                    CreatorStrike.expires_at.is_(None),
+                    CreatorStrike.expires_at > now,
+                ),
             )
             .order_by(CreatorStrike.created_at.desc())
         )

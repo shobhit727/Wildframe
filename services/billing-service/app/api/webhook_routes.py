@@ -212,26 +212,15 @@ async def _handle_invoice_paid(
         if user_id_str:
             user_id = UUID(user_id_str)
             amount = Decimal(str(invoice_obj["total"])) / Decimal(100)
-            # Check if invoice already exists for this amount + user.
-            existing_invoices = await service.inv_repo.get_by_user(user_id)
-            already_recorded = any(
-                inv.amount == amount and inv.status.value == "paid" for inv in existing_invoices
-            )
-            if not already_recorded:
-                await service.inv_repo.create(
-                    user_id=user_id,
-                    amount=amount,
-                    subscription_id=None,
-                )
-                # Mark as paid.
-                inv = await service.inv_repo.get_by_user(user_id)
-                # We just created it — mark paid.
-                from app.models import InvoiceStatus
+            from app.models import InvoiceStatus
 
-                new_inv = inv[-1] if inv else None
-                if new_inv and new_inv.status == InvoiceStatus.PENDING:
-                    new_inv.status = InvoiceStatus.PAID
-                    new_inv.paid_at = datetime.utcnow()
+            new_inv = await service.inv_repo.create(
+                user_id=user_id,
+                amount=amount,
+                subscription_id=None,
+            )
+            new_inv.status = InvoiceStatus.PAID
+            new_inv.paid_at = datetime.utcnow()
             logger.info("Invoice payment recorded for user %s (amount=%s)", user_id, amount)
             break
 

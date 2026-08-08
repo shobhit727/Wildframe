@@ -218,9 +218,7 @@ class RefreshTokenRepository:
         """
         from datetime import datetime
 
-        stmt = select(RefreshToken).where(
-            RefreshToken.user_id == user_id, RefreshToken.revoked_at is None
-        )
+        stmt = select(RefreshToken).where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
         result = await self.db.execute(stmt)
         tokens = result.scalars().all()
 
@@ -242,9 +240,7 @@ class TokenBlacklistRepository:
         """
         self.db = db
 
-    async def add(
-        self, token: str, user_id: UUID, expires_at, reason: str | None = None
-    ) -> TokenBlacklist:
+    async def add(self, token: str, user_id: UUID, expires_at, reason: str | None = None) -> TokenBlacklist:
         """Add token to blacklist.
 
         Args:
@@ -258,9 +254,7 @@ class TokenBlacklistRepository:
         """
         token_hash = TokenManager.hash_token(token)
 
-        blacklist_entry = TokenBlacklist(
-            token_hash=token_hash, user_id=user_id, expires_at=expires_at, reason=reason
-        )
+        blacklist_entry = TokenBlacklist(token_hash=token_hash, user_id=user_id, expires_at=expires_at, reason=reason)
 
         self.db.add(blacklist_entry)
         await self.db.flush()

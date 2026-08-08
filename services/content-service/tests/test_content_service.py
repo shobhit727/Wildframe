@@ -180,10 +180,15 @@ class TestEpisodeManagement:
 
     async def test_get_episode(self, content_service, mock_repositories):
         """Test getting an episode."""
+        content_id = uuid4()
+        season_id = uuid4()
         episode_id = uuid4()
-        mock_repositories["episode_repo"].get_by_id.return_value = MagicMock()
+        mock_season = MagicMock(content_id=content_id)
+        mock_episode = MagicMock(season_id=season_id)
+        mock_repositories["season_repo"].get_by_id.return_value = mock_season
+        mock_repositories["episode_repo"].get_by_id.return_value = mock_episode
 
-        result = await content_service.get_episode(episode_id)
+        result = await content_service.get_episode(content_id, season_id, episode_id)
 
         assert result is not None
         mock_repositories["episode_repo"].get_by_id.assert_called_once_with(episode_id)

@@ -51,9 +51,7 @@ async def start_playback(
 
 
 @router.get("/playback-sessions/{session_id}", response_model=PlaybackSessionResponse)
-async def get_playback_session(
-    session_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]
-):
+async def get_playback_session(session_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]):
     """Get playback session."""
     session = await service.get_playback_session(session_id)
     if not session:
@@ -83,9 +81,7 @@ async def update_playback_session(
 
 
 @router.post("/playback-sessions/{session_id}/end", status_code=status.HTTP_204_NO_CONTENT)
-async def end_playback_session(
-    session_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]
-):
+async def end_playback_session(session_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]):
     """End playback session."""
     session = await service.end_playback_session(session_id)
     if not session:
@@ -95,9 +91,7 @@ async def end_playback_session(
 # Video manifest endpoints
 
 
-@router.post(
-    "/manifests", response_model=VideoManifestResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("/manifests", response_model=VideoManifestResponse, status_code=status.HTTP_201_CREATED)
 async def generate_manifest(
     request: ManifestGenerationRequest,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
@@ -107,9 +101,7 @@ async def generate_manifest(
 
 
 @router.get("/manifests/{manifest_id}", response_model=VideoManifestResponse)
-async def get_manifest(
-    manifest_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]
-):
+async def get_manifest(manifest_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]):
     """Get manifest by ID."""
     manifest = await service.get_manifest(manifest_id)
     if not manifest:
@@ -133,9 +125,7 @@ async def get_episode_manifest(
 # Transcoding job endpoints
 
 
-@router.post(
-    "/transcoding-jobs", response_model=TranscodingJobResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("/transcoding-jobs", response_model=TranscodingJobResponse, status_code=status.HTTP_201_CREATED)
 async def create_transcoding_job(
     request: TranscodingJobCreateRequest,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
@@ -181,9 +171,7 @@ async def update_transcoding_progress(
 # Quality profile endpoints
 
 
-@router.post(
-    "/quality-profiles", response_model=QualityProfileResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("/quality-profiles", response_model=QualityProfileResponse, status_code=status.HTTP_201_CREATED)
 async def create_quality_profile(
     request: QualityProfileCreateRequest,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
@@ -193,9 +181,7 @@ async def create_quality_profile(
 
 
 @router.get("/quality-profiles/{profile_id}", response_model=QualityProfileResponse)
-async def get_quality_profile(
-    profile_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]
-):
+async def get_quality_profile(profile_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]):
     """Get quality profile."""
     profile = await service.get_quality_profile(profile_id)
     if not profile:
@@ -225,9 +211,7 @@ async def create_cdn_region(
 
 
 @router.get("/cdn-regions/{region_id}", response_model=CDNRegionResponse)
-async def get_cdn_region(
-    region_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]
-):
+async def get_cdn_region(region_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]):
     """Get CDN region."""
     region = await service.get_cdn_region(region_id)
     if not region:
@@ -258,9 +242,7 @@ async def create_download(
 
 
 @router.get("/download-sessions/{download_id}", response_model=DownloadSessionResponse)
-async def get_download(
-    download_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]
-):
+async def get_download(download_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]):
     """Get download session."""
     download = await service.get_download_session(download_id)
     if not download:
@@ -269,9 +251,7 @@ async def get_download(
 
 
 @router.get("/users/{user_id}/downloads", response_model=list[DownloadSessionResponse])
-async def get_user_downloads(
-    user_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]
-):
+async def get_user_downloads(user_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]):
     """Get downloads for user."""
     return await service.get_user_downloads(user_id)
 

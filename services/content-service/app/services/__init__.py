@@ -181,9 +181,7 @@ class ContentService:
         genre_id: UUID | None = None,
     ):
         """List content with pagination and filters."""
-        return await self.content_repo.list_filtered(
-            page, page_size, content_type, status, genre_id
-        )
+        return await self.content_repo.list_filtered(page, page_size, content_type, status, genre_id)
 
     async def get_content_by_slug(self, slug: str):
         """Get content by slug."""
@@ -214,6 +212,9 @@ class ContentService:
         try:
             update_data = request.model_dump(exclude_unset=True, exclude={"genre_ids"})
             content = await self.content_repo.update(content_id, **update_data)
+            if content is None:
+                await self.content_repo.rollback()
+                return None
 
             # Update genres if provided
             if request.genre_ids is not None:
@@ -278,9 +279,12 @@ class ContentService:
             logger.error(f"Failed to create season: {e}")
             raise
 
-    async def get_season(self, season_id: UUID):
-        """Get season by ID."""
-        return await self.season_repo.get_by_id(season_id)
+    async def get_season(self, content_id: UUID, season_id: UUID):
+        """Get season by ID, scoped to its content."""
+        season = await self.season_repo.get_by_id(season_id)
+        if not season or season.content_id != content_id:
+            return None
+        return season
 
     async def list_content_seasons(self, content_id: UUID):
         """List all seasons for content."""
@@ -304,9 +308,12 @@ class ContentService:
             logger.error(f"Failed to delete season: {e}")
             raise
 
-    async def update_season(self, season_id: UUID, request: SeasonUpdateRequest):
+    async def update_season(self, content_id: UUID, season_id: UUID, request: SeasonUpdateRequest):
         """Update season."""
         try:
+            season = await self.season_repo.get_by_id(season_id)
+            if not season or season.content_id != content_id:
+                return None
             update_data = request.model_dump(exclude_unset=True)
             season = await self.season_repo.update(season_id, **update_data)
             await self.content_repo.commit()
@@ -318,9 +325,7 @@ class ContentService:
 
     # Episode operations
 
-    async def create_episode(
-        self, content_id: UUID, season_id: UUID, request: EpisodeCreateRequest
-    ):
+    async def create_episode(self, content_id: UUID, season_id: UUID, request: EpisodeCreateRequest):
         """Create a new episode."""
         try:
             episode = await self.episode_repo.create(
@@ -348,9 +353,15 @@ class ContentService:
             logger.error(f"Failed to create episode: {e}")
             raise
 
-    async def get_episode(self, episode_id: UUID):
-        """Get episode by ID."""
-        return await self.episode_repo.get_by_id(episode_id)
+    async def get_episode(self, content_id: UUID, season_id: UUID, episode_id: UUID):
+        """Get episode by ID, scoped to its season's content."""
+        season = await self.season_repo.get_by_id(season_id)
+        if not season or season.content_id != content_id:
+            return None
+        episode = await self.episode_repo.get_by_id(episode_id)
+        if not episode or episode.season_id != season_id:
+            return None
+        return episode
 
     async def list_season_episodes(self, season_id: UUID):
         """List all episodes in season."""
@@ -382,9 +393,15 @@ class ContentService:
             logger.error(f"Failed to delete episode: {e}")
             raise
 
-    async def update_episode(self, episode_id: UUID, request: EpisodeUpdateRequest):
+    async def update_episode(self, content_id: UUID, season_id: UUID, episode_id: UUID, request: EpisodeUpdateRequest):
         """Update episode."""
         try:
+            season = await self.season_repo.get_by_id(season_id)
+            if not season or season.content_id != content_id:
+                return None
+            episode = await self.episode_repo.get_by_id(episode_id)
+            if not episode or episode.season_id != season_id:
+                return None
             update_data = request.model_dump(exclude_unset=True)
             episode = await self.episode_repo.update(episode_id, **update_data)
             await self.content_repo.commit()
@@ -396,9 +413,7 @@ class ContentService:
 
     # Rating operations
 
-    async def rate_content(
-        self, content_id: UUID, user_id: UUID, request: ContentRatingCreateRequest
-    ):
+    async def rate_content(self, content_id: UUID, user_id: UUID, request: ContentRatingCreateRequest):
         """Rate content."""
         try:
             rating = await self.rating_repo.create(
@@ -431,9 +446,7 @@ class ContentService:
 
     # Recommendation operations
 
-    async def add_recommendation(
-        self, content_id: UUID, request: ContentRecommendationCreateRequest
-    ):
+    async def add_recommendation(self, content_id: UUID, request: ContentRecommendationCreateRequest):
         """Add content recommendation."""
         try:
             recommendation = await self.recommendation_repo.create(
@@ -502,9 +515,7 @@ class ContentService:
 
     # Animation-specific queries
 
-    async def get_by_animation_style(
-        self, animation_style: AnimationStyle, limit: int = 50, offset: int = 0
-    ):
+    async def get_by_animation_style(self, animation_style: AnimationStyle, limit: int = 50, offset: int = 0):
         """List content by animation style."""
         return await self.content_repo.get_by_animation_style(animation_style, limit, offset)
 

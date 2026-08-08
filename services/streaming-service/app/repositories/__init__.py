@@ -99,9 +99,7 @@ class PlaybackSessionRepository(BaseRepository):
         """Mark session as completed."""
         from datetime import datetime
 
-        return await self.update(
-            session_id, status=PlaybackSessionStatus.COMPLETED, ended_at=datetime.now(UTC)
-        )
+        return await self.update(session_id, status=PlaybackSessionStatus.COMPLETED, ended_at=datetime.now(UTC))
 
 
 class VideoManifestRepository(BaseRepository):
@@ -135,9 +133,7 @@ class VideoManifestRepository(BaseRepository):
         """Get manifest by ID."""
         return await self.session.get(VideoManifest, manifest_id)
 
-    async def get_by_episode_and_protocol(
-        self, episode_id: UUID, protocol: str
-    ) -> VideoManifest | None:
+    async def get_by_episode_and_protocol(self, episode_id: UUID, protocol: str) -> VideoManifest | None:
         """Get manifest by episode and protocol."""
         result = await self.session.execute(
             select(VideoManifest).where(
@@ -228,9 +224,7 @@ class QualityProfileRepository(BaseRepository):
 
     async def get_by_name(self, name: str) -> StreamingQualityProfile | None:
         """Get profile by name."""
-        result = await self.session.execute(
-            select(StreamingQualityProfile).where(StreamingQualityProfile.name == name)
-        )
+        result = await self.session.execute(select(StreamingQualityProfile).where(StreamingQualityProfile.name == name))
         return result.scalars().first()
 
     async def get_all_active(self) -> list[StreamingQualityProfile]:
@@ -281,7 +275,7 @@ class StreamingMetricsRepository(BaseRepository):
 
     async def create(
         self,
-        session_id: UUID,
+        content_id: UUID,
         bandwidth_mbps: float,
         resolution: str,
         bitrate_kbps: int,
@@ -290,7 +284,7 @@ class StreamingMetricsRepository(BaseRepository):
     ) -> StreamingStatistics:
         """Record a metrics sample as an aggregated statistics row."""
         stats = StreamingStatistics(
-            content_id=session_id,
+            content_id=content_id,
             period_start=datetime.now(UTC).replace(minute=0, second=0, microsecond=0),
             period_end=datetime.now(UTC),
             period_type="hourly",
@@ -333,9 +327,7 @@ class DownloadSessionRepository(BaseRepository):
 
     async def get_user_downloads(self, user_id: UUID) -> list[DownloadSession]:
         """Get all downloads for user."""
-        result = await self.session.execute(
-            select(DownloadSession).where(DownloadSession.user_id == user_id)
-        )
+        result = await self.session.execute(select(DownloadSession).where(DownloadSession.user_id == user_id))
         return result.scalars().all()
 
     async def update(self, download_id: UUID, **kwargs) -> DownloadSession | None:

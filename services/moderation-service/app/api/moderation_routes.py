@@ -107,7 +107,7 @@ async def get_strikes(
 ):
     """Get the full strike history for a creator."""
     strikes = await service.get_strikes(creator_id)
-    active_count = sum(1 for s in strikes if s.is_active)
+    active_count = await service.strike_repo.count_active(creator_id)
     return StrikesResponse(
         creator_id=creator_id,
         strikes=[_strike_to_response(s) for s in strikes],

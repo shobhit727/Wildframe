@@ -16,6 +16,8 @@ router = APIRouter()
 _PROXY_AGENT_HEADERS = frozenset({"host", "content-length"})
 
 
+# Health and service-list routes must be registered BEFORE the catch-all
+# proxy below, otherwise "{service:path}" swallows them.
 @router.get("/gateway/health")
 async def gateway_health():
     """API Gateway health check."""
@@ -53,18 +55,14 @@ async def proxy_request(
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             original_host = request.headers.get("host", "")
-            headers = {
-                k: v for k, v in request.headers.items() if k.lower() not in _PROXY_AGENT_HEADERS
-            }
+            headers = {k: v for k, v in request.headers.items() if k.lower() not in _PROXY_AGENT_HEADERS}
             if original_host:
                 headers["host"] = original_host
             response = await client.request(
                 method=request.method,
                 url=f"{url}{path}",
                 headers=headers,
-                content=(
-                    await request.body() if request.method in ["POST", "PUT", "PATCH"] else None
-                ),
+                content=(await request.body() if request.method in ["POST", "PUT", "PATCH"] else None),
             )
     except httpx.TimeoutException:
         logger.error(f"Timeout calling {url}{path}")

@@ -1,5 +1,6 @@
 """Recommendation service business logic."""
 
+from datetime import datetime, timezone
 from uuid import UUID
 
 from app.repositories import RecommendationRepository, UserPreferencesRepository
@@ -14,10 +15,7 @@ class RecommendationService:
         """Get personalized recommendations for user using collaborative filtering."""
         await self.pref_repo.get_or_create(user_id)
         recommendations = await self.rec_repo.get_for_user(user_id, limit)
-        return [
-            {"content_id": str(r.content_id), "score": r.score, "reason": r.reason}
-            for r in recommendations
-        ]
+        return [{"content_id": str(r.content_id), "score": r.score, "reason": r.reason} for r in recommendations]
 
     async def update_preferences(
         self,
@@ -31,6 +29,6 @@ class RecommendationService:
             prefs.liked_genres = liked_genres
         if disliked_genres:
             prefs.disliked_genres = disliked_genres
-        prefs.updated_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
-        await self.session.flush()
+        prefs.updated_at = datetime.now(timezone.utc)
+        await self.pref_repo.session.commit()
         return prefs
