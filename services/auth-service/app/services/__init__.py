@@ -371,7 +371,7 @@ class AuthService:
             return {"message": "MFA already enabled"}
 
         # Generate TOTP secret
-        secret = secrets.token_base32(20)
+        secret = secrets.token_urlsafe(20)[:32]
 
         # Generate backup codes
         backup_codes = [secrets.token_hex(4).upper() for _ in range(10)]
