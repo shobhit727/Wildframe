@@ -60,7 +60,7 @@ export function Row({ title, items, variant = 'poster', showProgress }: RowProps
             className="nf-chevron nf-chevron-left"
             aria-label={`Scroll ${title} left`}
           >
-            <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
             </svg>
           </button>
@@ -94,7 +94,7 @@ export function Row({ title, items, variant = 'poster', showProgress }: RowProps
             className="nf-chevron nf-chevron-right"
             aria-label={`Scroll ${title} right`}
           >
-            <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z" />
             </svg>
           </button>

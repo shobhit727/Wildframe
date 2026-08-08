@@ -33,7 +33,7 @@ export function HeroBanner({ items }: HeroBannerProps) {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,#1f1f1f,#141414_70%)]" />
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 select-none">
-          <svg className="w-16 h-16 text-gray-700" fill="currentColor" viewBox="0 0 24 24">
+          <svg className="w-10 h-10 text-gray-700" fill="currentColor" viewBox="0 0 24 24">
             <path d="M8 5v14l11-7z" />
           </svg>
           <span className="uppercase text-xs tracking-[0.3em] text-gray-700 font-semibold">
