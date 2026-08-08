@@ -153,6 +153,53 @@ jobs:
               --asyncio-mode=auto --durations=20 -q
 
   # ---------------------------------------------------------------------------
+  # Backend SDK tests: shared event + observability packages (packages/sdk)
+  # ---------------------------------------------------------------------------
+  backend-sdk-test:
+    name: Backend Test (sdk)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached virtualenv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-sdk-${{ hashFiles('pyproject.toml') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction
+
+      - name: Run SDK tests
+        run: |
+          PYTHONPATH="$PWD/packages/sdk:$PYTHONPATH" \
+            poetry run pytest packages/sdk/tests \
+              --asyncio-mode=auto -q \
+              --cov=packages --cov-report=term-missing:skip-covered
+
+      - name: Print slowest tests
+        if: always()
+        run: |
+          PYTHONPATH="$PWD/packages/sdk:$PYTHONPATH" \
+            poetry run pytest packages/sdk/tests \
+              --asyncio-mode=auto --durations=20 -q
+
+  # ---------------------------------------------------------------------------
   # Frontend CI: lint + build for apps/web
   # ---------------------------------------------------------------------------
   frontend-ci:

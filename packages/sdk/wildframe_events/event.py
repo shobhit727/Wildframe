@@ -16,6 +16,7 @@ Every event carries:
 """
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -67,7 +68,7 @@ class DomainEvent:
             "occurred_at": self.occurred_at,
             "producer": self.producer,
             "schema_version": self.schema_version,
-            "payload": self.payload,
+            "payload": copy.deepcopy(self.payload),
         }
 
     def to_json(self) -> str:
@@ -80,7 +81,7 @@ class DomainEvent:
         return cls(
             topic=data["topic"],
             key=data["key"],
-            payload=data.get("payload", {}),
+            payload=copy.deepcopy(data.get("payload", {})),
             event_id=data.get("event_id", str(uuid4())),
             occurred_at=data.get("occurred_at", datetime.now(timezone.utc).isoformat()),
             producer=data.get("producer", ""),

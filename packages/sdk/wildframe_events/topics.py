@@ -165,6 +165,12 @@ TOPIC_METADATA = {
         "idempotency_key_pattern": "upload:{upload_session_id}",
         "retry_strategy": "exponential_backoff(max_attempts=3, base=1s, cap=60s)",
     },
+    Topic.CONTENT_UPLOAD_ABORTED: {
+        "producer": "uploads-service",
+        "consumers": ["content-service"],
+        "idempotency_key_pattern": "upload:aborted:{upload_session_id}",
+        "retry_strategy": "exponential_backoff(max_attempts=3)",
+    },
     Topic.CONTENT_SCANNED: {
         "producer": "media-pipeline",
         "consumers": ["moderation-service", "notification-service"],
@@ -192,7 +198,12 @@ TOPIC_METADATA = {
     },
     Topic.CONTENT_PUBLISHED: {
         "producer": "content-service",
-        "consumers": ["search-service", "recommendation-service", "notification-service", "analytics-service"],
+        "consumers": [
+            "search-service",
+            "recommendation-service",
+            "notification-service",
+            "analytics-service",
+        ],
         "idempotency_key_pattern": "published:{content_id}",
         "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
@@ -204,7 +215,12 @@ TOPIC_METADATA = {
     },
     Topic.BILLING_SUBSCRIPTION_CREATED: {
         "producer": "billing-service",
-        "consumers": ["user-service", "notification-service", "analytics-service", "creators-service"],
+        "consumers": [
+            "user-service",
+            "notification-service",
+            "analytics-service",
+            "creators-service",
+        ],
         "idempotency_key_pattern": "sub:created:{stripe_customer_id}",
         "retry_strategy": "exponential_backoff(max_attempts=5)",
     },
@@ -218,6 +234,12 @@ TOPIC_METADATA = {
         "producer": "billing-service",
         "consumers": ["user-service", "notification-service", "analytics-service"],
         "idempotency_key_pattern": "sub:cancelled:{subscription_id}",
+        "retry_strategy": "exponential_backoff(max_attempts=3)",
+    },
+    Topic.BILLING_CHECKOUT_SESSION_CREATED: {
+        "producer": "billing-service",
+        "consumers": ["analytics-service"],
+        "idempotency_key_pattern": "checkout:{stripe_session_id}",
         "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
     Topic.BILLING_PAYOUT_ACCRUED: {
@@ -238,6 +260,12 @@ TOPIC_METADATA = {
         "idempotency_key_pattern": "creator:onboarded:{creator_id}",
         "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
+    Topic.CREATOR_FLOOR_ADJUSTED: {
+        "producer": "creators-service",
+        "consumers": ["billing-service", "analytics-service"],
+        "idempotency_key_pattern": "floor:{creator_id}:{effective_date}",
+        "retry_strategy": "exponential_backoff(max_attempts=3)",
+    },
     Topic.CREATOR_MILESTONE_REACHED: {
         "producer": "creators-service",
         "consumers": ["billing-service", "notification-service"],
@@ -252,13 +280,23 @@ TOPIC_METADATA = {
     },
     Topic.MODERATION_DECISION_MADE: {
         "producer": "moderation-service",
-        "consumers": ["notification-service", "creators-service", "analytics-service", "content-service"],
+        "consumers": [
+            "notification-service",
+            "creators-service",
+            "analytics-service",
+            "content-service",
+        ],
         "idempotency_key_pattern": "decision:{decision_id}",
         "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
     Topic.CREATOR_SUSPENDED: {
         "producer": "moderation-service",
-        "consumers": ["billing-service", "content-service", "notification-service", "creators-service"],
+        "consumers": [
+            "billing-service",
+            "content-service",
+            "notification-service",
+            "creators-service",
+        ],
         "idempotency_key_pattern": "suspended:{creator_id}",
         "retry_strategy": "exponential_backoff(max_attempts=5)",
     },

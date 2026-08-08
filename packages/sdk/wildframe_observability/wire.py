@@ -57,4 +57,5 @@ def wire_observability(
     async def metrics() -> Response:
         """Prometheus metrics endpoint."""
         from prometheus_client import generate_latest
+
         return Response(content=generate_latest(), media_type="text/plain")
