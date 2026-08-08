@@ -23,7 +23,6 @@ from app.models import (
     PipelineStageLog,
     PipelineStageStatus,
 )
-from app.repositories import PipelineJobRepository, PipelineStageLogRepository
 from app.services import MediaPipelineService, PipelineNonRetryable
 
 # ---------------------------------------------------------------------------

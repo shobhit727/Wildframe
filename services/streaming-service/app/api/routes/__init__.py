@@ -144,6 +144,15 @@ async def create_transcoding_job(
     return await service.create_transcoding_job(request)
 
 
+@router.get("/transcoding-jobs/pending", response_model=list[TranscodingJobResponse])
+async def get_pending_jobs(
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
+):
+    """Get pending transcoding jobs."""
+    return await service.get_pending_jobs(limit)
+
+
 @router.get("/transcoding-jobs/{job_id}", response_model=TranscodingJobResponse)
 async def get_transcoding_job(
     job_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]
@@ -153,15 +162,6 @@ async def get_transcoding_job(
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     return job
-
-
-@router.get("/transcoding-jobs/pending", response_model=list[TranscodingJobResponse])
-async def get_pending_jobs(
-    service: Annotated[StreamingService, Depends(get_streaming_service)],
-    limit: Annotated[int, Query(ge=1, le=50)] = 10,
-):
-    """Get pending transcoding jobs."""
-    return await service.get_pending_jobs(limit)
 
 
 @router.patch("/transcoding-jobs/{job_id}/progress")

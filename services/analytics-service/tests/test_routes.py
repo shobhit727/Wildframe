@@ -69,9 +69,7 @@ class TestLogEvent:
     def test_log_event_requires_user_id(self, client, service):
         app.dependency_overrides[get_analytics_service] = override(service)
 
-        response = client.post(
-            "/api/v1/analytics/events", json={"event_type": "playback_started"}
-        )
+        response = client.post("/api/v1/analytics/events", json={"event_type": "playback_started"})
 
         assert response.status_code == 422
 
@@ -127,9 +125,7 @@ class TestRecordViewEvent:
     def test_record_view_event_requires_content_id(self, client, service):
         app.dependency_overrides[get_analytics_service] = override(service)
 
-        response = client.post(
-            "/api/v1/analytics/view-events", json={"viewer_id": str(uuid4())}
-        )
+        response = client.post("/api/v1/analytics/view-events", json={"viewer_id": str(uuid4())})
 
         assert response.status_code == 422
 

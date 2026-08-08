@@ -43,8 +43,9 @@ def override_deps(fake_service, user_id):
 
 @pytest.fixture
 def client():
-    with TestClient(app, base_url="http://localhost") as c:
-        yield c
+    # Not used as a context manager: the lifespan runs a DB health check that
+    # raises RuntimeError without a database, and CI has no postgres.
+    yield TestClient(app, base_url="http://localhost")
 
 
 def make_profile(id_value=None):
@@ -165,7 +166,7 @@ class TestProfileRoutes:
         assert response.json()["id"] == str(profile.id)
 
     def test_get_profile_returns_404(self, client, fake_service, user_id):
-        from fastapi import HTTPException, status
+        from fastapi import HTTPException
 
         fake_service.get_user_profile = AsyncMock(
             side_effect=HTTPException(status_code=404, detail="User profile not found")

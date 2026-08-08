@@ -14,7 +14,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-import pytest_asyncio
 from fastapi.testclient import TestClient
 
 from app.api.routes import get_content_service, get_current_user
@@ -58,11 +57,6 @@ def override_deps(fake_service, user_id):
 def client():
     with TestClient(app) as c:
         yield c
-
-
-@pytest.fixture
-def user_id():
-    return uuid4()
 
 
 @pytest.fixture
@@ -287,7 +281,9 @@ class TestContentRoutes:
     def test_publish_content(self, client, fake_service, content_id):
         fake_service.publish_content = AsyncMock(return_value=make_content(content_id))
 
-        response = client.post(f"/api/v1/content/{content_id}/publish", json={"status": "published"})
+        response = client.post(
+            f"/api/v1/content/{content_id}/publish", json={"status": "published"}
+        )
 
         assert response.status_code == 200
         fake_service.publish_content.assert_awaited_once()
@@ -385,7 +381,9 @@ class TestSeasonRoutes:
 class TestEpisodeRoutes:
     """Episode routes must forward (content_id, season_id, episode_id)."""
 
-    def test_create_episode_returns_201(self, client, fake_service, content_id, season_id, episode_id):
+    def test_create_episode_returns_201(
+        self, client, fake_service, content_id, season_id, episode_id
+    ):
         episode = MagicMock()
         episode.id = episode_id
         episode.episode_number = 1
@@ -415,7 +413,9 @@ class TestEpisodeRoutes:
         assert response.status_code == 200
         fake_service.list_episodes.assert_awaited_once_with(content_id, season_id)
 
-    def test_get_episode_passes_all_ids(self, client, fake_service, content_id, season_id, episode_id):
+    def test_get_episode_passes_all_ids(
+        self, client, fake_service, content_id, season_id, episode_id
+    ):
         episode = MagicMock()
         episode.id = episode_id
         episode.episode_number = 1
@@ -437,7 +437,9 @@ class TestEpisodeRoutes:
         # while the service only accepted 1 (TypeError at runtime).
         fake_service.get_episode.assert_awaited_once_with(content_id, season_id, episode_id)
 
-    def test_get_episode_missing_returns_404(self, client, fake_service, content_id, season_id, episode_id):
+    def test_get_episode_missing_returns_404(
+        self, client, fake_service, content_id, season_id, episode_id
+    ):
         fake_service.get_episode = AsyncMock(return_value=None)
 
         response = client.get(
@@ -446,7 +448,9 @@ class TestEpisodeRoutes:
 
         assert response.status_code == 404
 
-    def test_update_episode_passes_all_ids(self, client, fake_service, content_id, season_id, episode_id):
+    def test_update_episode_passes_all_ids(
+        self, client, fake_service, content_id, season_id, episode_id
+    ):
         episode = MagicMock()
         episode.id = episode_id
         episode.episode_number = 1
@@ -470,7 +474,9 @@ class TestEpisodeRoutes:
         call_args = fake_service.update_episode.await_args
         assert call_args.args[:3] == (content_id, season_id, episode_id)
 
-    def test_delete_episode_returns_204(self, client, fake_service, content_id, season_id, episode_id):
+    def test_delete_episode_returns_204(
+        self, client, fake_service, content_id, season_id, episode_id
+    ):
         fake_service.delete_episode = AsyncMock(return_value=True)
 
         response = client.delete(
@@ -484,9 +490,7 @@ class TestRatingRoutes:
     def test_rate_content_requires_auth(self, client, content_id):
         app.dependency_overrides.pop(get_current_user, None)
         try:
-            response = client.post(
-                f"/api/v1/content/{content_id}/ratings", json={"rating": 8.5}
-            )
+            response = client.post(f"/api/v1/content/{content_id}/ratings", json={"rating": 8.5})
         finally:
             app.dependency_overrides[get_current_user] = lambda: uuid4()
 

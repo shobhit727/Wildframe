@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.api.routes import get_streaming_service
@@ -145,7 +144,11 @@ class TestPlaybackRoutes:
 
         response = client.post(
             "/api/v1/playback-sessions",
-            json={"user_id": str(session.user_id), "content_id": str(session.content_id), "device_id": "device-1"},
+            json={
+                "user_id": str(session.user_id),
+                "content_id": str(session.content_id),
+                "device_id": "device-1",
+            },
         )
 
         assert response.status_code == 201
@@ -154,7 +157,12 @@ class TestPlaybackRoutes:
     def test_start_playback_rejects_bad_protocol(self, client):
         response = client.post(
             "/api/v1/playback-sessions",
-            json={"user_id": str(uuid4()), "content_id": str(uuid4()), "device_id": "d", "protocol": "rtsp"},
+            json={
+                "user_id": str(uuid4()),
+                "content_id": str(uuid4()),
+                "device_id": "d",
+                "protocol": "rtsp",
+            },
         )
 
         assert response.status_code == 422
@@ -325,7 +333,13 @@ class TestQualityProfileRoutes:
 
         response = client.post(
             "/api/v1/quality-profiles",
-            json={"name": "HD 720p", "resolution": "720p", "bitrate_kbps": 2500, "min_bandwidth_kbps": 1500, "max_bandwidth_kbps": 4000},
+            json={
+                "name": "HD 720p",
+                "resolution": "720p",
+                "bitrate_kbps": 2500,
+                "min_bandwidth_kbps": 1500,
+                "max_bandwidth_kbps": 4000,
+            },
         )
 
         assert response.status_code == 201
@@ -347,7 +361,9 @@ class TestQualityProfileRoutes:
         assert response.status_code == 404
 
     def test_list_quality_profiles_for_bandwidth(self, client, fake_service):
-        fake_service.get_quality_profiles_for_bandwidth = AsyncMock(return_value=[make_quality_profile()])
+        fake_service.get_quality_profiles_for_bandwidth = AsyncMock(
+            return_value=[make_quality_profile()]
+        )
 
         response = client.get("/api/v1/quality-profiles?bandwidth_kbps=3000")
 
@@ -449,7 +465,9 @@ class TestDownloadRoutes:
         download.bytes_downloaded = 500
         fake_service.update_download_progress = AsyncMock(return_value=download)
 
-        response = client.patch(f"/api/v1/download-sessions/{download.id}/progress?bytes_downloaded=500")
+        response = client.patch(
+            f"/api/v1/download-sessions/{download.id}/progress?bytes_downloaded=500"
+        )
 
         assert response.status_code == 200
         fake_service.update_download_progress.assert_awaited_once_with(download.id, 500)

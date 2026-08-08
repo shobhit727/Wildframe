@@ -192,9 +192,7 @@ class TestDecisions:
         assert body["decision"] == "approve"
 
     def test_make_decision_conflict_returns_409(self, client, service):
-        service.make_decision = AsyncMock(
-            side_effect=ModerationError("flag already resolved")
-        )
+        service.make_decision = AsyncMock(side_effect=ModerationError("flag already resolved"))
         app.dependency_overrides[get_moderation_service] = override(service)
 
         response = client.post(

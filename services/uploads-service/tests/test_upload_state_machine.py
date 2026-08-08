@@ -14,7 +14,6 @@ import pytest
 from app.core.events import InMemoryEventPublisher, set_event_publisher
 from app.core.storage import StubStoragePort, set_storage
 from app.models import UploadChunk, UploadSession, UploadSessionStatus
-from app.repositories import UploadChunkRepository
 from app.services import UploadError, UploadService
 
 # ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes.admin import get_current_admin_id, router
+from app.api.routes.admin import get_current_admin_id
 from app.core.database import get_db
 from app.main import app
 
@@ -187,7 +187,12 @@ class TestContentModerationRoutes:
 
         response = client.post(
             "/api/v1/admin/content/flag",
-            json={"content_id": mod.content_id, "content_type": "movie", "status": "flagged", "reason": "Copyright"},
+            json={
+                "content_id": mod.content_id,
+                "content_type": "movie",
+                "status": "flagged",
+                "reason": "Copyright",
+            },
         )
 
         assert response.status_code == 200
@@ -216,16 +221,16 @@ class TestContentModerationRoutes:
         fake_service.resolve_content_flag.assert_awaited_once()
 
     def test_resolve_content_flag_rejects_bad_status(self, client):
-        response = client.post(f"/api/v1/admin/content/resolve?content_id={uuid4()}&status=quarantined")
+        response = client.post(
+            f"/api/v1/admin/content/resolve?content_id={uuid4()}&status=quarantined"
+        )
 
         assert response.status_code == 422
 
     def test_resolve_content_flag_missing_returns_404(self, client, fake_service):
         fake_service.resolve_content_flag = AsyncMock(return_value=None)
 
-        response = client.post(
-            f"/api/v1/admin/content/resolve?content_id={uuid4()}&status=removed"
-        )
+        response = client.post(f"/api/v1/admin/content/resolve?content_id={uuid4()}&status=removed")
 
         assert response.status_code == 404
 

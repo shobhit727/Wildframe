@@ -85,9 +85,7 @@ class TestSubscriptionRoutes:
         sub = make_subscription()
         fake_service.subscribe = AsyncMock(return_value=sub)
 
-        response = client.post(
-            f"/api/v1/billing/subscribe/{sub.user_id}", json={"tier": "svod"}
-        )
+        response = client.post(f"/api/v1/billing/subscribe/{sub.user_id}", json={"tier": "svod"})
 
         assert response.status_code == 200
         body = response.json()
@@ -98,9 +96,7 @@ class TestSubscriptionRoutes:
     def test_subscribe_invalid_tier_returns_400(self, client, fake_service):
         from app.services import TierInvalidError
 
-        fake_service.subscribe = AsyncMock(
-            side_effect=TierInvalidError("Unknown tier: diamond")
-        )
+        fake_service.subscribe = AsyncMock(side_effect=TierInvalidError("Unknown tier: diamond"))
 
         response = client.post(f"/api/v1/billing/subscribe/{uuid4()}", json={"tier": "diamond"})
 
@@ -227,7 +223,11 @@ class TestMilestoneRoutes:
 
         response = client.post(
             "/api/v1/billing/milestones",
-            json={"creator_id": str(uuid4()), "project_title": "Film", "total_commitment": "1000.00"},
+            json={
+                "creator_id": str(uuid4()),
+                "project_title": "Film",
+                "total_commitment": "1000.00",
+            },
         )
 
         assert response.status_code == 200
@@ -311,7 +311,9 @@ class TestPayoutRoutes:
 
 class TestWebhookRoutes:
     def test_webhook_rejects_bad_signature(self, client):
-        with patch("app.api.webhook_routes.StripeClient.handle_webhook", side_effect=Exception("sig")):
+        with patch(
+            "app.api.webhook_routes.StripeClient.handle_webhook", side_effect=Exception("sig")
+        ):
             from app.core.stripe_client import StripeError
 
             from app.api import webhook_routes
