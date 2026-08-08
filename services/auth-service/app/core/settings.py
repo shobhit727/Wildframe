@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # Service Configuration
     SERVICE_NAME: str = "auth-service"
     SERVICE_VERSION: str = "1.0.0"
-    ENVIRONMENT: str = "production"
+    ENVIRONMENT: str = "development"
     DEBUG: bool = False
 
     # Database Configuration

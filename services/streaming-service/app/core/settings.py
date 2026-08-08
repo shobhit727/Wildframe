@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     SERVICE_NAME: str = "streaming-service"
     SERVICE_VERSION: str = "1.0.0"
-    ENVIRONMENT: str = "production"
+    ENVIRONMENT: str = "development"
     DEBUG: bool = False
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/streaming_db"
     REDIS_URL: str = "redis://localhost:6379/1"

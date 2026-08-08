@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # Service info
     SERVICE_NAME: str = "content-service"
     SERVICE_VERSION: str = "1.0.0"
-    ENVIRONMENT: str = "production"
+    ENVIRONMENT: str = "development"
     DEBUG: bool = False
 
     # Database

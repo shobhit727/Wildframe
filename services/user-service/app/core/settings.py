@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # Service metadata
     SERVICE_NAME: str = "user-service"
     SERVICE_VERSION: str = "1.0.0"
-    ENVIRONMENT: str = "production"
+    ENVIRONMENT: str = "development"
     DEBUG: bool = False
 
     # Database
