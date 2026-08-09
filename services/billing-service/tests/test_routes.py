@@ -9,12 +9,15 @@ floors, pool, milestones, payouts and webhook idempotency.
 from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 from app.api.billing_routes import get_billing_service as billing_di
+from app.api.billing_routes import get_current_user_id as billing_user_di
+from app.api.billing_routes import require_self as billing_require_self
 from app.api.webhook_routes import get_billing_service as webhook_di
 from app.main import app
 
@@ -32,10 +35,22 @@ def fake_service():
     return service
 
 
+async def _echo_path_self(request: Request):
+    return UUID(request.path_params["user_id"])
+
+
+@pytest.fixture
+def auth_user_id():
+    """Fixed authenticated user id for route tests."""
+    return uuid4()
+
+
 @pytest.fixture(autouse=True)
-def override_deps(fake_service):
+def override_deps(fake_service, auth_user_id):
     app.dependency_overrides[billing_di] = lambda: fake_service
     app.dependency_overrides[webhook_di] = lambda: fake_service
+    app.dependency_overrides[billing_user_di] = lambda: auth_user_id
+    app.dependency_overrides[billing_require_self] = _echo_path_self
     yield
     app.dependency_overrides.clear()
 
@@ -127,14 +142,18 @@ class TestSubscriptionRoutes:
 
 
 class TestPurchaseRoutes:
-    def test_purchase_title(self, client, fake_service):
+    def test_purchase_title(self, client, fake_service, auth_user_id):
         purchase = MagicMock()
         purchase.id = uuid4()
         fake_service.purchase_title = AsyncMock(return_value=purchase)
 
         response = client.post(
             "/api/v1/billing/purchase",
-            json={"user_id": str(uuid4()), "content_id": str(uuid4()), "price": "4.99"},
+            json={
+                "user_id": str(auth_user_id),
+                "content_id": str(uuid4()),
+                "price": "4.99",
+            },
         )
 
         assert response.status_code == 200
@@ -393,3 +412,31 @@ class TestWebhookRoutes:
         assert response.status_code == 200
         body = response.json()
         assert body["handled"] is False
+
+
+class TestIdorProtection:
+    """Cross-user access must be forbidden, not served."""
+
+    def test_purchase_for_other_user_403(self, client, auth_user_id):
+        response = client.post(
+            "/api/v1/billing/purchase",
+            json={
+                "user_id": str(uuid4()),
+                "content_id": str(uuid4()),
+                "price": "4.99",
+            },
+        )
+        assert response.status_code == 403
+
+    def test_subscription_of_other_user_403(self, client, auth_user_id):
+        # Use the real require_self with a fixed authenticated id; request a
+        # different path id -> must be 403, never the other user's data.
+        from app.api.billing_routes import require_self as rs
+
+        app.dependency_overrides.pop(rs, None)
+        app.dependency_overrides[billing_user_di] = lambda: auth_user_id
+        try:
+            response = client.get(f"/api/v1/billing/subscription/{uuid4()}")
+        finally:
+            app.dependency_overrides[rs] = _echo_path_self
+        assert response.status_code == 403

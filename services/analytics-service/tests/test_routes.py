@@ -2,22 +2,43 @@
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
-from app.api.analytics_routes import get_analytics_service
+from app.api.analytics_routes import (
+    get_analytics_service,
+    get_current_user_id as analytics_user_di,
+    require_self as analytics_require_self,
+)
 from app.main import app
 
 
 @pytest.fixture
-def client():
+def auth_user_id():
+    return uuid4()
+
+
+async def _echo_path_self(request: Request) -> UUID:
+    return UUID(request.path_params["user_id"])
+
+
+@pytest.fixture
+def client(auth_user_id):
     app.dependency_overrides.clear()
+    app.dependency_overrides[analytics_require_self] = _echo_path_self
+    app.dependency_overrides[analytics_user_di] = lambda: auth_user_id
     # NOTE: not used as a context manager — the lifespan raises when there is
     # no healthy database, and tests run without postgres.
     yield TestClient(app, base_url="http://localhost")
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def override_auth():
+    yield
 
 
 @pytest.fixture
@@ -49,13 +70,13 @@ def event_dict(**overrides):
 
 
 class TestLogEvent:
-    def test_log_event_success(self, client, service):
+    def test_log_event_success(self, client, service, auth_user_id):
         app.dependency_overrides[get_analytics_service] = override(service)
 
         response = client.post(
             "/api/v1/analytics/events",
             json={
-                "user_id": str(uuid4()),
+                "user_id": str(auth_user_id),
                 "event_type": "playback_started",
                 "event_data": {"position": 10},
                 "content_id": str(uuid4()),
@@ -100,14 +121,14 @@ class TestGetUserEvents:
 
 
 class TestRecordViewEvent:
-    def test_record_view_event_success(self, client, service):
+    def test_record_view_event_success(self, client, service, auth_user_id):
         app.dependency_overrides[get_analytics_service] = override(service)
 
         response = client.post(
             "/api/v1/analytics/view-events",
             json={
                 "content_id": str(uuid4()),
-                "viewer_id": str(uuid4()),
+                "viewer_id": str(auth_user_id),
                 "watch_duration_seconds": 120,
                 "content_duration_seconds": 300,
                 "completion_pct": 40.0,
@@ -191,3 +212,30 @@ class TestContentPerformance:
 
         assert response.status_code == 200
         assert response.json()["metrics"] is None
+
+
+class TestIdorProtection:
+    def test_other_user_events_403(self, client, auth_user_id):
+        app.dependency_overrides.pop(analytics_require_self, None)
+        app.dependency_overrides[analytics_user_di] = lambda: auth_user_id
+        try:
+            response = client.get(f"/api/v1/analytics/user-events/{uuid4()}")
+        finally:
+            app.dependency_overrides[analytics_require_self] = _echo_path_self
+        assert response.status_code == 403
+
+    def test_no_token_rejected_401(self, client):
+        app.dependency_overrides.clear()
+        response = client.get(f"/api/v1/analytics/user-events/{uuid4()}")
+        assert response.status_code == 401
+
+    def test_log_event_for_other_user_403(self, client, auth_user_id):
+        response = client.post(
+            "/api/v1/analytics/events",
+            json={
+                "user_id": str(uuid4()),
+                "event_type": "playback_started",
+                "event_data": {},
+            },
+        )
+        assert response.status_code == 403

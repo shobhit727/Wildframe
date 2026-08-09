@@ -13,11 +13,13 @@ from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import jwt
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status as http_status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.settings import settings
 from app.repositories import (
     CreatorPoolRepository,
     InvoiceRepository,
@@ -30,6 +32,47 @@ from app.repositories import (
 from app.services import BillingError, BillingService, TierInvalidError
 
 router = APIRouter(prefix="/api/v1/billing", tags=["billing"])
+
+
+async def get_current_user_id(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> UUID:
+    """Resolve the authenticated user id from the JWT sub claim."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+    token = authorization.removeprefix("Bearer ")
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    sub = payload.get("sub") or payload.get("user_id")
+    if not sub:
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
+        )
+    try:
+        return UUID(sub)
+    except ValueError:
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
+        )
+
+
+async def require_self(
+    jwt_user_id: Annotated[UUID, Depends(get_current_user_id)],
+    request: Request,
+) -> UUID:
+    """Ensure the path user_id matches the authenticated user."""
+    path_user_id = request.path_params.get("user_id")
+    if path_user_id is None or str(path_user_id) == str(jwt_user_id):
+        return jwt_user_id
+    raise HTTPException(
+        status_code=http_status.HTTP_403_FORBIDDEN,
+        detail="You can only access your own data",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +132,7 @@ class SubscriptionResponse(BaseModel):
 
 @router.get("/subscription/{user_id}", response_model=SubscriptionResponse)
 async def get_subscription(
-    user_id: UUID,
+    user_id: Annotated[UUID, Depends(require_self)],
     service: Annotated[BillingService, Depends(get_billing_service)],
 ):
     """Get a user's current subscription details."""
@@ -106,7 +149,7 @@ async def get_subscription(
 
 @router.post("/subscribe/{user_id}")
 async def subscribe(
-    user_id: UUID,
+    user_id: Annotated[UUID, Depends(require_self)],
     request: SubscribeRequest,
     service: Annotated[BillingService, Depends(get_billing_service)],
 ):
@@ -120,7 +163,7 @@ async def subscribe(
 
 @router.post("/cancel/{user_id}")
 async def cancel_subscription(
-    user_id: UUID,
+    user_id: Annotated[UUID, Depends(require_self)],
     service: Annotated[BillingService, Depends(get_billing_service)],
 ):
     """Cancel a subscription (reverts to AVOD free tier)."""
@@ -139,8 +182,14 @@ async def cancel_subscription(
 async def purchase_title(
     request: PurchaseRequest,
     service: Annotated[BillingService, Depends(get_billing_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)] = ...,
 ):
     """Record a pay-per-view (TVOD) purchase."""
+    if request.user_id != current_user:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="You can only purchase content for your own account",
+        )
     try:
         purchase = await service.purchase_title(request.user_id, request.content_id, request.price)
     except Exception as exc:

@@ -6,13 +6,27 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.notification_routes import get_notif_service
+from app.api.notification_routes import (
+    get_current_user_id as notif_user_di,
+    get_notif_service,
+)
 from app.main import app
 
 
 @pytest.fixture
-def client():
+def auth_user_id():
+    return uuid4()
+
+
+@pytest.fixture(autouse=True)
+def override_auth():
+    yield
+
+
+@pytest.fixture
+def client(auth_user_id):
     app.dependency_overrides.clear()
+    app.dependency_overrides[notif_user_di] = lambda: auth_user_id
     # Not a context manager: lifespan raises without a healthy DB.
     yield TestClient(app, base_url="http://localhost")
     app.dependency_overrides.clear()
@@ -33,9 +47,9 @@ def override(service_mock):
 
 
 class TestSendNotification:
-    def test_send_success(self, client, service):
+    def test_send_success(self, client, service, auth_user_id):
         app.dependency_overrides[get_notif_service] = override(service)
-        user_id = uuid4()
+        user_id = auth_user_id
 
         response = client.post(
             "/api/v1/notifications/send",
@@ -53,12 +67,16 @@ class TestSendNotification:
             user_id, "New episode", "Stranger Things S5 is out", "email"
         )
 
-    def test_send_defaults_to_in_app_channel(self, client, service):
+    def test_send_defaults_to_in_app_channel(self, client, service, auth_user_id):
         app.dependency_overrides[get_notif_service] = override(service)
 
         response = client.post(
             "/api/v1/notifications/send",
-            json={"user_id": str(uuid4()), "title": "Hi", "message": "There"},
+            json={
+                "user_id": str(auth_user_id),
+                "title": "Hi",
+                "message": "There",
+            },
         )
 
         assert response.status_code == 200
@@ -85,8 +103,8 @@ class TestSendNotification:
 
 
 class TestUnread:
-    def test_unread_returns_empty_by_default(self, client):
-        response = client.get(f"/api/v1/notifications/unread/{uuid4()}")
+    def test_unread_returns_empty_by_default(self, client, auth_user_id):
+        response = client.get(f"/api/v1/notifications/unread/{auth_user_id}")
 
         assert response.status_code == 200
         assert response.json() == {"notifications": [], "total": 0}
@@ -95,3 +113,8 @@ class TestUnread:
         response = client.get("/api/v1/notifications/unread/not-a-uuid")
 
         assert response.status_code == 422
+
+    def test_unread_other_user_403(self, client):
+        response = client.get(f"/api/v1/notifications/unread/{uuid4()}")
+
+        assert response.status_code == 403
