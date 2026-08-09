@@ -31,6 +31,8 @@ async def get_current_admin_id(
     token = authorization.replace("Bearer ", "")
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        if payload.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin privileges required")
         return payload.get("sub") or payload.get("user_id")
     except jwt.JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -53,6 +55,7 @@ async def moderate_user(
 @router.get("/users/moderation/{user_id}", response_model=UserModerationResponse)
 async def get_user_moderation(
     user_id: str,
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Get user moderation history"""
@@ -65,6 +68,7 @@ async def get_user_moderation(
 
 @router.get("/users/moderated", response_model=list[UserModerationResponse])
 async def list_moderated_users(
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
     status: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(le=100)] = 50,
@@ -106,6 +110,7 @@ async def resolve_content_flag(
 
 @router.get("/content/flagged", response_model=list[ContentModerationResponse])
 async def list_flagged_content(
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
     limit: Annotated[int, Query(le=100)] = 50,
     offset: Annotated[int, Query()] = 0,
@@ -119,6 +124,7 @@ async def list_flagged_content(
 @router.post("/alerts", response_model=SystemAlertResponse)
 async def create_alert(
     request: SystemAlertRequest,
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Create system alert"""
@@ -130,6 +136,7 @@ async def create_alert(
 
 @router.get("/alerts", response_model=list[SystemAlertResponse])
 async def get_alerts(
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
     limit: Annotated[int, Query(le=100)] = 50,
 ):
@@ -139,7 +146,10 @@ async def get_alerts(
 
 
 @router.get("/alerts/critical", response_model=list[SystemAlertResponse])
-async def get_critical_alerts(db: Annotated[AsyncSession, Depends(get_db)]):
+async def get_critical_alerts(
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
     """Get critical system alerts"""
     service = AdminService(db)
     return await service.get_critical_alerts()
@@ -176,6 +186,7 @@ async def set_config(
 @router.get("/config/{key}", response_model=SystemConfigResponse)
 async def get_config(
     key: str,
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Get system configuration"""
@@ -188,6 +199,7 @@ async def get_config(
 
 @router.get("/config", response_model=list[SystemConfigResponse])
 async def list_configs(
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
     limit: Annotated[int, Query(le=500)] = 100,
 ):
@@ -200,6 +212,7 @@ async def list_configs(
 @router.get("/audit/admin/{admin_id}", response_model=list[AdminAuditLogResponse])
 async def get_audit_by_admin(
     admin_id: str,
+    viewer_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
     limit: Annotated[int, Query(le=100)] = 50,
 ):
@@ -214,6 +227,7 @@ async def get_audit_by_admin(
 async def get_audit_by_resource(
     resource_type: str,
     resource_id: str,
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
     limit: Annotated[int, Query(le=100)] = 50,
 ):
@@ -224,7 +238,10 @@ async def get_audit_by_resource(
 
 # System Stats Endpoint
 @router.get("/stats", response_model=SystemStatsResponse)
-async def get_system_stats(db: Annotated[AsyncSession, Depends(get_db)]):
+async def get_system_stats(
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
     """Get system statistics"""
     service = AdminService(db)
     return await service.get_system_stats()

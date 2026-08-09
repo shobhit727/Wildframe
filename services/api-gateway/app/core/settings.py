@@ -35,10 +35,12 @@ class Settings(BaseSettings):
             "your-secret-key-change-in-production",
             "dev-secret-key",
         ]
-        if self.ENVIRONMENT == "production" and self.JWT_SECRET_KEY in default_secrets:
+        if self.ENVIRONMENT == "production" and (
+            self.JWT_SECRET_KEY in default_secrets or self.CORS_ALLOWED_ORIGINS == ["*"]
+        ):
             raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value in production. "
-                "Refusing to start with default insecure secret."
+                "JWT_SECRET_KEY must be a strong secret and CORS_ALLOWED_ORIGINS must "
+                "be an explicit origin list in production. "
             )
         return self
 

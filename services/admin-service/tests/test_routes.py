@@ -132,6 +132,62 @@ class TestAuth:
 
         assert response.status_code == 401
 
+    def test_non_admin_role_rejected_403(self):
+        from datetime import UTC, datetime, timedelta
+
+        import jwt as pyjwt
+        from app.core.settings import settings
+        from fastapi import HTTPException
+
+        token = pyjwt.encode(
+            {
+                "sub": str(uuid4()),
+                "role": "user",
+                "type": "access",
+                "exp": datetime.now(UTC) + timedelta(minutes=5),
+            },
+            settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+
+        import asyncio
+
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(get_current_admin_id(f"Bearer {token}"))
+
+        assert exc.value.status_code == 403
+
+    def test_admin_role_accepted(self):
+        from datetime import UTC, datetime, timedelta
+
+        import jwt as pyjwt
+        from app.core.settings import settings
+
+        token = pyjwt.encode(
+            {
+                "sub": str(uuid4()),
+                "role": "admin",
+                "type": "access",
+                "exp": datetime.now(UTC) + timedelta(minutes=5),
+            },
+            settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+
+        import asyncio
+
+        result = asyncio.run(get_current_admin_id(f"Bearer {token}"))
+        assert result is not None
+
+    def test_garbage_token_rejected_401(self):
+        from fastapi import HTTPException
+
+        import asyncio
+
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(get_current_admin_id("Bearer garbage"))
+        assert exc.value.status_code == 401
+
 
 class TestUserModerationRoutes:
     def test_moderate_user(self, client, fake_service):
