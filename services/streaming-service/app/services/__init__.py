@@ -198,7 +198,7 @@ segment-001.ts
                 job_id,
                 status="completed",
                 progress_percent=100,
-                completed_at=datetime.now(UTC),
+                completed_at=datetime.now(UTC).replace(tzinfo=None),
                 output_paths=output_paths,
             )
             await self.transcoding_repo.commit()

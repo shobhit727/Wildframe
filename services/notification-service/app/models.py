@@ -20,6 +20,6 @@ class Notification(Base):
     message = Column(String(1000), nullable=False)
     channel = Column(String(50))
     is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None))
     read_at = Column(DateTime, nullable=True)
     __table_args__ = (Index("idx_notifications_user_read", "user_id", "is_read"),)

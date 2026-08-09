@@ -100,7 +100,8 @@ class PlaybackSessionRepository(BaseRepository):
         from datetime import datetime
 
         return await self.update(
-            session_id, status=PlaybackSessionStatus.COMPLETED, ended_at=datetime.now(UTC)
+            session_id, status=PlaybackSessionStatus.COMPLETED,
+            ended_at=datetime.now(UTC).replace(tzinfo=None),
         )
 
 
@@ -291,8 +292,8 @@ class StreamingMetricsRepository(BaseRepository):
         """Record a metrics sample as an aggregated statistics row."""
         stats = StreamingStatistics(
             content_id=content_id,
-            period_start=datetime.now(UTC).replace(minute=0, second=0, microsecond=0),
-            period_end=datetime.now(UTC),
+            period_start=datetime.now(UTC).replace(tzinfo=None, minute=0, second=0, microsecond=0),
+            period_end=datetime.now(UTC).replace(tzinfo=None),
             period_type="hourly",
             total_streams=1,
             average_bitrate_kbps=bitrate_kbps,
