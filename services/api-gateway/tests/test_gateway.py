@@ -296,8 +296,47 @@ class TestAuthenticationMiddleware:
         assert await mw(request) is None
 
     @pytest.mark.asyncio
+    async def test_public_path_prefix_does_not_bypass_auth(self):
+        from fastapi import HTTPException, Request
+
+        from app.middleware import AuthenticationMiddleware
+
+        mw = AuthenticationMiddleware("secret")
+        request = Request(
+            scope={"type": "http", "path": "/auth/login-anything", "headers": []}
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await mw(request)
+
+        assert exc.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_public_child_path_is_allowed(self):
+        from fastapi import Request
+
+        from app.middleware import AuthenticationMiddleware
+
+        mw = AuthenticationMiddleware("secret")
+        request = Request(
+            scope={"type": "http", "path": "/docs/index.html", "headers": []}
+        )
+
+        assert await mw(request) is None
+
+    @pytest.mark.asyncio
+    async def test_public_path_with_trailing_slash_is_allowed(self):
+        from fastapi import Request
+
+        from app.middleware import AuthenticationMiddleware
+
+        mw = AuthenticationMiddleware("secret")
+        request = Request(scope={"type": "http", "path": "/health/", "headers": []})
+
+        assert await mw(request) is None
+
+    @pytest.mark.asyncio
     async def test_protected_path_without_token_raises_401(self):
-        import pytest as _pytest
         from fastapi import HTTPException, Request
 
         from app.middleware import AuthenticationMiddleware
@@ -305,7 +344,7 @@ class TestAuthenticationMiddleware:
         mw = AuthenticationMiddleware("secret")
         request = Request(scope={"type": "http", "path": "/content/genres", "headers": []})
 
-        with _pytest.raises(HTTPException) as exc:
+        with pytest.raises(HTTPException) as exc:
             await mw(request)
 
         assert exc.value.status_code == 401
