@@ -63,4 +63,25 @@ describe('LoginForm', () => {
       expect(screen.getByText('Invalid email or password')).toBeInTheDocument(),
     );
   });
+
+  it('shows verification step when MFA is required, then verifies', async () => {
+    const verifyMfa = vi.fn().mockResolvedValue(undefined);
+    login.mockResolvedValue('mfa');
+    useAuthStore.setState({ verifyMfa });
+
+    render(<LoginForm />);
+
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'a@b.com' } });
+    fireEvent.change(screen.getByPlaceholderText('Enter your password'), { target: { value: 'secret' } });
+    fireEvent.submit(screen.getByRole("button", { name: /sign in/i }).closest("form")!);
+
+    await waitFor(() => expect(login).toHaveBeenCalledWith('a@b.com', 'secret'));
+    expect(await screen.findByPlaceholderText('6-digit code')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('6-digit code'), { target: { value: '123456' } });
+    fireEvent.submit(screen.getByRole("button", { name: /verify/i }).closest("form")!);
+
+    await waitFor(() => expect(verifyMfa).toHaveBeenCalledWith('123456'));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/browse'));
+  });
 });

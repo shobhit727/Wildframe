@@ -12,7 +12,6 @@ from app.core.database import DatabaseManager
 from app.core.logging import set_correlation_id, set_request_id, setup_logging
 from app.core.settings import settings
 from app.schemas import ErrorResponse, HealthCheckResponse
-from app.telemetry import setup_tracing
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,10 +44,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Initialize logging
     setup_logging()
-
-    # Initialize observability
-    if settings.JAEGER_ENABLED:
-        setup_tracing()
 
     # Verify database connectivity
     db_healthy = await DatabaseManager.health_check()
