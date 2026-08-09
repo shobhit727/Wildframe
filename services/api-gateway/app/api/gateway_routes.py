@@ -51,6 +51,16 @@ async def proxy_request(
     if not url:
         raise HTTPException(status_code=404, detail="Service not found")
 
+    # Enforce per-client rate limits (user id when authenticated, IP otherwise).
+    from app.main import rate_limiter  # late import: set in startup
+
+    service_name = service.split("/")[0]
+    client_key = (
+        str(current_user.get("sub")) if current_user else (request.client.host or "unknown")
+    )
+    if rate_limiter and not await rate_limiter.check_rate_limit(client_key, service_name):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
     # Forward request
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:

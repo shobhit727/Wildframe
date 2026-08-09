@@ -14,8 +14,10 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes import get_streaming_service
+from app.api.routes import get_current_user_id, get_streaming_service
 from app.main import app
+
+TEST_USER_ID = uuid4()
 
 
 @pytest.fixture
@@ -26,6 +28,7 @@ def fake_service():
 @pytest.fixture(autouse=True)
 def override_deps(fake_service):
     app.dependency_overrides[get_streaming_service] = lambda: fake_service
+    app.dependency_overrides[get_current_user_id] = lambda: TEST_USER_ID
     yield
     app.dependency_overrides.clear()
 
@@ -39,7 +42,7 @@ def client():
 def make_playback_session(id_value=None):
     s = MagicMock()
     s.id = id_value or uuid4()
-    s.user_id = uuid4()
+    s.user_id = TEST_USER_ID
     s.content_id = uuid4()
     s.episode_id = None
     s.device_id = "device-1"
@@ -123,7 +126,7 @@ def make_cdn_region(id_value=None):
 def make_download(id_value=None):
     d = MagicMock()
     d.id = id_value or uuid4()
-    d.user_id = uuid4()
+    d.user_id = TEST_USER_ID
     d.episode_id = uuid4()
     d.device_id = "device-1"
     d.status = "downloading"
@@ -184,7 +187,7 @@ class TestPlaybackRoutes:
         assert response.status_code == 404
 
     def test_get_user_playback_sessions(self, client, fake_service):
-        user_id = uuid4()
+        user_id = TEST_USER_ID
         fake_service.get_active_sessions = AsyncMock(return_value=[make_playback_session()])
 
         response = client.get(f"/api/v1/users/{user_id}/playback-sessions")
@@ -206,6 +209,7 @@ class TestPlaybackRoutes:
 
     def test_end_playback_session_returns_204(self, client, fake_service):
         session = make_playback_session()
+        fake_service.get_playback_session = AsyncMock(return_value=session)
         fake_service.end_playback_session = AsyncMock(return_value=session)
 
         response = client.post(f"/api/v1/playback-sessions/{session.id}/end")
@@ -213,11 +217,23 @@ class TestPlaybackRoutes:
         assert response.status_code == 204
 
     def test_end_playback_session_missing_returns_404(self, client, fake_service):
+        fake_service.get_playback_session = AsyncMock(return_value=None)
         fake_service.end_playback_session = AsyncMock(return_value=None)
 
         response = client.post(f"/api/v1/playback-sessions/{uuid4()}/end")
 
         assert response.status_code == 404
+
+    def test_end_playback_session_foreign_owner_returns_403(self, client, fake_service):
+        session = make_playback_session()
+        session.user_id = uuid4()
+        fake_service.get_playback_session = AsyncMock(return_value=session)
+        fake_service.end_playback_session = AsyncMock(return_value=session)
+
+        response = client.post(f"/api/v1/playback-sessions/{session.id}/end")
+
+        assert response.status_code == 403
+        fake_service.end_playback_session.assert_not_awaited()
 
 
 class TestManifestRoutes:
@@ -452,7 +468,7 @@ class TestDownloadRoutes:
         assert response.status_code == 404
 
     def test_get_user_downloads(self, client, fake_service):
-        user_id = uuid4()
+        user_id = TEST_USER_ID
         fake_service.get_user_downloads = AsyncMock(return_value=[make_download()])
 
         response = client.get(f"/api/v1/users/{user_id}/downloads")

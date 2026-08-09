@@ -297,7 +297,7 @@ class TestMilestoneRoutes:
 
 
 class TestPayoutRoutes:
-    def test_get_payout_history(self, client, fake_service):
+    def test_get_payout_history(self, client, fake_service, auth_user_id):
         payout = MagicMock()
         payout.id = uuid4()
         payout.amount = Decimal("550.00")
@@ -308,7 +308,7 @@ class TestPayoutRoutes:
         payout.cycle_end = None
         fake_service.get_payout_history = AsyncMock(return_value=[payout])
 
-        response = client.get(f"/api/v1/billing/payouts/{uuid4()}")
+        response = client.get(f"/api/v1/billing/payouts/{auth_user_id}")
 
         assert response.status_code == 200
         assert len(response.json()) == 1
