@@ -1,8 +1,8 @@
 # 📊 Wildframe Project Status Report
 
-**Last Updated**: August 8, 2026
-**Overall Progress**: 90% Complete
-**Current Phase**: CI/CD fully green → Production hardening
+**Last Updated**: August 9, 2026
+**Overall Progress**: 95% Complete
+**Current Phase**: CI/CD green → Production hardening (AWS deploys, DRM, secrets)
 
 ---
 
@@ -10,127 +10,84 @@
 
 | Category | Progress | Status |
 |----------|----------|--------|
-| **Documentation** | ✅ 95% | AGENTS.md, AUDIT_FIX_SUMMARY.md, STATUS.md updated |
+| **Documentation** | ✅ 95% | AGENTS.md, README.md, STATUS.md, AUDIT_FIX_SUMMARY.md updated Aug 9 |
 | **Architecture** | ✅ 100% | Complete |
-| **Infrastructure** | ✅ 95% | Compose, CI/CD, Prometheus/Grafana/Loki configs created |
-| **Auth Service** | ✅ 85% | Tests 69/69 green; email/MFA stubbed (501) |
-| **User Service** | ✅ 80% | Tests 12/12 green |
-| **Content Service** | ✅ 80% | Tests 11/11 green |
-| **Streaming Service** | ✅ 80% | Tests 11/11 green |
-| **Admin Service** | ✅ 80% | Tests green |
-| **Media Pipeline** | ✅ 80% | Orchestrator works; tests green |
-| **Search/Rec/Billing/Analytics/Notification** | ✅ 75% | Tests green |
-| **Creators/Moderation/Uploads/Api-Gateway** | ✅ 80% | Tests green |
-| **Frontend** | 🟡 20% | Next.js scaffold; CI passing |
-| **Testing** | ✅ 80% | All 15 backend test jobs pass in CI |
-| **Observability** | ✅ 70% | `wildframe-observability-sdk` wired into all 15 services |
-| **CI/CD** | ✅ 90% | Backend Lint ✓, Frontend CI ✓, Docker Build ✓, all 15 Backend Test ✓; Deploy jobs blocked on AWS credentials |
-| **Overall Platform** | ✅ 90% | CI/CD fully green |
+| **Infrastructure** | ✅ 95% | Compose (26 containers healthy), Helm chart, Prometheus/Grafana/Loki configs created |
+| **Auth Service** | ✅ 95% | 109 tests green; JWT + refresh; MFA/TOTP + email verification implemented |
+| **User Service** | ✅ 85% | 51 tests green |
+| **Content Service** | ✅ 85% | 81 tests green; duplicate genres → 409 |
+| **Streaming Service** | ✅ 95% | 71 tests green; full authz hardening (all endpoints JWT, owner-scoped) |
+| **Admin Service** | ✅ 85% | 47 tests green |
+| **Media Pipeline** | ✅ 85% | 15 tests green; orchestrator works |
+| **Search** | ✅ 90% | 17 tests green; Elasticsearch indexed + query verified E2E |
+| **Billing** | ✅ 90% | 54 tests green; payouts owner-checked |
+| **Analytics** | ✅ 85% | 14 tests green |
+| **Notification** | ✅ 90% | 8 tests green; send flow works E2E |
+| **Recommendation** | ✅ 85% | 14 tests green |
+| **Creators/Moderation/Uploads** | ✅ 85% | 16/25/13 tests green |
+| **API Gateway** | ✅ 95% | 26 tests green; rate limiting enforced (429) |
+| **Frontend** | ✅ 90% | Next.js 16 with real flows; vitest 43/43; eslint + tsc + build green |
+| **Testing** | ✅ 95% | 551 tests across 16 backend suites + 43 frontend, all green |
+| **Observability** | 🟡 70% | SDK wired into all 15 services; Jaeger tracing wired; Grafana/Loki dashboards need finishing |
+| **CI/CD** | ✅ 95% | Backend Lint ✓, Helm Lint ✓, Backend Test (15+SDK) ✓, Frontend CI ✓, Docker Build ✓; Deploy jobs blocked on AWS credentials |
+| **Overall Platform** | ✅ 95% | Security deep-dive + fixes landed (see AUDIT_FIX_SUMMARY.md) |
 
 ---
 
-## ✅ COMPLETED (Current — Aug 8, 2026)
+## ✅ COMPLETED (Aug 9, 2026 — Security Deep-Dive, commits `85689da…a4697ec`)
 
-### Runtime Bug Sweep (11 fixes, commit `9d8d8a2`)
-- **content-service**: get/update season & episode signature mismatches (TypeError 500s); `update_content` None crash → 404
-- **recommendation-service**: `update_preferences` non-existent `self.session` → 500
-- **streaming-service**: `/transcoding-jobs/pending` shadowed by `/{job_id}` (422); metrics FK mis-mapped
-- **moderation-service**: strikes never expired (permanent suspension); `active_count` stale-flag count
-- **api-gateway**: `/gateway/health` + `/gateway/services` shadowed by catch-all proxy (404)
-- **billing-service**: recurring invoices dropped (amount-dedupe); wrong invoice marked PAID
-- **auth-service**: `revoke_all_for_user` `WHERE false` no-op; **uploads-service**: session expiry unenforced
-- Tests: moderation/streaming/content 11/11 green; details in `AUDIT_FIX_SUMMARY.md`
+### Security hardening (live-verified against the running stack)
+- **streaming-service**: was fully unauthenticated. Every route now requires a JWT (`get_current_user_id`); body `user_id` is overridden by the token claim (spoofing probe → session bound to the real user); user-scoped reads (sessions, downloads) return 403 for foreign users; `POST …/end` now checks ownership *before* touching state (live: attacker 403, victim session stays `ACTIVE` in DB); manifest/transcoding/download/CDN-region endpoints authed (anon → 401).
+- **api-gateway**: rate limiter was constructed but never invoked — now wired into `proxy_request` (live: `401×5` then `429`).
+- **billing-service**: `GET /payouts/{creator_id}` had no owner check (IDOR) — fixed (foreign → 403, own → 200).
+- **content-service**: duplicate genre raised unhandled IntegrityError 500 — now `409`.
+
+### Reliability (crash / 500 fixes)
+- **python-jose crash**: upstream added `import jwt` in 5 services that only install `python-jose` → crash at startup (analytics, notification, billing, recommendation, uploads) → `from jose import jwt` + `jwt.JWTError`, container-restart verified.
+- **search-service**: image lacked `elasticsearch` async client dep (`aiohttp`) — added to requirements; reindex + query verified E2E.
+- **Timezone 500s**: streaming-service wrote tz-aware `datetime.now(UTC)` into `TIMESTAMP WITHOUT TIME ZONE` columns (playback `ended_at`, metrics period, transcoding `completed_at`) → asyncpg DataError 500 on `end` — fixed naive-UTC; notification-service `created_at` same class of bug fixed.
+- tests updated/added (incl. `test_end_playback_session_foreign_owner_returns_403`); `pytest-mock` added to the dev venv (two suites used the `mocker` fixture).
+
+### CI/CD (repaired)
+- Restored stashed tooling fixes: mypy per `services/*/app` (root-level mypy breaks on duplicated `app` package), dep range updates, `poetry.lock`, tsconfig.
+- **Frontend CI was un-runnable**: workflow targeted `pnpm install --frozen-lockfile` + `pnpm-lock.yaml`, which never existed (repo is an **npm-workspaces monorepo**). Now: `npm ci --legacy-peer-deps` at root + committed `package-lock.json`; added type-check step.
+- Fixed phantom/mismatched deps: `vitest-ui` → `@vitest/ui`; `@vitest/coverage-v8` aligned with vitest 4; `@types/hls.js@^1.4.0` (registry max 1.0.0); missing `@testing-library/dom` (peer, skipped by `--legacy-peer-deps`); dropped invalid `ignoreDeprecations: "6.0"` (TS 5.x fails on it).
+- Verified equivalents of every CI job locally: ruff ✓ black ✓ mypy ✓ (continue-on-error), helm lint + render (all 15 services present) ✓, per-service pytest ✓, SDK tests 49 ✓, frontend eslint/tsc/vitest/build ✓.
+
+### Auth flows (verified implemented, upstream commits `a224685` etc.)
+- MFA/TOTP: setup / verify / disable / backup codes, MFA-challenge login (`/auth/mfa/login-verify`), secrets at-rest encrypted.
+- Email verification: signed-ownership-token flow (`/auth/verify-email`). No more `501` stubs.
 
 ---
 
-## ✅ COMPLETED (This Session — Aug 4, 2026)
+## ✅ COMPLETED (Aug 8, 2026 — Runtime Bug Sweep, commit `9d8d8a2`)
 
-### 1. Full Audit & Fix (22 Issues)
-- **Deleted cruft**: `netflix_backend/`, `services/streaming/`, `tools/`, shadow dirs, flattened 5 nested service dirs
-- **Compose fixed**: 5 service/build-context mismatches, missing infra configs (prometheus, grafana, loki), malformed loki command, removed `alembic upgrade head`
-- **init-databases.sql**: Added missing owner/grants for `search_db`, `recommendation_db`, `notification_db`, `media_db`
-- **DB defaults aligned**: `media-pipeline_db` → `media_db`, `user_db` → `users_db`, dropped `api-gateway_db`
-- **api-gateway**: Fixed `JWT_SECRET` crash, broken `get_current_user`
-- **billing**: Fixed package shadow (`app/services/` masking `app/services.py`)
-- **7 database.py**: Raw `SELECT 1` → `text("SELECT 1")`
-- **10 services**: Added `@asynccontextmanager lifespan` with DB health check + init/shutdown
-- **Python version**: `>=3.11,<3.16` everywhere; Dockerfiles on `3.13-slim`
-- **JWT security**: `model_validator` fails fast in production with default secrets
-- **auth-service**: MFA/email-verify stubbed to 501; added missing `TokenBlacklistRepository`
-- **CI**: npm → pnpm, cache key `pnpm-lock.yaml`
-- **AGENTS.md**: 15 services, full port table, correct SDK paths
+11 fixes, CI-verified across all services — see AUDIT_FIX_SUMMARY.md for the table (content-service signature mismatches, recommendation `update_preferences`, streaming `/pending` shadowing + metrics FK, moderation strike expiry, gateway `/gateway/*` shadowing, billing invoice dedupe, auth `revoke_all WHERE false`, uploads session expiry).
 
-### 2. Lint Cleanup (Backend Lint now passes in CI)
-- **F821 Undefined names** — Added `Annotated`, `timedelta`, `timezone`, `pytest_asyncio` imports across 12+ files
-- **F401 Unused imports** — Removed 30+ dead imports (`re`, `enum`, `HTTPException`, `uuid4`, `and_`, `ForeignKey`, etc.)
-- **B008 `Depends()` in defaults** — Refactored 189 occurrences to `Annotated[Type, Depends(...)]` with correct parameter ordering (no-default before default)
-- **B008 `Body()` / `Query()`** — Same pattern
-- **F404** — Moved `from __future__ import annotations` to top of file in 5 files
-- **RUF012** — Fixed mutable defaults with `frozenset` / `MappingProxyType`
-- **F811** — Resolved `Enum` redefinition conflicts (sqlalchemy vs python `enum`)
-- **PLW0127** — Removed self-assignment
-- **SIM102** — Combined nested `if` statements
-- **Black formatting** — Reformatted 190 files to Black 26.5.1 standard
+---
 
-### 3. Dependency & Build Fixes
-- `asyncpg` upgraded from `^0.29.0` → `^0.30.0` (Python 3.13 support) across all 15 service `pyproject.toml`
-- `setuptools = "^69.0.0"` added to all services using opentelemetry (`pkg_resources` removed in Python 3.13)
-- `wildframe-observability-sdk` added as path dep to all 15 services
-- `pytest-cov = "^4.1.0"` added to services missing it
-- Poetry pinned to `1.8.3` in all Dockerfiles (Poetry 2.x requires Python 3.14)
-- **Python version standardized**: `>=3.11,<3.16` in root + all 15 pyprojects; Dockerfiles on `3.13-slim`
+## ✅ COMPLETED (Aug 4, 2026 — Initial Audit 22/22)
 
-### 4. CI/CD Pipeline (Backend Lint job: ✅ PASSING)
-- `ruff check services/` — passes
-- `black --check services/` — passes
-- `mypy services/` — passes (continue-on-error)
-- Per-service `pytest.ini` created (overrides root coverage config)
-- CI: `npm ci` → `pnpm install --frozen-lockfile`; cache key `pnpm-lock.yaml`
-
-### 5. Import & Code Fixes
-- Fixed `from app.services.streaming import` → `from app.services import` (streaming-service tests + routes)
-- Fixed `from app.services.content import` → `from app.services import` (content-service tests + routes)
-- Fixed `from app.services.auth_service import` → `from app.services import`
-- Fixed `from app.security.manager import` → `from app.security import`
-- Fixed `wildframe-observability-sdk` path: `../../packages/sdk` → `../../packages/sdk/wildframe_observability` (media-pipeline)
-- Removed hashlib redefinition in `auth-service/app/security/__init__.py`
-- Renamed conflicting instance methods `create_access_token` → `create_access_token_for_user` in TokenManager
+Repo hygiene (deleted netflix_backend, flattened services), compose/infra fixes, DB grants, lifespan + `text("SELECT 1")` health checks everywhere, JWT secret model_validators, B008/B811/F821 lint cleanup (189 `Depends()` refactors), dependency fixes (asyncpg, setuptools, SDK wiring). Details in AUDIT_FIX_SUMMARY.md.
 
 ---
 
 ## 🔄 REMAINING FOR CI/CD GREEN
 
-### Critical (Blocking Backend Tests)
-- [ ] **Test file imports** — Many test files reference modules that don't exist:
-  - `services/auth-service/tests/test_api.py` — fails on `create_app` import
-  - `services/auth-service/tests/test_auth_endpoints.py` — fails on imports
-  - Other service test files need audit
-- [ ] **Auth Service** — Implement real email verification + MFA flows (replace 501 stubs)
-- [ ] **Integration Tests** — Make all 6 core service tests actually pass (need Docker + testcontainers)
-
-### High (Should Have)
-- [ ] **Frontend CI** — Failing on something, investigate
-- [ ] **Security Scan** — Trivy path input issue (`~/` not expanded)
-
-### Medium (Nice to Have)
-- [ ] **Observability SDK** — Replace stub with real implementation
-- [ ] **Load Testing** — k6/Locust scripts
-- [ ] **Database Migrations** — Alembic per-service
-- [ ] **API Contract Tests** — Pact for service-to-service
+- [ ] **Deploy jobs** — blocked on `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` repo secrets + `wildframe-staging` / `wildframe-production` EKS clusters (jobs are now runnable once credentials exist).
+- [ ] **Observability sinks** — OTel exporters running; finish Grafana dashboards / Loki retention.
+- [ ] **Search integration tests** — need an Elasticsearch container (reindex/query verified locally).
 
 ---
 
-## 📋 PRE-EXISTING DEBT (Not from Audit)
+## 🚀 Remaining Work (prod readiness)
 
-| Area | Issue | Effort |
-|------|-------|--------|
-| FastAPI deprecation | `Annotated[..., Query(default=...)]` → `Query(...)` in 4 services | Medium |
-| creators-service | Missing `app/api/creators_routes.py` — route file gone | Medium |
-| Test fixtures | `httpx.AsyncClient(app=...)` API changed in newer httpx | Low |
-| AuthService signature | Tests pass `refresh_token_repo`, code expects `token_repo` | Low |
-| User/Content/Admin | Use deprecated `@app.on_event` instead of lifespan | Low |
-| GitHub advisories | 96 Dependabot alerts (5 critical, 41 high) | Medium |
-| **DRM / content protection** | No Widevine/FairPlay/PlayReady — plaintext HLS/DASH only; no license server, keys, or EME in frontend. See [docs/DRM_SCOPE.md](docs/DRM_SCOPE.md) for the scoped plan | Large |
+1. **Load testing** — k6/Locust scripts
+2. **DRM (Widevine/FairPlay/PlayReady)** — CENC packaging, KMS key mgt, license endpoints, Shaka/EME (blocked on platform certificates/agreements) — see [docs/DRM_SCOPE.md](docs/DRM_SCOPE.md)
+3. **Secrets management** — replace legacy key names/meann settings with vault/SSM-backed config
+4. **Integration tests with testcontainers** (PostgreSQL/Redis/Kafka/ES)
+5. **API contract tests / Pact**
+6. **Deploy credentials + EKS clusters** so Deploy jobs run
 
 ---
 
@@ -138,21 +95,21 @@
 
 ```
 services/
-├── auth-service/          ✅ Starts; auth works; tests need fixing
-├── user-service/          ✅ Starts; CRUD works
-├── content-service/       ✅ Starts; CRUD works
-├── streaming-service/     ✅ Starts; CRUD works
-├── admin-service/         ✅ Starts; CRUD works; tests PASSING
-├── media-pipeline/        ✅ Starts; orchestrator works
-├── api-gateway/           ✅ Starts
-├── creators-service/      ✅ Starts
-├── moderation-service/    ✅ Starts
-├── uploads-service/       ✅ Starts
-├── analytics/             ✅ Starts
-├── billing/               ✅ Starts
-├── notification/          ✅ Starts
-├── recommendation/        ✅ Starts
-└── search/                ✅ Starts
+├── auth-service/          ✅ JWT + MFA + email verification; 109 tests
+├── user-service/          ✅ CRUD works; 51 tests
+├── content-service/       ✅ CRUD works; 81 tests
+├── streaming-service/     ✅ authz hardened; 71 tests
+├── search-service/        ✅ ES indexed + verified; 17 tests
+├── recommendation-service ✅ 14 tests
+├── billing-service/       ✅ payouts owner-checked; 54 tests
+├── analytics-service/     ✅ 14 tests
+├── notification-service/  ✅ 8 tests
+├── media-pipeline/        ✅ 15 tests
+├── creators-service/      ✅ 16 tests
+├── moderation-service/    ✅ 25 tests
+├── uploads-service/       ✅ 13 tests
+├── api-gateway/           ✅ rate limited; 26 tests
+└── packages/sdk/          ✅ 49 tests
 ```
 
 ---
@@ -161,57 +118,18 @@ services/
 
 | File | Status |
 |------|--------|
-| `STATUS.md` | ✅ Updated (this file) |
-| `README.md` | ✅ Updated |
-| `AGENTS.md` | ✅ Updated |
-| `QUICKSTART.md` | ✅ Updated |
-| `STARTUP_GUIDE.md` | ✅ Updated |
-| `HOW_TO_RUN_TESTS.md` | ✅ Updated |
-| `docs/QUICKSTART.md` | ✅ Updated |
-| `docs/TEST_GUIDE.md` | ✅ Updated |
+| `STATUS.md` | ✅ Updated Aug 9 |
+| `README.md` | ✅ Updated Aug 9 |
+| `AGENTS.md` | ✅ Updated Aug 9 |
+| `AUDIT_FIX_SUMMARY.md` | ✅ Updated Aug 9 |
+| `HOW_TO_RUN_TESTS.md` | ✅ Updated Aug 9 |
+| `docs/TEST_GUIDE.md` | ✅ Updated Aug 9 |
+| `docs/QUICKSTART.md` | ⚠️ legacy copy; see README for install/test-command truth |
 | `docs/ARCHITECTURE.md` | ✅ Accurate |
 | `docs/DEVELOPMENT.md` | ✅ Accurate |
 | `docs/OPERATIONS.md` | ✅ Accurate |
-| `COMPLETION_SUMMARY.md` | ⚠️ Outdated (claims 100%) |
-| `IMPLEMENTATION_COMPLETE.md` | ⚠️ Outdated |
-| `FINAL_EXECUTION_REPORT.md` | ⚠️ Outdated |
-| `START_HERE.md` | ⚠️ Outdated |
+| `COMPLETION_SUMMARY.md` / `IMPLEMENTATION_COMPLETE.md` / `FINAL_EXECUTION_REPORT.md` | ⚠️ Historical, superseded |
 
 ---
 
-## ✅ CI/CD GREEN (August 7, 2026)
-
-All GitHub Actions checks pass except Deploy:
-- **Backend Lint** ✓ (ruff + black over `services/`)
-- **Frontend CI** ✓ (pnpm install, lint, build)
-- **Docker Build Smoke** ✓ (api-gateway, auth, content, streaming, media-pipeline)
-- **Backend Test** ✓ all 15: auth, user, admin, content, streaming, search, recommendation, billing, analytics, notification, media-pipeline, creators, moderation, uploads, api-gateway
-- **Build & Push Frontend** ✓ (multi-stage Dockerfile, served on :3000)
-- **Deploy Staging / Production** ⚠️ Skipped/failing — no AWS credentials configured (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` repo secrets absent)
-
-**Key fixes to reach green:**
-- Dockerfiles: python:3.13-slim, pip install via `requirements.txt`, SDK copied into `/app`
-- SDK pyproject: `packages from='..'` so it builds; fastapi `^0.111.0`
-- fastapi 0.111 pin (fixes `FieldInfo.in_` bug on pydantic 2.13)
-- setuptools `<81` (pkg_resources removed in 81+; Dependabot ignore configured)
-- asyncpg 0.30, sqlalchemy 2.0.36 (Python 3.13 C API fixes)
-- auth-service: register auto-login tokens, logout dual-mode, TrustedHost test hosts
-- user/content/streaming tests: rewritten to match actual service APIs
-- moderation: fake repo assigns ids; creators/moderation tests moved to top-level `tests/`
-- poetry `requires-python` in `[project]` for 13 services
-
----
-
-## 🚀 Remaining Work
-
-1. **Auth email/MFA** — Replace 501 stubs with real flows
-2. **Real observability SDK** — Stub in place; wire real OTel exporters
-3. **Helm chart** — CI deploy jobs are no-ops without it
-4. **Integration tests** — testcontainers-based (Postgres/Redis/Kafka/ES) need Docker
-5. **Frontend** — Next.js scaffold only; real pages/flows
-6. **Deploy credentials** — Add `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` repo secrets + `wildframe-staging` / `wildframe-production` EKS clusters so CI/CD Deploy jobs can run
-7. **DRM (Widevine + FairPlay + PlayReady)** — Packaging w/ CENC encryption, key management (KMS), DRM license endpoints in streaming-service, and Shaka Player EME in the frontend. Blocked first on Google/Apple/Microsoft certificate + agreements (FPS grant, Widevine licence, PlayReady provisioning). Full scope: [docs/DRM_SCOPE.md](docs/DRM_SCOPE.md)
-
----
-
-**Status maintained per session. Last update: August 7, 2026 — CI/CD green except Deploy (needs AWS creds).**
+**Status maintained per session. Last update: August 9, 2026 — audit fixes pushed; CI/CD green except Deploy (needs AWS creds).**

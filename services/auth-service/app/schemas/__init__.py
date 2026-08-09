@@ -210,6 +210,13 @@ class MFAVerifyRequest(BaseModel):
     code: str = Field(..., min_length=6, description="Verification code")
 
 
+class MFALoginVerifyRequest(BaseModel):
+    """Complete an MFA-gated login: challenge token + TOTP code."""
+
+    mfa_challenge: str = Field(..., description="Short-lived token from /login")
+    code: str = Field(..., min_length=6, description="TOTP verification code")
+
+
 class ResendVerificationRequest(BaseModel):
     """Request to (re)issue an email verification token."""
 

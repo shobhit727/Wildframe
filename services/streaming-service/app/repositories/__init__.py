@@ -100,7 +100,8 @@ class PlaybackSessionRepository(BaseRepository):
         from datetime import datetime
 
         return await self.update(
-            session_id, status=PlaybackSessionStatus.COMPLETED,
+            session_id,
+            status=PlaybackSessionStatus.COMPLETED,
             ended_at=datetime.now(UTC).replace(tzinfo=None),
         )
 
@@ -142,7 +143,10 @@ class VideoManifestRepository(BaseRepository):
         """Get manifest by episode and protocol."""
         result = await self.session.execute(
             select(VideoManifest).where(
-                and_(VideoManifest.episode_id == episode_id, VideoManifest.protocol == protocol)
+                and_(
+                    VideoManifest.episode_id == episode_id,
+                    VideoManifest.protocol == protocol,
+                )
             )
         )
         return result.scalars().first()
@@ -313,7 +317,12 @@ class DownloadSessionRepository(BaseRepository):
     """Repository for download session operations."""
 
     async def create(
-        self, user_id: UUID, episode_id: UUID, device_id: str, resolution: str, total_bytes: int
+        self,
+        user_id: UUID,
+        episode_id: UUID,
+        device_id: str,
+        resolution: str,
+        total_bytes: int,
     ) -> DownloadSession:
         """Create a new download session."""
         download = DownloadSession(

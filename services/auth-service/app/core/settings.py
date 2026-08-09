@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     # MFA Configuration
     MFA_ENABLED: bool = True
     MFA_ISSUER_NAME: str = "Wildframe"
+    MFA_CHALLENGE_EXPIRATION_MINUTES: int = 5
     MFA_BACKUP_CODES_COUNT: int = 10
     MFA_BACKUP_CODE_LENGTH: int = 8
 

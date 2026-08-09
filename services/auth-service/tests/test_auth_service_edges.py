@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 from app.schemas import UserLoginRequest, UserRegisterRequest
-from app.security import PasswordManager, TokenManager
+from app.security import PasswordManager, SecretCipher, TokenManager
 from app.services import AuthService
 from fastapi import HTTPException
 
@@ -329,4 +329,55 @@ def _user():
     u.first_name = "First"
     u.last_name = "Last"
     u.role = "user"
+    u.mfa_enabled = False
     return u
+
+
+class TestMfaAtLogin:
+    async def test_login_with_mfa_raises_challenge(self, service, repos):
+        user = make_user(mfa_enabled=True, mfa_secret=SecretCipher.encrypt("AA"))
+        repos["user_repo"].get_by_email.return_value = user
+        repos["user_repo"].update.return_value = user
+        repos["user_repo"].reset_login_attempts.return_value = user
+        from app.services import MfaChallengeRequired
+
+        with pytest.raises(MfaChallengeRequired) as exc:
+            await service.login(
+                UserLoginRequest(email="user@example.com", password="password123"),
+                "1.2.3.4",
+            )
+
+        assert exc.value.challenge_token
+        repos["token_repo"].create.assert_not_awaited()
+
+    async def test_complete_mfa_login_invalid_challenge_401(self, service, repos):
+        service.token_manager.verify_mfa_challenge = MagicMock(return_value=None)
+
+        with pytest.raises(HTTPException) as exc:
+            await service.complete_mfa_login("bad", "123456", "1.2.3.4")
+
+        assert exc.value.status_code == 401
+
+    async def test_complete_mfa_login_bad_code_400(self, service, repos):
+        user = make_user(mfa_enabled=True, mfa_secret=SecretCipher.encrypt("AA"))
+        service.token_manager.verify_mfa_challenge = MagicMock(return_value=user.id)
+        repos["user_repo"].get_by_id.return_value = user
+
+        with pytest.raises(HTTPException) as exc:
+            await service.complete_mfa_login("chal", "999999", "1.2.3.4")
+
+        assert exc.value.status_code == 400
+
+    async def test_complete_mfa_login_success(self, service, repos):
+        import pyotp
+
+        secret = pyotp.random_base32()
+        user = make_user(mfa_enabled=True, mfa_secret=SecretCipher.encrypt(secret))
+        service.token_manager.verify_mfa_challenge = MagicMock(return_value=user.id)
+        repos["user_repo"].get_by_id.return_value = user
+        code = pyotp.TOTP(secret).now()
+
+        result = await service.complete_mfa_login("chal", code, "1.2.3.4")
+
+        assert result.access_token
+        repos["token_repo"].create.assert_awaited_once()

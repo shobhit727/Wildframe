@@ -15,7 +15,12 @@ poetry install
 docker compose -f deployments/docker-compose.dev.yml up --build -d
 
 # Run the backend test suite
-pytest services --asyncio-mode=auto
+# Every service packs its own top-level `app` package, so tests must run
+# per-service (a combined `pytest services/` run from the repo root breaks
+# on shadowed `app.*` imports).
+for svc in services/*/; do
+  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+done
 
 # Frontend (Next.js 15)
 cd apps/web && npm install && npm run dev   # http://localhost:3000
@@ -143,8 +148,21 @@ actually binds (8000 for most; 8003 for content, 8004 for streaming).
   and compose port mapping must agree with it.
 - **Don't silently succeed on security endpoints** — email verification and
   MFA must not flip state without proof. Return `501` until the flow exists.
+- **Don't use `import jwt`** — services install `python-jose`, not PyJWT;
+  import `from jose import jwt` and catch `jwt.JWTError`.
+- **Don't write tz-aware datetimes into naive columns** — model columns are
+  `TIMESTAMP WITHOUT TIME ZONE`; pass `datetime.now(UTC).replace(tzinfo=None)`
+  or the insert/update raises asyncpg `DataError` (500s seen in
+  streaming/notification `ended_at`, metrics, `created_at`).
+- **Don't mutate state before authorization** — e.g. `POST
+  /playback-sessions/{id}/end` must fetch + owner-check first; a 403 response
+  must never come after the side effect (see `end_playback_session`).
+- **Don't forget the gateway rate limiter** — the api-gateway enforces 429s in
+  `proxy_request` (key: user `sub` or IP). Gateway tests stub it; don't remove
+  the call.
 - **Don't forget the API prefix** — routes are mounted under `/api/v1`, so a
-  handler at `/auth/login` is reached at `/api/v1/auth/login`.
+  handler at `/auth/login` is reached at `/api/v1/auth/login` (via the gateway:
+  `/{service}/api/v1/...`).
 
 ## Documentation
 

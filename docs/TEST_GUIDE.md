@@ -23,19 +23,20 @@ Comprehensive reference for writing, running, and debugging tests across the Wil
 
 | Layer | Tool | Why |
 |---|---|---|
-| Backend unit / integration | **pytest** + **pytest-asyncio** | De facto Python test framework, async-native |
-| HTTPX / async DB | **httpx.AsyncClient**, **aiosqlite** | Real async I/O in tests |
-| Mocking | **unittest.mock** (`AsyncMock`, `MagicMock`, `patch`) | Stub external dependencies |
+| Backend unit / route | **pytest** + **pytest-asyncio** (`--asyncio-mode=auto`) | De facto Python test framework, async-native |
+| HTTPX | **httpx** (ASGITransport / TestClient) | In-process app testing |
+| Mocking | **unittest.mock** (`AsyncMock`, `MagicMock`, `patch`) + **pytest-mock** (`mocker` fixture) | Stub external dependencies |
 | Coverage | **pytest-cov** | Track line + branch coverage |
 | Frontend unit | **Vitest** | Fast, ESM-native, Jest-compatible API |
-| Frontend E2E | **Playwright** | Cross-browser, network interception |
-| Load | **k6** | Optional, in [load/](../load) scripts |
+| Frontend E2E | **Playwright** | Scripts exist, not yet run in CI |
+| Load | **k6** | Optional, not yet written |
 
 ---
 
 ## Test Layout
 
-Every backend service follows the same structure:
+Every backend service follows the same structure (tests live at the **service
+root**, not inside `app/`):
 
 ```
 services/<service>/
@@ -44,36 +45,38 @@ services/<service>/
 │   ├── core/                # config, security
 │   ├── models/              # SQLAlchemy models
 │   ├── repositories/        # data access
-│   ├── services/            # business logic
-│   └── tests/
-│       ├── __init__.py
-│       ├── conftest.py      # shared fixtures
-│       ├── test_<area>.py   # unit tests
-│       └── test_<area>_integration.py
+│   └── services/            # business logic
+├── tests/
+│   ├── conftest.py          # shared fixtures
+│   ├── test_<area>.py       # route/service unit tests
+│   └── test_<area>_edges.py # edge-case coverage
 ├── Dockerfile
 └── pyproject.toml
 ```
 
 Test files **must** start with `test_`. Pytest auto-discovers them.
 
+> ⚠️ Every service defines its own top-level `app` package, so **always run
+> pytest from inside the service directory** — a combined `pytest services/`
+> sweep from the repo root breaks on shadowed `app.*` imports.
+
 ---
 
 ## Running Tests
 
-### One-shot script
+### All services (from repo root — per-service, never a combined sweep)
 
 ```bash
-# From project root
-./run_tests.sh
+for svc in services/*/; do
+  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+done
 ```
-
-The script iterates over every `services/*` directory and runs the suite with coverage.
 
 ### Single service
 
 ```bash
 cd services/auth-service
-python3 -m pytest tests/ -v
+python3 -m pytest tests/ --asyncio-mode=auto
 ```
 
 ### Single file
@@ -116,15 +119,13 @@ Examples:
 
 ### Async tests
 
-All FastAPI service tests are async. Mark them with `@pytest.mark.asyncio`:
+All FastAPI service tests are async. Run pytest with `--asyncio-mode=auto`
+(no per-test `@pytest.mark.asyncio` decorator needed):
 
 ```python
-import pytest
-
-@pytest.mark.asyncio
-async def test_register_user_returns_201(async_client):
-    response = await async_client.post(
-        "/auth/register",
+def test_register_user_returns_201(client):
+    response = client.post(
+        "/api/v1/auth/register",
         json={"email": "a@b.com", "password": "Pass123!"},
     )
     assert response.status_code == 201
@@ -138,16 +139,16 @@ Test business logic in isolation by injecting mocks. See `services/auth-service/
 
 ## Fixtures & Mocks
 
-Each service ships with a `conftest.py` exposing reusable fixtures:
+Each service ships with a `conftest.py` exposing reusable fixtures. Common
+patterns across suites (names vary by service):
 
 | Fixture | Purpose |
 |---|---|
-| `async_client` | `httpx.AsyncClient` bound to the FastAPI app via `ASGITransport` |
-| `db_session` | Async SQLAlchemy session against an in-memory SQLite or test DB |
-| `mock_repositories` | Pre-built `AsyncMock` repos for the service under test |
-| `mock_rate_limiter` | Stub rate limiter allowing all requests |
-| `auth_headers` | `{"Authorization": "Bearer <jwt>"}` for a seeded user |
-| `seed_user` | Insert a user and return the model instance |
+| `client` | FastAPI `TestClient` bound to the app with dependencies overridden |
+| `fake_service` / `fake_*_repo` | Pre-built `AsyncMock` repos/service under test |
+| `auth_user_id` / `TEST_USER_ID` | Fixed authenticated user UUID; the `get_current_user_id` dependency is overridden with it |
+| `override_deps` (autouse) | Registers `app.dependency_overrides` for the suite and clears them after |
+| `make_*()` helpers | `MagicMock` factory functions producing realistic model instances |
 
 ### Mocks vs. fakes — when to use which
 
@@ -190,7 +191,9 @@ open htmlcov/index.html
 | Content, Search, Recommendation, Analytics, Notification, Media Pipeline | 75%+ |
 | API Gateway | 70%+ |
 
-Coverage **must not drop** in a PR — CI fails the build below the threshold.
+Coverage **must not drop** in a PR. CI currently runs coverage per service
+(`--cov=app`) but does **not** fail the build below a threshold — thresholds
+are aspirational; add `--cov-fail-under` once suites stabilize.
 
 ---
 
@@ -198,23 +201,23 @@ Coverage **must not drop** in a PR — CI fails the build below the threshold.
 
 ### Service-level integration
 
-These tests boot the FastAPI app + a real (test) database. They live in `tests/test_*_integration.py`.
-
-```bash
-python3 -m pytest tests/ -m integration -v
-```
+Not yet written. Planned suites (`tests/test_*_integration.py`) will boot the
+FastAPI app + a real database (testcontainers: PostgreSQL/Redis/Kafka/ES).
 
 ### Full platform E2E
 
-`run_tests.sh` (or a CI workflow) brings up the whole Docker Compose stack, waits for health, then runs the suites. Useful for catching contract drift between services.
+The dockerized stack (`deployments/docker-compose.dev.yml`) is the E2E target:
+boot it, then probe endpoints per [API_DOCUMENTATION.md](API_DOCUMENTATION.md).
+The Aug 9, 2026 security sweep used exactly this flow (see
+[AUDIT_FIX_SUMMARY.md](../AUDIT_FIX_SUMMARY.md)).
 
 ### Smoke test (after deployment)
 
 ```bash
 curl http://localhost:8000/health
-curl -X POST http://localhost:8001/api/v1/auth/login \
+curl -X POST http://localhost:8000/auth/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"smoke@wildframe.io","password":"Smoke123!"}'
+  -d '{"email":"demo@wildframe.com","password":"DemoPass123!"}'
 ```
 
 ---
@@ -236,7 +239,11 @@ curl -X POST http://localhost:8001/api/v1/auth/login \
 
 ## Troubleshooting
 
-**`RuntimeError: Event loop is closed`** — You forgot `@pytest.mark.asyncio` on an async test.
+**`RuntimeError: Event loop is closed`** — run pytest with `--asyncio-mode=auto`.
+
+**`fixture 'mocker' not found`** — install pytest-mock into the venv.
+
+**`ModuleNotFoundError: No module named 'app'` / wrong `app.models` imported** — you ran pytest from outside the service dir (or a combined `pytest services/` sweep). `cd services/<svc>` first.
 
 **`asyncpg.exceptions.UndefinedTableError`** — Migrations not applied. Run:
 ```bash

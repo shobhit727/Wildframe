@@ -23,6 +23,14 @@ from fastapi import HTTPException, status
 logger = logging.getLogger(__name__)
 
 
+class MfaChallengeRequired(Exception):
+    """Raised when login succeeded (password) but MFA proof is pending."""
+
+    def __init__(self, challenge_token: str):
+        self.challenge_token = challenge_token
+        super().__init__("MFA verification required")
+
+
 class AuthService:
     """Business logic for authentication."""
 
@@ -152,6 +160,15 @@ class AuthService:
         )
         await self.audit_repo.commit()
 
+        # MFA gate: password verified, but the user must prove TOTP possession
+        # before any tokens are issued.
+        if getattr(user, "mfa_enabled", False):
+            challenge = self.token_manager.create_mfa_challenge_token(
+                user.id, getattr(user, "email", "")
+            )
+            logger.info(f"Login awaiting MFA challenge for user: {user.email}")
+            raise MfaChallengeRequired(challenge)
+
         # Generate tokens
         access_token = self.token_manager.create_access_token(
             str(user.id), getattr(user, "email", "")
@@ -171,6 +188,69 @@ class AuthService:
         await self.token_repo.commit()
 
         logger.info(f"User logged in: {user.email}")
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token_str,
+            expires_in=900,  # 15 minutes
+            token_type="bearer",
+        )
+
+    async def complete_mfa_login(
+        self, challenge_token: str, code: str, ip_address: str
+    ) -> TokenResponse:
+        """Complete a password-verified login with a valid TOTP code.
+
+        Verifies the short-lived ``mfa_challenge`` token (proof that the
+        password check already passed), then validates the TOTP code before
+        issuing real access/refresh tokens.
+        """
+        user_id = self.token_manager.verify_mfa_challenge(challenge_token)
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired MFA challenge",
+            )
+
+        user = await self.user_repo.get_by_id(user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+            )
+        if not getattr(user, "mfa_enabled", False):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MFA is not enabled for this user",
+            )
+
+        import pyotp
+        from app.security import SecretCipher
+
+        secret = SecretCipher.decrypt(user.mfa_secret) if user.mfa_secret else ""
+        if not secret or not pyotp.TOTP(secret).verify(code, valid_window=1):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid MFA code",
+            )
+
+        # MFA passed — issue tokens (mirrors the tail of login()).
+        access_token = self.token_manager.create_access_token(
+            str(user.id), getattr(user, "email", "")
+        )
+        (
+            refresh_token_str,
+            refresh_token_hash,
+            expires_at,
+        ) = self.token_manager.create_refresh_token_for_user(user)
+
+        await self.token_repo.create(
+            user_id=user.id,
+            token_hash=refresh_token_hash,
+            expires_at=expires_at,
+        )
+        await self.token_repo.commit()
+
+        logger.info(f"MFA login completed for user: {user.email}")
         return TokenResponse(
             access_token=access_token,
             refresh_token=refresh_token_str,

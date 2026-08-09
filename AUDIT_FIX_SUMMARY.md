@@ -2,6 +2,7 @@
 
 **Date**: August 4, 2026
 **Status**: 22/22 items fixed — platform boots, imports clean, compose/CI valid.
+**Latest session**: Aug 9, 2026 — security deep-dive & live pentest; see the 🔐 section below.
 
 ---
 
@@ -47,7 +48,7 @@
 - [x] Stubbed auth-service `/verify-email`, `/mfa/setup`, `/mfa/verify` to 501 (per AGENTS.md: no silent success on security endpoints)
 
 ### CI / Docs
-- [x] CI: `npm ci` → `pnpm install --frozen-lockfile`; cache key `pnpm-lock.yaml`
+- [x] CI: `npm ci` → `pnpm install --frozen-lockfile`; cache key `pnpm-lock.yaml` *(reverted Aug 9 — repo is npm-workspaces; see 🔐 section below)*
 - [x] Updated AGENTS.md: 15 services, full port table, correct SDK paths (`packages/sdk/wildframe_*`)
 - [x] Fixed `auth-service` missing `TokenBlacklistRepository`
 
@@ -135,6 +136,51 @@ Tests: moderation 11/11, streaming 11/11, content 11/11 green (updated `test_get
 
 ---
 
+## 🔐 Aug 9, 2026 — Security Deep-Dive & Live Pentest (commits `85689da` → `a4697ec`)
+
+Full-stack live probes against the dockerized stack (26 containers) + per-service test suites. Every fix below was verified by re-probing the running services after redeploy.
+
+### Security (live-verified)
+
+| Service | Finding | Fix |
+|---------|---------|-----|
+| streaming-service | **No auth on any endpoint** — playback sessions, manifests, transcoding jobs, downloads, CDN regions all open | `get_current_user_id` dependency on every route; anon → 401 |
+| streaming-service | Session **creation bound to body `user_id`** (anyone could create sessions as any user) | Handler overrides `user_id` with the JWT claim (probe: spoofed body id → session owned by token user) |
+| streaming-service | User-scoped listing (`/users/{id}/playback-sessions`, `/users/{id}/downloads`) readable cross-user | Owner check → 403 |
+| streaming-service | `POST /playback-sessions/{id}/end` ended the session **before** the owner check — attacker 403 but victim's session already COMPLETED | Fetch + owner-check first, then end (unit: `end_playback_session` not awaited on 403; live: victim session stays `ACTIVE`) |
+| streaming-service | `GET /manifests/*`, `GET /cdn-regions` unauthenticated | Auth added → 401 without token |
+| billing-service | `GET /payouts/{creator_id}` — any caller could read any creator's payout history (IDOR) | Owner check → 403 (foreign), 200 (own) |
+| api-gateway | `RateLimiter` instantiated in startup but **never called** — no 429s under hammering | Wired into `proxy_request`; key = user `sub` when authed, else client IP (live: `401×5` then `429×3`) |
+| content-service | `POST /genres` duplicate → unhandled `IntegrityError` 500 | Caught → `409` |
+| recommendation-service | `GET /for-user/{id}` + preferences — verified owner-scoped after upstream IDOR fix | — |
+
+### Reliability / crash bugs (container-restart verified)
+
+| Service | Finding | Fix |
+|---------|---------|-----|
+| analytics, notification, billing, recommendation, uploads | Crash on startup: upstream commit added `import jwt` but only `python-jose` is installed (`jose` namespace) | `from jose import jwt`; `except jwt.JWTError` |
+| search-service | Image lacked `aiohttp` (elasticsearch async client requires it) | Added to `requirements.txt`; reindex `{"indexed":7}` + query + trending verified E2E |
+| streaming-service | `end`/metrics/transcoding wrote tz-**aware** `datetime.now(UTC)` into `TIMESTAMP WITHOUT TIME ZONE` columns → asyncpg DataError 500 | Naive-UTC (`replace(tzinfo=None)`) at 4 sites |
+| notification-service | `created_at` tz-aware default vs naive column → 500 on send | Same class fixed; send verified `{"status":"sent"}` |
+| api-gateway | Rate-limit call crashed pytest (wrong relative import) | Absolute import |
+
+### Tests
+
+- All 16 backend suites green: auth 109, user 51, gateway 26, content 81, streaming 71, search 17, analytics 14, notification 8, media-pipeline 15, creators 16, moderation 25, uploads 13, admin 47, billing 54, recommendation 14 = **551**
+- Added `test_end_playback_session_foreign_owner_returns_403`; billing payout test now uses the authed user id
+- `pytest-mock` installed into the dev venv: the `mocker` fixture was the last non-green item in two suites (media-pipeline, streaming edges)
+- SDK suite: 49 passed
+
+### CI/CD repaired
+
+- **Frontend CI un-runnable**: targeted `pnpm install --frozen-lockfile` + `pnpm-lock.yaml` (never existed); repo is npm-workspaces. Fixed + `package-lock.json` committed; added type-check step.
+- **Deps**: `vitest-ui` (doesn't exist) → `@vitest/ui`; `@vitest/coverage-v8` ^1→^4 (vitest 4); `@types/hls.js` ^1.4.0→^1.0.0 (registry max); `@testing-library/dom` peer added; `allowScripts` for esbuild/unrs-resolver postinstalls (npm 12).
+- **tsconfig**: dropped `ignoreDeprecations: "6.0"` (TS 5.x rejects it with TS5103, breaking `tsc`/`next build`).
+- Helm lint/render checked with helm 3.14 — all 15 services render.
+- AGENTS.md/README now document per-service pytest runs (combined `pytest services/` breaks on shadowed `app.*` imports).
+
+---
+
 ## Quick Commands
 
 ```bash
@@ -152,5 +198,8 @@ done
 # Run CI-style lint
 ruff check services/
 black --check services/
-mypy services/ 2>&1 | head -20
+for app_dir in services/*/app; do
+  echo "Checking $app_dir"
+  mypy "$app_dir" 2>&1 | head -20
+done
 ```

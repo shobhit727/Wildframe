@@ -50,7 +50,10 @@ jobs:
         run: black --check services/
 
       - name: Run mypy
-        run: mypy services/
+        run: |
+          for app_dir in services/*/app; do
+            mypy "$app_dir"
+          done
         continue-on-error: true
 
   # ---------------------------------------------------------------------------
@@ -188,7 +191,7 @@ jobs:
               --asyncio-mode=auto --durations=20 -q
 
   # ---------------------------------------------------------------------------
-  # Frontend CI: lint + build for apps/web
+  # Frontend CI: lint + type-check + test + build for apps/web
   # ---------------------------------------------------------------------------
   frontend-ci:
     name: Frontend CI
@@ -200,42 +203,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check apps/web exists
-        id: check
-        run: |
-          if [ -d "apps/web" ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Set up Node.js
-        if: steps.check.outputs.exists == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          cache: npm
+          cache-dependency-path: package-lock.json
 
-      - name: Install pnpm
-        if: steps.check.outputs.exists == 'true'
-        run: npm install -g pnpm@9
-
-      - name: Install dependencies
-        if: steps.check.outputs.exists == 'true'
-        run: pnpm install --frozen-lockfile
+      - name: Install dependencies (workspace root)
+        working-directory: .
+        run: npm ci --legacy-peer-deps --no-audit --no-fund
 
       - name: Lint
-        if: steps.check.outputs.exists == 'true'
         run: npm run lint
 
+      - name: Type check
+        run: npm run type-check
+
       - name: Test
-        if: steps.check.outputs.exists == 'true'
         run: npm test -- --run
         continue-on-error: true
 
       - name: Build
-        if: steps.check.outputs.exists == 'true'
         run: npm run build
 
   # ---------------------------------------------------------------------------
@@ -416,6 +405,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -429,12 +423,11 @@ jobs:
 
       - name: Deploy with Helm
         run: |
-          helm repo add wildframe https://charts.wildframe.com || true
-          helm repo update
-          helm upgrade --install wildframe-staging wildframe/wildframe \
+          helm upgrade --install wildframe-staging infrastructure/helm/wildframe \
             -f infrastructure/helm/values-staging.yaml \
             --namespace wildframe-staging \
-            --create-namespace
+            --create-namespace \
+            --atomic
 
       - name: Verify deployment
         run: |
@@ -456,6 +449,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -467,22 +465,31 @@ jobs:
         run: |
           aws eks update-kubeconfig --name wildframe-production --region us-east-1
 
-      - name: Create deployment approval
+      - name: Create deployment approval comment
         uses: actions/github-script@v7
+        env:
+          COMMIT_SHA: ${{ github.sha }}
         with:
           script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
+            const sha = process.env.COMMIT_SHA;
+            const { data: prs } = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '🚀 Deployment to production is ready. Waiting for approval.'
-            })
+              state: 'open',
+              head: `${context.repo.owner}:${context.ref.replace('refs/heads/', '')}`,
+            });
+            if (prs.length > 0) {
+              await github.rest.issues.createComment({
+                issue_number: prs[0].number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `🚀 Production deployment for commit \`${sha}\` is ready. Waiting for approval.`,
+              });
+            }
 
       - name: Deploy with Helm (Blue-Green)
         run: |
-          helm repo add wildframe https://charts.wildframe.com || true
-          helm repo update
-          helm upgrade --install wildframe-prod wildframe/wildframe \
+          helm upgrade --install wildframe-prod infrastructure/helm/wildframe \
             -f infrastructure/helm/values-production.yaml \
             --namespace wildframe-production \
             --create-namespace \
@@ -501,6 +508,9 @@ jobs:
           ./scripts/smoke-tests.sh production || true
 
       - name: Notify deployment
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        if: env.SLACK_WEBHOOK != ''
         uses: slackapi/slack-github-action@v1.25.0
         with:
           webhook-url: ${{ secrets.SLACK_WEBHOOK }}

@@ -1,5 +1,27 @@
 # 14_Technical_Debt
 
+> **Updated Aug 9, 2026**: items 1–5 below (duplicate models/services/schemas,
+> dead routers, dead repo code) are **resolved** in the current codebase —
+> the Aug 4 audit (commit `9d8d8a2`) and later upstream work removed the
+> duplicates and mounted all routers; 551 backend + 43 frontend tests pass.
+> The tables below are historical. Active debt is tracked in
+> `STATUS.md` (Remaining Work) and appended at the bottom of this file.
+
+## Active Debt (Aug 9, 2026)
+
+| Area | Item | Effort |
+|------|------|--------|
+| Deploys | AWS secrets (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`) + EKS staging/prod clusters missing → Deploy jobs can't run | Medium |
+| Secrets | Hardcoded dev secrets in settings (prod `model_validator` fails fast, but no vault/SSM story) | Large |
+| DRM | No Widevine/FairPlay/PlayReady; plaintext HLS/DASH; see docs/DRM_SCOPE.md | Large |
+| Observability | OTel/Jaeger wired; Grafana dashboards + Loki retention unfinished | Medium |
+| Testing | testcontainers integration suites (PG/Redis/Kafka/ES) not written | Large |
+| Load | k6/Locust scripts missing | Medium |
+| Frontend E2E | Playwright scripts exist, not run in CI | Medium |
+| Dependencies | ~96 GitHub advisories (Dependabot) | Medium |
+
+---
+
 ## Critical Technical Debt
 
 ### 1. Duplicate Model Definitions

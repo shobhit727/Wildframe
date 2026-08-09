@@ -8,8 +8,10 @@ export interface AuthStore {
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  mfaChallenge: string | null;
 
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<'mfa' | 'ok'>;
+  verifyMfa: (code: string) => Promise<void>;
   register: (email: string, password: string, firstName: string, lastName: string) => Promise<void>;
   logout: () => Promise<void>;
   setUser: (user: User | null) => void;
@@ -23,11 +25,18 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   token: null,
   isLoading: false,
   isAuthenticated: false,
+  mfaChallenge: null,
 
   login: async (email: string, password: string) => {
     set({ isLoading: true });
     try {
-      const tokens = await apiClient.login(email, password);
+      const data = await apiClient.login(email, password);
+      if ((data as { requires_mfa?: boolean }).requires_mfa) {
+        const challenge = (data as { mfa_challenge: string }).mfa_challenge;
+        set({ isLoading: false, mfaChallenge: challenge });
+        return 'mfa';
+      }
+      const tokens = data as { access_token: string };
       const user = await apiClient.getMe();
       localStorage.setItem('user', JSON.stringify(user));
       set({
@@ -35,6 +44,29 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
         user,
         isAuthenticated: true,
         isLoading: false,
+        mfaChallenge: null,
+      });
+      return 'ok';
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  verifyMfa: async (code: string) => {
+    const challenge = get().mfaChallenge;
+    if (!challenge) throw new Error('No MFA challenge in progress');
+    set({ isLoading: true });
+    try {
+      const tokens = await apiClient.verifyMfaLogin(challenge, code);
+      const user = await apiClient.getMe();
+      localStorage.setItem('user', JSON.stringify(user));
+      set({
+        token: tokens.access_token,
+        user,
+        isAuthenticated: true,
+        isLoading: false,
+        mfaChallenge: null,
       });
     } catch (error) {
       set({ isLoading: false });

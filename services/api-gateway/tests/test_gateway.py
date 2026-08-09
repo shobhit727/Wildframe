@@ -18,8 +18,14 @@ from app.main import app
 
 @pytest.fixture
 def client():
+    import app.main as main
+
     app.dependency_overrides.clear()
     with TestClient(app, base_url="http://localhost") as c:
+        # Lifespan just constructed the real RateLimiter (Redis); override it
+        # so proxy tests don't attempt a real Redis connection.
+        main.rate_limiter = MagicMock()
+        main.rate_limiter.check_rate_limit = AsyncMock(return_value=True)
         yield c
 
 
@@ -195,6 +201,20 @@ class TestProxy:
             response = client.get("/content/genres")
 
         assert response.status_code == 504
+
+    def test_proxy_rate_limited_returns_429(self, client):
+        import app.main as main
+
+        original = main.rate_limiter
+        main.rate_limiter = MagicMock()
+        main.rate_limiter.check_rate_limit = AsyncMock(return_value=False)
+        try:
+            response = client.get("/content/genres")
+        finally:
+            main.rate_limiter = original
+
+        assert response.status_code == 429
+        assert response.json()["detail"] == "Rate limit exceeded"
 
 
 class TestOptionalUser:

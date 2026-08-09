@@ -1,7 +1,7 @@
 # 📋 API Documentation
 
 **Version**: 1.0.0  
-**Last Updated**: May 28, 2026  
+**Last Updated**: August 9, 2026  
 **Stability**: Production-Ready
 
 ## Overview
@@ -36,11 +36,13 @@ Complete API reference for all Wildframe microservices. This guide documents eve
 
 ```
 1. User calls POST /auth/login with credentials
-2. Service returns { access_token, refresh_token }
-3. Client includes access_token in Authorization header:
+2. Without MFA: service returns { access_token, refresh_token }
+   With MFA enabled: service returns 200 { requires_mfa: true, mfa_challenge, expires_in }
+3. MFA login: POST /auth/mfa/login-verify with { mfa_challenge, code } → tokens
+4. Client includes access_token in Authorization header:
    Authorization: Bearer <access_token>
-4. When token expires, use refresh_token to get new one
-5. Invalid/expired tokens return 401 Unauthorized
+5. When token expires, use refresh_token to get new one
+6. Invalid/expired tokens return 401 Unauthorized
 ```
 
 ### Token Headers
@@ -51,10 +53,36 @@ All authenticated endpoints require:
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-Token lifetime:
-- **Access Token**: 1 hour
-- **Refresh Token**: 30 days
-- **Token Blacklist**: Tokens remain blacklisted for 30 days after logout
+Token lifetime (auth-service defaults):
+- **Access Token**: 15 minutes
+- **Refresh Token**: 7 days
+- **MFA challenge**: 5 minutes
+- **Token Blacklist**: tokens remain blacklisted after logout
+- **Email verification**: signed JWT of type `email_verification` issued at registration; POST `/auth/verify-email` with the token
+
+> Note: routes are mounted under `/api/v1` on each service and reachable
+> through the gateway at `/{service}/api/v1/...` (e.g.
+> `http://localhost:8000/auth/api/v1/auth/login`).
+
+---
+
+## Rate Limiting
+
+The api-gateway enforces per-client rate limits on proxied requests:
+
+- **Key**: authenticated user `sub` (JWT) when present, otherwise the client IP.
+- **Behavior**: when the limit is exceeded the gateway returns:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: <seconds>
+Content-Type: application/json
+
+{"detail": "Rate limit exceeded"}
+```
+
+- Auth endpoints additionally rate-limit failed login attempts (5 per 5 min
+  per account/IP).
 
 ---
 
@@ -102,13 +130,26 @@ Content-Type: application/json
   "email": "user@example.com",
   "first_name": "John",
   "last_name": "Doe",
-  "created_at": "2026-05-28T10:30:00Z"
+  "created_at": "2026-05-28T10:30:00Z",
+  "email_verification_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
 
 **Errors**:
 - `400`: Password too weak (< 8 chars, no uppercase/number)
 - `409`: Email already registered
+
+#### Verify Email
+
+```http
+POST /auth/verify-email
+Content-Type: application/json
+
+{"token": "<email_verification_token>"}
+```
+
+**Response** (200 OK): `{"message": "Email verified successfully"}`
+**Errors**: `400` invalid or expired verification token.
 
 #### Login
 
@@ -128,9 +169,19 @@ Content-Type: application/json
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "token_type": "bearer",
-  "expires_in": 3600
+  "expires_in": 900
 }
 ```
+
+**MFA-enabled account** (200 OK, no tokens yet):
+```json
+{
+  "requires_mfa": true,
+  "mfa_challenge": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expires_in": 300
+}
+```
+Then complete with `POST /auth/mfa/login-verify` `{"mfa_challenge": "...", "code": "123456"}` → same token response as above.
 
 **Errors**:
 - `401`: Invalid email or password
@@ -317,6 +368,9 @@ Content-Type: application/json
 
 ### 3. Content Service (Host port 8003)
 
+> Note: creating a genre that already exists returns `409 Conflict`
+> (not a 500).
+
 #### List Movies
 
 ```http
@@ -410,6 +464,14 @@ Authorization: Bearer <access_token>
 ---
 
 ### 4. Streaming Service (Host port 8004)
+
+> 🔒 **Auth (Aug 9, 2026)**: every streaming endpoint requires a Bearer token —
+> playback sessions, manifests, transcoding jobs, quality profiles, CDN
+> regions, and download sessions. Without a token → `401`. User-scoped reads
+> (`/users/{user_id}/playback-sessions`, `/users/{user_id}/downloads`) are
+> owner-only → `403` for other users. Session `user_id` in request bodies is
+> ignored — the JWT claim always wins. `POST /playback-sessions/{id}/end`
+> returns `403` to non-owners without touching the session.
 
 #### Start Streaming Session
 
@@ -516,11 +578,11 @@ All error responses follow this format:
 | Code | Status | Meaning |
 |------|--------|---------|
 | `UNAUTHORIZED` | 401 | Missing or invalid authentication token |
-| `FORBIDDEN` | 403 | User lacks permission for this resource |
+| `FORBIDDEN` | 403 | User lacks permission for this resource (e.g. billing payouts for another creator, streaming session owner checks) |
 | `NOT_FOUND` | 404 | Resource does not exist |
 | `VALIDATION_ERROR` | 422 | Request validation failed |
-| `DUPLICATE_RESOURCE` | 409 | Resource already exists (unique constraint) |
-| `RATE_LIMITED` | 429 | Too many requests, wait before retrying |
+| `DUPLICATE_RESOURCE` | 409 | Resource already exists (unique constraint) — e.g. duplicate genre |
+| `RATE_LIMITED` | 429 | Too many requests, wait before retrying (enforced by the api-gateway) |
 | `INTERNAL_ERROR` | 500 | Unexpected server error |
 | `SERVICE_UNAVAILABLE` | 503 | Service temporarily unavailable |
 
@@ -528,7 +590,7 @@ All error responses follow this format:
 
 ## Rate Limiting
 
-API enforces rate limits per user:
+The api-gateway enforces rate limits per client (authenticated user `sub` or IP):
 
 | Endpoint | Limit | Window |
 |----------|-------|--------|
@@ -537,25 +599,16 @@ API enforces rate limits per user:
 | `/search` | 100 requests | 1 minute |
 | Most other endpoints | 1000 requests | 1 minute |
 
-Rate limit headers in response:
-
-```http
-X-RateLimit-Limit: 1000
-X-RateLimit-Remaining: 987
-X-RateLimit-Reset: 1685268600
-```
+(Configured per service in `app/core/settings.py` — auth-service and
+api-gateway ship concrete limiters; other services use gateway defaults.)
 
 When rate limited (429):
 
 ```json
-{
-  "error": {
-    "code": "RATE_LIMITED",
-    "message": "Too many requests",
-    "retry_after_seconds": 45
-  }
-}
+{"detail": "Rate limit exceeded"}
 ```
+
+with a `Retry-After` header.
 
 ---
 

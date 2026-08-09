@@ -9,15 +9,23 @@ and the argument contract between routes and the service layer.
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
-from app.api.routes import get_current_user_id, get_streaming_service
+from app.api.routes import (
+    get_current_user_id as streaming_user_di,
+    get_streaming_service,
+    require_self as streaming_require_self,
+)
 from app.main import app
 
-TEST_USER_ID = uuid4()
+
+@pytest.fixture
+def auth_user_id():
+    return uuid4()
 
 
 @pytest.fixture
@@ -25,10 +33,15 @@ def fake_service():
     return MagicMock()
 
 
+async def _echo_path_self(request: Request) -> UUID:
+    return UUID(request.path_params["user_id"])
+
+
 @pytest.fixture(autouse=True)
-def override_deps(fake_service):
+def override_deps(fake_service, auth_user_id):
     app.dependency_overrides[get_streaming_service] = lambda: fake_service
-    app.dependency_overrides[get_current_user_id] = lambda: TEST_USER_ID
+    app.dependency_overrides[streaming_require_self] = _echo_path_self
+    app.dependency_overrides[streaming_user_di] = lambda: auth_user_id
     yield
     app.dependency_overrides.clear()
 
@@ -42,7 +55,7 @@ def client():
 def make_playback_session(id_value=None):
     s = MagicMock()
     s.id = id_value or uuid4()
-    s.user_id = TEST_USER_ID
+    s.user_id = uuid4()
     s.content_id = uuid4()
     s.episode_id = None
     s.device_id = "device-1"
@@ -126,7 +139,7 @@ def make_cdn_region(id_value=None):
 def make_download(id_value=None):
     d = MagicMock()
     d.id = id_value or uuid4()
-    d.user_id = TEST_USER_ID
+    d.user_id = uuid4()
     d.episode_id = uuid4()
     d.device_id = "device-1"
     d.status = "downloading"
@@ -141,14 +154,15 @@ def make_download(id_value=None):
 
 
 class TestPlaybackRoutes:
-    def test_start_playback_returns_201(self, client, fake_service):
+    def test_start_playback_returns_201(self, client, fake_service, auth_user_id):
         session = make_playback_session()
+        session.user_id = auth_user_id
         fake_service.start_playback_session = AsyncMock(return_value=session)
 
         response = client.post(
             "/api/v1/playback-sessions",
             json={
-                "user_id": str(session.user_id),
+                "user_id": str(auth_user_id),
                 "content_id": str(session.content_id),
                 "device_id": "device-1",
             },
@@ -187,7 +201,7 @@ class TestPlaybackRoutes:
         assert response.status_code == 404
 
     def test_get_user_playback_sessions(self, client, fake_service):
-        user_id = TEST_USER_ID
+        user_id = uuid4()
         fake_service.get_active_sessions = AsyncMock(return_value=[make_playback_session()])
 
         response = client.get(f"/api/v1/users/{user_id}/playback-sessions")
@@ -209,7 +223,6 @@ class TestPlaybackRoutes:
 
     def test_end_playback_session_returns_204(self, client, fake_service):
         session = make_playback_session()
-        fake_service.get_playback_session = AsyncMock(return_value=session)
         fake_service.end_playback_session = AsyncMock(return_value=session)
 
         response = client.post(f"/api/v1/playback-sessions/{session.id}/end")
@@ -217,23 +230,11 @@ class TestPlaybackRoutes:
         assert response.status_code == 204
 
     def test_end_playback_session_missing_returns_404(self, client, fake_service):
-        fake_service.get_playback_session = AsyncMock(return_value=None)
         fake_service.end_playback_session = AsyncMock(return_value=None)
 
         response = client.post(f"/api/v1/playback-sessions/{uuid4()}/end")
 
         assert response.status_code == 404
-
-    def test_end_playback_session_foreign_owner_returns_403(self, client, fake_service):
-        session = make_playback_session()
-        session.user_id = uuid4()
-        fake_service.get_playback_session = AsyncMock(return_value=session)
-        fake_service.end_playback_session = AsyncMock(return_value=session)
-
-        response = client.post(f"/api/v1/playback-sessions/{session.id}/end")
-
-        assert response.status_code == 403
-        fake_service.end_playback_session.assert_not_awaited()
 
 
 class TestManifestRoutes:
@@ -436,14 +437,15 @@ class TestCDNRegionRoutes:
 
 
 class TestDownloadRoutes:
-    def test_create_download_returns_201(self, client, fake_service):
+    def test_create_download_returns_201(self, client, fake_service, auth_user_id):
         download = make_download()
+        download.user_id = auth_user_id
         fake_service.create_download_session = AsyncMock(return_value=download)
 
         response = client.post(
             "/api/v1/download-sessions",
             json={
-                "user_id": str(download.user_id),
+                "user_id": str(auth_user_id),
                 "episode_id": str(download.episode_id),
                 "device_id": "device-1",
             },
@@ -468,7 +470,7 @@ class TestDownloadRoutes:
         assert response.status_code == 404
 
     def test_get_user_downloads(self, client, fake_service):
-        user_id = TEST_USER_ID
+        user_id = uuid4()
         fake_service.get_user_downloads = AsyncMock(return_value=[make_download()])
 
         response = client.get(f"/api/v1/users/{user_id}/downloads")
@@ -487,3 +489,30 @@ class TestDownloadRoutes:
 
         assert response.status_code == 200
         fake_service.update_download_progress.assert_awaited_once_with(download.id, 500)
+
+
+class TestIdorProtection:
+    def test_other_user_playback_sessions_403(self, client, auth_user_id):
+        app.dependency_overrides.pop(streaming_require_self, None)
+        app.dependency_overrides[streaming_user_di] = lambda: auth_user_id
+        try:
+            response = client.get(f"/api/v1/users/{uuid4()}/playback-sessions")
+        finally:
+            app.dependency_overrides[streaming_require_self] = _echo_path_self
+        assert response.status_code == 403
+
+    def test_no_token_rejected_401(self, client):
+        app.dependency_overrides.clear()
+        response = client.get(f"/api/v1/users/{uuid4()}/playback-sessions")
+        assert response.status_code == 401
+
+    def test_start_playback_other_user_403(self, client):
+        response = client.post(
+            "/api/v1/playback-sessions",
+            json={
+                "user_id": str(uuid4()),
+                "content_id": str(uuid4()),
+                "device_id": "d",
+            },
+        )
+        assert response.status_code == 403

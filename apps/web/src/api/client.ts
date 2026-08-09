@@ -182,6 +182,20 @@ class APIClient {
 
   async login(email: string, password: string) {
     const { data } = await this.client.post('/auth/api/v1/auth/login', { email, password });
+    if ((data as { requires_mfa?: boolean }).requires_mfa) {
+      // MFA-gated account: password verified, but no tokens yet. Caller must
+      // collect the TOTP code and call verifyMfaLogin with the challenge.
+      return data as { requires_mfa: true; mfa_challenge: string; expires_in: number };
+    }
+    setTokens(data as AuthTokens);
+    return data as AuthTokens;
+  }
+
+  async verifyMfaLogin(mfaChallenge: string, code: string) {
+    const { data } = await this.client.post('/auth/api/v1/auth/mfa/login-verify', {
+      mfa_challenge: mfaChallenge,
+      code,
+    });
     setTokens(data as AuthTokens);
     return data as AuthTokens;
   }

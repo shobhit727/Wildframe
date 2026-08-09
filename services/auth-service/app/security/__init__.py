@@ -155,6 +155,39 @@ class TokenManager:
         return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
     @staticmethod
+    def create_mfa_challenge_token(user_id: UUID, email: str) -> str:
+        """Create a short-lived token proving password login succeeded.
+
+        Issued after a successful password check when the user has MFA enabled.
+        It must be exchanged for real tokens via a valid TOTP code within
+        ``MFA_CHALLENGE_EXPIRATION_MINUTES``.
+        """
+        now = datetime.now(UTC)
+        expires_at = now + timedelta(minutes=settings.MFA_CHALLENGE_EXPIRATION_MINUTES)
+        payload = {
+            "sub": str(user_id),
+            "user_id": str(user_id),
+            "email": email,
+            "type": "mfa_challenge",
+            "iat": now,
+            "exp": expires_at,
+            "jti": f"mfa_{user_id}_{now.timestamp()}",
+        }
+        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+    @staticmethod
+    def verify_mfa_challenge(token: str) -> UUID | None:
+        """Verify an mfa_challenge token and return the user UUID or None."""
+        try:
+            payload = TokenManager.verify_token(token, token_type="mfa_challenge")
+            user_id = payload.get("user_id") or payload.get("sub")
+            if user_id:
+                return UUID(user_id)
+        except Exception:  # noqa: BLE001
+            return None
+        return None
+
+    @staticmethod
     def hash_token(token: str) -> str:
         """Hash a token for secure storage using SHA-256."""
         return hashlib.sha256(token.encode()).hexdigest()
