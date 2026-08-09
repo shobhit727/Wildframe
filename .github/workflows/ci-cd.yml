@@ -191,7 +191,7 @@ jobs:
               --asyncio-mode=auto --durations=20 -q
 
   # ---------------------------------------------------------------------------
-  # Frontend CI: lint + build for apps/web
+  # Frontend CI: lint + type-check + test + build for apps/web
   # ---------------------------------------------------------------------------
   frontend-ci:
     name: Frontend CI
@@ -203,42 +203,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check apps/web exists
-        id: check
-        run: |
-          if [ -d "apps/web" ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Set up Node.js
-        if: steps.check.outputs.exists == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          cache: npm
+          cache-dependency-path: package-lock.json
 
-      - name: Install pnpm
-        if: steps.check.outputs.exists == 'true'
-        run: npm install -g pnpm@9
-
-      - name: Install dependencies
-        if: steps.check.outputs.exists == 'true'
-        run: pnpm install --frozen-lockfile
+      - name: Install dependencies (workspace root)
+        working-directory: .
+        run: npm ci --legacy-peer-deps --no-audit --no-fund
 
       - name: Lint
-        if: steps.check.outputs.exists == 'true'
         run: npm run lint
 
+      - name: Type check
+        run: npm run type-check
+
       - name: Test
-        if: steps.check.outputs.exists == 'true'
         run: npm test -- --run
         continue-on-error: true
 
       - name: Build
-        if: steps.check.outputs.exists == 'true'
         run: npm run build
 
   # ---------------------------------------------------------------------------
