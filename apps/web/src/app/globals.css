@@ -20,19 +20,44 @@
       'Helvetica Neue', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background: #141414;
+    background: #0b0b0b;
     color: #ffffff;
   }
 
-  /* Focus styles for accessibility */
+  /* Keep keyboard navigation visible without changing the visual language. */
   :focus-visible {
     outline: 2px solid #e50914;
-    outline-offset: 2px;
+    outline-offset: 3px;
+  }
+
+  /* Prevent mobile browsers from turning controls into light UI. */
+  button,
+  input,
+  textarea,
+  select {
+    color-scheme: dark;
   }
 }
 
 @layer components {
-  /* Scrollbar styling - dark, Netflix-style (thin) */
+  /* Shared cinematic page surface used across authenticated and public pages. */
+  .wf-page {
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 78% -10%, rgba(229, 9, 20, 0.11), transparent 32rem),
+      radial-gradient(circle at 8% 18%, rgba(120, 80, 255, 0.06), transparent 28rem),
+      #0b0b0b;
+  }
+
+  /* Glass navigation surface becomes stronger after the user scrolls. */
+  .wf-glass {
+    background: rgba(11, 11, 11, 0.72);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    backdrop-filter: blur(18px) saturate(130%);
+    -webkit-backdrop-filter: blur(18px) saturate(130%);
+  }
+
+  /* Scrollbar styling keeps long media rows visually quiet. */
   .scrollbar-thin::-webkit-scrollbar {
     height: 4px;
     width: 4px;
@@ -51,16 +76,15 @@
     background: rgba(255, 255, 255, 0.4);
   }
 
-  /* Hide scrollbar but keep scrolling (Netflix rows use 0-width scrollbars) */
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
 
-  /* Smooth row scroller */
   .row-scroller {
     scroll-snap-type: x mandatory;
     -webkit-overflow-scrolling: touch;
@@ -70,59 +94,70 @@
     scroll-snap-align: start;
   }
 
-  /* Netflix billboard gradient (bottom overlay for hero) */
+  /* Netflix-inspired billboard gradients without copying proprietary assets. */
   .billboard-gradient {
     background: linear-gradient(
       to bottom,
       transparent 0%,
-      rgba(0, 0, 0, 0.5) 60%,
-      rgba(0, 0, 0, 0.85) 85%,
-      #141414 100%
+      rgba(0, 0, 0, 0.48) 60%,
+      rgba(0, 0, 0, 0.88) 84%,
+      #0b0b0b 100%
     );
   }
 
   .billboard-gradient-left {
     background: linear-gradient(
       to right,
-      rgba(0, 0, 0, 0.75) 0%,
-      rgba(0, 0, 0, 0.45) 30%,
-      rgba(0, 0, 0, 0.1) 60%,
+      rgba(0, 0, 0, 0.82) 0%,
+      rgba(0, 0, 0, 0.5) 32%,
+      rgba(0, 0, 0, 0.12) 62%,
       transparent 100%
     );
   }
 
-  /* Hero gradient overlay (legacy) */
   .hero-gradient {
     background: linear-gradient(
       to top,
-      rgba(0, 0, 0, 1) 0%,
-      rgba(0, 0, 0, 0.8) 15%,
-      rgba(0, 0, 0, 0.4) 40%,
-      rgba(0, 0, 0, 0.1) 60%,
-      transparent 100%
+      #0b0b0b 0%,
+      rgba(11, 11, 11, 0.92) 14%,
+      rgba(11, 11, 11, 0.42) 42%,
+      transparent 70%
     );
   }
 
   .hero-gradient-left {
     background: linear-gradient(
       to right,
-      rgba(0, 0, 0, 1) 0%,
-      rgba(0, 0, 0, 0.85) 20%,
-      rgba(0, 0, 0, 0.4) 50%,
+      rgba(0, 0, 0, 0.95) 0%,
+      rgba(0, 0, 0, 0.7) 22%,
+      rgba(0, 0, 0, 0.25) 52%,
       transparent 100%
     );
   }
 
-  /* Shimmer loading animation */
+  /* Reusable hover treatment for media cards and interactive surfaces. */
+  .wf-lift {
+    transition:
+      transform 220ms cubic-bezier(0.2, 0.7, 0.2, 1),
+      box-shadow 220ms ease,
+      border-color 220ms ease;
+  }
+
+  .wf-lift:hover {
+    transform: translateY(-5px) scale(1.018);
+    box-shadow: 0 20px 55px rgba(0, 0, 0, 0.45);
+  }
+
+  /* Shimmer loading animation for skeleton states. */
   .shimmer {
     background: linear-gradient(
       90deg,
       rgba(255, 255, 255, 0.03) 0%,
-      rgba(255, 255, 255, 0.08) 50%,
+      rgba(255, 255, 255, 0.09) 50%,
       rgba(255, 255, 255, 0.03) 100%
     );
     background-size: 200% 100%;
-    animation: shimmer 2s infinite;
+    animation: shimmer 1.8s infinite;
   }
 
   @keyframes shimmer {
@@ -130,27 +165,44 @@
     100% { background-position: -200% 0; }
   }
 
-  /* Fade-in animation */
+  /* Entry motion used by pages, cards, dialogs, and search results. */
   .animate-fade-in {
-    animation: fadeIn 0.4s ease-out;
+    animation: fadeIn 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  .animate-scale-in {
+    animation: scaleIn 260ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  .animate-rise-in {
+    animation: riseIn 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  .animate-glow {
+    animation: glowPulse 2.8s ease-in-out infinite;
   }
 
   @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
+    from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
   }
 
-  /* Scale-in animation */
-  .animate-scale-in {
-    animation: scaleIn 0.2s ease-out;
-  }
-
   @keyframes scaleIn {
-    from { opacity: 0; transform: scale(0.95); }
+    from { opacity: 0; transform: scale(0.965); }
     to { opacity: 1; transform: scale(1); }
   }
 
-  /* Netflix row chevron */
+  @keyframes riseIn {
+    from { opacity: 0; transform: translateY(22px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes glowPulse {
+    0%, 100% { box-shadow: 0 0 0 rgba(229, 9, 20, 0); }
+    50% { box-shadow: 0 0 34px rgba(229, 9, 20, 0.16); }
+  }
+
+  /* Netflix-style row navigation controls. */
   .nf-chevron {
     position: absolute;
     top: 0;
@@ -163,20 +215,34 @@
     background: rgba(0, 0, 0, 0.5);
     color: #fff;
     opacity: 0;
-    transition: opacity 0.25s ease;
+    transition: opacity 220ms ease, background 220ms ease;
     border: none;
     cursor: pointer;
   }
+
   .nf-chevron:hover {
-    background: rgba(0, 0, 0, 0.7);
+    background: rgba(0, 0, 0, 0.74);
   }
-  .nf-row:hover .nf-chevron {
+
+  .nf-row:hover .nf-chevron,
+  .nf-row:focus-within .nf-chevron {
     opacity: 1;
   }
-  .nf-chevron-left {
-    left: 0;
-  }
-  .nf-chevron-right {
-    right: 0;
+
+  .nf-chevron-left { left: 0; }
+  .nf-chevron-right { right: 0; }
+
+  /* Respect users who disable motion at the operating-system level. */
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
