@@ -191,7 +191,9 @@ ruff check services/
 black --check services/
 
 # Type check
-mypy services/
+for dir in services/*/app; do
+  mypy "$dir"
+ done
 
 # Tests (per service, uses local pytest.ini)
 cd services/content-service

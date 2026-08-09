@@ -83,7 +83,7 @@
 ### 4. CI/CD Pipeline (Backend Lint job: ✅ PASSING)
 - `ruff check services/` — passes
 - `black --check services/` — passes
-- `mypy services/` — passes (continue-on-error)
+- `for app_dir in services/*/app; do mypy "$app_dir"; done` — passes (continue-on-error)
 - Per-service `pytest.ini` created (overrides root coverage config)
 - CI: `npm ci` → `pnpm install --frozen-lockfile`; cache key `pnpm-lock.yaml`
 

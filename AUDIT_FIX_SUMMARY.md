@@ -152,5 +152,8 @@ done
 # Run CI-style lint
 ruff check services/
 black --check services/
-mypy services/ 2>&1 | head -20
+for app_dir in services/*/app; do
+  echo "Checking $app_dir"
+  mypy "$app_dir" 2>&1 | head -20
+done
 ```

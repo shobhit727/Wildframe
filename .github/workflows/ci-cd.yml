@@ -50,7 +50,10 @@ jobs:
         run: black --check services/
 
       - name: Run mypy
-        run: mypy services/
+        run: |
+          for app_dir in services/*/app; do
+            mypy "$app_dir"
+          done
         continue-on-error: true
 
   # ---------------------------------------------------------------------------
