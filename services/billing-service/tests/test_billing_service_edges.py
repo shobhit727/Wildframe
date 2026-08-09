@@ -226,3 +226,43 @@ class TestMisc:
         service.payout_repo.get_by_creator.return_value = [MagicMock()]
 
         assert len(await service.get_payout_history(uuid4())) == 1
+
+
+class TestAccruePayoutIntegrity:
+    async def test_unique_violation_returns_existing(self):
+        from datetime import UTC, datetime
+
+        from sqlalchemy.exc import IntegrityError
+
+        from app.repositories import PayoutLedgerRepository
+
+        session = AsyncMock()
+        session.flush.side_effect = IntegrityError("stmt", {}, Exception("dup"))
+        repo = PayoutLedgerRepository(session)
+        existing = MagicMock()
+        # First lookup (pre-insert) -> None; post-rollback lookup -> existing.
+        session.execute.side_effect = [
+            MagicMock(scalar_one_or_none=lambda: None),
+            MagicMock(scalar_one_or_none=lambda: existing),
+        ]
+        now = datetime.now(UTC)
+
+        result = await repo.accrue(uuid4(), Decimal("5.00"), "USD", "k", now, now)
+
+        assert result is existing
+        session.rollback.assert_awaited_once()
+
+    async def test_acrues_when_new(self):
+        from datetime import UTC, datetime
+
+        from app.repositories import PayoutLedgerRepository
+
+        session = AsyncMock()
+        repo = PayoutLedgerRepository(session)
+        session.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
+        now = datetime.now(UTC)
+
+        await repo.accrue(uuid4(), Decimal("5.00"), "USD", "k", now, now)
+
+        session.add.assert_called_once()
+        session.flush.assert_awaited_once()

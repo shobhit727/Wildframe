@@ -8,6 +8,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import and_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -235,7 +236,16 @@ class PayoutLedgerRepository:
             breakdown=breakdown,
         )
         self.session.add(entry)
-        await self.session.flush()
+        try:
+            await self.session.flush()
+        except IntegrityError:
+            # Concurrent replay lost the race: the unique constraint guarantees
+            # one row per idempotency_key. Refresh in this transaction.
+            await self.session.rollback()
+            existing = await self.get_by_idempotency_key(idempotency_key)
+            if existing:
+                return existing
+            raise
         return entry
 
     async def get_by_creator(self, creator_id: UUID) -> list[PayoutLedger]:

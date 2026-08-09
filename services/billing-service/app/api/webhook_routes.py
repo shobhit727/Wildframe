@@ -59,17 +59,23 @@ async def get_billing_service(db: Annotated[AsyncSession, Depends(get_db)]) -> B
 # Idempotency guard
 # ---------------------------------------------------------------------------
 
-_processed_events: set = set()  # In production, use Redis/DB for this.
+# Auxiliary in-process dedupe. The durable guard for payouts is the unique
+# constraint on PayoutLedger.idempotency_key (DB-level, survives restart);
+# this set only avoids re-running handlers for a *single* process lifetime.
+# It is bounded so a long-running replica can't grow without limit.
+_MAX_PROCESSED_EVENTS = 100_000
+_processed_events: dict[str, bool] = {}  # insertion-ordered
 
 
 def _is_event_processed(event_id: str) -> bool:
-    """Check whether a Stripe event has already been processed."""
     return event_id in _processed_events
 
 
 def _mark_event_processed(event_id: str) -> None:
-    """Mark a Stripe event as processed for idempotency."""
-    _processed_events.add(event_id)
+    _processed_events[event_id] = True
+    # Drop oldest entries beyond the cap (LRU-ish via dict insertion order).
+    while len(_processed_events) > _MAX_PROCESSED_EVENTS:
+        _processed_events.pop(next(iter(_processed_events)))
 
 
 # ---------------------------------------------------------------------------
