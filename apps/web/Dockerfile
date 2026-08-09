@@ -1,11 +1,11 @@
 FROM node:20-alpine AS builder
 WORKDIR /workspace
-RUN npm install -g pnpm@10
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .pnpmfile.cjs ./
+COPY package.json package-lock.json ./
 COPY apps/web ./apps/web
-RUN pnpm install --frozen-lockfile
+COPY packages ./packages
+RUN npm ci --legacy-peer-deps --no-audit --no-fund
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm --filter wildframe-web build
+RUN npm run build --workspace=wildframe-web
 
 FROM node:20-alpine AS runner
 WORKDIR /workspace
