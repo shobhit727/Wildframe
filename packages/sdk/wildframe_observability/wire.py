@@ -16,6 +16,8 @@ This adds:
 """
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
 from fastapi.responses import Response
 
@@ -25,6 +27,34 @@ from wildframe_observability.middleware import (
     RequestLoggingMiddleware,
 )
 from wildframe_observability.metrics import MetricsMiddleware
+
+
+def _setup_tracing(service_name: str) -> None:
+    """Optionally init OpenTelemetry tracing to Jaeger.
+
+    Gated on the JAEGER_ENABLED env var so services that install the SDK get
+    distributed traces with no per-service code. Imports stay lazy so a service
+    without the OTel extras still boots.
+    """
+    if os.getenv("JAEGER_ENABLED", "false").lower() != "true":
+        return
+    try:
+        from opentelemetry import trace
+        from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        host = os.getenv("JAEGER_AGENT_HOST", "localhost")
+        port = int(os.getenv("JAEGER_AGENT_PORT", "6831"))
+        provider = TracerProvider()
+        provider.add_span_processor(
+            BatchSpanProcessor(JaegerExporter(agent_host_name=host, agent_port=port))
+        )
+        trace.set_tracer_provider(provider)
+        FastAPIInstrumentor.instrument()
+    except Exception:  # noqa: BLE001 - observability must never crash the app
+        pass
 
 
 def wire_observability(
@@ -44,6 +74,9 @@ def wire_observability(
     """
     # Set up structured JSON logging.
     obs_setup_logging(service_name=service_name, log_level=log_level)
+
+    # Distributed tracing (Jaeger), gated on JAEGER_ENABLED env var.
+    _setup_tracing(service_name=service_name)
 
     # Add middleware (order matters: last added = first executed).
     # CorrelationMiddleware runs first (outermost) to set contextvars
