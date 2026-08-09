@@ -99,9 +99,11 @@ resources:
     cpu: 500m
     memory: 512Mi
 
-# Development fallback only. Production must supply this through a secret mechanism.
+# Deployed environments must provide these values through a Kubernetes Secret.
 secrets:
-  jwtSecret: "change-me-in-production"
+  existingSecret: wildframe-runtime
+  jwtSecretKey: JWT_SECRET_KEY
+  postgresPasswordKey: POSTGRES_PASSWORD
 
 kafka:
   enabled: true
