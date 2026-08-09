@@ -9,6 +9,7 @@ from uuid import UUID
 import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from jwt.exceptions import PyJWTError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import db_manager
@@ -89,7 +90,13 @@ async def create_genre(
     service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Create a new genre."""
-    return await service.create_genre(request)
+    try:
+        return await service.create_genre(request)
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Genre with this name or slug already exists",
+        )
 
 
 @router.get("/genres", response_model=list[GenreResponse])

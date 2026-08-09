@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-import jwt
+from jose import jwt
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,7 +27,7 @@ async def get_current_user_id(
     token = authorization.removeprefix("Bearer ")
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-    except jwt.InvalidTokenError:
+    except jwt.JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
