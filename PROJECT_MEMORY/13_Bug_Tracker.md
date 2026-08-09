@@ -16,6 +16,37 @@
 
 ---
 
+## Session Log — Aug 9, 2026 (Security deep-dive; commits `85689da`→`a4697ec`)
+
+All FIXED, live-verified against the running stack; details in `AUDIT_FIX_SUMMARY.md`.
+
+| ID | Service | Severity | Status | Description |
+|----|---------|----------|--------|-------------|
+| SEC-001 | streaming-service | CRITICAL | FIXED | No auth on any endpoint (sessions, manifests, transcoding, downloads, CDN regions) → all require JWT; anon → 401 |
+| SEC-002 | streaming-service | CRITICAL | FIXED | Session creation honored body `user_id` (create-as-anyone) → handler overrides with JWT claim |
+| SEC-003 | streaming-service | HIGH | FIXED | `/users/{id}/playback-sessions` + `/users/{id}/downloads` cross-user readable → owner check 403 |
+| SEC-004 | streaming-service | HIGH | FIXED | `end` marked session COMPLETED before owner check (attacker 403 but damage done) → ownership checked first; unit test `assert_not_awaited` |
+| SEC-005 | billing-service | HIGH | FIXED | `GET /payouts/{creator_id}` IDOR (any caller, any creator) → owner check 403 |
+| SEC-006 | api-gateway | HIGH | FIXED | RateLimiter instantiated but never invoked (no 429s) → wired into `proxy_request`, key = user sub / IP |
+| REL-001 | analytics/notification/billing/recommendation/uploads | CRITICAL | FIXED | Startup crash: `import jwt` added upstream but only `python-jose` installed → `from jose import jwt` |
+| REL-002 | search-service | HIGH | FIXED | Image missing `aiohttp` for elasticsearch async client → requirements.txt; reindex+query verified |
+| REL-003 | streaming-service | HIGH | FIXED | tz-aware `datetime.now(UTC)` into naive TIMESTAMP columns (ended_at, metrics, completed_at) → asyncpg DataError 500 |
+| REL-004 | notification-service | HIGH | FIXED | Same tz-aware-default class of bug → 500 on send; verified `{"status":"sent"}` |
+| SEC-007 | content-service | MEDIUM | FIXED | Duplicate genre → unhandled IntegrityError 500 → 409 |
+| REL-005 | api-gateway | MEDIUM | FIXED | Rate-limit import broke pytest (wrong relative path) → absolute import; tests 26/26 |
+
+---
+
+## Pre-Aug-2026 backlog (legacy)
+
+> The tables below predate the Aug 4 audit (commit `9d8d8a2`) and refer to
+> paths that no longer exist (`app/tests/`, `services/streaming/`, dual
+> `auth_service.py` modules, etc.). The current codebase resolves these —
+> verified by 551 passing tests across 16 suites. Treat the tables below as
+> historical; file new findings under the session-log style used above.
+
+
+
 ## auth-service
 
 ### CRITICAL (Service won't start)

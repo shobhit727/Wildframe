@@ -2,7 +2,7 @@
 
 Get the Wildframe platform running on your local machine in under 10 minutes.
 
-**Last Updated**: June 4, 2026
+**Last Updated**: August 9, 2026
 **Version**: 1.0.0
 
 ---
@@ -34,11 +34,10 @@ If you already have the project locally, just `cd` into it.
 
 ## 2. Configure Environment
 
-```bash
-cp .env.example .env
-```
-
-The defaults work for local development. Edit `.env` if you need to change ports, database credentials, or external service keys.
+Service settings are loaded from env vars with sensible dev defaults
+(`services/<svc>/app/core/settings.py`). For the dockerized stack, database
+users/passwords are defined in `infrastructure/database/init-databases.sql`
+and the compose file — no `.env` file is required for local development.
 
 ---
 
@@ -48,10 +47,10 @@ The defaults work for local development. Edit `.env` if you need to change ports
 docker compose -f deployments/docker-compose.dev.yml up --build -d
 ```
 
-This launches **23 service containers** across the app and infrastructure:
+This launches **15 microservices + infrastructure containers**:
 
-- **12 microservices** (host ports 8000–8011)
-- **PostgreSQL** (12 logical databases)
+- **15 microservices** (host ports 8000–8014, see table below)
+- **PostgreSQL** (one database per service, 16 total)
 - **Redis** (cache + sessions)
 - **Kafka** + Zookeeper (event streaming)
 - **Elasticsearch** (search index)
@@ -95,9 +94,13 @@ A healthy response looks like:
 
 ## 5. Run the Frontend (Optional)
 
+The repo is an npm-workspaces monorepo — install once from the repo root:
+
 ```bash
+# From the repo root
+npm install --legacy-peer-deps
+
 cd apps/web
-npm install
 npm run dev
 ```
 
@@ -107,20 +110,26 @@ Open http://localhost:3000.
 
 ## 6. Run the Test Suite
 
-From the project root:
+Backend tests must run **per service** (every service has its own top-level
+`app` package, so a combined `pytest services/` sweep breaks on shadowed
+imports):
 
 ```bash
-./run_tests.sh
-```
+# All 15 services + SDK
+for svc in services/*/; do
+  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+done
 
-Or per-service:
-
-```bash
+# One service
 cd services/auth-service
-python3 -m pytest tests/ -v
+pytest tests --asyncio-mode=auto
+
+# Frontend
+cd apps/web
+npx vitest run
 ```
 
-See [TEST_GUIDE.md](TEST_GUIDE.md) for the full testing playbook.
+See [TEST_GUIDE.md](../docs/TEST_GUIDE.md) for the full testing playbook.
 
 ---
 
@@ -155,6 +164,9 @@ docker compose -f deployments/docker-compose.dev.yml down -v
 | 8009 | Analytics |
 | 8010 | Notification |
 | 8011 | Media Pipeline |
+| 8012 | Creators |
+| 8013 | Moderation |
+| 8014 | Uploads |
 | 3000 | Frontend (Next.js) |
 | 9090 | Prometheus |
 | 3001 | Grafana (monitoring) |
