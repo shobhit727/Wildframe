@@ -14,10 +14,26 @@ from app.services import SearchService
 
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
 
+# Shared ES client (created lazily on first request, closed on shutdown).
+_es_client: AsyncElasticsearch | None = None
+
+
+def es_client() -> AsyncElasticsearch:
+    global _es_client
+    if _es_client is None:
+        _es_client = AsyncElasticsearch(hosts=[settings.ELASTICSEARCH_URL])
+    return _es_client
+
+
+async def close_es_client() -> None:
+    global _es_client
+    if _es_client is not None:
+        await _es_client.close()
+        _es_client = None
+
 
 async def get_search_service(db: Annotated[AsyncSession, Depends(get_db)]) -> SearchService:
-    es = AsyncElasticsearch(hosts=[settings.ELASTICSEARCH_URL])
-    return SearchService(es, SearchQueryRepository(db), SearchIndexRepository(db))
+    return SearchService(es_client(), SearchQueryRepository(db), SearchIndexRepository(db))
 
 
 @router.get("/query")
@@ -39,6 +55,20 @@ async def search_content(
 
 
 @router.get("/trending")
-async def get_trending(content_type: str | None = None, limit: int = 10):
-    """Get trending content."""
-    return {"trending": [], "total": 0}
+async def get_trending(
+    service: Annotated[SearchService, Depends(get_search_service)],
+    content_type: str | None = None,
+    limit: int = 10,
+):
+    """Get trending content (top-rated published titles in the index)."""
+    results = await service.trending(content_type, limit)
+    return {"trending": results, "total": len(results)}
+
+
+@router.post("/reindex")
+async def reindex(
+    service: Annotated[SearchService, Depends(get_search_service)],
+):
+    """Re-index published content from the catalog service into Elasticsearch."""
+    count = await service.reindex_catalog()
+    return {"indexed": count}

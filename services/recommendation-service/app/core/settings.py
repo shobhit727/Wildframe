@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/recommendation_db"
 
+    # Content catalog
+    CONTENT_SERVICE_URL: str = "http://content-service:8000"
+
     # Security
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"

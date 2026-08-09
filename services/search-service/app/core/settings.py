@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # Elasticsearch
     ELASTICSEARCH_URL: str = "http://elasticsearch:9200"
 
+    # Content service (catalog backfill for indexing)
+    CONTENT_SERVICE_URL: str = "http://content-service:8000"
+
     # Logging
     LOG_LEVEL: str = "INFO"
 

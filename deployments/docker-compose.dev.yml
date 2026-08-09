@@ -379,6 +379,7 @@ services:
     - 8007:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/recommendation_db
+      CONTENT_SERVICE_URL: http://content-service:8000
       REDIS_URL: redis://redis:6379/6
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG

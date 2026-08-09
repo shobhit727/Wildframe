@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Recommendation, UserPreferences
@@ -36,6 +36,10 @@ class RecommendationRepository:
         self.session.add(rec)
         await self.session.flush()
         return rec
+
+    async def clear_for_user(self, user_id: UUID) -> None:
+        stmt = delete(Recommendation).where(Recommendation.user_id == user_id)
+        await self.session.execute(stmt)
 
     async def get_for_user(self, user_id: UUID, limit: int = 20) -> list[Recommendation]:
         stmt = (

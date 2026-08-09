@@ -23,6 +23,8 @@ def client():
 def service():
     mock = MagicMock()
     mock.search = AsyncMock(return_value=[{"id": "m1", "title": "Action Movie"}])
+    mock.trending = AsyncMock(return_value=[{"id": "m1", "title": "Action Movie"}])
+    mock.reindex_catalog = AsyncMock(return_value=12)
     return mock
 
 
@@ -81,10 +83,29 @@ class TestSearchEndpoints:
 
         assert response.status_code == 422
 
-    def test_trending_returns_empty_list(self, client):
+    def test_trending_returns_results(self, client, service):
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+
         response = client.get("/api/v1/search/trending")
 
         assert response.status_code == 200
         body = response.json()
-        assert body["trending"] == []
-        assert body["total"] == 0
+        assert body["total"] == 1
+        assert body["trending"][0]["title"] == "Action Movie"
+        service.trending.assert_awaited_once_with(None, 10)
+
+    def test_trending_passes_content_type_and_limit(self, client, service):
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+
+        client.get("/api/v1/search/trending", params={"content_type": "movie", "limit": 5})
+
+        service.trending.assert_awaited_once_with("movie", 5)
+
+    def test_reindex_calls_service(self, client, service):
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+
+        response = client.post("/api/v1/search/reindex")
+
+        assert response.status_code == 200
+        assert response.json() == {"indexed": 12}
+        service.reindex_catalog.assert_awaited_once()

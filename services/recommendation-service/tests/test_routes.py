@@ -86,7 +86,7 @@ class TestUpdatePreferences:
 
         assert response.status_code == 200
         assert response.json() == {"status": "updated"}
-        service.update_preferences.assert_awaited_once_with(user_id, ["action", "scifi"])
+        service.update_preferences.assert_awaited_once_with(user_id, ["action", "scifi"], None)
 
     def test_update_without_genres(self, client, service):
         app.dependency_overrides[get_rec_service] = override(service)

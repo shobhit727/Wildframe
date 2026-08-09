@@ -33,8 +33,21 @@ async def get_recommendations(
 async def update_preferences(
     user_id: UUID,
     service: RecommendationService = Depends(get_rec_service),  # noqa: B008
-    liked_genres: list | None = Body(None),  # noqa: B008
+    body: dict | list | None = Body(None),  # noqa: B008
 ):
-    """Update user preferences."""
-    await service.update_preferences(user_id, liked_genres)
+    """Update user preferences.
+
+    Body may be a raw list of liked genre slugs (legacy) or an object with
+    ``liked_genres`` / ``disliked_genres`` arrays. Recommendations are
+    regenerated afterwards.
+    """
+    if isinstance(body, list):
+        liked_genres = body or None
+        disliked_genres = None
+    elif isinstance(body, dict):
+        liked_genres = body.get("liked_genres")
+        disliked_genres = body.get("disliked_genres")
+    else:
+        liked_genres = disliked_genres = None
+    await service.update_preferences(user_id, liked_genres, disliked_genres)
     return {"status": "updated"}

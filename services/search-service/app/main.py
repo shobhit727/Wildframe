@@ -4,11 +4,26 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from wildframe_observability.wire import wire_observability
 
-from app.api.search_routes import router as search_router
+from app.api.search_routes import close_es_client, es_client, router as search_router
 from app.core.database import DatabaseManager
 from app.core.settings import settings
+from app.repositories import SearchIndexRepository, SearchQueryRepository
+from app.services import SearchService
 
 logger = logging.getLogger(__name__)
+
+
+async def _warm_search_index() -> None:
+    """Create the ES index and backfill from content-service, tolerantly."""
+    try:
+        async for session in DatabaseManager.session_factory():
+            service = SearchService(
+                es_client(), SearchQueryRepository(session), SearchIndexRepository(session)
+            )
+            await service.ensure_index()
+            await service.reindex_catalog()
+    except Exception:
+        logger.warning("Elasticsearch warm-up failed; run POST /api/v1/search/reindex to retry")
 
 
 @asynccontextmanager
@@ -24,6 +39,9 @@ async def lifespan(app: FastAPI):
         logger.error("Database health check failed")
         raise RuntimeError("Database is not healthy on startup")
 
+    # Warm the Elasticsearch index with the published catalog (tolerant).
+    await _warm_search_index()
+
     logger.info("All startup checks passed")
 
     yield
@@ -31,6 +49,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
     await DatabaseManager.close()
+    await close_es_client()
     logger.info("Shutdown complete")
 
 
