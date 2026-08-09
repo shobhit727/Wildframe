@@ -183,3 +183,57 @@ class TestAuthEndpoints:
 # Decorator to mark async tests
 def pytest_asyncio():
     """Pytest asyncio configuration."""
+
+
+@pytest.mark.asyncio
+class TestMfaLoginEndpoint:
+    async def test_login_returns_challenge_for_mfa_user(self, client):
+        from unittest.mock import AsyncMock
+
+        from app.api.routes.auth import get_auth_service
+        from app.services import MfaChallengeRequired
+
+        service = AsyncMock()
+        service.login.side_effect = MfaChallengeRequired("challenge-token-123")
+        app.dependency_overrides[get_auth_service] = lambda: service
+
+        try:
+            response = await client.post(
+                "/api/v1/auth/login",
+                json={"email": "mfa@example.com", "password": "PasSword123!"},
+            )
+        finally:
+            app.dependency_overrides.pop(get_auth_service, None)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["requires_mfa"] is True
+        assert body["mfa_challenge"] == "challenge-token-123"
+
+    async def test_mfa_login_verify_success(self, client):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from app.api.routes.auth import get_auth_service
+
+        service = AsyncMock()
+        tokens = MagicMock()
+        tokens.model_dump.return_value = {
+            "access_token": "acc",
+            "refresh_token": "ref",
+            "expires_in": 900,
+            "token_type": "bearer",
+        }
+        service.complete_mfa_login = AsyncMock(return_value=tokens)
+        app.dependency_overrides[get_auth_service] = lambda: service
+
+        try:
+            response = await client.post(
+                "/api/v1/auth/mfa/login-verify",
+                json={"mfa_challenge": "chal", "code": "123456"},
+            )
+        finally:
+            app.dependency_overrides.pop(get_auth_service, None)
+
+        assert response.status_code == 200
+        assert response.json()["access_token"] == "acc"
+        service.complete_mfa_login.assert_awaited_once()

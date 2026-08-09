@@ -210,6 +210,7 @@ class TestAuthServiceLogin:
         mock_repositories["user_repo"].get_by_email.return_value = mock_user
         mock_repositories["user_repo"].update.return_value = mock_user
         mock_repositories["user_repo"].reset_login_attempts.return_value = mock_user
+        mock_user.mfa_enabled = False
 
         request = UserLoginRequest(email=email, password=password)
         result = await auth_service.login(request, ip_address="127.0.0.1")

@@ -22,6 +22,7 @@ from app.repositories import (
 )
 from app.schemas import (
     ChangePasswordRequest,
+    MFALoginVerifyRequest,
     MFAVerifyRequest,
     RefreshTokenRequest,
     ResendVerificationRequest,
@@ -32,7 +33,7 @@ from app.schemas import (
     VerifyEmailRequest,
 )
 from app.security import PasswordManager, RateLimiter, SecretCipher, TokenManager, role_for_email
-from app.services import AuthService
+from app.services import AuthService, MfaChallengeRequired
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +164,10 @@ async def register(
         )
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse | dict,
+)
 async def login(
     request: UserLoginRequest,
     http_request: Request,
@@ -179,7 +183,8 @@ async def login(
         db: Database session
 
     Returns:
-        Token response with access and refresh tokens
+        Token response with access and refresh tokens, or an MFA challenge
+        when the user has MFA enabled.
 
     Raises:
         HTTPException: If credentials invalid or account locked
@@ -194,6 +199,12 @@ async def login(
 
         return token_response.model_dump()
 
+    except MfaChallengeRequired as exc:
+        return {
+            "requires_mfa": True,
+            "mfa_challenge": exc.challenge_token,
+            "expires_in": settings.MFA_CHALLENGE_EXPIRATION_MINUTES * 60,
+        }
     except HTTPException:
         await db.rollback()
         raise
@@ -204,6 +215,33 @@ async def login(
     except Exception as e:  # noqa: BLE001
         await db.rollback()
         logger.error(f"Login error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error"
+        )
+
+
+@router.post("/mfa/login-verify", response_model=TokenResponse)
+async def mfa_login_verify(
+    request: MFALoginVerifyRequest,
+    http_request: Request,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Complete an MFA-gated login: exchange a challenge token + TOTP code
+    for real access/refresh tokens."""
+    ip_address = http_request.client.host if http_request.client else None
+    try:
+        token_response = await auth_service.complete_mfa_login(
+            request.mfa_challenge, request.code, ip_address=ip_address
+        )
+        await db.commit()
+        return token_response.model_dump()
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:  # noqa: BLE001
+        await db.rollback()
+        logger.error(f"MFA login verification error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error"
         )
