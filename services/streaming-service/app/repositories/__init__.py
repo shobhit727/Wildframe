@@ -100,7 +100,8 @@ class PlaybackSessionRepository(BaseRepository):
         from datetime import datetime
 
         return await self.update(
-            session_id, status=PlaybackSessionStatus.COMPLETED,
+            session_id,
+            status=PlaybackSessionStatus.COMPLETED,
             ended_at=datetime.now(UTC).replace(tzinfo=None),
         )
 
@@ -142,7 +143,10 @@ class VideoManifestRepository(BaseRepository):
         """Get manifest by episode and protocol."""
         result = await self.session.execute(
             select(VideoManifest).where(
-                and_(VideoManifest.episode_id == episode_id, VideoManifest.protocol == protocol)
+                and_(
+                    VideoManifest.episode_id == episode_id,
+                    VideoManifest.protocol == protocol,
+                )
             )
         )
         return result.scalars().first()
@@ -237,7 +241,9 @@ class QualityProfileRepository(BaseRepository):
     async def get_all_active(self) -> list[StreamingQualityProfile]:
         """Get all active quality profiles."""
         result = await self.session.execute(
-            select(StreamingQualityProfile).where(StreamingQualityProfile.is_active == True)
+            select(StreamingQualityProfile).where(
+                StreamingQualityProfile.is_active == True
+            )
         )
         return result.scalars().all()
 
@@ -273,7 +279,9 @@ class CDNRegionRepository(BaseRepository):
 
     async def get_all_active(self) -> list[CDNRegion]:
         """Get all active CDN regions."""
-        result = await self.session.execute(select(CDNRegion).where(CDNRegion.is_active == True))
+        result = await self.session.execute(
+            select(CDNRegion).where(CDNRegion.is_active == True)
+        )
         return result.scalars().all()
 
 
@@ -292,7 +300,9 @@ class StreamingMetricsRepository(BaseRepository):
         """Record a metrics sample as an aggregated statistics row."""
         stats = StreamingStatistics(
             content_id=content_id,
-            period_start=datetime.now(UTC).replace(tzinfo=None, minute=0, second=0, microsecond=0),
+            period_start=datetime.now(UTC).replace(
+                tzinfo=None, minute=0, second=0, microsecond=0
+            ),
             period_end=datetime.now(UTC).replace(tzinfo=None),
             period_type="hourly",
             total_streams=1,
@@ -313,7 +323,12 @@ class DownloadSessionRepository(BaseRepository):
     """Repository for download session operations."""
 
     async def create(
-        self, user_id: UUID, episode_id: UUID, device_id: str, resolution: str, total_bytes: int
+        self,
+        user_id: UUID,
+        episode_id: UUID,
+        device_id: str,
+        resolution: str,
+        total_bytes: int,
     ) -> DownloadSession:
         """Create a new download session."""
         download = DownloadSession(

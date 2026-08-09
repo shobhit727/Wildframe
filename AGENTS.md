@@ -15,7 +15,12 @@ poetry install
 docker compose -f deployments/docker-compose.dev.yml up --build -d
 
 # Run the backend test suite
-pytest services --asyncio-mode=auto
+# Every service packs its own top-level `app` package, so tests must run
+# per-service (a combined `pytest services/` run from the repo root breaks
+# on shadowed `app.*` imports).
+for svc in services/*/; do
+  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+done
 
 # Frontend (Next.js 15)
 cd apps/web && npm install && npm run dev   # http://localhost:3000
