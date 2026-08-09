@@ -1,258 +1,132 @@
-# Wildframe OTT Streaming Platform
+# Wildframe
 
-A FastAPI microservices-based OTT streaming platform. **Not yet production-ready** — core services run, auth (JWT + MFA + email verification) is in, and a full security/test sweep has been completed and the results documented in [AUDIT_FIX_SUMMARY.md](AUDIT_FIX_SUMMARY.md); remaining gaps are Infra (AWS deploys, secrets management, DRM).
+Wildframe is a FastAPI microservices OTT streaming platform with a Next.js frontend, Docker images, Helm/Kubernetes deployment, and GitHub Actions CI/CD.
 
-## 🎯 Current State (August 2026)
+> **Status: active development. Not production-ready.**
 
-| Service | Status |
-|---------|--------|
-| auth-service | ✅ JWT + refresh tokens; MFA/TOTP (setup, verify, challenge-login, backup codes); email verification (signed token) |
-| user-service | ✅ Starts; CRUD works |
-| content-service | ✅ Starts; CRUD works; duplicate genres → 409 |
-| streaming-service | ✅ All endpoints JWT-authed; owner-scoped reads/writes |
-| admin-service | ✅ Starts; CRUD works; tests passing |
-| media-pipeline | ✅ Starts; orchestrator works |
-| api-gateway | ✅ Starts; per-client rate limiting enforced (429) |
-| creators-service | ✅ Starts |
-| moderation-service | ✅ Starts |
-| uploads-service | ✅ Starts |
-| analytics | ✅ Starts |
-| billing | ✅ Starts; payouts owner-checked |
-| notification | ✅ Starts; send works E2E |
-| recommendation | ✅ Starts |
-| search | ✅ Starts; Elasticsearch wired, reindex + query verified |
+## Current architecture
 
-**What works**: All 15 services import cleanly and their suites are green (551 tests across 16 suites). CI is green for Backend Lint (ruff + black + mypy), Helm Lint (chart renders all 15 services), Frontend CI (eslint, tsc, vitest, `next build`), Security Scan, 5 Docker Build Smokes, and all 15 backend test jobs. A full audit/pentest pass landed fixes for authz gaps (streaming IDOR, billing payouts), crash-on-startup import bugs, asyncpg timezone 500s, and wiring for the gateway rate limiter. See [AUDIT_FIX_SUMMARY.md](AUDIT_FIX_SUMMARY.md) and [STATUS.md](STATUS.md).
+- **15 backend services:** API gateway, auth, users, content, streaming, search, recommendations, billing, analytics, notifications, media pipeline, creators, moderation, uploads, and admin.
+- **Frontend:** Next.js + TypeScript in `apps/web`.
+- **Shared SDK:** `packages/sdk` for events and observability.
+- **Infrastructure:** Docker, Kubernetes, Helm, Terraform, PostgreSQL, Redis, Kafka, Elasticsearch, Prometheus, Grafana, Loki, and Jaeger.
 
-**What's still missing**: production deploy jobs (need AWS credentials + EKS clusters in repo secrets), secrets management, load testing, DRM (Widevine/FairPlay/PlayReady), full observability sink wiring (Prometheus/Grafana/Loki/Jaeger configs exist).
+## CI/CD
 
-## Technology Stack
+The authoritative pipeline is `.github/workflows/ci-cd.yml`.
 
-### Backend
-- **FastAPI** 0.111+: Async Python web framework
-- **SQLAlchemy 2.0**: Async ORM
-- **PostgreSQL 14+**: Primary database (per-service)
-- **Redis 7.0+**: Caching and sessions
-- **Kafka 3.0+**: Event streaming
-- **Elasticsearch 8.x**: Search (indexed + query verified end-to-end)
-- **FFmpeg**: Video transcoding (pipeline orchestrated)
-- **Python 3.13**: Runtime (asyncpg 0.30.0+ required)
+### Pull requests
 
-### Frontend
-- **Next.js 16**: React framework with SSR (real catalog/player/authz flows; 43 unit tests green)
-- **TypeScript**: Type-safe development
-- **TailwindCSS**: Utility-first CSS
-- **Docker**: Multi-stage `apps/web/Dockerfile` builds and pushes to GHCR via CI
-- **npm workspaces**: monorepo install from repo root (`npm ci --legacy-peer-deps` in CI)
+CI runs:
 
-### Infrastructure
-- **Kubernetes**: Container orchestration (manifests exist)
-- **Docker**: Containerization (Dockerfiles exist)
-- **Helm**: Helm chart `infrastructure/helm/wildframe` (lints and renders all 15 services)
-- **Terraform**: Infrastructure as code (modules exist)
-- **GitHub Actions**: CI/CD (consolidated workflow)
-- **Prometheus**: Metrics (exposed, configs exist)
-- **Grafana**: Dashboards (configs exist)
-- **Loki**: Log aggregation (configs exist)
+1. Ruff, Black, and mypy.
+2. Helm lint plus rendering of default, staging, and production values.
+3. All 15 backend service test suites.
+4. SDK tests.
+5. Frontend lint, type-check, tests, and production build.
+6. Docker build smoke tests for **all 15 backend images and the frontend image**.
+7. Trivy and Semgrep security scanning.
 
-## Project Structure
+Test and type-check failures are blocking. The workflow does not intentionally use `continue-on-error` or `|| true` for validation steps.
 
-```
-wildframe/
-├── apps/
-│   └── web/                        # Next.js web application (scaffold)
-├── services/                       # 15 Backend microservices
-│   ├── api-gateway/                # Request routing and auth
-│   ├── auth-service/               # Authentication and JWT
-│   ├── user-service/               # User profiles and devices
-│   ├── content-service/            # Content metadata
-│   ├── streaming-service/          # Video streaming manifests
-│   ├── search-service/             # Content search
-│   ├── recommendation-service/     # ML-based recommendations
-│   ├── billing-service/            # Subscriptions and payments
-│   ├── analytics-service/          # Event analytics
-│   ├── notification-service/       # Multi-channel notifications
-│   ├── admin-service/              # Administration
-│   ├── media-pipeline/             # Video transcoding
-│   ├── creators-service/           # Creator onboarding
-│   ├── moderation-service/         # Content moderation
-│   └── uploads-service/            # File uploads
-├── packages/
-│   └── sdk/
-│       ├── wildframe_observability/ # Observability SDK
-│       └── wildframe_events/        # Event publishing
-├── infrastructure/                 # Infrastructure as code
-│   ├── kubernetes/                 # K8s manifests and Helm
-│   ├── terraform/                  # Terraform modules
-│   └── docker/                     # Docker configurations
-├── deployments/                    # Docker Compose
-├── docs/                           # Documentation
-└── .github/workflows/              # CI/CD
+### Image publishing
+
+Pushes to `main` and `develop` publish every backend service image and the frontend image to GHCR. Images are tagged with the commit SHA and branch reference. Deployments use the immutable SHA tag rather than the Helm chart's `appVersion`.
+
+### Kubernetes deployment
+
+- `develop` → staging EKS cluster.
+- `main` → production EKS cluster.
+- Helm uses `--atomic` and waits for every service deployment to become ready.
+- Deployment verification checks `/health` for every backend service from inside the cluster.
+- AWS authentication uses GitHub Actions OIDC; long-lived AWS access keys are not used by the deployment workflow.
+- GHCR pull credentials are provisioned into the target namespace by the deployment job.
+
+Production and staging deployment require GitHub environment secrets:
+
+- `AWS_DEPLOY_ROLE_ARN` — IAM role trusted by GitHub's OIDC provider.
+- `WILDFRAME_JWT_SECRET` — runtime JWT signing secret.
+- `WILDFRAME_POSTGRES_PASSWORD` — database password matching the target PostgreSQL deployment.
+
+Production should also use GitHub Environment protection rules for human approval before deployment.
+
+## Docker
+
+Every backend service has its own Dockerfile under `services/<service>/Dockerfile`. The frontend uses `apps/web/Dockerfile`.
+
+Build an individual backend image locally:
+
+```bash
+# Build one service from the repository root.
+docker build -f services/auth-service/Dockerfile -t wildframe/auth-service:dev .
 ```
 
-## Quick Start
+Build the frontend:
 
-### Prerequisites
-- Docker & Docker Compose
-- Python 3.11+ (3.13 recommended)
-- Node.js 20.9+
+```bash
+# Build the Next.js production image from the repository root.
+docker build -f apps/web/Dockerfile -t wildframe/web:dev .
+```
+
+## Local development
+
+Prerequisites:
+
+- Docker and Docker Compose
+- Python 3.13
+- Node.js 20+
 - Poetry 1.8.3
 
-### Local Development with Docker Compose
+Start the development stack:
 
 ```bash
-# Start all services (infrastructure + 15 services)
+# Start local infrastructure and application containers.
 docker compose -f deployments/docker-compose.dev.yml up -d
-
-# Wait for services to be ready
-sleep 30
-
-# Verify services
-curl http://localhost:8000/health   # API Gateway
-curl http://localhost:8001/health   # Auth Service
-curl http://localhost:8002/health   # User Service
-curl http://localhost:8003/health   # Content Service
-curl http://localhost:8004/health   # Streaming Service
-curl http://localhost:8006/health   # Admin Service
-curl http://localhost:8011/health   # Media Pipeline
 ```
 
-### Run Services Individually (Dev)
+For service-specific development, see `docs/DEVELOPMENT.md` and `docs/QUICKSTART.md`.
 
-```bash
-# Auth Service
-cd services/auth-service
-poetry install
-poetry run uvicorn app.main:app --reload --port 8001
+## Testing
 
-# User Service
-cd services/user-service
-poetry install
-poetry run uvicorn app.main:app --reload --port 8002
+The CI workflow is the primary reproducible validation environment. For local testing, see:
 
-# Content Service
-cd services/content-service
-poetry install
-poetry run uvicorn app.main:app --reload --port 8003
+- `docs/TEST_GUIDE.md`
+- `TESTING_GUIDE.md`
+- `HOW_TO_RUN_TESTS.md`
 
-# Streaming Service
-cd services/streaming-service
-poetry install
-poetry run uvicorn app.main:app --reload --port 8004
+Avoid treating old completion reports as current test evidence. CI results from the current commit are authoritative.
 
-# Admin Service
-cd services/admin-service
-poetry install
-poetry run uvicorn app.main:app --reload --port 8006
+## Documentation source of truth
 
-# Media Pipeline
-cd services/media-pipeline
-poetry install
-poetry run uvicorn app.main:app --reload --port 8011
-```
+The repository contains several historical completion summaries and overlapping quick-start documents. They are retained for project history, but they should not be interpreted as a current release declaration.
 
-### Frontend
+For current information, start with:
 
-The repo is an npm-workspaces monorepo — install from the root, run in `apps/web`:
+- `README.md` — current project status and architecture.
+- `STATUS.md` — current implementation status.
+- `docs/INDEX.md` — documentation index.
+- `docs/DEPLOYMENT_GUIDE.md` — deployment architecture and requirements.
+- `docs/OPERATIONS.md` — operational procedures.
+- `SECURITY.md` — vulnerability reporting policy.
+- `PROJECT_MEMORY/` — engineering backlog, bugs, risks, and technical debt.
 
-```bash
-# From repo root (installs all workspaces incl. apps/web)
-npm install --legacy-peer-deps   # headlessui@1 peers react<=18; app runs react 19
+## Known production gaps
 
-cd apps/web
-npm run dev
-# http://localhost:3000
-```
+Wildframe is not production-ready yet. Major remaining work includes:
 
-### CI/CD
+- production secrets and database credential lifecycle;
+- load and capacity testing;
+- DRM for protected media;
+- complete observability sink/dashboard wiring;
+- production ingress, TLS, DNS, CDN, and external media delivery;
+- disaster recovery, backups, restore testing, and operational runbooks;
+- payment-provider production configuration and compliance work;
+- final AWS/EKS hardening and environment-specific configuration.
 
-All pipeline checks are green: Backend Lint, Helm Lint, Backend Test (15 per-service jobs + SDK), Frontend CI (eslint → tsc → vitest → `next build`), Security Scan, Docker Build Smokes, Build & Push Frontend. Deploy Staging/Production additionally require `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` repo secrets plus `wildframe-staging`/`wildframe-production` EKS clusters — without them the deploy steps fail.
+## Security
 
-## Architecture
-
-See `docs/ARCHITECTURE.md` for system design, service patterns, and data architecture.
-
-## API Documentation
-
-All endpoints under `/api/v1` (mounted by each service).
-
-### Authentication
-- `POST /api/v1/auth/register` — Create account (returns verification token)
-- `POST /api/v1/auth/verify-email` — Confirm email via signed ownership token
-- `POST /api/v1/auth/login` — Get access + refresh tokens (returns `requires_mfa` challenge if MFA is on)
-- `POST /api/v1/auth/mfa/login-verify` — Complete an MFA-gated login (TOTP)
-- `POST /api/v1/auth/refresh` — Refresh access token
-- `POST /api/v1/auth/logout` — Revoke tokens
-- `GET /api/v1/users/me` — Current user (requires Bearer token)
-- `POST /api/v1/mfa/setup|verify|disable` — TOTP lifecycle (auth-service)
-
-### Health Checks
-- `GET /health` — Liveness
-- `GET /ready` — Readiness (verifies DB)
-
-### Rate Limiting
-The api-gateway enforces per-client rate limits on proxied requests (authenticated: by user `sub`, otherwise by client IP). Exceeding the limit returns `429` with `Retry-After`. Tests that exercise the gateway must stub the limiter (`test_gateway.py` shows the pattern).
-
-## Development
-
-### Code Quality
-```bash
-# Lint (all passing)
-ruff check services/
-black --check services/
-
-# Type check
-for dir in services/*/app; do
-  mypy "$dir"
- done
-
-# Tests (per service, uses local pytest.ini — a combined `pytest services/` 
-# run breaks on shadowed `app.*` imports)
-for svc in services/*/; do
-  (cd "$svc" && poetry run pytest tests --asyncio-mode=auto) || exit 1
-done
-```
-
-### Adding a Service
-Each service follows: `api/routes` → `services` → `repositories` → `models` with `create_app()` in `main.py`. FastAPI dependency injection uses `Annotated[Type, Depends(...)]` — never `Depends()` in argument defaults.
-
-## Deployment
-
-### Docker
-```bash
-docker build -f services/auth-service/Dockerfile -t auth-service:latest .
-```
-
-### Kubernetes
-```bash
-kubectl apply -f infrastructure/kubernetes/
-# Helm chart: infrastructure/helm/
-```
-
-### Terraform
-```bash
-cd infrastructure/terraform
-terraform init && terraform plan
-```
-
-## Monitoring
-
-- Prometheus metrics: `/metrics` on each service
-- Structured JSON logs with correlation IDs
-- OpenTelemetry tracing via `wildframe-observability-sdk`
-
-## Known Limitations
-
-- ❌ Deploy jobs — blocked until AWS repo secrets + EKS clusters configured
-- ❌ Secrets management (hardcoded dev defaults in settings; prod validation fails fast on them)
-- ❌ Load testing / capacity planning
-- ❌ DRM (Widevine/FairPlay/PlayReady) — plaintext HLS/DASH only; see [docs/DRM_SCOPE.md](docs/DRM_SCOPE.md)
-- ❌ Observability sinks (OTel exporters to Jaeger wired; Grafana/Loki dashboards need finishing)
+Do not report vulnerabilities through public GitHub issues or pull requests. See `SECURITY.md` for the private reporting process.
 
 ## License
 
-Proprietary - Wildframe Platform
-
-## Status
-
-See `STATUS.md` for current progress and next steps.
+Proprietary — Wildframe Platform.
