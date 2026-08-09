@@ -13,15 +13,44 @@ Endpoints:
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+import jwt
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, status as http_status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.settings import settings
 from app.repositories import UploadChunkRepository
 from app.services import UploadError, UploadService
 
 router = APIRouter(prefix="/api/v1/uploads", tags=["uploads"])
+
+
+async def get_current_user_id(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> UUID:
+    """Resolve the authenticated user id from the JWT sub claim."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+    token = authorization.removeprefix("Bearer ")
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    sub = payload.get("sub") or payload.get("user_id")
+    if not sub:
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
+        )
+    try:
+        return UUID(sub)
+    except ValueError:
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
+        )
 
 
 async def get_upload_service(
@@ -89,8 +118,14 @@ class SessionResponse(BaseModel):
 async def create_session(
     request: CreateSessionRequest,
     service: Annotated[UploadService, Depends(get_upload_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)] = ...,
 ):
     """Create an upload session and return a pre-signed URL per chunk."""
+    if request.creator_id != current_user:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="You can only create upload sessions for your own account",
+        )
     try:
         session, uploads = await service.create_session(
             creator_id=request.creator_id,
