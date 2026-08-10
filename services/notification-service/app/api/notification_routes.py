@@ -72,9 +72,40 @@ async def get_unread_notifications(
     user_id: UUID,
     service: NotificationService = Depends(get_notif_service),  # noqa: B008
 ):
-    """Get unread notifications."""
+    """Get unread notifications belonging to the authenticated user."""
     if user_id != current_user:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="You can only access your own data"
         )
-    return {"notifications": [], "total": 0}
+
+    notifications = await service.get_unread(user_id)
+    return {
+        "notifications": [
+            {
+                "id": str(notification.id),
+                "user_id": str(notification.user_id),
+                "title": notification.title,
+                "message": notification.message,
+                "channel": notification.channel,
+                "is_read": notification.is_read,
+                "created_at": notification.created_at.isoformat()
+                if notification.created_at
+                else None,
+            }
+            for notification in notifications
+        ],
+        "total": len(notifications),
+    }
+
+
+@router.post("/{notification_id}/read")
+async def mark_notification_as_read(
+    notification_id: UUID,
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
+    service: NotificationService = Depends(get_notif_service),  # noqa: B008
+):
+    """Mark a notification read only when it belongs to the authenticated user."""
+    updated = await service.mark_as_read(notification_id, current_user)
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    return {"status": "read"}
