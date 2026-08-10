@@ -28,6 +28,7 @@ env:
     notification-service media-pipeline creators-service moderation-service
     uploads-service admin-service
 
+jobs:
   backend-lint:
     name: Backend Lint
     runs-on: ubuntu-latest

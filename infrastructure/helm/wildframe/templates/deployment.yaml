@@ -25,9 +25,13 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - name: {{ $name }}
-        image: "{{ $.Values.image.repository }}/{{ $name }}:{{ $.Chart.AppVersion }}"
+        image: "{{ $.Values.image.repository }}/{{ $name }}:{{ $.Values.image.tag }}"
         imagePullPolicy: {{ $.Values.image.pullPolicy }}
         ports:
         - name: http
@@ -45,7 +49,15 @@ spec:
         - name: JAEGER_AGENT_HOST
           value: {{ $.Values.infra.jaegerAgentHost }}
         - name: JWT_SECRET_KEY
-          value: {{ $.Values.secrets.jwtSecret }}
+          valueFrom:
+            secretKeyRef:
+              name: {{ $.Values.secrets.existingSecret }}
+              key: {{ $.Values.secrets.jwtSecretKey }}
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ $.Values.secrets.existingSecret }}
+              key: {{ $.Values.secrets.postgresPasswordKey }}
         - name: REDIS_URL
           value: "redis://{{ $.Values.infra.redisHost }}:{{ $.Values.infra.redisPort }}/0"
         {{- if $svc.db }}

@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 
+// Search icon keeps the navigation independent from an icon package.
 function SearchIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -14,6 +15,7 @@ function SearchIcon({ className = 'w-4 h-4' }: { className?: string }) {
   );
 }
 
+// Notification icon is intentionally small so it does not dominate the header.
 function BellIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -22,6 +24,7 @@ function BellIcon({ className = 'w-4 h-4' }: { className?: string }) {
   );
 }
 
+// Chevron indicates that the profile control opens a menu.
 function ChevronDownIcon({ className = 'w-3 h-3' }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -30,6 +33,7 @@ function ChevronDownIcon({ className = 'w-3 h-3' }: { className?: string }) {
   );
 }
 
+// User icon is the fallback when an account has no first-name initial.
 function UserIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -58,16 +62,19 @@ export function Navbar({ onSearchChange }: NavbarProps) {
   const searchWrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Only promote the navbar after a small scroll so the hero remains visually open.
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   useEffect(() => {
+    // Focus the search field immediately after its animation mounts.
     if (searchOpen && searchRef.current) searchRef.current.focus();
   }, [searchOpen]);
 
   useEffect(() => {
+    // Close the search popover when the user clicks outside it.
     const onClickOutside = (e: MouseEvent) => {
       if (searchWrapRef.current && !searchWrapRef.current.contains(e.target as Node)) {
         setSearchOpen(false);
@@ -89,18 +96,23 @@ export function Navbar({ onSearchChange }: NavbarProps) {
 
   return (
     <header
-      className={`fixed top-0 left-0 right-0 z-50 transition-colors duration-300 ${
-        scrolled || searchOpen ? 'bg-[#141414]' : 'bg-gradient-to-b from-black/70 via-black/40 to-transparent'
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        scrolled || searchOpen
+          ? 'wf-glass shadow-[0_12px_40px_rgba(0,0,0,0.22)]'
+          : 'bg-gradient-to-b from-black/80 via-black/40 to-transparent'
       }`}
     >
-      <nav className="px-8 h-[68px] flex items-center justify-between">
-        {/* Left: Brand + Nav Links */}
-        <div className="flex items-end gap-6">
-          <Link href="/browse" className="text-[26px] font-semibold tracking-tight text-[#E50914] leading-none select-none">
+      <nav className="mx-auto flex h-[68px] max-w-[1800px] items-center justify-between px-4 sm:px-6 lg:px-8">
+        {/* Brand and navigation stay compact on smaller screens. */}
+        <div className="flex min-w-0 items-end gap-5 sm:gap-7">
+          <Link
+            href="/browse"
+            className="select-none text-[22px] font-black tracking-[-0.04em] text-[#E50914] transition-transform duration-200 hover:scale-[1.03] sm:text-[26px]"
+          >
             WILDFRAME
           </Link>
           {isAuthenticated && (
-            <div className="hidden md:flex items-center gap-5">
+            <div className="hidden items-center gap-5 md:flex">
               {NAV_LINKS.map((link) => {
                 const isActive =
                   link.href === '/browse'
@@ -110,11 +122,17 @@ export function Navbar({ onSearchChange }: NavbarProps) {
                   <Link
                     key={link.href}
                     href={link.href}
-                    className={`text-sm transition-colors duration-200 ${
-                      isActive ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'
+                    className={`relative py-6 text-sm transition-colors duration-200 ${
+                      isActive ? 'font-semibold text-white' : 'text-gray-300 hover:text-white'
                     }`}
                   >
                     {link.label}
+                    {/* Active indicator gives navigation state without relying on color alone. */}
+                    <span
+                      className={`absolute bottom-2 left-0 h-0.5 rounded-full bg-[#E50914] transition-all duration-300 ${
+                        isActive ? 'w-full' : 'w-0'
+                      }`}
+                    />
                   </Link>
                 );
               })}
@@ -122,21 +140,21 @@ export function Navbar({ onSearchChange }: NavbarProps) {
           )}
         </div>
 
-        {/* Right: Search, Profile */}
-        <div className="flex items-center gap-5">
-          {/* Search */}
+        {/* Search, notification, and profile controls. */}
+        <div className="flex items-center gap-3 sm:gap-5">
           {isAuthenticated && (
-            <div ref={searchWrapRef} className="relative flex items-center gap-2">
+            <div ref={searchWrapRef} className="relative flex items-center">
               {searchOpen && (
-                <div className="absolute right-8 -bottom-1.5 flex items-center bg-[#141414] border border-white/30">
-                  <SearchIcon className="w-3.5 h-3.5 text-gray-400 ml-3" />
+                <div className="animate-scale-in absolute right-9 top-1/2 flex -translate-y-1/2 items-center border border-white/20 bg-[#111] shadow-2xl">
+                  <SearchIcon className="ml-3 h-3.5 w-3.5 text-gray-400" />
                   <input
                     ref={searchRef}
                     type="text"
                     value={searchQuery}
                     onChange={(e) => handleSearch(e.target.value)}
                     placeholder="Titles, people, genres"
-                    className="bg-transparent text-[13px] text-white placeholder-gray-400 px-3 py-2 w-48 sm:w-60 outline-none"
+                    aria-label="Search titles, people, or genres"
+                    className="w-44 bg-transparent px-3 py-2.5 text-[13px] text-white outline-none placeholder:text-gray-500 sm:w-60"
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') {
                         setSearchOpen(false);
@@ -147,66 +165,75 @@ export function Navbar({ onSearchChange }: NavbarProps) {
                 </div>
               )}
               <button
+                type="button"
                 onClick={() => setSearchOpen((v) => !v)}
-                className="text-white transition-transform hover:scale-110"
-                aria-label="Search"
+                className="rounded-full p-1.5 text-white transition-all duration-200 hover:bg-white/10 hover:scale-110"
+                aria-label={searchOpen ? 'Close search' : 'Search'}
               >
-                <SearchIcon className="w-5 h-5" />
+                <SearchIcon className="h-5 w-5" />
               </button>
             </div>
           )}
 
           {isAuthenticated && (
-            <button className="text-white relative" aria-label="Notifications">
-              <BellIcon className="w-5 h-5" />
-              <span className="absolute top-0 right-0 w-1.5 h-1.5 bg-[#E50914] rounded-full" />
+            <button
+              type="button"
+              className="relative rounded-full p-1.5 text-white transition-all duration-200 hover:bg-white/10 hover:scale-110"
+              aria-label="Notifications"
+            >
+              <BellIcon className="h-5 w-5" />
+              {/* Notification dot is decorative until the notifications API is wired. */}
+              <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[#E50914]" />
             </button>
           )}
 
-          {/* Profile Dropdown */}
           {isAuthenticated ? (
             <DropdownMenu.Root>
               <DropdownMenu.Trigger asChild>
-                <button className="flex items-center gap-1.5 text-white" aria-label="Profile menu">
-                  <div className="w-7 h-7 rounded-md bg-gradient-to-br from-[#E50914] to-[#8f060c] flex items-center justify-center text-white text-xs font-semibold">
-                    {user?.firstName?.[0]?.toUpperCase() || <UserIcon className="w-3.5 h-3.5" />}
+                <button
+                  type="button"
+                  className="group flex items-center gap-1.5 rounded-md p-0.5 text-white transition-all duration-200 hover:bg-white/10"
+                  aria-label="Profile menu"
+                >
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-[#e50914] to-[#70050a] text-xs font-bold text-white shadow-lg shadow-black/30 transition-transform duration-200 group-hover:scale-105">
+                    {user?.firstName?.[0]?.toUpperCase() || <UserIcon className="h-3.5 w-3.5" />}
                   </div>
-                  <ChevronDownIcon className="w-3 h-3 transition-transform group-data-[state=open]:rotate-180" />
+                  <ChevronDownIcon className="h-3 w-3 text-gray-300 transition-transform duration-200 group-data-[state=open]:rotate-180" />
                 </button>
               </DropdownMenu.Trigger>
 
               <DropdownMenu.Portal>
                 <DropdownMenu.Content
-                  className="min-w-[200px] bg-[#141414] border border-white/10 shadow-2xl p-1.5 z-50"
-                  sideOffset={8}
+                  className="animate-scale-in z-50 min-w-[220px] border border-white/10 bg-[#141414]/95 p-1.5 shadow-2xl backdrop-blur-xl"
+                  sideOffset={10}
                   align="end"
                 >
-                  <div className="px-3 py-2 border-b border-white/10 mb-1">
+                  <div className="mb-1 border-b border-white/10 px-3 py-2.5">
                     <p className="text-sm font-medium text-white">{user?.firstName} {user?.lastName}</p>
-                    <p className="text-xs text-gray-400">{user?.email}</p>
+                    <p className="truncate text-xs text-gray-400">{user?.email}</p>
                   </div>
 
                   <DropdownMenu.Item asChild>
-                    <Link href="/account" className="flex items-center gap-3 px-3 py-2.5 text-[13px] text-gray-300 hover:underline cursor-pointer outline-none">
-                      <UserIcon className="w-4 h-4" /> Account
+                    <Link href="/account" className="flex cursor-pointer items-center gap-3 rounded px-3 py-2.5 text-[13px] text-gray-300 outline-none transition-colors hover:bg-white/10 hover:text-white">
+                      <UserIcon className="h-4 w-4" /> Account
                     </Link>
                   </DropdownMenu.Item>
                   <DropdownMenu.Item asChild>
-                    <Link href="/billing" className="flex items-center gap-3 px-3 py-2.5 text-[13px] text-gray-300 hover:underline cursor-pointer outline-none">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <Link href="/billing" className="flex cursor-pointer items-center gap-3 rounded px-3 py-2.5 text-[13px] text-gray-300 outline-none transition-colors hover:bg-white/10 hover:text-white">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3H18a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0018 4.5H6a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 006 19.5h1.5" />
                       </svg>
                       Billing
                     </Link>
                   </DropdownMenu.Item>
 
-                  <DropdownMenu.Separator className="h-px bg-white/10 my-1" />
+                  <DropdownMenu.Separator className="my-1 h-px bg-white/10" />
 
                   <DropdownMenu.Item
                     onSelect={handleLogout}
-                    className="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-300 hover:underline cursor-pointer outline-none"
+                    className="flex cursor-pointer items-center gap-3 rounded px-3 py-2.5 text-sm text-gray-300 outline-none transition-colors hover:bg-white/10 hover:text-white"
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
                     </svg>
                     Sign Out of Wildframe
@@ -215,13 +242,13 @@ export function Navbar({ onSearchChange }: NavbarProps) {
               </DropdownMenu.Portal>
             </DropdownMenu.Root>
           ) : (
-            <div className="flex items-center gap-3">
-              <Link href="/login" className="text-sm text-gray-300 hover:text-white transition-colors">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <Link href="/login" className="rounded px-2 py-1.5 text-sm text-gray-300 transition-colors hover:text-white">
                 Sign In
               </Link>
               <Link
                 href="/signup"
-                className="bg-[#E50914] hover:bg-[#F6121D] text-white text-sm px-4 py-1.5 rounded font-medium transition-colors"
+                className="rounded bg-[#E50914] px-3.5 py-1.5 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#f6121d] hover:shadow-red-950/50"
               >
                 Sign Up
               </Link>

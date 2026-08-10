@@ -2,13 +2,13 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/shobhit727/wildframe
+  tag: latest
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
 
 namespace: wildframe
 
-# Shared infra connection endpoints (cluster-internal)
 infra:
   postgresHost: "postgres"
   postgresPort: 5432
@@ -17,7 +17,6 @@ infra:
   kafkaBootstrap: "kafka:9092"
   jaegerAgentHost: "jaeger-agent"
 
-# Per-service overrides. `databases` defines the Postgres DBs to provision.
 services:
   api-gateway:
     containerPort: 8000
@@ -100,9 +99,11 @@ resources:
     cpu: 500m
     memory: 512Mi
 
-# Default JWT secret (override via --set secrets.jwtSecret or a Secret)
+# Deployed environments must provide these values through a Kubernetes Secret.
 secrets:
-  jwtSecret: "change-me-in-production"
+  existingSecret: wildframe-runtime
+  jwtSecretKey: JWT_SECRET_KEY
+  postgresPasswordKey: POSTGRES_PASSWORD
 
 kafka:
   enabled: true

@@ -1,124 +1,70 @@
-# 📚 Wildframe Platform Documentation
+# Wildframe Documentation Index
 
-Welcome to the Wildframe documentation! This is your complete reference for the platform.
+**Current status:** active development; not production-ready.
 
-## 🚀 Getting Started
+This index points to the documentation that should be used for current engineering decisions. Historical completion reports remain in the repository but are not release declarations.
 
-### Quick Links
-- **[Quick Start Guide](QUICKSTART.md)** - Set up and run the platform in minutes
-- **[How to Run Tests](HOW_TO_RUN_TESTS.md)** - Testing your code
-- **[Testing Guide](TEST_GUIDE.md)** - Comprehensive testing documentation
+## Start here
 
-## 📖 Documentation by Topic
+- [`README.md`](../README.md) — current architecture, CI/CD, deployment requirements, and production gaps.
+- [`STATUS.md`](../STATUS.md) — current implementation and deployment status.
+- [`SECURITY.md`](../SECURITY.md) — vulnerability reporting policy.
 
-### Architecture & Design
-- **[System Architecture](ARCHITECTURE.md)** - High-level system design and components
-- **[Service Architecture Pattern](SERVICE_ARCHITECTURE_PATTERN.md)** - Design patterns used across services
-- **[Database Schema](DATABASE_SCHEMA.md)** - Complete database design
+## Development
 
-### Development
-- **[Contributing Guide](CONTRIBUTING.md)** - Code conventions and development workflow
-- **[API Documentation](API_DOCUMENTATION.md)** - Complete API reference
-- **[Frontend Architecture](FRONTEND_ARCHITECTURE.md)** - React/Next.js structure
+- [`DEVELOPMENT.md`](DEVELOPMENT.md) — development workflow.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution conventions.
+- [`QUICKSTART.md`](QUICKSTART.md) — local setup.
+- [`TEST_GUIDE.md`](TEST_GUIDE.md) — test strategy and execution.
+- [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) — test commands.
 
-### Operations
-- **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - How to deploy to production
-- **[Operations Guide](OPERATIONS_GUIDE.md)** - Running and maintaining in production
-- **[Monitoring & Observability](MONITORING.md)** - Metrics, logs, and tracing
+## Architecture
 
-### Reference
-- **[Glossary](GLOSSARY.md)** - Technical terminology
-- **[What's Included](WHATS_INCLUDED.md)** - Feature inventory
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — backend architecture.
+- [`FRONTEND_ARCHITECTURE.md`](FRONTEND_ARCHITECTURE.md) — frontend architecture.
+- [`SERVICE_ARCHITECTURE_PATTERN.md`](SERVICE_ARCHITECTURE_PATTERN.md) — service structure.
+- [`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md) — database design.
+- [`API_DOCUMENTATION.md`](API_DOCUMENTATION.md) — API reference.
 
-## 🎯 Common Tasks
+## Operations and deployment
 
-### For Developers
-1. Read: [Quick Start Guide](QUICKSTART.md)
-2. Setup: Follow the one-time prerequisites
-3. Develop: Create a feature branch and edit code
-4. Test: Run tests locally with [How to Run Tests](HOW_TO_RUN_TESTS.md)
-5. Commit: Push to GitHub and create PR
+- [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) — current GitHub Actions, GHCR, Helm, and EKS deployment path.
+- [`OPERATIONS.md`](OPERATIONS.md) — operational procedures.
+- [`MONITORING.md`](MONITORING.md) — monitoring and observability.
+- [`DRM_SCOPE.md`](DRM_SCOPE.md) — DRM scope and remaining work.
 
-### For DevOps/SRE
-1. Read: [Deployment Guide](DEPLOYMENT_GUIDE.md)
-2. Setup: Deploy to AWS/Kubernetes
-3. Monitor: Review [Monitoring Guide](MONITORING.md)
-4. Maintain: Follow [Operations Guide](OPERATIONS_GUIDE.md)
+## Reference
 
-### For QA/Testing
-1. Read: [Testing Guide](TEST_GUIDE.md)
-2. Setup: Start services with Docker Compose
-3. Test: Run manual and automated tests
-4. Report: Document findings in issues
+- [`GLOSSARY.md`](GLOSSARY.md) — terminology.
+- [`PRODUCT_VISION.md`](PRODUCT_VISION.md) — product direction.
+- [`OVERVIEW.md`](OVERVIEW.md) — project overview.
+- [`WHATS_INCLUDED.md`](WHATS_INCLUDED.md) — feature inventory.
+- [`DOCUMENTATION_GUIDE.md`](DOCUMENTATION_GUIDE.md) — documentation conventions.
 
-## 📊 Platform Overview
+## CI/CD source of truth
 
+The executable CI/CD definition is:
+
+```text
+.github/workflows/ci-cd.yml
 ```
+
+It validates all 15 backend services, the frontend, Helm rendering, Docker builds, and security scans. Pushes to `develop` and `main` publish commit-SHA-tagged images; deployment then uses that same immutable SHA.
+
+## Current platform inventory
+
+```text
 Wildframe OTT Platform
-├── 12 Microservices
-├── PostgreSQL (Multi-database)
-├── Redis (Caching & Sessions)
-├── Kafka (Event Streaming)
-├── Elasticsearch (Full-text Search)
-└── Observability Stack (Prometheus, Grafana, Jaeger, Loki)
+├── 15 FastAPI backend services
+├── Next.js frontend
+├── Shared Python SDK
+├── PostgreSQL
+├── Redis
+├── Kafka
+├── Elasticsearch
+└── Prometheus / Grafana / Jaeger / Loki
 ```
 
-## 🔗 External Resources
+## Documentation rule
 
-- **FastAPI**: https://fastapi.tiangolo.com
-- **SQLAlchemy**: https://sqlalchemy.org
-- **PostgreSQL**: https://www.postgresql.org
-- **Docker**: https://www.docker.com
-- **Kubernetes**: https://kubernetes.io
-- **Next.js**: https://nextjs.org
-
-## 📞 Support
-
-For issues or questions:
-1. Check relevant documentation section above
-2. Search GitHub issues
-3. Review service logs: `docker-compose logs -f <service>`
-4. Check metrics: http://localhost:9090
-5. Check traces: http://localhost:16686
-
-## 🆕 What's New
-
-**Last Updated**: June 4, 2026
-
-### Recent Changes
-- ✅ All 12 microservices scaffolded
-- ✅ Docker Compose environment configured
-- ✅ 70+ tests implemented
-- ✅ CI/CD pipeline set up
-- ✅ Monitoring dashboards configured
-- ✅ **Complete documentation suite created** (19 files, 200+ KB)
-  - API_DOCUMENTATION.md - Complete API reference with examples
-  - DEPLOYMENT_GUIDE.md - Production deployment procedures
-  - MONITORING.md - Metrics, logging, tracing, and alerting
-  - GLOSSARY.md - Technical terminology (80+ terms)
-  - ARCHITECTURE.md - System design and patterns
-  - QUICKSTART.md - 10-minute local setup
-  - TEST_GUIDE.md - Testing playbook
-  - SERVICE_ARCHITECTURE_PATTERN.md - Per-service layout
-  - FRONTEND_ARCHITECTURE.md - Frontend structure
-  - WHATS_INCLUDED.md - Feature inventory
-
-### Documentation Coverage
-
-**Total**: 19 comprehensive documentation files covering:
-- ✅ System architecture and design patterns
-- ✅ API reference with all endpoints
-- ✅ Database schema and relationships
-- ✅ Development guidelines and conventions
-- ✅ Testing strategies and examples
-- ✅ Deployment to production
-- ✅ Operations and monitoring
-- ✅ Contributing guidelines
-- ✅ Technical glossary
-- ✅ Per-service architecture pattern
-- ✅ Frontend architecture and conventions
-- ✅ Quick-start, testing, and feature inventory
-
----
-
-**Next Step**: Start with [QUICKSTART.md](QUICKSTART.md) to get up and running!
+Do not use documents named `*_COMPLETE.md`, `*COMPLETION*.md`, `FINAL_*REPORT.md`, or similar historical reports as evidence that the platform is production-ready. Verify the current repository state and GitHub Actions results instead.

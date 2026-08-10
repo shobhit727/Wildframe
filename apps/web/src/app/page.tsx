@@ -2,23 +2,65 @@
 
 import Link from 'next/link';
 
+const FEATURES = [
+  {
+    eyebrow: 'EVERY SCREEN',
+    title: 'Your library, wherever you are.',
+    description: 'Move from your laptop to your phone or TV without losing your place. Wildframe is designed around a continuous viewing experience.',
+    icon: '▣',
+  },
+  {
+    eyebrow: 'SMART DISCOVERY',
+    title: 'Find something worth watching.',
+    description: 'Browse trending titles, recommendations, genres, and your personal list through a media-first interface built for exploration.',
+    icon: '⌕',
+  },
+  {
+    eyebrow: 'YOUR LIST',
+    title: 'Keep the good stuff close.',
+    description: 'Save titles for later and return to them when you are ready. Your watchlist stays one click away.',
+    icon: '＋',
+  },
+];
+
+const FAQS = [
+  {
+    question: 'What is Wildframe?',
+    answer: 'Wildframe is a streaming platform project focused on discovery, playback, accounts, recommendations, and a modern media-library experience.',
+  },
+  {
+    question: 'Is Wildframe production-ready?',
+    answer: 'Not yet. The project is actively under development. Some CI, security, infrastructure, and product work remains before a production release should be considered.',
+  },
+  {
+    question: 'Where can I watch?',
+    answer: 'The current web application is the primary interface. Additional device and platform support can be added as the product develops.',
+  },
+  {
+    question: 'Can I save titles?',
+    answer: 'Yes. Authenticated users have a My List experience for keeping titles they want to revisit.',
+  },
+];
+
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-black">
-      {/* Nav */}
-      <nav className="fixed w-full top-0 z-50 bg-gradient-to-b from-black/80 to-transparent">
-        <div className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
-          <span className="text-3xl font-bold tracking-tight text-[#E50914] select-none">WILDFRAME</span>
-          <div className="flex items-center gap-4">
-            <Link
-              href="/login"
-              className="text-sm text-gray-300 hover:text-white transition-colors"
-            >
+    <main className="wf-page overflow-hidden">
+      {/* Public navigation stays intentionally minimal so the hero owns the first impression. */}
+      <nav className="fixed inset-x-0 top-0 z-50 bg-gradient-to-b from-black/90 via-black/50 to-transparent">
+        <div className="mx-auto flex h-20 max-w-[1800px] items-center justify-between px-5 sm:px-8 lg:px-12">
+          <Link
+            href="/"
+            className="text-2xl font-black tracking-[-0.05em] text-[#E50914] transition-transform duration-200 hover:scale-[1.03] sm:text-3xl"
+          >
+            WILDFRAME
+          </Link>
+          <div className="flex items-center gap-3 sm:gap-5">
+            <Link href="/login" className="text-sm font-medium text-gray-200 transition-colors hover:text-white">
               Sign In
             </Link>
             <Link
               href="/signup"
-              className="bg-[#E50914] hover:bg-[#F6121D] text-white text-sm px-4 py-1.5 rounded transition-colors font-medium"
+              className="rounded bg-[#E50914] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#f6121d]"
             >
               Get Started
             </Link>
@@ -26,149 +68,119 @@ export default function HomePage() {
         </div>
       </nav>
 
-      {/* Hero */}
-      <section className="relative h-[85vh] flex items-center justify-center overflow-hidden">
-        <div className="absolute inset-0">
-          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(229,9,20,0.15),transparent_60%)]" />
-        </div>
+      {/* Hero uses layered gradients instead of requiring a remote background asset. */}
+      <section className="relative flex min-h-[760px] items-end overflow-hidden sm:min-h-[860px]">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_75%_30%,rgba(229,9,20,0.24),transparent_30%),radial-gradient(circle_at_20%_30%,rgba(75,60,160,0.18),transparent_32%),linear-gradient(135deg,#111_0%,#090909_48%,#170608_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(115deg,rgba(0,0,0,.98)_0%,rgba(0,0,0,.76)_38%,rgba(0,0,0,.28)_72%,rgba(0,0,0,.78)_100%)]" />
+        <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-[#0b0b0b] to-transparent" />
 
-        <div className="relative max-w-3xl mx-auto px-4 text-center">
-          <h1 className="text-5xl sm:text-6xl font-bold text-white leading-tight mb-6">
-            Unlimited movies, TV shows &amp; more
-          </h1>
-          <p className="text-xl text-white mb-4">Watch anywhere. Cancel anytime.</p>
-          <p className="text-lg text-gray-300 max-w-2xl mx-auto mb-8">
-            Ready to watch? Enter your email to create or restart your membership.
-          </p>
-
-          <form className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full max-w-xl mx-auto">
-            <input
-              type="email"
-              placeholder="Email address"
-              aria-label="Email address"
-              className="flex-1 w-full bg-black/60 border border-gray-600 rounded px-4 py-3.5 text-sm text-white placeholder-gray-400 focus:outline-none focus:border-white/70"
-            />
-            <Link
-              href="/signup"
-              className="bg-[#E50914] hover:bg-[#F6121D] flex-shrink-0 w-full sm:w-auto text-white text-lg font-medium px-6 py-3 rounded transition-colors inline-flex items-center justify-center gap-2"
-            >
-              Get Started
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-              </svg>
-            </Link>
-          </form>
+        <div className="relative z-10 mx-auto w-full max-w-[1800px] px-5 pb-24 sm:px-8 sm:pb-32 lg:px-12">
+          <div className="max-w-3xl animate-rise-in">
+            <div className="mb-5 flex items-center gap-3 text-xs font-bold tracking-[0.25em] text-gray-300">
+              <span className="h-px w-8 bg-[#E50914]" />
+              STREAM SOMETHING GREAT
+            </div>
+            <h1 className="text-5xl font-black leading-[0.95] tracking-[-0.045em] text-white sm:text-7xl lg:text-[6.6rem]">
+              Stories that pull you in.
+            </h1>
+            <p className="mt-7 max-w-2xl text-base leading-7 text-gray-300 sm:text-lg sm:leading-8">
+              Explore movies and series through a dark, cinematic interface built around discovery, recommendations, and effortless playback.
+            </p>
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center gap-2 rounded bg-[#E50914] px-7 py-3.5 text-base font-bold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#f6121d] hover:shadow-[0_12px_40px_rgba(229,9,20,.28)]"
+              >
+                Start exploring
+                <span aria-hidden="true">→</span>
+              </Link>
+              <Link
+                href="/browse"
+                className="inline-flex items-center justify-center rounded bg-white/10 px-7 py-3.5 text-base font-semibold text-white backdrop-blur-sm transition-all duration-200 hover:bg-white/15"
+              >
+                Browse titles
+              </Link>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Feature Rows */}
-      {[
-        {
-          title: 'Enjoy on your TV',
-          desc: 'Watch on Smart TVs, Playstation, Xbox, Chromecast, Apple TV, Blu-ray players, and more.',
-          emoji: '📺',
-        },
-        {
-          title: 'Download your shows to watch offline',
-          desc: 'Save your favorites easily and always have something to watch.',
-          emoji: '⬇️',
-        },
-        {
-          title: 'Watch everywhere',
-          desc: 'Stream unlimited movies and TV shows on your phone, tablet, laptop, and TV.',
-          emoji: '📱',
-        },
-      ].map((f, i) => (
-        <section key={i} className={`py-16 px-4 border-t-8 border-[#222] bg-black`}>
-          <div className={`max-w-6xl mx-auto flex flex-col ${i % 2 === 1 ? 'md:flex-row-reverse' : 'md:flex-row'} items-center gap-12`}>
-            <div className="flex-1 text-center md:text-left">
-              <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">{f.title}</h2>
-              <p className="text-lg text-gray-400 leading-relaxed max-w-lg mx-auto md:mx-0">{f.desc}</p>
-            </div>
-            <div className="flex-1 flex justify-center">
-              <div className="w-72 h-44 bg-[#1a1a1a] rounded-xl border border-[#2f2f2f] flex items-center justify-center text-6xl">
-                {f.emoji}
-              </div>
-            </div>
+      {/* Feature cards create a consistent visual language for the rest of the public UI. */}
+      <section className="relative border-t border-white/10 px-5 py-20 sm:px-8 lg:px-12">
+        <div className="mx-auto max-w-[1500px]">
+          <div className="mb-10 max-w-2xl animate-fade-in">
+            <p className="text-xs font-bold tracking-[0.25em] text-[#E50914]">BUILT FOR WATCHING</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-5xl">A cleaner way to find your next watch.</h2>
           </div>
-        </section>
-      ))}
 
-      {/* FAQ */}
-      <section className="py-16 px-4 border-t-8 border-[#222] bg-black">
-        <div className="max-w-3xl mx-auto">
-          <h2 className="text-3xl sm:text-4xl font-bold text-white text-center mb-10">
-            Frequently Asked Questions
-          </h2>
+          <div className="grid gap-4 md:grid-cols-3">
+            {FEATURES.map((feature, index) => (
+              <article
+                key={feature.title}
+                className="wf-lift animate-rise-in group min-h-64 rounded-2xl border border-white/10 bg-white/[0.035] p-7 backdrop-blur-sm"
+                style={{ animationDelay: `${index * 90}ms` }}
+              >
+                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#E50914]/10 text-xl text-[#ff3b44] transition-transform duration-300 group-hover:scale-110">
+                  {feature.icon}
+                </div>
+                <p className="mt-8 text-[10px] font-bold tracking-[0.25em] text-gray-500">{feature.eyebrow}</p>
+                <h3 className="mt-2 text-2xl font-bold text-white">{feature.title}</h3>
+                <p className="mt-3 text-sm leading-6 text-gray-400">{feature.description}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ uses native details for reliable keyboard and screen-reader behavior. */}
+      <section className="border-t border-white/10 px-5 py-20 sm:px-8 lg:px-12">
+        <div className="mx-auto max-w-4xl">
+          <div className="mb-10 text-center">
+            <p className="text-xs font-bold tracking-[0.25em] text-[#E50914]">FAQ</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-5xl">Questions, answered.</h2>
+          </div>
           <div className="space-y-2">
-            {[
-              { q: 'What is Wildframe?', a: 'Wildframe is a streaming service that offers a wide variety of award-winning TV shows, movies, anime, documentaries, and more on thousands of internet-connected devices.' },
-              { q: 'How much does Wildframe cost?', a: 'Watch Wildframe on your smartphone, tablet, Smart TV, laptop, or streaming device, all for one fixed monthly fee. Plans range from Free to $22.99 a month.' },
-              { q: 'Where can I watch?', a: 'Watch anywhere, anytime. Sign in with your Wildframe account to watch instantly on the web, or on any internet-connected device.' },
-              { q: 'How do I cancel?', a: 'Wildframe is flexible. There are no pesky contracts and no commitments. You can easily cancel your account online in two clicks.' },
-            ].map((faq) => (
-              <details key={faq.q} className="bg-[#2d2d2d] group open:bg-[#333] transition-colors">
-                <summary className="px-6 py-5 text-xl text-white cursor-pointer list-none flex items-center justify-between hover:bg-[#414141] transition-colors">
-                  {faq.q}
-                  <svg className="w-5 h-5 text-white transition-transform group-open:rotate-45" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                  </svg>
+            {FAQS.map((faq) => (
+              <details key={faq.question} className="group overflow-hidden rounded-xl border border-white/10 bg-white/[0.035] transition-colors hover:bg-white/[0.055]">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-6 px-5 py-5 text-base font-semibold text-white sm:px-6 sm:text-lg">
+                  {faq.question}
+                  <span className="text-xl font-light text-gray-400 transition-transform duration-200 group-open:rotate-45" aria-hidden="true">+</span>
                 </summary>
-                <div className="px-6 pb-6 text-lg text-white border-t border-black/20 pt-4 leading-relaxed">
-                  {faq.a}
+                <div className="border-t border-white/10 px-5 pb-6 pt-4 text-sm leading-7 text-gray-400 sm:px-6">
+                  {faq.answer}
                 </div>
               </details>
             ))}
           </div>
-
-          <p className="text-lg text-gray-300 text-center my-8">
-            Ready to watch? Enter your email to create or restart your membership.
-          </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 max-w-xl mx-auto">
-            <input
-              type="email"
-              placeholder="Email address"
-              aria-label="Email address"
-              className="flex-1 w-full sm:w-auto bg-white/60 border border-white/40 px-4 py-3.5 text-sm text-black placeholder-gray-500 focus:outline-none"
-            />
-            <Link
-              href="/signup"
-              className="bg-[#E50914] hover:bg-[#F6121D] w-full sm:w-auto text-white text-lg font-medium px-4 py-3.5 transition-colors inline-flex items-center justify-center gap-2"
-            >
-              Get Started
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-              </svg>
-            </Link>
-          </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="py-12 px-4 border-t-8 border-[#222] bg-black">
-        <div className="max-w-6xl mx-auto">
-          <p className="text-base text-gray-400 mb-8">Questions? Contact us.</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-400">
-            {[
-              ['FAQ', 'Help Center', 'Account', 'Media Center'],
-              ['Investor Relations', 'Jobs', 'Ways to Watch', 'Terms of Use'],
-              ['Privacy', 'Cookie Preferences', 'Corporate Information', 'Only on Wildframe'],
-            ].map((col, i) => (
-              <ul key={i} className="space-y-3">
-                {col.map((link) => (
-                  <li key={link}>
-                    <Link href="#" className="hover:underline">{link}</Link>
-                  </li>
-                ))}
-              </ul>
-            ))}
-          </div>
-          <p className="text-xs text-gray-500 mt-10">
-            &copy; {new Date().getFullYear()} Wildframe. All rights reserved.
+      {/* Final call-to-action avoids the misleading membership claims in the old page. */}
+      <section className="border-t border-white/10 px-5 py-24 text-center sm:px-8">
+        <div className="mx-auto max-w-3xl animate-fade-in">
+          <p className="text-xs font-bold tracking-[0.25em] text-[#E50914]">WILDFRAME</p>
+          <h2 className="mt-4 text-4xl font-black tracking-tight text-white sm:text-6xl">Ready to explore?</h2>
+          <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-gray-400 sm:text-base">
+            Create an account and step into the current Wildframe experience. The platform is still being built, so expect changes as new features land.
           </p>
+          <Link
+            href="/signup"
+            className="mt-8 inline-flex rounded bg-[#E50914] px-7 py-3.5 text-sm font-bold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#f6121d]"
+          >
+            Create account
+          </Link>
+        </div>
+      </section>
+
+      <footer className="border-t border-white/10 px-5 py-10 sm:px-8 lg:px-12">
+        <div className="mx-auto flex max-w-[1500px] flex-col justify-between gap-5 text-xs text-gray-500 sm:flex-row sm:items-center">
+          <p>© {new Date().getFullYear()} Wildframe.</p>
+          <div className="flex gap-5">
+            <Link href="/login" className="transition-colors hover:text-gray-300">Sign in</Link>
+            <Link href="/signup" className="transition-colors hover:text-gray-300">Create account</Link>
+          </div>
         </div>
       </footer>
-    </div>
+    </main>
   );
 }

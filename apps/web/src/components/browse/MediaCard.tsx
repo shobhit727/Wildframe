@@ -15,49 +15,49 @@ export function MediaCard({ content, variant = 'poster', showProgress, showCapti
   const isPoster = variant === 'poster';
 
   return (
-    <Link href={`/watch/${content.id}`} className="group block">
+    <Link href={`/watch/${content.id}`} className="group block rounded-md focus-visible:ring-2 focus-visible:ring-[#e50914]">
       <div
-        className={`relative overflow-hidden bg-[#1f1f1f] transition-transform duration-300 group-hover:scale-[1.03] group-hover:z-20 ${
+        className={`wf-lift relative overflow-hidden rounded-md bg-[#1f1f1f] ${
           isPoster ? 'aspect-[2/3]' : 'aspect-video'
         }`}
       >
-        {/* Placeholder loading surface (no artwork) */}
-        <div className="absolute inset-0 shimmer flex items-center justify-center">
+        {/* Placeholder remains useful until real artwork delivery is connected. */}
+        <div className="absolute inset-0 flex items-center justify-center shimmer">
           <div className="flex flex-col items-center gap-2">
-            <svg className="w-5 h-5 text-gray-700" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="h-5 w-5 text-gray-700" fill="currentColor" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z" />
             </svg>
-            <span className="uppercase text-[9px] tracking-widest text-gray-700 font-semibold px-3">
+            <span className="px-3 text-[9px] font-semibold uppercase tracking-widest text-gray-700">
               {content.type === 'movie' ? 'Film' : 'Series'}
             </span>
           </div>
         </div>
 
-        {/* Hover overlay with title + play */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          <h3 className="text-sm font-semibold text-white mb-2 truncate">
+        {/* Hover overlay gives desktop users quick metadata without covering the artwork at rest. */}
+        <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/90 via-black/20 to-transparent p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-visible:opacity-100">
+          <h3 className="mb-2 truncate text-sm font-semibold text-white">
             {content.title}
           </h3>
           <div className="flex items-center gap-2">
-            <span className="text-[#46d369] text-xs font-semibold">
+            <span className="text-xs font-semibold text-[#46d369]">
               {Math.min(99, Math.max(75, content.rating * 10))}% Match
             </span>
             {content.rating > 0 && (
               <span className="text-[11px] text-gray-400">{content.rating.toFixed(1)}</span>
             )}
           </div>
-          <div className="flex items-center gap-2 mt-2">
+          <div className="mt-2 flex items-center gap-2">
             <span className="border border-white/60 px-1.5 py-0.5 text-[10px] uppercase text-gray-200">
               {content.type}
             </span>
           </div>
         </div>
 
-        {/* Watch Progress Bar */}
+        {/* Progress remains visible even when the card is not hovered. */}
         {showProgress !== undefined && showProgress > 0 && (
           <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-black/60">
             <div
-              className="h-full bg-[#E50914]"
+              className="h-full bg-[#E50914] transition-[width] duration-500"
               style={{ width: `${Math.min(showProgress, 100)}%` }}
             />
           </div>
@@ -66,7 +66,7 @@ export function MediaCard({ content, variant = 'poster', showProgress, showCapti
 
       {showCaption && (
         <div className="mt-2 space-y-0.5">
-          <h3 className="text-sm text-gray-200 group-hover:text-white transition-colors truncate">
+          <h3 className="truncate text-sm text-gray-200 transition-colors group-hover:text-white">
             {content.title}
           </h3>
           <p className="text-xs text-gray-500">
