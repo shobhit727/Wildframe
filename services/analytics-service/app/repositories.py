@@ -35,7 +35,7 @@ class EventRepository:
     async def get_by_user(self, user_id: UUID, limit: int = 100) -> list[Event]:
         stmt = select(Event).where(Event.user_id == user_id).limit(limit)
         result = await self.session.execute(stmt)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
 
 class ContentViewEventRepository:
@@ -75,7 +75,7 @@ class ContentViewEventRepository:
             .limit(limit)
         )
         result = await self.session.execute(stmt)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_by_viewer(self, viewer_id: UUID, limit: int = 100) -> list[ContentViewEvent]:
         stmt = (
@@ -85,7 +85,7 @@ class ContentViewEventRepository:
             .limit(limit)
         )
         result = await self.session.execute(stmt)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
 
 class CreatorAnalyticsSnapshotRepository:
@@ -142,7 +142,7 @@ class CreatorAnalyticsSnapshotRepository:
             .order_by(CreatorAnalyticsSnapshot.period_start)
         )
         result = await self.session.execute(stmt)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
 
 class ContentPerformanceMetricsRepository:

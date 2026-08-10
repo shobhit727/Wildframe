@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from jose import jwt
+from jose import JWTError, jwt
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,7 +33,7 @@ async def get_current_user_id(
     token = authorization.removeprefix("Bearer ")
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-    except jwt.JWTError:
+    except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
@@ -75,12 +75,12 @@ async def get_analytics_service(
 
 @router.post("/events", response_model=dict)
 async def log_event(
-    service: AnalyticsService = Depends(get_analytics_service),  # noqa: B008
-    current_user: Annotated[UUID, Depends(get_current_user_id)] = ...,
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
     user_id: UUID = Body(...),
     event_type: str = Body(...),
     event_data: dict | None = Body(None),  # noqa: B008
     content_id: UUID | None = Body(None),  # noqa: B008
+    service: AnalyticsService = Depends(get_analytics_service),  # noqa: B008
 ):
     """Log analytics event."""
     if user_id != current_user:
@@ -104,8 +104,7 @@ async def get_user_events(
 
 @router.post("/view-events", response_model=dict)
 async def record_view_event(
-    service: AnalyticsService = Depends(get_analytics_service),  # noqa: B008
-    current_user: Annotated[UUID, Depends(get_current_user_id)] = ...,
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
     content_id: UUID = Body(...),
     viewer_id: UUID = Body(...),
     watch_duration_seconds: int = Body(0),
@@ -114,12 +113,12 @@ async def record_view_event(
     playback_quality: str | None = Body(None),
     started_at: datetime | None = Body(None),  # noqa: B008
     completed_at: datetime | None = Body(None),  # noqa: B008
+    service: AnalyticsService = Depends(get_analytics_service),  # noqa: B008
 ):
     """Record a content view/playback event."""
     if viewer_id != current_user:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only record your own view events",
+            status_code=status.HTTP_403_FORBIDDEN, detail="You can only record your own views"
         )
     await service.record_view_event(
         content_id=content_id,
