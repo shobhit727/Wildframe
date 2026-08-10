@@ -15,9 +15,20 @@ from app.core.settings import settings
 logger = logging.getLogger(__name__)
 
 
-def _normalize_password(password: str) -> bytes:
-    """Bcrypt has a 72-byte limit; truncate deterministically."""
-    return password.encode("utf-8")[:72]
+PASSWORD_MAX_LENGTH: int = 128
+
+
+def _encode_password(password: str) -> bytes:
+    """Validate password length and encode for bcrypt.
+
+    Raises ValueError if password exceeds PASSWORD_MAX_LENGTH characters
+    instead of silently truncating.
+    """
+    if len(password) > PASSWORD_MAX_LENGTH:
+        raise ValueError(
+            f"password exceeds maximum length of {PASSWORD_MAX_LENGTH} characters"
+        )
+    return password.encode("utf-8")
 
 
 class PasswordManager:
@@ -28,14 +39,14 @@ class PasswordManager:
         """Hash a password using bcrypt."""
         rounds = rounds or settings.PASSWORD_BCRYPT_ROUNDS
         salt = bcrypt.gensalt(rounds=rounds)
-        return bcrypt.hashpw(_normalize_password(password), salt).decode("utf-8")
+        return bcrypt.hashpw(_encode_password(password), salt).decode("utf-8")
 
     @staticmethod
     def verify_password(password: str, password_hash: str) -> bool:
         """Verify a password against its hash."""
         try:
             return bcrypt.checkpw(
-                _normalize_password(password),
+                _encode_password(password),
                 password_hash.encode("utf-8"),
             )
         except (ValueError, TypeError):

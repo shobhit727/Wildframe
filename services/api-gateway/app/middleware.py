@@ -10,6 +10,54 @@ from fastapi import HTTPException, Request, status
 
 logger = logging.getLogger(__name__)
 
+# Header names whose values must never appear in logs. Matched
+# case-insensitively against any field attached to a LogRecord (covers both
+# the formatted message and `extra={...}` payloads).
+_REDACTED_HEADERS = frozenset({"authorization", "cookie", "set-cookie"})
+_REDACTED_VALUE = "[REDACTED]"
+_CONTROL_CHARS = (
+    "".join(chr(c) for c in range(32) if c not in (9,))  # keep tab, drop the rest
+    + "\x7f"
+)
+_CONTROL_TRANSLATION = str.maketrans({c: "?" for c in _CONTROL_CHARS})
+
+
+def _sanitize_message(message: str) -> str:
+    """Escape log-injection vectors (CR, LF, NUL, control bytes)."""
+    if not message:
+        return message
+    return message.replace("\r", "?").replace("\n", "?").translate(
+        _CONTROL_TRANSLATION
+    )
+
+
+class HeaderRedactionFilter(logging.Filter):
+    """Mask Authorization/Cookie/Set-Cookie values and sanitize messages."""
+
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
+        msg = record.getMessage()
+        if msg:
+            record.msg = _sanitize_message(msg)
+            record.args = ()
+        for attr in list(vars(record)):
+            if attr.startswith("_"):
+                continue
+            value = getattr(record, attr, None)
+            if isinstance(value, str) and attr.lower() in _REDACTED_HEADERS:
+                setattr(record, attr, _REDACTED_VALUE)
+        return True
+
+
+def install_header_redaction() -> None:
+    """Attach HeaderRedactionFilter to every existing handler on the root logger.
+
+    Idempotent — safe to call repeatedly (e.g. on app startup).
+    """
+    filt = HeaderRedactionFilter()
+    for handler in logging.getLogger().handlers:
+        if not any(isinstance(f, HeaderRedactionFilter) for f in handler.filters):
+            handler.addFilter(filt)
+
 
 class ServiceRegistry:
     """Registry of backend services."""
@@ -83,8 +131,10 @@ class AuthenticationMiddleware:
 
             payload = jwt.decode(token, self.jwt_secret, algorithms=["HS256"])
             return payload
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Token verification failed: {e}")
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Token verification failed", exc_info=True
+            )
             return None
 
     async def __call__(self, request: Request) -> dict | None:
@@ -149,7 +199,7 @@ class LoadBalancer:
                 if response.status_code == 200:
                     return url
             except Exception:  # noqa: BLE001
-                logger.warning(f"Health check failed for {service}")
+                logger.warning("Health check failed for %s", service)
 
         return None
 

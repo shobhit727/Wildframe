@@ -98,14 +98,14 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):
-        """Handle general exceptions."""
-        logger.error(f"Unhandled exception: {exc}")
+        """Handle general exceptions — never leak internals in production."""
+        logger.exception(f"Unhandled exception: {exc}")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=ErrorResponse(
                 status_code=500,
                 message="Internal server error",
-                detail=str(exc) if settings.DEBUG else None,
+                detail=str(exc) if settings.ENVIRONMENT != "production" else None,
             ).model_dump(),
         )
 
