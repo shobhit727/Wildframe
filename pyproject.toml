@@ -29,7 +29,7 @@ packages = [
 python = ">=3.11,<3.16"
 
 # FastAPI ecosystem
-fastapi = "^0.111.0"
+fastapi = ">=0.111,<0.142"
 uvicorn = {extras = ["standard"], version = ">=0.24,<0.53"}
 pydantic = "^2.4.0"
 pydantic-settings = "^2.0.0"
