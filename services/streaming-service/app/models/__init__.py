@@ -22,9 +22,11 @@ from sqlalchemy import (
     Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
-from sqlalchemy.orm import mapped_column, Mapped, declarative_base
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    """SQLAlchemy 2.0 declarative base (mypy-friendly vs declarative_base())."""
 
 
 class PlaybackSessionStatus(str, Enum):

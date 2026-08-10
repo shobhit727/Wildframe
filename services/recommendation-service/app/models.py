@@ -7,9 +7,11 @@ from uuid import uuid4
 
 from sqlalchemy import JSON, Column, DateTime, Float, Index, String
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import mapped_column, Mapped, declarative_base
+from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    """SQLAlchemy 2.0 declarative base (mypy-friendly vs declarative_base())."""
 
 
 class UserPreferences(Base):

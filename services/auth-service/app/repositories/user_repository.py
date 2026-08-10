@@ -7,8 +7,8 @@ import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from app.models.user import LoginAudit, RefreshToken, TokenBlacklist, User
-from app.security.manager import PasswordManager, TokenManager
+from app.models import LoginAudit, RefreshToken, TokenBlacklist, User
+from app.security import PasswordManager, TokenManager
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
