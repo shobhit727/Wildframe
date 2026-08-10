@@ -41,7 +41,7 @@ async def get_current_admin_id(
 # --- Authorization helpers -------------------------------------------------
 # Issue #618 / #622: lookup-then-authorize-then-404. Never return 403 for
 # resources the caller cannot see — return 404 so existence is not leaked.
-AUDIT_RESOURCE_VISIBILITY = frozenset({"system", "alert", "config"})
+AUDIT_RESOURCE_VISIBILITY = frozenset({"system", "alert", "config", "user", "content"})
 
 
 def _ensure_admin_can_view_target_admin(viewer_id: str, target_admin_id: str) -> None:

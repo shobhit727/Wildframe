@@ -157,20 +157,30 @@ class Content(Base):
     published_at = Column(DateTime, nullable=True)
 
     # Relationships
-    genres: Mapped[list["Genre"]] = relationship("Genre", secondary=content_genre_association, back_populates="content")
+    genres: Mapped[list["Genre"]] = relationship(
+        "Genre", secondary=content_genre_association, back_populates="content"
+    )
     cast_members: Mapped[list["CastMember"]] = relationship(
         "CastMember", secondary=content_cast_association, back_populates="content"
     )
-    seasons: Mapped[list["Season"]] = relationship("Season", back_populates="content", cascade="all, delete-orphan")
-    episodes: Mapped[list["Episode"]] = relationship("Episode", back_populates="content", cascade="all, delete-orphan")
-    ratings: Mapped[list["ContentRating"]] = relationship("ContentRating", back_populates="content", cascade="all, delete-orphan")
+    seasons: Mapped[list["Season"]] = relationship(
+        "Season", back_populates="content", cascade="all, delete-orphan"
+    )
+    episodes: Mapped[list["Episode"]] = relationship(
+        "Episode", back_populates="content", cascade="all, delete-orphan"
+    )
+    ratings: Mapped[list["ContentRating"]] = relationship(
+        "ContentRating", back_populates="content", cascade="all, delete-orphan"
+    )
     recommendations: Mapped[list["ContentRecommendation"]] = relationship(
         "ContentRecommendation",
         back_populates="content",
         cascade="all, delete-orphan",
         foreign_keys="ContentRecommendation.content_id",
     )
-    series: Mapped["ContentSeries"] = relationship("ContentSeries", back_populates="episodes", foreign_keys=[series_id])
+    series: Mapped["ContentSeries"] = relationship(
+        "ContentSeries", back_populates="episodes", foreign_keys=[series_id]
+    )
     creators: Mapped[list["ContentCreator"]] = relationship(
         "ContentCreator", back_populates="content", cascade="all, delete-orphan"
     )
@@ -206,7 +216,9 @@ class Season(Base):
 
     # Relationships
     content: Mapped["Content"] = relationship("Content", back_populates="seasons")
-    episodes: Mapped[list["Episode"]] = relationship("Episode", back_populates="season", cascade="all, delete-orphan")
+    episodes: Mapped[list["Episode"]] = relationship(
+        "Episode", back_populates="season", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("content_id", "season_number", name="_season_content_number_uc"),
@@ -268,7 +280,9 @@ class Genre(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
-    content: Mapped["Content"] = relationship("Content", secondary=content_genre_association, back_populates="genres")
+    content: Mapped["Content"] = relationship(
+        "Content", secondary=content_genre_association, back_populates="genres"
+    )
 
 
 class CastMember(Base):
@@ -301,7 +315,9 @@ class ContentRating(Base):
     content_id = Column(
         UUID(as_uuid=True), ForeignKey("content.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
 
     rating = Column(Float, nullable=False)  # 0-10
     review = Column(Text, nullable=True)
@@ -337,7 +353,9 @@ class ContentRecommendation(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
-    content: Mapped["Content"] = relationship("Content", back_populates="recommendations", foreign_keys=[content_id])
+    content: Mapped["Content"] = relationship(
+        "Content", back_populates="recommendations", foreign_keys=[content_id]
+    )
 
     __table_args__ = (
         UniqueConstraint("content_id", "recommended_content_id", name="_content_recommendation_uc"),
@@ -402,6 +420,8 @@ class ContentSeries(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
-    episodes: Mapped[list["Episode"]] = relationship("Content", back_populates="series", foreign_keys="Content.series_id")
+    episodes: Mapped[list["Episode"]] = relationship(
+        "Content", back_populates="series", foreign_keys="Content.series_id"
+    )
 
     __table_args__ = (Index("ix_content_series_status", "status"),)

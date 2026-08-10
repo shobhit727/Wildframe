@@ -1,4 +1,5 @@
 import uuid
+
 """Search service models."""
 
 from datetime import UTC, datetime
@@ -30,7 +31,9 @@ class SearchIndex(Base):
 
     __tablename__ = "search_indexes"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    content_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    content_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, unique=True, index=True
+    )
     title = Column(String(500), nullable=False)
     description = Column(Text)
     content_type = Column(String(50), nullable=False)

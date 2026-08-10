@@ -28,9 +28,7 @@ def _encode_password(password: str) -> bytes:
     instead of silently truncating.
     """
     if len(password) > PASSWORD_MAX_LENGTH:
-        raise ValueError(
-            f"password exceeds maximum length of {PASSWORD_MAX_LENGTH} characters"
-        )
+        raise ValueError(f"password exceeds maximum length of {PASSWORD_MAX_LENGTH} characters")
     return password.encode("utf-8")
 
 

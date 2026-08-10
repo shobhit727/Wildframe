@@ -1,4 +1,5 @@
 import uuid
+
 """Billing service domain models.
 
 Implements the Sustenance Engine architecture from PRODUCT_VISION.md:
@@ -66,9 +67,13 @@ class Subscription(Base):
     __tablename__ = "subscriptions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, unique=True, index=True
+    )
     tier = Column(SQLEnum(RevenueTier), default=RevenueTier.AVOD, nullable=False)
-    monthly_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
+    monthly_price: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    )
     started_at = Column(DateTime, default=lambda: datetime.utcnow())
     renewal_date = Column(DateTime, nullable=True)
     cancelled_at = Column(DateTime, nullable=True)
@@ -127,7 +132,9 @@ class Invoice(Base):
     subscription_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("subscriptions.id"), nullable=True, index=True
     )
-    purchase_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("purchases.id"), nullable=True, index=True)
+    purchase_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("purchases.id"), nullable=True, index=True
+    )
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     creator_share_amount = Column(
@@ -194,8 +201,12 @@ class CreatorPoolEntry(Base):
     cycle_start = Column(DateTime, nullable=False)
     cycle_end = Column(DateTime, nullable=False)
     net_revenue: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    pool_percentage: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), default=Decimal("0.1500"), comment="Default 15%")
-    pool_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, comment="= net_revenue * pool_percentage")
+    pool_percentage: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 4), default=Decimal("0.1500"), comment="Default 15%"
+    )
+    pool_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, comment="= net_revenue * pool_percentage"
+    )
     redistributed_amount = Column(Numeric(12, 2), default=Decimal("0.00"))
     created_at = Column(DateTime, default=lambda: datetime.utcnow())
 
@@ -276,7 +287,9 @@ class MilestoneTranche(Base):
         UUID(as_uuid=True), ForeignKey("milestones.id"), nullable=False, index=True
     )
     tranche_number = Column(Integer, nullable=False, comment="1-4, representing 10/20/30/40%")
-    percentage: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, comment="10.00, 20.00, 30.00, or 40.00")
+    percentage: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, comment="10.00, 20.00, 30.00, or 40.00"
+    )
     amount = Column(
         Numeric(12, 2), nullable=False, comment="= milestone.total_commitment * percentage"
     )

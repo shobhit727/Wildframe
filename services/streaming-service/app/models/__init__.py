@@ -59,9 +59,15 @@ class PlaybackSession(Base):
     __tablename__ = "playback_session"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    content_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    episode_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
+    content_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
+    episode_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
     device_id = Column(String(255), nullable=False, index=True)
 
     # Playback info

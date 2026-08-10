@@ -1,4 +1,5 @@
 import uuid
+
 """Analytics service models."""
 
 from datetime import UTC, datetime

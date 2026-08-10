@@ -1,4 +1,5 @@
 import uuid
+
 """Media pipeline service models.
 
 The pipeline is an event-driven state machine over ``pipeline_jobs``. Each job
@@ -59,7 +60,9 @@ class PipelineJob(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     content_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    upload_session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    upload_session_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
     current_stage = Column(String(100), nullable=True)
     status = Column(
         SQLEnum(PipelineJobStatus),

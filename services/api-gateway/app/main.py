@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 auth_middleware = None
 rate_limiter = None
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage FastAPI application lifespan."""

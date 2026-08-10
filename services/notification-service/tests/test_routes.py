@@ -27,6 +27,14 @@ def override_auth():
 def client(auth_user_id):
     app.dependency_overrides.clear()
     app.dependency_overrides[notif_user_di] = lambda: auth_user_id
+    # Default service stub: keeps route handlers off the real DB. Tests that
+    # want to assert on the service (e.g. TestSendNotification) replace this
+    # override with their own via `app.dependency_overrides[get_notif_service]`.
+    default_service = MagicMock()
+    default_service.send_notification = AsyncMock()
+    default_service.get_unread = AsyncMock(return_value=[])
+    default_service.mark_as_read = AsyncMock(return_value=True)
+    app.dependency_overrides[get_notif_service] = lambda: default_service
     # Not a context manager: lifespan raises without a healthy DB.
     yield TestClient(app, base_url="http://localhost")
     app.dependency_overrides.clear()

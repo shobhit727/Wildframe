@@ -23,10 +23,11 @@ request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 # python-json-logger (callers log headers via extra={...}).
 _REDACTED_HEADERS = frozenset({"authorization", "cookie", "set-cookie"})
 _REDACTED_VALUE = "[REDACTED]"
-_CONTROL_CHARS = "".join(
-    chr(c) for c in range(32) if c not in (9,)  # keep tab, drop the rest
-) + "\x7f"
+_CONTROL_CHARS = (
+    "".join(chr(c) for c in range(32) if c not in (9,)) + "\x7f"  # keep tab, drop the rest
+)
 _CONTROL_TRANSLATION = str.maketrans({c: "?" for c in _CONTROL_CHARS})
+
 
 def _redact_headers(log_record: dict[str, Any]) -> None:
     """Mask Authorization/Cookie/Set-Cookie values in-place on the log record."""
@@ -111,7 +112,6 @@ class CorrelationIdJsonFormatter(jsonlogger.JsonFormatter):
         if isinstance(log_record.get("message"), str):
             log_record["message"] = _sanitize_message(log_record["message"])
         _redact_headers(log_record)
-
 
 
 def setup_logging() -> None:

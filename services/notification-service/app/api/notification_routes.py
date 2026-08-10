@@ -88,9 +88,9 @@ async def get_unread_notifications(
                 "message": notification.message,
                 "channel": notification.channel,
                 "is_read": notification.is_read,
-                "created_at": notification.created_at.isoformat()
-                if notification.created_at
-                else None,
+                "created_at": (
+                    notification.created_at.isoformat() if notification.created_at else None
+                ),
             }
             for notification in notifications
         ],

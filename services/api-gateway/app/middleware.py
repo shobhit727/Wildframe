@@ -16,8 +16,7 @@ logger = logging.getLogger(__name__)
 _REDACTED_HEADERS = frozenset({"authorization", "cookie", "set-cookie"})
 _REDACTED_VALUE = "[REDACTED]"
 _CONTROL_CHARS = (
-    "".join(chr(c) for c in range(32) if c not in (9,))  # keep tab, drop the rest
-    + "\x7f"
+    "".join(chr(c) for c in range(32) if c not in (9,)) + "\x7f"  # keep tab, drop the rest
 )
 _CONTROL_TRANSLATION = str.maketrans({c: "?" for c in _CONTROL_CHARS})
 
@@ -26,9 +25,7 @@ def _sanitize_message(message: str) -> str:
     """Escape log-injection vectors (CR, LF, NUL, control bytes)."""
     if not message:
         return message
-    return message.replace("\r", "?").replace("\n", "?").translate(
-        _CONTROL_TRANSLATION
-    )
+    return message.replace("\r", "?").replace("\n", "?").translate(_CONTROL_TRANSLATION)
 
 
 class HeaderRedactionFilter(logging.Filter):
@@ -139,9 +136,7 @@ class AuthenticationMiddleware:
             )
             return payload
         except Exception:  # noqa: BLE001
-            logger.warning(
-                "Token verification failed", exc_info=True
-            )
+            logger.warning("Token verification failed", exc_info=True)
             return None
 
     async def __call__(self, request: Request) -> dict | None:

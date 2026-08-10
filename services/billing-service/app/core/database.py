@@ -4,7 +4,7 @@ Provides the DatabaseManager singleton and the get_db() async generator
 used as a FastAPI dependency for injecting AsyncSession instances.
 """
 
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (

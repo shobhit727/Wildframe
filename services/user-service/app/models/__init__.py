@@ -1,4 +1,5 @@
 import uuid
+
 """SQLAlchemy models for User Service."""
 
 from datetime import datetime
@@ -29,7 +30,9 @@ class UserProfile(Base):
     )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=False)  # Reference to auth service user
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )  # Reference to auth service user
 
     # Profile information
     avatar_url = Column(String(2048), nullable=True)  # Profile picture

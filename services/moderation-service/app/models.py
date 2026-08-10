@@ -1,4 +1,5 @@
 import uuid
+
 """Moderation service models.
 
 Three tables drive the content review workflow:

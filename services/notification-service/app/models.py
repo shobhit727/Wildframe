@@ -1,4 +1,5 @@
 import uuid
+
 """Notification service models."""
 
 from datetime import UTC, datetime

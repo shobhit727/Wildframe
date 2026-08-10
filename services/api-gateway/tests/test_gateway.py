@@ -22,10 +22,14 @@ def client():
 
     app.dependency_overrides.clear()
     with TestClient(app, base_url="http://localhost") as c:
-        # Lifespan just constructed the real RateLimiter (Redis); override it
-        # so proxy tests don't attempt a real Redis connection.
+        # Lifespan just constructed the real RateLimiter and app.state.redis_client
+        # against a real Redis; override both so tests never touch a live socket.
+        # /health pings app.state.redis_client, so stub its ping to always succeed.
         main.rate_limiter = MagicMock()
         main.rate_limiter.check_rate_limit = AsyncMock(return_value=True)
+        redis_stub = MagicMock()
+        redis_stub.ping = AsyncMock(return_value=True)
+        app.state.redis_client = redis_stub
         yield c
 
 

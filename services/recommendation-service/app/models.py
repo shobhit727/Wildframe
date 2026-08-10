@@ -1,4 +1,5 @@
 import uuid
+
 """Recommendation service models."""
 
 from datetime import UTC, datetime
@@ -16,7 +17,9 @@ class UserPreferences(Base):
 
     __tablename__ = "user_preferences"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, unique=True, index=True
+    )
     liked_genres = Column(JSON, default=[])
     disliked_genres = Column(JSON, default=[])
     preferred_languages = Column(JSON, default=["en"])
