@@ -146,7 +146,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: services/${{ matrix.service }}/.venv
-          key: venv-${{ runner.os }}-${{ matrix.service }}-${{ hashFiles(format('services/{0}/poetry.lock', matrix.service), format('services/{0}/pyproject.toml', matrix.service)) }}
+          key: venv-v2-${{ env.PYTHON_VERSION }}-${{ runner.os }}-${{ matrix.service }}-${{ hashFiles(format('services/{0}/poetry.lock', matrix.service), format('services/{0}/pyproject.toml', matrix.service)) }}
+          restore-keys: |
+            venv-${{ env.PYTHON_VERSION }}-${{ runner.os }}-${{ matrix.service }}-
 
       - name: Install service dependencies
         if: steps.poetry-cache.outputs.cache-hit != 'true'
