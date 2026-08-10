@@ -92,6 +92,8 @@ jobs:
   backend-test:
     name: Backend Test (${{ matrix.service }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -251,6 +253,8 @@ jobs:
   docker-build-frontend-smoke:
     name: Docker Build Smoke (frontend)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
