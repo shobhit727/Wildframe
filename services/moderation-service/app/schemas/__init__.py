@@ -8,36 +8,20 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.models import DecisionType, FlagReason, FlagStatus, StrikeReason
+
 # ---------------------------------------------------------------------------
-# Enums (mirror the SQLAlchemy enums for API wire format).
+# Enums: API wire format mirrors the SQLAlchemy enums in app.models. We
+# re-export them under the "...Enum" names the rest of this module uses so
+# the schema layer keeps a consistent naming convention without duplicating
+# any class (a duplicate between FlagReason and FlagReasonEnum was the source
+# of mypy [arg-type] mismatches at the service boundary).
 # ---------------------------------------------------------------------------
 
-
-class FlagReasonEnum(str, Enum):
-    SPAM = "spam"
-    INAPPROPRIATE = "inappropriate"
-    COPYRIGHT = "copyright"
-    OTHER = "other"
-
-
-class FlagStatusEnum(str, Enum):
-    PENDING = "pending"
-    REVIEWING = "reviewing"
-    RESOLVED = "resolved"
-    ESCALATED = "escalated"
-
-
-class DecisionTypeEnum(str, Enum):
-    APPROVE = "approve"
-    REJECT = "reject"
-    ESCALATE = "escalate"
-
-
-class StrikeReasonEnum(str, Enum):
-    CONTENT_VIOLATION = "content_violation"
-    COPYRIGHT = "copyright"
-    REPEATED_FLAGS = "repeated_flags"
-
+FlagReasonEnum = FlagReason
+FlagStatusEnum = FlagStatus
+DecisionTypeEnum = DecisionType
+StrikeReasonEnum = StrikeReason
 
 # ---------------------------------------------------------------------------
 # Request schemas.

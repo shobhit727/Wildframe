@@ -27,7 +27,6 @@ from uuid import uuid4
 
 from sqlalchemy import (
     Boolean,
-    Column,
     DateTime,
     ForeignKey,
     Index,
@@ -83,25 +82,25 @@ class ContentFlag(Base):
 
     __tablename__ = "content_flags"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     content_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    flag_reason = Column(SQLEnum(FlagReason), nullable=False)
+    flag_reason: Mapped[FlagReason] = mapped_column(SQLEnum(FlagReason), nullable=False)
     reported_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    status = Column(
+    status: Mapped[FlagStatus] = mapped_column(
         SQLEnum(FlagStatus),
         default=FlagStatus.PENDING,
         nullable=False,
         index=True,
     )
-    reviewed_by = Column(UUID(as_uuid=True), nullable=True)
-    reviewed_at = Column(DateTime(timezone=True), nullable=True)
-    resolution_notes = Column(Text, nullable=True)
-    created_at = Column(
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         nullable=False,
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
@@ -116,7 +115,7 @@ class ModerationDecision(Base):
 
     __tablename__ = "moderation_decisions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     flag_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("content_flags.id", ondelete="CASCADE"),
@@ -124,9 +123,9 @@ class ModerationDecision(Base):
         index=True,
     )
     moderator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    decision = Column(SQLEnum(DecisionType), nullable=False)
-    notes = Column(Text, nullable=True)
-    created_at = Column(
+    decision: Mapped[DecisionType] = mapped_column(SQLEnum(DecisionType), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         nullable=False,
@@ -140,17 +139,17 @@ class CreatorStrike(Base):
 
     __tablename__ = "creator_strikes"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    creator_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    strike_reason = Column(SQLEnum(StrikeReason), nullable=False)
-    related_flag_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    strike_reason: Mapped[StrikeReason] = mapped_column(SQLEnum(StrikeReason), nullable=False)
+    related_flag_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("content_flags.id", ondelete="SET NULL"),
         nullable=True,
     )
-    is_active = Column(Boolean, default=True, nullable=False, index=True)
-    expires_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         nullable=False,
