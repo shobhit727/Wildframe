@@ -38,6 +38,24 @@ async def get_current_admin_id(
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
+# --- Authorization helpers -------------------------------------------------
+# Issue #618 / #622: lookup-then-authorize-then-404. Never return 403 for
+# resources the caller cannot see — return 404 so existence is not leaked.
+AUDIT_RESOURCE_VISIBILITY = frozenset({"system", "alert", "config"})
+
+
+def _ensure_admin_can_view_target_admin(viewer_id: str, target_admin_id: str) -> None:
+    """Admins may only view their own audit log; everyone else 404s."""
+    if viewer_id != target_admin_id:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+def _ensure_admin_can_view_resource(resource_type: str, viewer_id: str) -> None:
+    """Non-super admins may only view audit resources visible to all admins."""
+    if resource_type not in AUDIT_RESOURCE_VISIBILITY:
+        raise HTTPException(status_code=404, detail="Not found")
+
+
 # User Moderation Endpoints
 @router.post("/users/moderate", response_model=UserModerationResponse)
 async def moderate_user(
@@ -58,11 +76,11 @@ async def get_user_moderation(
     admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Get user moderation history"""
+    """Get user moderation history. Returns 404 if no moderation record."""
     service = AdminService(db)
     result = await service.get_user_moderation_history(user_id)
     if not result:
-        raise HTTPException(status_code=404, detail="User moderation not found")
+        raise HTTPException(status_code=404, detail="Not found")
     return result
 
 
@@ -100,11 +118,11 @@ async def resolve_content_flag(
     admin_id: Annotated[str, Depends(get_current_admin_id)],
     status: Annotated[str, Query(pattern="^(active|removed)$")],
 ):
-    """Resolve flagged content"""
+    """Resolve flagged content. Returns 404 if the flag does not exist."""
     service = AdminService(db)
     result = await service.resolve_content_flag(content_id, status, admin_id, "0.0.0.0")
     if not result:
-        raise HTTPException(status_code=404, detail="Content not found")
+        raise HTTPException(status_code=404, detail="Not found")
     return result
 
 
@@ -161,11 +179,11 @@ async def acknowledge_alert(
     admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Acknowledge system alert"""
+    """Acknowledge system alert. Returns 404 if alert does not exist."""
     service = AdminService(db)
     result = await service.acknowledge_alert(alert_id, admin_id)
     if not result:
-        raise HTTPException(status_code=404, detail="Alert not found")
+        raise HTTPException(status_code=404, detail="Not found")
     return result
 
 
@@ -189,11 +207,11 @@ async def get_config(
     admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Get system configuration"""
+    """Get system configuration. Returns 404 if key is unknown."""
     service = AdminService(db)
     result = await service.get_config(key)
     if not result:
-        raise HTTPException(status_code=404, detail="Config not found")
+        raise HTTPException(status_code=404, detail="Not found")
     return result
 
 
@@ -216,7 +234,8 @@ async def get_audit_by_admin(
     db: Annotated[AsyncSession, Depends(get_db)],
     limit: Annotated[int, Query(le=100)] = 50,
 ):
-    """Get audit logs by admin"""
+    """Get audit logs by admin. Authz: admins see only their own; others 404."""
+    _ensure_admin_can_view_target_admin(viewer_id, admin_id)
     service = AdminService(db)
     return await service.get_audit_logs_by_admin(admin_id, limit)
 
@@ -231,7 +250,8 @@ async def get_audit_by_resource(
     db: Annotated[AsyncSession, Depends(get_db)],
     limit: Annotated[int, Query(le=100)] = 50,
 ):
-    """Get audit logs by resource"""
+    """Get audit logs by resource. Authz: restricted to visible resource types."""
+    _ensure_admin_can_view_resource(resource_type, admin_id)
     service = AdminService(db)
     return await service.get_audit_logs_by_resource(resource_type, resource_id, limit)
 

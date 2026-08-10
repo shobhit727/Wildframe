@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 auth_middleware = None
 rate_limiter = None
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage FastAPI application lifespan."""
@@ -29,9 +28,18 @@ async def lifespan(app: FastAPI):
 
     auth_middleware = AuthenticationMiddleware(settings.JWT_SECRET_KEY)
     redis_client = await redis.from_url(settings.REDIS_URL)
+    app.state.redis_client = redis_client
     rate_limiter = RateLimiter(redis_client)
 
     logger.info("API Gateway started successfully")
+
+    # Apply the header-redaction + log-injection filter to whatever logger
+    # handlers the observability SDK (or basicConfig) installed. Must run
+    # after wire_observability in create_app; idempotent so the lifespan
+    # invocation covers handlers added later by uvicorn.
+    from app.middleware import install_header_redaction
+
+    install_header_redaction()
 
     yield
 
@@ -62,8 +70,22 @@ def create_app() -> FastAPI:
     # Health check
     @app.get("/health")
     async def health() -> dict:
-        """Health check endpoint."""
-        return {"status": "healthy", "service": "api-gateway", "version": settings.SERVICE_VERSION}
+        """Health check endpoint. Verifies Redis connectivity."""
+        status = "healthy"
+        redis_ok = True
+        try:
+            await app.state.redis_client.ping()
+        except Exception as e:  # noqa: BLE001
+            redis_ok = False
+            status = "degraded"
+            logger.error("Redis health check failed: %s", e)
+        payload = {
+            "status": status,
+            "service": "api-gateway",
+            "version": settings.SERVICE_VERSION,
+            "checks": {"redis": "ok" if redis_ok else "down"},
+        }
+        return payload
 
     # Include gateway routes
     app.include_router(gateway_router)

@@ -18,9 +18,20 @@ from jose.exceptions import ExpiredSignatureError
 logger = logging.getLogger(__name__)
 
 
-def _normalize_password(password: str) -> bytes:
-    """Bcrypt has a 72-byte limit; truncate deterministically."""
-    return password.encode("utf-8")[:72]
+PASSWORD_MAX_LENGTH: int = 128
+
+
+def _encode_password(password: str) -> bytes:
+    """Validate password length and encode for bcrypt.
+
+    Raises ValueError if password exceeds PASSWORD_MAX_LENGTH characters
+    instead of silently truncating.
+    """
+    if len(password) > PASSWORD_MAX_LENGTH:
+        raise ValueError(
+            f"password exceeds maximum length of {PASSWORD_MAX_LENGTH} characters"
+        )
+    return password.encode("utf-8")
 
 
 def role_for_email(email: str | None) -> str:
@@ -45,7 +56,7 @@ class PasswordManager:
             str: Hashed password
         """
         salt = bcrypt.gensalt(rounds=settings.PASSWORD_BCRYPT_ROUNDS)
-        return bcrypt.hashpw(_normalize_password(password), salt).decode("utf-8")
+        return bcrypt.hashpw(_encode_password(password), salt).decode("utf-8")
 
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -60,7 +71,7 @@ class PasswordManager:
         """
         try:
             return bcrypt.checkpw(
-                _normalize_password(plain_password),
+                _encode_password(plain_password),
                 hashed_password.encode("utf-8"),
             )
         except (ValueError, TypeError):
