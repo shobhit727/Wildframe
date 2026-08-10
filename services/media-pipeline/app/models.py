@@ -1,3 +1,4 @@
+import uuid
 """Media pipeline service models.
 
 The pipeline is an event-driven state machine over ``pipeline_jobs``. Each job
@@ -21,6 +22,7 @@ from enum import Enum
 from uuid import uuid4
 
 from sqlalchemy import (
+    mapped_column,
     Column,
     DateTime,
     ForeignKey,
@@ -33,7 +35,7 @@ from sqlalchemy import (
     Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import Mapped, declarative_base
 
 Base = declarative_base()
 
@@ -57,8 +59,8 @@ class PipelineJob(Base):
     __tablename__ = "pipeline_jobs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    content_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    upload_session_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    content_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    upload_session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     current_stage = Column(String(100), nullable=True)
     status = Column(
         SQLEnum(PipelineJobStatus),

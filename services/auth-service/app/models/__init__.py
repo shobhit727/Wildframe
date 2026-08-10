@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    mapped_column,
     Boolean,
     Column,
     DateTime,
@@ -17,7 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import Mapped, declarative_base
 
 Base = declarative_base()
 
@@ -119,7 +120,7 @@ class RefreshToken(Base, BaseModel):
 
     __tablename__ = "refresh_tokens"
 
-    user_id = Column(
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=False,
         index=True,

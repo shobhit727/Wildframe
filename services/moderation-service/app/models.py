@@ -1,3 +1,4 @@
+import uuid
 """Moderation service models.
 
 Three tables drive the content review workflow:
@@ -24,6 +25,7 @@ from enum import Enum
 from uuid import uuid4
 
 from sqlalchemy import (
+    mapped_column,
     Boolean,
     Column,
     DateTime,
@@ -35,7 +37,7 @@ from sqlalchemy import (
     Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import Mapped, declarative_base
 
 Base = declarative_base()
 
@@ -80,9 +82,9 @@ class ContentFlag(Base):
     __tablename__ = "content_flags"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    content_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    content_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     flag_reason = Column(SQLEnum(FlagReason), nullable=False)
-    reported_by = Column(UUID(as_uuid=True), nullable=False, index=True)
+    reported_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     status = Column(
         SQLEnum(FlagStatus),
         default=FlagStatus.PENDING,
@@ -113,13 +115,13 @@ class ModerationDecision(Base):
     __tablename__ = "moderation_decisions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    flag_id = Column(
+    flag_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("content_flags.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    moderator_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    moderator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     decision = Column(SQLEnum(DecisionType), nullable=False)
     notes = Column(Text, nullable=True)
     created_at = Column(

@@ -4,8 +4,11 @@ Provides the DatabaseManager singleton and the get_db() async generator
 used as a FastAPI dependency for injecting AsyncSession instances.
 """
 
+from collections.abc import AsyncGenerator, AsyncIterator
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -17,8 +20,8 @@ from app.core.settings import settings
 class DatabaseManager:
     """Manages database connections and session lifecycle."""
 
-    engine = None
-    session_factory = None
+    engine: AsyncEngine | None = None
+    session_factory: async_sessionmaker[AsyncSession] | None = None
 
     @classmethod
     async def init(cls) -> None:
@@ -40,8 +43,9 @@ class DatabaseManager:
     async def health_check(cls) -> bool:
         """Check database connectivity by executing SELECT 1."""
         try:
-            if not cls.engine:
+            if cls.engine is None:
                 await cls.init()
+            assert cls.engine is not None
             async with cls.engine.begin() as conn:
                 await conn.execute(text("SELECT 1"))
             return True
@@ -49,18 +53,20 @@ class DatabaseManager:
             return False
 
     @classmethod
-    async def get_session(cls):
+    async def get_session(cls) -> AsyncGenerator[AsyncSession, None]:
         """Yield an AsyncSession (for use outside of FastAPI DI)."""
-        if not cls.session_factory:
+        if cls.session_factory is None:
             await cls.init()
+        assert cls.session_factory is not None
         async with cls.session_factory() as session:
             yield session
 
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency that yields an AsyncSession per request."""
-    if not DatabaseManager.session_factory:
+    if DatabaseManager.session_factory is None:
         await DatabaseManager.init()
+    assert DatabaseManager.session_factory is not None
     async with DatabaseManager.session_factory() as session:
         try:
             yield session

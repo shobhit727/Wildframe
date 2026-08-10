@@ -1,7 +1,14 @@
 """Database connection management."""
 
+from collections.abc import AsyncGenerator
+
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.core.settings import settings
 
@@ -9,8 +16,8 @@ from app.core.settings import settings
 class DatabaseManager:
     """Manages database connections."""
 
-    engine = None
-    session_factory = None
+    engine: AsyncEngine | None = None
+    session_factory: async_sessionmaker[AsyncSession] | None = None
 
     @classmethod
     async def init(cls) -> None:
@@ -30,8 +37,9 @@ class DatabaseManager:
     async def health_check(cls) -> bool:
         """Check database health."""
         try:
-            if not cls.engine:
+            if cls.engine is None:
                 await cls.init()
+            assert cls.engine is not None
             async with cls.engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
             return True
@@ -39,9 +47,10 @@ class DatabaseManager:
             return False
 
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Get database session."""
-    if not DatabaseManager.session_factory:
+    if DatabaseManager.session_factory is None:
         await DatabaseManager.init()
+    assert DatabaseManager.session_factory is not None
     async with DatabaseManager.session_factory() as session:
         yield session
