@@ -7,13 +7,15 @@ import base64
 import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from uuid import UUID
-
 import bcrypt
 from app.core.settings import settings
 from jose import JWTError, jwt
 from jose.exceptions import ExpiredSignatureError
+
+if TYPE_CHECKING:
+    from app.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +191,8 @@ class TokenManager:
         """Verify an mfa_challenge token and return the user UUID or None."""
         try:
             payload = TokenManager.verify_token(token, token_type="mfa_challenge")
+            if payload is None:
+                return None
             user_id = payload.get("user_id") or payload.get("sub")
             if user_id:
                 return UUID(user_id)
@@ -259,16 +263,16 @@ class TokenManager:
         return None
 
     # Convenience wrappers for service layer compatibility
-    def create_access_token_for_user(self, user) -> str:
+    def create_access_token_for_user(self, user: User) -> str:
         """Create access token from a user object (service-friendly)."""
-        return TokenManager.create_access_token(str(user.id), getattr(user, "email", ""))
+        return TokenManager.create_access_token(user.id, user.email)
 
-    def create_refresh_token_for_user(self, user) -> tuple[str, str, datetime]:
+    def create_refresh_token_for_user(self, user: User) -> tuple[str, str, datetime]:
         """Create refresh token and return token, hash, and expires_at."""
         now = datetime.now(UTC)
         expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRATION_DAYS)
         # Use existing static method to build token
-        token = TokenManager.create_refresh_token(str(user.id))
+        token = TokenManager.create_refresh_token(user.id)
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         return token, token_hash, expires_at
 
@@ -276,6 +280,8 @@ class TokenManager:
         """Verify refresh token and return user UUID or None."""
         try:
             payload = TokenManager.verify_token(token, token_type="refresh")
+            if payload is None:
+                return None
             user_id = payload.get("user_id") or payload.get("sub")
             if user_id:
                 return UUID(user_id)
@@ -283,7 +289,8 @@ class TokenManager:
             return None
         return None
 
-    def hash_refresh_token(self, token: str) -> str:
+    @staticmethod
+    def hash_refresh_token(token: str) -> str:
         """Return sha256 hash of given refresh token for storage."""
         return hashlib.sha256(token.encode()).hexdigest()
 
@@ -302,12 +309,12 @@ class SecretCipher:
 
     @classmethod
     def encrypt(cls, plaintext: str) -> str:
-        return cls._fernet().encrypt(plaintext.encode()).decode()
+        return str(cls._fernet().encrypt(plaintext.encode()).decode())
 
     @classmethod
     def decrypt(cls, token: str) -> str:
         try:
-            return cls._fernet().decrypt(token.encode()).decode()
+            return str(cls._fernet().decrypt(token.encode()).decode())
         except Exception:  # noqa: BLE001
             return ""
 

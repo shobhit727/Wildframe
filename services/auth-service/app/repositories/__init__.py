@@ -76,20 +76,29 @@ class UserRepository(BaseRepository):
             raise
 
     async def increment_login_attempts(self, user_id: UUID) -> User:
-        """Increment failed login attempts."""
+        """Increment failed login attempts.
+
+        Raises: ValueError: if the user no longer exists (caller already
+            validated the id; absence indicates a race deletion).
+        """
         user = await self.get_by_id(user_id)
-        if user:
-            user.login_attempts += 1
-            await self.flush()
+        if user is None:
+            raise ValueError(f"user {user_id} not found")
+        user.login_attempts += 1
+        await self.flush()
         return user
 
     async def reset_login_attempts(self, user_id: UUID) -> User:
-        """Reset login attempts after successful login."""
+        """Reset login attempts after successful login.
+
+        Raises: ValueError: if the user no longer exists (race deletion).
+        """
         user = await self.get_by_id(user_id)
-        if user:
-            user.login_attempts = 0
-            user.locked_until = None
-            await self.flush()
+        if user is None:
+            raise ValueError(f"user {user_id} not found")
+        user.login_attempts = 0
+        user.locked_until = None
+        await self.flush()
         return user
 
 

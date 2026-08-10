@@ -4,7 +4,7 @@ All endpoints implement proper error handling, logging, and validation.
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -136,8 +136,9 @@ async def register(
         user_id = user.id
         email = user.email
         access_token = TokenManager.create_access_token(user_id, email)
-        token_manager = TokenManager()
-        refresh_token, refresh_hash, expires_at = token_manager.create_refresh_token_for_user(user)
+        refresh_token = TokenManager.create_refresh_token(user_id)
+        refresh_hash = TokenManager.hash_refresh_token(refresh_token)
+        expires_at = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRATION_DAYS)
         token_repo = RefreshTokenRepository(db)
         await token_repo.create(user_id=user_id, token_hash=refresh_hash, expires_at=expires_at)
         await db.commit()
@@ -191,7 +192,7 @@ async def login(
     """
     try:
         # Extract client info
-        ip_address = http_request.client.host if http_request.client else None
+        ip_address = http_request.client.host if http_request.client else "unknown"
 
         token_response = await auth_service.login(request, ip_address=ip_address)
 
@@ -229,7 +230,7 @@ async def mfa_login_verify(
 ) -> dict:
     """Complete an MFA-gated login: exchange a challenge token + TOTP code
     for real access/refresh tokens."""
-    ip_address = http_request.client.host if http_request.client else None
+    ip_address = http_request.client.host if http_request.client else "unknown"
     try:
         token_response = await auth_service.complete_mfa_login(
             request.mfa_challenge, request.code, ip_address=ip_address

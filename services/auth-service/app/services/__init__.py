@@ -127,12 +127,12 @@ class AuthService:
 
             # Increment failed attempts
             user = await self.user_repo.increment_login_attempts(user.id)
-
+            assert user is not None  # known to exist (fetched at start of login)
             # Lock user if too many attempts
             if user.login_attempts >= self.max_login_attempts:
                 locked_until = datetime.now(UTC) + timedelta(minutes=self.lockout_minutes)
                 user = await self.user_repo.update(user.id, locked_until=locked_until)
-
+                assert user is not None
             await self.user_repo.commit()
 
             await self.audit_repo.create(
@@ -150,6 +150,7 @@ class AuthService:
         # Reset login attempts on successful login
         await self.user_repo.reset_login_attempts(user.id)
         user = await self.user_repo.update(user.id, last_login_at=datetime.now(UTC))
+        assert user is not None  # known to exist (fetched earlier this call)
         await self.user_repo.commit()
 
         # Create audit record
@@ -161,18 +162,15 @@ class AuthService:
         await self.audit_repo.commit()
 
         # MFA gate: password verified, but the user must prove TOTP possession
-        # before any tokens are issued.
-        if getattr(user, "mfa_enabled", False):
+        if user.mfa_enabled:
             challenge = self.token_manager.create_mfa_challenge_token(
-                user.id, getattr(user, "email", "")
+                user.id, user.email
             )
             logger.info(f"Login awaiting MFA challenge for user: {user.email}")
             raise MfaChallengeRequired(challenge)
 
         # Generate tokens
-        access_token = self.token_manager.create_access_token(
-            str(user.id), getattr(user, "email", "")
-        )
+        access_token = self.token_manager.create_access_token(user.id, user.email)
         (
             refresh_token_str,
             refresh_token_hash,
@@ -234,9 +232,7 @@ class AuthService:
             )
 
         # MFA passed — issue tokens (mirrors the tail of login()).
-        access_token = self.token_manager.create_access_token(
-            str(user.id), getattr(user, "email", "")
-        )
+        access_token = self.token_manager.create_access_token(user.id, user.email)
         (
             refresh_token_str,
             refresh_token_hash,
@@ -293,9 +289,7 @@ class AuthService:
         await self.token_repo.commit()
 
         # Create new tokens
-        access_token = self.token_manager.create_access_token(
-            str(user.id), getattr(user, "email", "")
-        )
+        access_token = self.token_manager.create_access_token(user.id, user.email)
         (
             new_refresh_token,
             new_token_hash,
@@ -422,7 +416,7 @@ class AuthService:
                 detail="Invalid verification code",
             )
 
-        if datetime.now(UTC) > expires_at:
+        if expires_at is None or datetime.now(UTC) > expires_at:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Verification code expired",

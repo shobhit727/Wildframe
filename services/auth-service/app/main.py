@@ -4,9 +4,10 @@ Entry point with lifespan management, middleware, and route configuration.
 """
 
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import Any
 
 from app.core.database import DatabaseManager
 from app.core.logging import set_correlation_id, set_request_id, setup_logging
@@ -129,10 +130,11 @@ def create_app() -> FastAPI:
         response.headers["X-Correlation-ID"] = correlation_id
         response.headers["X-Request-ID"] = request_id
         return response
-
-    def _serializable_errors(errors: list[dict]) -> list[dict]:
+    def _serializable_errors(
+        errors: Sequence[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         """Sanitize Pydantic error ctx so JSON responses never carry non-serializable objects."""
-        cleaned: list[dict] = []
+        cleaned: list[dict[str, Any]] = []
         for error in errors:
             error = dict(error)
             ctx = error.get("ctx")

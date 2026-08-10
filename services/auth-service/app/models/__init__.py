@@ -4,11 +4,11 @@ Implements User and RefreshToken entities with audit columns.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Sequence
 
 from sqlalchemy import (
     Boolean,
-    Column,
     DateTime,
     Index,
     Integer,
@@ -25,26 +25,33 @@ class Base(DeclarativeBase):
 
 
 class BaseModel:
-    """Base model with common audit columns."""
+    """Base model with common audit columns.
 
-    id = Column(
+    Provides id + audit timestamps shared across auth-service entities.
+    """
+
+    id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         nullable=False,
     )
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         nullable=False,
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
-    is_active = Column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
 
 
 class User(Base, BaseModel):
@@ -58,10 +65,12 @@ class User(Base, BaseModel):
         last_name: User's last name
         email_verified: Whether email is verified
         email_verified_at: Timestamp of email verification
-        last_login_at: Last login timestamp
+        last_login_at: Last successful login timestamp
         last_login_ip: Last login IP address
         login_attempts: Failed login attempts counter
+        last_login_attempt_at: Timestamp of the last failed login attempt
         locked_until: Account lock expiration
+        is_locked: Property — True when the account is currently locked
         is_active: Soft delete flag
         created_at: Record creation timestamp
         updated_at: Record update timestamp
@@ -69,32 +78,63 @@ class User(Base, BaseModel):
 
     __tablename__ = "users"
 
-    email = Column(
+    email: Mapped[str] = mapped_column(
         String(255),
         unique=True,
         nullable=False,
         index=True,
     )
-    password_hash = Column(String(255), nullable=False)
-    first_name = Column(String(100), nullable=True)
-    last_name = Column(String(100), nullable=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    first_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Email verification
-    email_verified = Column(Boolean, default=False, nullable=False)
-    email_verified_at = Column(DateTime(timezone=True), nullable=True)
-    email_verification_code = Column(String(6), nullable=True)
-    email_verification_code_expires_at = Column(DateTime(timezone=True), nullable=True)
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    email_verification_code: Mapped[str | None] = mapped_column(
+        String(6),
+        nullable=True,
+    )
+    email_verification_code_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     # Login tracking
-    last_login_at = Column(DateTime(timezone=True), nullable=True)
-    last_login_ip = Column(String(45), nullable=True)  # Supports IPv6
-    login_attempts = Column(Integer, default=0, nullable=False)
-    locked_until = Column(DateTime(timezone=True), nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_login_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    login_attempts: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    last_login_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     # MFA
-    mfa_enabled = Column(Boolean, default=False, nullable=False)
-    mfa_secret = Column(String(255), nullable=True)
-    backup_codes = Column(Text, nullable=True)  # JSON array of backup codes
+    mfa_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+    mfa_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    backup_codes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Indexes for common queries
     __table_args__ = (
@@ -102,6 +142,34 @@ class User(Base, BaseModel):
         Index("idx_users_created_at", "created_at"),
         UniqueConstraint("email", "is_active", name="uq_users_email_active"),
     )
+
+    @property
+    def is_locked(self) -> bool:
+        """Whether the account is currently locked.
+
+        An account is locked when ``locked_until`` is in the future.
+        Comparisons use naive UTC (the column is ``TIMESTAMP WITHOUT TIME
+        ZONE``); drop tzinfo before comparing to mirror the column storage
+        convention used across the platform.
+        """
+        if self.locked_until is None:
+            return False
+        now = datetime.now(UTC).replace(tzinfo=None)
+        locked_until = self.locked_until
+        if locked_until.tzinfo is not None:
+            locked_until = locked_until.replace(tzinfo=None)
+        return locked_until > now
+
+    @is_locked.setter
+    def is_locked(self, value: bool) -> None:
+        """Setter for ``is_locked`` — compatibility for callers that toggle
+        the property. Setting ``True`` without a duration locks for the
+        default 1h; ``False`` clears the lock immediately.
+        """
+        if value:
+            self.locked_until = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1)
+        else:
+            self.locked_until = None
 
 
 class RefreshToken(Base, BaseModel):
@@ -121,17 +189,29 @@ class RefreshToken(Base, BaseModel):
 
     __tablename__ = "refresh_tokens"
 
-    user_id: Mapped[uuid.UUID | None] = mapped_column(
+    user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         nullable=False,
         index=True,
     )
-    token_hash = Column(String(255), unique=True, nullable=False, index=True)
-    device_id = Column(String(255), nullable=True, index=True)
-    ip_address = Column(String(45), nullable=True)
-    user_agent = Column(Text, nullable=True)
-    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
-    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    token_hash: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    device_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     __table_args__ = (
         Index("idx_refresh_tokens_user_expires", "user_id", "expires_at"),
@@ -152,12 +232,27 @@ class TokenBlacklist(Base, BaseModel):
 
     __tablename__ = "token_blacklist"
 
-    token_hash = Column(String(255), unique=True, nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    revoked_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
-    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    revoked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
 
-    __table_args__ = (Index("idx_token_blacklist_user_expires", "user_id", "expires_at"),)
+    __table_args__ = (
+        Index("idx_token_blacklist_user_expires", "user_id", "expires_at"),
+    )
 
 
 class LoginAudit(Base, BaseModel):
@@ -175,14 +270,28 @@ class LoginAudit(Base, BaseModel):
 
     __tablename__ = "login_audit"
 
-    user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
-    email = Column(String(255), nullable=True, index=True)
-    status = Column(String(50), nullable=False, index=True)
-    ip_address = Column(String(45), nullable=True)
-    user_agent = Column(Text, nullable=True)
-    failure_reason = Column(String(255), nullable=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        index=True,
+    )
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     __table_args__ = (
         Index("idx_login_audit_user_created", "user_id", "created_at"),
         Index("idx_login_audit_email_created", "email", "created_at"),
     )
+
+
+__all__: Sequence[str] = (
+    "Base",
+    "BaseModel",
+    "User",
+    "RefreshToken",
+    "TokenBlacklist",
+    "LoginAudit",
+)

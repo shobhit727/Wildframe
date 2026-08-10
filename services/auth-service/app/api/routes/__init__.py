@@ -99,7 +99,7 @@ async def get_current_user_id(
                 detail="Invalid token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        return user_id
+        return str(user_id)
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
