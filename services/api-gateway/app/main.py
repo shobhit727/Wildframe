@@ -1,17 +1,17 @@
 """Main FastAPI application for Api Gateway Service."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from wildframe_observability.wire import wire_observability
 
 from app.api.gateway_routes import router as gateway_router
 from app.core.settings import settings
 from app.middleware import AuthenticationMiddleware, RateLimiter
-
 logger = logging.getLogger(__name__)
 
 # Global middleware instances
@@ -68,24 +68,53 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Health check
+    # Liveness probe — process/event loop is alive and serving HTTP. Does NOT
+    # verify downstream dependencies; use /ready for that. Keeping liveness
+    # independent of Redis prevents Kubernetes from restarting a gateway that
+    # can still route while a dependency is briefly unavailable. Response
+    # body carries no connection strings or credentials.
     @app.get("/health")
     async def health() -> dict:
-        """Health check endpoint. Verifies Redis connectivity."""
-        status = "healthy"
-        redis_ok = True
-        try:
-            await app.state.redis_client.ping()
-        except Exception as e:  # noqa: BLE001
-            redis_ok = False
-            status = "degraded"
-            logger.error("Redis health check failed: %s", e)
-        payload = {
-            "status": status,
+        return {
+            "status": "healthy",
             "service": "api-gateway",
             "version": settings.SERVICE_VERSION,
-            "checks": {"redis": "ok" if redis_ok else "down"},
         }
+
+    # Readiness probe — required dependencies are reachable and initialized.
+    # Verifies Redis with a bounded timeout so a hung dependency cannot stall
+    # the readiness signal. Returns HTTP 503 when any dependency is down so
+    # load balancers stop routing traffic. No connection strings or creds.
+    @app.get("/ready")
+    async def ready() -> dict:
+        checks: dict[str, str] = {}
+        overall = "ready"
+        redis = app.state.redis_client
+        if redis is None:
+            checks["redis"] = "down"
+            overall = "not_ready"
+        else:
+            try:
+                await asyncio.wait_for(redis.ping(), timeout=2.0)
+                checks["redis"] = "ok"
+            except asyncio.TimeoutError:
+                checks["redis"] = "timeout"
+                overall = "not_ready"
+            except Exception as e:  # noqa: BLE001
+                checks["redis"] = "down"
+                overall = "not_ready"
+                logger.error("Redis readiness check failed: %s", e)
+        payload = {
+            "status": overall,
+            "service": "api-gateway",
+            "version": settings.SERVICE_VERSION,
+            "checks": checks,
+        }
+        if overall != "ready":
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=payload,
+            )
         return payload
 
     # Include gateway routes

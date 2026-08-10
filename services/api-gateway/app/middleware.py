@@ -107,6 +107,9 @@ class AuthenticationMiddleware:
             "/auth/register",
             "/auth/login",
             "/health",
+            "/ready",
+            "/gateway/health",
+            "/gateway/ready",
             "/docs",
             "/openapi.json",
         }

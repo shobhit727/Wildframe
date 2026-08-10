@@ -117,6 +117,53 @@ class TestGatewayEndpoints:
         assert response.status_code == 200
         assert response.json()["service"] == "api-gateway"
 
+    def test_ready_succeeds_when_redis_healthy(self, client):
+        response = client.get("/ready")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "ready"
+        assert body["checks"]["redis"] == "ok"
+        # No credentials or connection strings in the body.
+        assert "REDIS" not in response.text
+
+    def test_ready_fails_when_redis_down(self):
+        import app.main as main
+        from app.main import app
+        from fastapi.testclient import TestClient
+
+        app.dependency_overrides.clear()
+        broken = MagicMock()
+        broken.ping = AsyncMock(side_effect=ConnectionError("refused"))
+        with TestClient(app, base_url="http://localhost") as c:
+            main.rate_limiter = MagicMock()
+            main.rate_limiter.check_rate_limit = AsyncMock(return_value=True)
+            app.state.redis_client = broken
+            response = c.get("/ready")
+        assert response.status_code == 503
+        body = response.json()["detail"]
+        assert body["status"] == "not_ready"
+        assert body["checks"]["redis"] == "down"
+
+    def test_liveness_independent_of_redis(self):
+        import app.main as main
+        from app.main import app
+        from fastapi.testclient import TestClient
+
+        app.dependency_overrides.clear()
+        with TestClient(app, base_url="http://localhost") as c:
+            main.rate_limiter = MagicMock()
+            main.rate_limiter.check_rate_limit = AsyncMock(return_value=True)
+            app.state.redis_client = None  # unreachable dependency
+            response = c.get("/health")
+        assert response.status_code == 200
+        assert response.json()["status"] == "healthy"
+        assert "checks" not in response.json()
+
+    def test_gateway_ready_succeeds_when_redis_healthy(self, client):
+        response = client.get("/gateway/ready")
+        assert response.status_code == 200
+        assert response.json()["checks"]["redis"] == "ok"
+
     def test_list_services(self, client):
         response = client.get("/gateway/services")
 

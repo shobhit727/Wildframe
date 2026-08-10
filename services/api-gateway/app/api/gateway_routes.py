@@ -1,12 +1,14 @@
 """API Gateway routes - proxy requests to backend services."""
 
+import asyncio
 import logging
 from typing import Annotated
 
 import httpx
 from app.middleware import ServiceRegistry, get_optional_user
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
+from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -19,9 +21,44 @@ _PROXY_AGENT_HEADERS = frozenset({"host", "content-length"})
 # Health and service-list routes must be registered BEFORE the catch-all
 # proxy below, otherwise "{service:path}" swallows them.
 @router.get("/gateway/health")
-async def gateway_health():
-    """API Gateway health check."""
-    return {"status": "healthy", "service": "api-gateway", "timestamp": "2026-05-29T00:00:00Z"}
+async def gateway_health(request: Request):
+    """Gateway liveness probe — see /ready for dependency verification."""
+    return {"status": "healthy", "service": "api-gateway"}
+
+@router.get("/gateway/ready")
+async def gateway_ready(request: Request):
+    """Gateway readiness probe — bounded Redis ping (max 2s).
+
+    Returns 503 with a checks dict when Redis is unavailable; never exposes
+    connection strings or credentials.
+    """
+    checks: dict[str, str] = {}
+    overall = "ready"
+    redis_client = request.app.state.redis_client
+    if redis_client is None:
+        checks["redis"] = "down"
+        overall = "not_ready"
+    else:
+        try:
+            await asyncio.wait_for(redis_client.ping(), timeout=2.0)
+            checks["redis"] = "ok"
+        except asyncio.TimeoutError:
+            checks["redis"] = "timeout"
+            overall = "not_ready"
+        except Exception:  # noqa: BLE001
+            checks["redis"] = "down"
+            overall = "not_ready"
+    payload = {
+        "status": overall,
+        "service": "api-gateway",
+        "checks": checks,
+    }
+    if overall != "ready":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=payload,
+        )
+    return payload
 
 
 @router.get("/gateway/services")
