@@ -21,6 +21,7 @@ def make_flag(**overrides):
     flag = MagicMock()
     flag.id = uuid4()
     flag.content_id = uuid4()
+    flag.content_creator_id = None
     flag.flag_reason = "copyright"
     flag.reported_by = uuid4()
     flag.status = "pending"

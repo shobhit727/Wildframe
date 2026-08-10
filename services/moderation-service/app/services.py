@@ -63,15 +63,24 @@ class ModerationService:
         content_id: UUID,
         flag_reason: FlagReason,
         reporter_id: UUID,
+        content_creator_id: UUID | None = None,
     ) -> ContentFlag:
         """Flag a piece of content for moderator review.
 
         Creates a ``ContentFlag`` row in ``pending`` status and emits a
         ``content.flagged`` event so the notification service can alert
         moderators and the analytics service can track flag volume.
+
+        ``content_creator_id`` is the authoritative UUID of the creator who
+        owns ``content_id``. Callers (api-gateway / admin) resolve it from
+        content-service before flagging so that downstream strike issuance
+        never confuses a content UUID for a creator UUID. ``None`` means the
+        creator could not be resolved; the flag is still recorded but a
+        rejection cannot issue a strike until the field is backfilled.
         """
         flag = ContentFlag(
             content_id=content_id,
+            content_creator_id=content_creator_id,
             flag_reason=flag_reason,
             reported_by=reporter_id,
             status=FlagStatus.PENDING,
@@ -159,11 +168,10 @@ class ModerationService:
             flag.status = FlagStatus.RESOLVED
         await self.flag_repo.save(flag)
 
-        # On reject: issue a strike against the creator.
-        # We derive the creator_id from the flag's content_id. In a real
-        # system content_id would resolve to its creator via a content
-        # service lookup; here we use content_id as a stand-in since the
-        # flag already carries the offending party's identity.
+        # On reject: issue a strike against the flag's authoritative creator.
+        # ``_issue_strike`` skips strike creation (and logs) when
+        # ``flag.content_creator_id`` is missing — we never infer creator
+        # identity from ``content_id``.
         if decision == DecisionType.REJECT:
             await self._issue_strike(flag, moderator_id)
 
@@ -193,14 +201,32 @@ class ModerationService:
     # _issue_strike (private)
     # ------------------------------------------------------------------
 
-    async def _issue_strike(self, flag: ContentFlag, moderator_id: UUID) -> CreatorStrike:
+    async def _issue_strike(
+        self, flag: ContentFlag, moderator_id: UUID
+    ) -> CreatorStrike | None:
         """Issue a strike for a rejected flag and check suspension threshold.
 
         The strike is linked to the flag that caused it (``related_flag_id``)
         and expires after ``STRIKE_EXPIRES_DAYS`` days. If the creator now has
         >= ``STRIKES_BEFORE_SUSPENSION`` active strikes, emit
         ``creator.suspended``.
+
+        The strike is issued against ``flag.content_creator_id`` — the
+        authoritative creator UUID owning ``flag.content_id``. If the creator
+        was not resolved when the flag was raised (``content_creator_id`` is
+        ``None``), no strike is issued: the creator UUID can never be inferred
+        from ``content_id`` and the strike is skipped with an audit log so an
+        operator can backfill the flag and re-run the decision.
         """
+        if flag.content_creator_id is None:
+            logger.warning(
+                "strike skipped: flag_id=%s content_id=%s has no authoritative "
+                "content_creator_id; backfill before re-deciding",
+                flag.id,
+                flag.content_id,
+            )
+            return None
+        creator_id = flag.content_creator_id
         now = datetime.now(UTC)
         expires_at = now + timedelta(days=settings.STRIKE_EXPIRES_DAYS)
 
@@ -212,7 +238,7 @@ class ModerationService:
             strike_reason = StrikeReason.CONTENT_VIOLATION
 
         strike = CreatorStrike(
-            creator_id=flag.content_id,
+            creator_id=creator_id,
             strike_reason=strike_reason,
             related_flag_id=flag.id,
             is_active=True,
@@ -221,14 +247,14 @@ class ModerationService:
         await self.strike_repo.create(strike)
 
         # Check suspension threshold.
-        active_count = await self.strike_repo.count_active(flag.content_id)
+        active_count = await self.strike_repo.count_active(creator_id)
         if active_count >= settings.STRIKES_BEFORE_SUSPENSION:
             await self.publisher.publish(
                 Event(
                     topic="creator.suspended",
-                    key=str(flag.content_id),
+                    key=str(creator_id),
                     payload={
-                        "creator_id": str(flag.content_id),
+                        "creator_id": str(creator_id),
                         "active_strikes": active_count,
                         "reason": "auto-suspended after " f"{active_count} strikes",
                         "triggering_flag_id": str(flag.id),
@@ -237,7 +263,7 @@ class ModerationService:
             )
             logger.warning(
                 "creator auto-suspended: creator_id=%s active_strikes=%d",
-                flag.content_id,
+                creator_id,
                 active_count,
             )
         return strike

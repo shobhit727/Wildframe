@@ -61,6 +61,7 @@ async def flag_content(
     try:
         flag = await service.flag_content(
             content_id=request.content_id,
+            content_creator_id=request.content_creator_id,
             flag_reason=request.flag_reason,
             reporter_id=request.reporter_id,
         )
@@ -133,6 +134,7 @@ def _flag_to_response(flag) -> FlagResponse:
     return FlagResponse(
         id=flag.id,
         content_id=flag.content_id,
+        content_creator_id=flag.content_creator_id,
         flag_reason=flag.flag_reason,
         reported_by=flag.reported_by,
         status=flag.status,

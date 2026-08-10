@@ -32,6 +32,7 @@ class FlagContentRequest(BaseModel):
     """Request body for POST /moderation/flags."""
 
     content_id: UUID
+    content_creator_id: UUID | None = None
     flag_reason: FlagReasonEnum
     reporter_id: UUID
 
@@ -51,10 +52,9 @@ class MakeDecisionRequest(BaseModel):
 
 
 class FlagResponse(BaseModel):
-    """Response for a single content flag."""
-
     id: UUID
     content_id: UUID
+    content_creator_id: UUID | None = None
     flag_reason: FlagReasonEnum
     reported_by: UUID
     status: FlagStatusEnum

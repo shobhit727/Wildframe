@@ -225,8 +225,10 @@ async def test_make_decision_reject_creates_strike():
     """Rejecting a flag resolves it AND creates a strike."""
     service, flag_repo, _, strike_repo = make_service()
     content_id = uuid4()
+    creator_id = uuid4()  # Authoritative creator — clearly distinct from content_id.
     flag = await service.flag_content(
         content_id=content_id,
+        content_creator_id=creator_id,
         flag_reason=FlagReason.INAPPROPRIATE,
         reporter_id=uuid4(),
     )
@@ -243,9 +245,8 @@ async def test_make_decision_reject_creates_strike():
     assert updated_flag.status == FlagStatus.RESOLVED
 
     # A strike was created.
-    assert len(strike_repo.strikes) == 1
     strike = strike_repo.strikes[0]
-    assert strike.creator_id == content_id
+    assert strike.creator_id == creator_id
     assert strike.strike_reason == StrikeReason.CONTENT_VIOLATION
     assert strike.related_flag_id == flag.id
     assert strike.is_active is True
@@ -261,7 +262,8 @@ async def test_three_strikes_triggers_suspension():
     # Flag + reject three times for the same creator (content_id == creator_id).
     for i in range(3):
         flag = await service.flag_content(
-            content_id=creator_id,
+            content_id=uuid4(),
+            content_creator_id=creator_id,
             flag_reason=FlagReason.SPAM,
             reporter_id=uuid4(),
         )
@@ -294,7 +296,8 @@ async def test_two_strikes_does_not_trigger_suspension():
 
     for i in range(2):
         flag = await service.flag_content(
-            content_id=creator_id,
+            content_id=uuid4(),
+            content_creator_id=creator_id,
             flag_reason=FlagReason.SPAM,
             reporter_id=uuid4(),
         )
@@ -384,7 +387,8 @@ async def test_get_strikes_returns_all_strikes_for_creator():
     # Create 2 strikes via rejections.
     for _ in range(2):
         flag = await service.flag_content(
-            content_id=creator_id,
+            content_id=uuid4(),
+            content_creator_id=creator_id,
             flag_reason=FlagReason.SPAM,
             reporter_id=uuid4(),
         )
@@ -405,7 +409,8 @@ async def test_copyright_flag_creates_copyright_strike():
     service, _, _, strike_repo = make_service()
     creator_id = uuid4()
     flag = await service.flag_content(
-        content_id=creator_id,
+        content_id=uuid4(),
+        content_creator_id=creator_id,
         flag_reason=FlagReason.COPYRIGHT,
         reporter_id=uuid4(),
     )
@@ -417,3 +422,54 @@ async def test_copyright_flag_creates_copyright_strike():
 
     assert len(strike_repo.strikes) == 1
     assert strike_repo.strikes[0].strike_reason == StrikeReason.COPYRIGHT
+
+
+
+@pytest.mark.asyncio
+async def test_issue_strike_targets_real_creator_not_content_id():
+    """A strike is issued against content_creator_id, never content_id."""
+    service, _, _, strike_repo = make_service()
+    content_id = uuid4()
+    creator_id = uuid4()
+    assert content_id != creator_id
+    flag = await service.flag_content(
+        content_id=content_id,
+        content_creator_id=creator_id,
+        flag_reason=FlagReason.SPAM,
+        reporter_id=uuid4(),
+    )
+    await service.make_decision(
+        flag_id=flag.id,
+        decision=DecisionType.REJECT,
+        moderator_id=uuid4(),
+    )
+
+    assert len(strike_repo.strikes) == 1
+    strike = strike_repo.strikes[0]
+    assert strike.creator_id == creator_id
+    assert strike.creator_id != content_id
+
+
+@pytest.mark.asyncio
+async def test_reject_without_content_creator_id_skips_strike():
+    """If the creator could not be resolved, reject does not issue a strike."""
+    service, _, _, strike_repo = make_service()
+    flag = await service.flag_content(
+        content_id=uuid4(),
+        content_creator_id=None,
+        flag_reason=FlagReason.SPAM,
+        reporter_id=uuid4(),
+    )
+    await service.make_decision(
+        flag_id=flag.id,
+        decision=DecisionType.REJECT,
+        moderator_id=uuid4(),
+    )
+
+    assert len(strike_repo.strikes) == 0
+
+    # No suspension event is emitted either.
+    publisher = service.publisher
+    assert isinstance(publisher, InMemoryEventPublisher)
+    suspension_events = [e for e in publisher.sent if e.topic == "creator.suspended"]
+    assert len(suspension_events) == 0

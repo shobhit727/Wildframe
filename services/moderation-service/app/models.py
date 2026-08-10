@@ -86,6 +86,12 @@ class ContentFlag(Base):
     content_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     flag_reason: Mapped[FlagReason] = mapped_column(SQLEnum(FlagReason), nullable=False)
     reported_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    content_creator_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        index=True,
+        comment="Authoritative creator UUID owning content_id (resolved upstream by content-service).",
+    )
     status: Mapped[FlagStatus] = mapped_column(
         SQLEnum(FlagStatus),
         default=FlagStatus.PENDING,
