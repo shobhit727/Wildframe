@@ -1,6 +1,5 @@
 """Notification service business logic."""
 
-from datetime import UTC, datetime
 from uuid import UUID
 
 from app.repositories import NotificationRepository
