@@ -25,9 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.stripe_client import StripeClient, StripeError
 from app.repositories import (
+    CreatorPoolRepository,
     InvoiceRepository,
+    MilestoneRepository,
     PayoutLedgerRepository,
     PurchaseRepository,
+    RegionFloorRepository,
     SubscriptionRepository,
 )
 from app.services import BillingService
@@ -48,9 +51,9 @@ async def get_billing_service(db: Annotated[AsyncSession, Depends(get_db)]) -> B
         sub_repo=SubscriptionRepository(db),
         purchase_repo=PurchaseRepository(db),
         inv_repo=InvoiceRepository(db),
-        floor_repo=None,  # Not needed for webhook handlers
-        pool_repo=None,  # Not needed for webhook handlers
-        milestone_repo=None,  # Not needed for webhook handlers
+        floor_repo=RegionFloorRepository(db),
+        pool_repo=CreatorPoolRepository(db),
+        milestone_repo=MilestoneRepository(db),
         payout_repo=PayoutLedgerRepository(db),
     )
 

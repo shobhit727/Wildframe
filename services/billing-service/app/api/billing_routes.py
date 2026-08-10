@@ -13,7 +13,7 @@ from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from jose import jwt
+from jose import JWTError, jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status as http_status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,9 +46,9 @@ async def get_current_user_id(
     token = authorization.removeprefix("Bearer ")
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-    except jwt.JWTError:
+    except JWTError:
         raise HTTPException(status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    sub = payload.get("sub") or payload.get("user_id")
+    sub = str(payload.get("sub") or payload.get("user_id"))
     if not sub:
         raise HTTPException(
             status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
@@ -182,7 +182,7 @@ async def cancel_subscription(
 async def purchase_title(
     request: PurchaseRequest,
     service: Annotated[BillingService, Depends(get_billing_service)],
-    current_user: Annotated[UUID, Depends(get_current_user_id)] = ...,
+    current_user: UUID = Depends(get_current_user_id),
 ):
     """Record a pay-per-view (TVOD) purchase."""
     if request.user_id != current_user:
@@ -333,7 +333,7 @@ async def kill_milestone(
 async def get_payout_history(
     creator_id: UUID,
     service: Annotated[BillingService, Depends(get_billing_service)],
-    current_user: Annotated[UUID, Depends(get_current_user_id)] = ...,
+    current_user: UUID = Depends(get_current_user_id),
 ):
     """Get a creator's full payout ledger history (owner only)."""
     if creator_id != current_user:

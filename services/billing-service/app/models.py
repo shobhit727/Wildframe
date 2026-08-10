@@ -14,6 +14,7 @@ calculated BEFORE platform costs are deducted (contractual floor, not target).
 """
 
 from datetime import datetime
+from typing import Any
 from decimal import Decimal
 from enum import Enum
 from uuid import uuid4
@@ -68,20 +69,20 @@ class Subscription(Base):
 
     __tablename__ = "subscriptions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), nullable=False, unique=True, index=True
     )
-    tier = Column(SQLEnum(RevenueTier), default=RevenueTier.AVOD, nullable=False)
+    tier: Mapped[RevenueTier] = mapped_column(SQLEnum(RevenueTier), default=RevenueTier.AVOD, nullable=False)
     monthly_price: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), default=Decimal("0.00"), nullable=False
     )
-    started_at = Column(DateTime, default=lambda: datetime.utcnow())
-    renewal_date = Column(DateTime, nullable=True)
-    cancelled_at = Column(DateTime, nullable=True)
-    is_active = Column(Boolean, default=True, index=True)
-    created_at = Column(DateTime, default=lambda: datetime.utcnow())
-    updated_at = Column(
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    renewal_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.utcnow(),
         onupdate=lambda: datetime.utcnow(),
@@ -98,17 +99,17 @@ class Purchase(Base):
 
     __tablename__ = "purchases"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     content_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    idempotency_key = Column(
+    idempotency_key: Mapped[str] = mapped_column(
         String(128),
         unique=True,
         nullable=False,
         comment="Prevents duplicate charges from retried requests.",
     )
-    purchased_at = Column(DateTime, default=lambda: datetime.utcnow())
+    purchased_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
     __table_args__ = (Index("idx_purchase_user_content", "user_id", "content_id", unique=True),)
 
@@ -130,25 +131,25 @@ class Invoice(Base):
 
     __tablename__ = "invoices"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     subscription_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("subscriptions.id"), nullable=True, index=True
     )
     purchase_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("purchases.id"), nullable=True, index=True
     )
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    creator_share_amount = Column(
+    creator_share_amount: Mapped[Decimal] = mapped_column(
         Numeric(10, 2),
         default=Decimal("0.00"),
         comment="Portion of this invoice allocated to creators (>=55% of net for SVOD).",
     )
-    status = Column(SQLEnum(InvoiceStatus), default=InvoiceStatus.PENDING)
-    issued_at = Column(DateTime, default=lambda: datetime.utcnow())
-    due_at = Column(DateTime, nullable=True)
-    paid_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.utcnow())
+    status: Mapped[InvoiceStatus] = mapped_column(SQLEnum(InvoiceStatus), default=InvoiceStatus.PENDING)
+    issued_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
 
 # ---------------------------------------------------------------------------
@@ -168,15 +169,15 @@ class RegionFloor(Base):
 
     __tablename__ = "region_floors"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    region_code = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    region_code: Mapped[str] = mapped_column(
         String(10), nullable=False, unique=True, comment="ISO 3166-1 alpha-2 or custom code"
     )
-    currency = Column(String(3), nullable=False, comment="ISO 4217")
-    floor_low = Column(Numeric(10, 4), nullable=False, comment="Minimum per finished minute")
-    floor_high = Column(Numeric(10, 4), nullable=False, comment="Maximum per finished minute")
-    created_at = Column(DateTime, default=lambda: datetime.utcnow())
-    updated_at = Column(
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, comment="ISO 4217")
+    floor_low: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False, comment="Minimum per finished minute")
+    floor_high: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False, comment="Maximum per finished minute")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.utcnow(),
         onupdate=lambda: datetime.utcnow(),
@@ -199,9 +200,9 @@ class CreatorPoolEntry(Base):
 
     __tablename__ = "creator_pool_entries"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    cycle_start = Column(DateTime, nullable=False)
-    cycle_end = Column(DateTime, nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    cycle_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    cycle_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     net_revenue: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     pool_percentage: Mapped[Decimal | None] = mapped_column(
         Numeric(5, 4), default=Decimal("0.1500"), comment="Default 15%"
@@ -209,8 +210,8 @@ class CreatorPoolEntry(Base):
     pool_amount: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), nullable=False, comment="= net_revenue * pool_percentage"
     )
-    redistributed_amount = Column(Numeric(12, 2), default=Decimal("0.00"))
-    created_at = Column(DateTime, default=lambda: datetime.utcnow())
+    redistributed_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
 
 class CreatorPoolDistribution(Base):
@@ -218,14 +219,14 @@ class CreatorPoolDistribution(Base):
 
     __tablename__ = "creator_pool_distributions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    pool_entry_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    pool_entry_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("creator_pool_entries.id"), nullable=False, index=True
     )
     creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    amount = Column(Numeric(10, 2), nullable=False)
-    floor_deficit = Column(Numeric(10, 2), comment="How far below floor before this distribution")
-    created_at = Column(DateTime, default=lambda: datetime.utcnow())
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    floor_deficit: Mapped[Decimal] = mapped_column(Numeric(10, 2), comment="How far below floor before this distribution")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
 
 # ---------------------------------------------------------------------------
@@ -251,13 +252,13 @@ class Milestone(Base):
 
     __tablename__ = "milestones"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    creator_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    project_title = Column(String(255), nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    project_title: Mapped[str] = mapped_column(String(255), nullable=False)
     total_commitment: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    status = Column(SQLEnum(MilestoneStatus), default=MilestoneStatus.PENDING)
-    created_at = Column(DateTime, default=lambda: datetime.utcnow())
-    updated_at = Column(
+    status: Mapped[MilestoneStatus] = mapped_column(SQLEnum(MilestoneStatus), default=MilestoneStatus.PENDING)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.utcnow(),
         onupdate=lambda: datetime.utcnow(),
@@ -284,21 +285,21 @@ class MilestoneTranche(Base):
 
     __tablename__ = "milestone_tranches"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    milestone_id = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    milestone_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("milestones.id"), nullable=False, index=True
     )
-    tranche_number = Column(Integer, nullable=False, comment="1-4, representing 10/20/30/40%")
+    tranche_number: Mapped[int] = mapped_column(Integer, nullable=False, comment="1-4, representing 10/20/30/40%")
     percentage: Mapped[Decimal] = mapped_column(
         Numeric(5, 2), nullable=False, comment="10.00, 20.00, 30.00, or 40.00"
     )
-    amount = Column(
+    amount: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), nullable=False, comment="= milestone.total_commitment * percentage"
     )
-    status = Column(SQLEnum(TrancheStatus), default=TrancheStatus.LOCKED)
-    released_at = Column(DateTime, nullable=True)
-    reverted_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.utcnow())
+    status: Mapped[TrancheStatus] = mapped_column(SQLEnum(TrancheStatus), default=TrancheStatus.LOCKED)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reverted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
     milestone = relationship("Milestone", back_populates="tranches")
 
@@ -333,24 +334,24 @@ class PayoutLedger(Base):
 
     __tablename__ = "payout_ledger"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    creator_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    amount = Column(Numeric(12, 2), nullable=False)
-    currency = Column(String(3), nullable=False, default="USD")
-    idempotency_key = Column(String(128), unique=True, nullable=False)
-    status = Column(SQLEnum(PayoutStatus), default=PayoutStatus.ACCRUED)
-    breakdown = Column(
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    status: Mapped[PayoutStatus] = mapped_column(SQLEnum(PayoutStatus), default=PayoutStatus.ACCRUED)
+    breakdown: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         comment="JSON breakdown: {floor_payment, svod_share, avod_share, pool_top_up, tvod_share}",
     )
-    stripe_transfer_id = Column(String(255), nullable=True)
-    stripe_account_id = Column(
+    stripe_transfer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    stripe_account_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="Creator's Stripe Connect account"
     )
-    cycle_start = Column(DateTime, nullable=False)
-    cycle_end = Column(DateTime, nullable=False)
-    accrued_at = Column(DateTime, default=lambda: datetime.utcnow())
-    transferred_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.utcnow())
+    cycle_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    cycle_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    accrued_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    transferred_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
     __table_args__ = (Index("idx_payout_creator_cycle", "creator_id", "cycle_start", "cycle_end"),)

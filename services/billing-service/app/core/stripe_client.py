@@ -17,6 +17,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import stripe
+from stripe import SignatureVerificationError as _StripeSignatureError, StripeError as _StripeError
 
 from app.core.settings import settings
 
@@ -79,7 +80,7 @@ class StripeClient:
                 session.id,
             )
             return session
-        except stripe.error.StripeError as exc:
+        except _StripeError as exc:
             logger.error("Stripe create_checkout_session failed: %s", exc)
             raise StripeError(f"Failed to create checkout session: {exc}") from exc
 
@@ -136,7 +137,7 @@ class StripeClient:
                 session.id,
             )
             return session
-        except stripe.error.StripeError as exc:
+        except _StripeError as exc:
             logger.error("Stripe create_tvod_purchase_session failed: %s", exc)
             raise StripeError(f"Failed to create TVOD purchase session: {exc}") from exc
 
@@ -164,11 +165,11 @@ class StripeClient:
                 settings.STRIPE_WEBHOOK_SECRET,
             )
             logger.info("Verified Stripe webhook event %s (%s)", event.id, event.type)
-            return event
-        except stripe.error.SignatureVerificationError as exc:
+            return dict(event)
+        except _StripeSignatureError as exc:
             logger.warning("Invalid Stripe webhook signature: %s", exc)
             raise StripeError("Invalid webhook signature") from exc
-        except stripe.error.StripeError as exc:
+        except _StripeError as exc:
             logger.error("Stripe webhook construct_event failed: %s", exc)
             raise StripeError(f"Webhook processing error: {exc}") from exc
 
@@ -211,7 +212,7 @@ class StripeClient:
                 account.id,
             )
             return account
-        except stripe.error.StripeError as exc:
+        except _StripeError as exc:
             logger.error("Stripe create_connect_account failed: %s", exc)
             raise StripeError(f"Failed to create Connect account: {exc}") from exc
 
@@ -251,6 +252,6 @@ class StripeClient:
                 idempotency_key,
             )
             return transfer
-        except stripe.error.StripeError as exc:
+        except _StripeError as exc:
             logger.error("Stripe transfer_to_creator failed: %s", exc)
             raise StripeError(f"Failed to transfer to creator: {exc}") from exc

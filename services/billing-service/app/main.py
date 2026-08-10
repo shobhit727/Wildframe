@@ -12,7 +12,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from wildframe_observability.wire import wire_observability
+from wildframe_observability.wire import wire_observability  # type: ignore[import-untyped]
 
 from app.api.billing_routes import router as billing_router
 from app.api.webhook_routes import router as webhook_router
