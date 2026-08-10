@@ -71,7 +71,7 @@ class AuthenticationMiddleware:
         self.jwt_secret = jwt_secret
 
     async def verify_token(self, request: Request) -> dict | None:
-        """Verify JWT token from Authorization header."""
+        """Verify a JWT token from the Authorization header."""
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             return None
@@ -81,10 +81,17 @@ class AuthenticationMiddleware:
             if scheme.lower() != "bearer":
                 return None
 
-            payload = jwt.decode(token, self.jwt_secret, algorithms=["HS256"])
+            # Require an expiration claim so tokens without an expiry cannot
+            # become effectively permanent bearer credentials.
+            payload = jwt.decode(
+                token,
+                self.jwt_secret,
+                algorithms=["HS256"],
+                options={"require": ["exp"]},
+            )
             return payload
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"Token verification failed: {e}")
+            logger.warning("Token verification failed: %s", e)
             return None
 
     async def __call__(self, request: Request) -> dict | None:
@@ -149,7 +156,7 @@ class LoadBalancer:
                 if response.status_code == 200:
                     return url
             except Exception:  # noqa: BLE001
-                logger.warning(f"Health check failed for {service}")
+                logger.warning("Health check failed for %s", service)
 
         return None
 
