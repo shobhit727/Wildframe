@@ -22,7 +22,7 @@ class ContentCatalogClient:
     async def fetch_genres(self) -> list[dict]:
         resp = await self.client.get("/api/v1/genres")
         resp.raise_for_status()
-        return resp.json()
+        return list(resp.json())
 
     async def fetch_by_genre(self, genre_id, page_size: int = 100) -> list[dict]:
         resp = await self.client.get(
@@ -30,12 +30,12 @@ class ContentCatalogClient:
             params={"page": 1, "page_size": page_size, "genre_id": genre_id},
         )
         resp.raise_for_status()
-        return resp.json()
+        return list(resp.json())
 
     async def fetch_global(self, page_size: int = 100) -> list[dict]:
         resp = await self.client.get("/api/v1/content", params={"page": 1, "page_size": page_size})
         resp.raise_for_status()
-        return resp.json()
+        return list(resp.json())
 
     async def aclose(self) -> None:
         await self.client.aclose()
