@@ -302,9 +302,7 @@ class TestAuthenticationMiddleware:
         from app.middleware import AuthenticationMiddleware
 
         mw = AuthenticationMiddleware("secret")
-        request = Request(
-            scope={"type": "http", "path": "/auth/login-anything", "headers": []}
-        )
+        request = Request(scope={"type": "http", "path": "/auth/login-anything", "headers": []})
 
         with pytest.raises(HTTPException) as exc:
             await mw(request)
@@ -318,9 +316,7 @@ class TestAuthenticationMiddleware:
         from app.middleware import AuthenticationMiddleware
 
         mw = AuthenticationMiddleware("secret")
-        request = Request(
-            scope={"type": "http", "path": "/docs/index.html", "headers": []}
-        )
+        request = Request(scope={"type": "http", "path": "/docs/index.html", "headers": []})
 
         assert await mw(request) is None
 
