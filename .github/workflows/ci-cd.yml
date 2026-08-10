@@ -1,7 +1,7 @@
 # Wildframe CI/CD Pipeline
 #
-# Consolidated pipeline: lint → test → build-smoke → deploy.
-# Runs on push/PR to main and develop.
+# CI: lint -> test -> security -> build smoke.
+# CD: build immutable images -> deploy to Kubernetes with Helm -> verify rollouts.
 
 name: CI/CD
 
@@ -12,7 +12,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Cancel in-progress runs for same branch/PR
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -23,11 +22,13 @@ env:
   POETRY_VERSION: "1.8.3"
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  SERVICES: >-
+    api-gateway auth-service user-service content-service streaming-service
+    search-service recommendation-service billing-service analytics-service
+    notification-service media-pipeline creators-service moderation-service
+    uploads-service admin-service
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Backend lint: ruff, black, mypy over services/
-  # ---------------------------------------------------------------------------
   backend-lint:
     name: Backend Lint
     runs-on: ubuntu-latest
@@ -39,6 +40,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
 
       - name: Install lint tools
         run: python -m pip install "ruff==0.11.10" black mypy
@@ -51,14 +53,11 @@ jobs:
 
       - name: Run mypy
         run: |
+          set -euo pipefail
           for app_dir in services/*/app; do
             mypy "$app_dir"
           done
-        continue-on-error: true
 
-  # ---------------------------------------------------------------------------
-  # Helm chart lint/render: validates infrastructure/helm/wildframe
-  # ---------------------------------------------------------------------------
   helm-lint:
     name: Helm Lint
     runs-on: ubuntu-latest
@@ -74,23 +73,24 @@ jobs:
       - name: Lint chart
         run: helm lint infrastructure/helm/wildframe
 
-      - name: Render manifests
+      - name: Render default manifests
         run: helm template wildframe infrastructure/helm/wildframe --namespace wildframe > /tmp/helm-out.yaml
 
-      - name: Check all services rendered
+      - name: Validate every service is rendered
         run: |
-          for svc in api-gateway auth-service user-service content-service streaming-service \
-                      search-service recommendation-service billing-service analytics-service \
-                      notification-service media-pipeline creators-service moderation-service \
-                      uploads-service admin-service; do
+          set -euo pipefail
+          for svc in $SERVICES; do
             grep -q "name: $svc" /tmp/helm-out.yaml || { echo "missing service: $svc"; exit 1; }
           done
 
-  # ---------------------------------------------------------------------------
-  # Backend tests: pytest + coverage per service
-  # ---------------------------------------------------------------------------
+      - name: Validate staging values
+        run: helm template wildframe infrastructure/helm/wildframe -f infrastructure/helm/values-staging.yaml --namespace wildframe-staging > /tmp/helm-staging.yaml
+
+      - name: Validate production values
+        run: helm template wildframe infrastructure/helm/wildframe -f infrastructure/helm/values-production.yaml --namespace wildframe-production > /tmp/helm-production.yaml
+
   backend-test:
-    name: Backend Test
+    name: Backend Test (${{ matrix.service }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -127,37 +127,30 @@ jobs:
           virtualenvs-create: true
           virtualenvs-in-project: true
 
-      - name: Load cached virtualenv
-        id: cached-poetry-dependencies
+      - name: Cache service virtualenv
+        id: poetry-cache
         uses: actions/cache@v4
         with:
           path: services/${{ matrix.service }}/.venv
-          key: venv-${{ runner.os }}-${{ matrix.service }}-${{ hashFiles(format('services/{0}/pyproject.toml', matrix.service)) }}
+          key: venv-${{ runner.os }}-${{ matrix.service }}-${{ hashFiles(format('services/{0}/poetry.lock', matrix.service), format('services/{0}/pyproject.toml', matrix.service)) }}
 
       - name: Install service dependencies
-        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        if: steps.poetry-cache.outputs.cache-hit != 'true'
         working-directory: services/${{ matrix.service }}
         run: poetry install --no-interaction --with dev
 
       - name: Run tests with coverage
         working-directory: services/${{ matrix.service }}
         run: |
-          PYTHONPATH="$PWD:${PYTHONPATH:-}" \
-            poetry run pytest tests \
-              --asyncio-mode=auto -q \
-              --cov=app --cov-report=term-missing:skip-covered
+          set -euo pipefail
+          PYTHONPATH="$PWD:${PYTHONPATH:-}" poetry run pytest tests --asyncio-mode=auto -q --cov=app --cov-report=term-missing:skip-covered
 
       - name: Print slowest tests
         if: always()
         working-directory: services/${{ matrix.service }}
         run: |
-          PYTHONPATH="$PWD:${PYTHONPATH:-}" \
-            poetry run pytest tests \
-              --asyncio-mode=auto --durations=20 -q
+          PYTHONPATH="$PWD:${PYTHONPATH:-}" poetry run pytest tests --asyncio-mode=auto --durations=20 -q
 
-  # ---------------------------------------------------------------------------
-  # Backend SDK tests: shared event + observability packages (packages/sdk)
-  # ---------------------------------------------------------------------------
   backend-sdk-test:
     name: Backend Test (sdk)
     runs-on: ubuntu-latest
@@ -172,27 +165,16 @@ jobs:
 
       - name: Install test dependencies
         run: |
-          python -m pip install --quiet \
-            "pytest<8" "pytest-asyncio>=0.21,<0.22" "pytest-cov<5" \
-            "fastapi>=0.104" "prometheus-client>=0.18" "httpx>=0.25"
+          python -m pip install --quiet "pytest<8" "pytest-asyncio>=0.21,<0.22" "pytest-cov<5" "fastapi>=0.104" "prometheus-client>=0.18" "httpx>=0.25"
 
       - name: Run SDK tests
         run: |
-          PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" \
-            python -m pytest packages/sdk/tests \
-              --asyncio-mode=auto -q \
-              --cov=packages --cov-report=term-missing:skip-covered
+          PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest packages/sdk/tests --asyncio-mode=auto -q --cov=packages --cov-report=term-missing:skip-covered
 
       - name: Print slowest tests
         if: always()
-        run: |
-          PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" \
-            python -m pytest packages/sdk/tests \
-              --asyncio-mode=auto --durations=20 -q
+        run: PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest packages/sdk/tests --asyncio-mode=auto --durations=20 -q
 
-  # ---------------------------------------------------------------------------
-  # Frontend CI: lint + type-check + test + build for apps/web
-  # ---------------------------------------------------------------------------
   frontend-ci:
     name: Frontend CI
     runs-on: ubuntu-latest
@@ -210,7 +192,7 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Install dependencies (workspace root)
+      - name: Install dependencies
         working-directory: .
         run: npm ci --legacy-peer-deps --no-audit --no-fund
 
@@ -222,14 +204,10 @@ jobs:
 
       - name: Test
         run: npm test -- --run
-        continue-on-error: true
 
       - name: Build
         run: npm run build
 
-  # ---------------------------------------------------------------------------
-  # Docker build smoke: build (no push) representative services
-  # ---------------------------------------------------------------------------
   docker-build-smoke:
     name: Docker Build Smoke (${{ matrix.service }})
     runs-on: ubuntu-latest
@@ -239,9 +217,19 @@ jobs:
         service:
           - api-gateway
           - auth-service
+          - user-service
           - content-service
           - streaming-service
+          - admin-service
           - media-pipeline
+          - creators-service
+          - moderation-service
+          - uploads-service
+          - search-service
+          - analytics-service
+          - billing-service
+          - recommendation-service
+          - notification-service
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -249,8 +237,8 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image (no push)
-        uses: docker/build-push-action@v5
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: services/${{ matrix.service }}/Dockerfile
@@ -260,9 +248,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ---------------------------------------------------------------------------
-  # Security scanning (non-blocking)
-  # ---------------------------------------------------------------------------
+  docker-build-frontend-smoke:
+    name: Docker Build Smoke (frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          load: true
+          tags: wildframe-web:ci-smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -270,36 +274,34 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
 
-      - name: Upload Trivy results to GitHub Security
+      - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: trivy-results.sarif
 
-      - name: Run SAST with Semgrep
-        uses: returntocorp/semgrep-action@v1
+      - name: Run Semgrep
+        uses: semgrep/semgrep-action@v1
         with:
           config: >-
             p/owasp-top-ten
             p/security-audit
 
-  # ===========================================================================
-  # CD JOBS — only run on push to main/develop
-  # ===========================================================================
-
-  # Build and push Docker images
   build-images:
-    name: Build & Push ${{ matrix.service }}
-    needs: [backend-lint, backend-test, docker-build-smoke]
+    name: Build & Push (${{ matrix.service }})
+    needs: [backend-lint, backend-test, backend-sdk-test, helm-lint, security-scan, docker-build-smoke]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
     permissions:
@@ -316,32 +318,35 @@ jobs:
           - streaming-service
           - admin-service
           - media-pipeline
+          - creators-service
+          - moderation-service
+          - uploads-service
+          - search-service
+          - analytics-service
+          - billing-service
+          - recommendation-service
+          - notification-service
     steps:
-      - uses: actions/checkout@v4
-
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Container Registry
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
+      - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.service }}
           tags: |
-            type=sha
+            type=sha,prefix=sha-
             type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build and push
-        uses: docker/build-push-action@v5
+      - name: Build and push immutable image
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: services/${{ matrix.service }}/Dockerfile
@@ -351,41 +356,35 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Build and push frontend image
   build-frontend:
     name: Build & Push Frontend
-    needs: [frontend-ci]
+    needs: [frontend-ci, docker-build-frontend-smoke, security-scan]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
-
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Container Registry
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
+      - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/web-app
           tags: |
-            type=sha
+            type=sha,prefix=sha-
             type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build and push
-        uses: docker/build-push-action@v5
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/web/Dockerfile
@@ -395,135 +394,122 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Deploy to staging (develop branch)
   deploy-staging:
     name: Deploy Staging
     needs: [build-images, build-frontend]
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     environment: staging
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
-
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Set up Helm
         uses: azure/setup-helm@v4
         with:
           version: v3.14.0
-
-      - name: Configure AWS credentials
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+      - name: Configure AWS credentials with OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
-
       - name: Update EKS kubeconfig
+        run: aws eks update-kubeconfig --name wildframe-staging --region us-east-1
+      - name: Authenticate Kubernetes to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          aws eks update-kubeconfig --name wildframe-staging --region us-east-1
-
+          kubectl create namespace wildframe-staging --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n wildframe-staging create secret docker-registry ghcr-pull \
+            --docker-server=ghcr.io \
+            --docker-username="${{ github.actor }}" \
+            --docker-password="$GHCR_TOKEN" \
+            --dry-run=client -o yaml | kubectl apply -f -
       - name: Deploy with Helm
         run: |
           helm upgrade --install wildframe-staging infrastructure/helm/wildframe \
             -f infrastructure/helm/values-staging.yaml \
             --namespace wildframe-staging \
             --create-namespace \
-            --atomic
-
-      - name: Verify deployment
+            --set-string image.tag="sha-${GITHUB_SHA}" \
+            --set-string imagePullSecrets[0].name=ghcr-pull \
+            --atomic --timeout 10m
+      - name: Verify all deployments
         run: |
-          kubectl rollout status deployment/api-gateway -n wildframe-staging --timeout=5m || true
-          kubectl rollout status deployment/auth-service -n wildframe-staging --timeout=5m || true
-
-      - name: Run smoke tests
+          set -euo pipefail
+          for svc in $SERVICES; do
+            kubectl rollout status "deployment/$svc" -n wildframe-staging --timeout=5m
+          done
+      - name: Verify service health endpoints
         run: |
-          chmod +x scripts/smoke-tests.sh || true
-          ./scripts/smoke-tests.sh staging || true
+          set -euo pipefail
+          kubectl -n wildframe-staging run wildframe-smoke --rm --restart=Never \
+            --image=curlimages/curl:8.16.0 -- \
+            sh -ec 'for svc in api-gateway auth-service user-service content-service streaming-service admin-service media-pipeline creators-service moderation-service uploads-service search-service analytics-service billing-service recommendation-service notification-service; do curl --fail --silent --show-error --max-time 10 "http://$svc/health" >/dev/null; done'
 
-  # Deploy to production (main branch)
   deploy-production:
     name: Deploy Production
     needs: [build-images, build-frontend]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
-
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Set up Helm
         uses: azure/setup-helm@v4
         with:
           version: v3.14.0
-
-      - name: Configure AWS credentials
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+      - name: Configure AWS credentials with OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
-
       - name: Update EKS kubeconfig
-        run: |
-          aws eks update-kubeconfig --name wildframe-production --region us-east-1
-
-      - name: Create deployment approval comment
-        uses: actions/github-script@v7
+        run: aws eks update-kubeconfig --name wildframe-production --region us-east-1
+      - name: Authenticate Kubernetes to GHCR
         env:
-          COMMIT_SHA: ${{ github.sha }}
-        with:
-          script: |
-            const sha = process.env.COMMIT_SHA;
-            const { data: prs } = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              head: `${context.repo.owner}:${context.ref.replace('refs/heads/', '')}`,
-            });
-            if (prs.length > 0) {
-              await github.rest.issues.createComment({
-                issue_number: prs[0].number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `🚀 Production deployment for commit \`${sha}\` is ready. Waiting for approval.`,
-              });
-            }
-
-      - name: Deploy with Helm (Blue-Green)
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          kubectl create namespace wildframe-production --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n wildframe-production create secret docker-registry ghcr-pull \
+            --docker-server=ghcr.io \
+            --docker-username="${{ github.actor }}" \
+            --docker-password="$GHCR_TOKEN" \
+            --dry-run=client -o yaml | kubectl apply -f -
+      - name: Deploy with Helm
         run: |
           helm upgrade --install wildframe-prod infrastructure/helm/wildframe \
             -f infrastructure/helm/values-production.yaml \
             --namespace wildframe-production \
             --create-namespace \
-            --atomic \
-            --timeout 10m
-
-      - name: Verify deployment
+            --set-string image.tag="sha-${GITHUB_SHA}" \
+            --set-string imagePullSecrets[0].name=ghcr-pull \
+            --atomic --timeout 15m
+      - name: Verify all deployments
         run: |
-          kubectl rollout status deployment/api-gateway -n wildframe-production --timeout=10m || true
-          kubectl rollout status deployment/auth-service -n wildframe-production --timeout=10m || true
-          kubectl rollout status deployment/user-service -n wildframe-production --timeout=10m || true
-
-      - name: Run smoke tests
+          set -euo pipefail
+          for svc in $SERVICES; do
+            kubectl rollout status "deployment/$svc" -n wildframe-production --timeout=10m
+          done
+      - name: Verify service health endpoints
         run: |
-          chmod +x scripts/smoke-tests.sh || true
-          ./scripts/smoke-tests.sh production || true
-
-      - name: Notify deployment
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-        if: env.SLACK_WEBHOOK != ''
-        uses: slackapi/slack-github-action@v1.25.0
-        with:
-          webhook-url: ${{ secrets.SLACK_WEBHOOK }}
-          payload: |
-            {
-              "text": "✅ Wildframe deployed to production",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Deployment Status*\nVersion: ${{ github.sha }}\nRef: ${{ github.ref }}"
-                  }
-                }
-              ]
-            }
+          set -euo pipefail
+          kubectl -n wildframe-production run wildframe-smoke --rm --restart=Never \
+            --image=curlimages/curl:8.16.0 -- \
+            sh -ec 'for svc in api-gateway auth-service user-service content-service streaming-service admin-service media-pipeline creators-service moderation-service uploads-service search-service analytics-service billing-service recommendation-service notification-service; do curl --fail --silent --show-error --max-time 10 "http://$svc/health" >/dev/null; done'
+      - name: Deployment summary
+        run: |
+          echo "Production deployment verified for commit $GITHUB_SHA"
+          kubectl get deployments -n wildframe-production
