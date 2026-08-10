@@ -2,8 +2,10 @@
 
 from datetime import UTC, datetime
 from uuid import UUID
+from typing import cast
 
 from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Notification
@@ -24,7 +26,7 @@ class NotificationRepository:
             (Notification.user_id == user_id) & (Notification.is_read == False)
         )
         result = await self.session.execute(stmt)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def mark_as_read(self, notification_id: UUID, user_id: UUID) -> bool:
         """Mark a notification read only when it belongs to the caller."""
@@ -39,4 +41,4 @@ class NotificationRepository:
         )
         result = await self.session.execute(stmt)
         await self.session.flush()
-        return result.rowcount == 1
+        return cast(CursorResult, result).rowcount == 1

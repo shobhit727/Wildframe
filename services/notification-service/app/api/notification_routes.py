@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from jose import jwt
+from jose import JWTError, jwt
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,7 +27,7 @@ async def get_current_user_id(
     token = authorization.removeprefix("Bearer ")
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-    except jwt.JWTError:
+    except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
@@ -50,12 +50,12 @@ async def get_notif_service(
 
 @router.post("/send", response_model=dict)
 async def send_notification(
-    service: NotificationService = Depends(get_notif_service),  # noqa: B008
-    current_user: Annotated[UUID, Depends(get_current_user_id)] = ...,
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
     user_id: UUID = Body(...),
     title: str = Body(...),
     message: str = Body(...),
     channel: str = Body(default="in-app"),
+    service: NotificationService = Depends(get_notif_service),  # noqa: B008
 ):
     """Send notification."""
     if user_id != current_user:
