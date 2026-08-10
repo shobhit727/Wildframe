@@ -142,7 +142,7 @@ jobs:
       - name: Run tests with coverage
         working-directory: services/${{ matrix.service }}
         run: |
-          PYTHONPATH="$PWD:$PYTHONPATH" \
+          PYTHONPATH="$PWD:${PYTHONPATH:-}" \
             poetry run pytest tests \
               --asyncio-mode=auto -q \
               --cov=app --cov-report=term-missing:skip-covered
@@ -151,7 +151,7 @@ jobs:
         if: always()
         working-directory: services/${{ matrix.service }}
         run: |
-          PYTHONPATH="$PWD:$PYTHONPATH" \
+          PYTHONPATH="$PWD:${PYTHONPATH:-}" \
             poetry run pytest tests \
               --asyncio-mode=auto --durations=20 -q
 
@@ -178,7 +178,7 @@ jobs:
 
       - name: Run SDK tests
         run: |
-          PYTHONPATH="$PWD/packages/sdk:$PYTHONPATH" \
+          PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" \
             python -m pytest packages/sdk/tests \
               --asyncio-mode=auto -q \
               --cov=packages --cov-report=term-missing:skip-covered
@@ -186,7 +186,7 @@ jobs:
       - name: Print slowest tests
         if: always()
         run: |
-          PYTHONPATH="$PWD/packages/sdk:$PYTHONPATH" \
+          PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" \
             python -m pytest packages/sdk/tests \
               --asyncio-mode=auto --durations=20 -q
 
