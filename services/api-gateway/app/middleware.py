@@ -89,11 +89,16 @@ class AuthenticationMiddleware:
 
     async def __call__(self, request: Request) -> dict | None:
         """Middleware to check authentication on protected routes."""
-        # Check if path is public
-        if any(request.url.path.startswith(path) for path in self.PUBLIC_PATHS):
+        # Match public routes exactly or as a child path. Using startswith(path)
+        # alone would accidentally make paths such as /auth/login-anything public.
+        request_path = request.url.path.rstrip("/") or "/"
+        if any(
+            request_path == path or request_path.startswith(f"{path}/")
+            for path in self.PUBLIC_PATHS
+        ):
             return None
 
-        # Verify token for protected routes
+        # Verify token for protected routes.
         token_payload = await self.verify_token(request)
         if not token_payload:
             raise HTTPException(
