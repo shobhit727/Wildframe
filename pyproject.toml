@@ -48,7 +48,7 @@ kafka-python = "^2.0.0"
 aiokafka = "^0.10.0"
 
 # Search
-elasticsearch = "^8.10.0"
+elasticsearch = ">=8.10,<10.0"
 
 # Authentication & Security
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
