@@ -1,11 +1,12 @@
+import uuid
 """Search service models."""
 
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import JSON, Column, DateTime, Index, Integer, String, Text
+from sqlalchemy import mapped_column, JSON, Column, DateTime, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import Mapped, declarative_base
 
 Base = declarative_base()
 
@@ -15,7 +16,7 @@ class SearchQuery(Base):
 
     __tablename__ = "search_queries"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     query_text = Column(String(500), nullable=False)
     result_count = Column(Integer, default=0)
     filters = Column(JSON, nullable=True)
@@ -29,7 +30,7 @@ class SearchIndex(Base):
 
     __tablename__ = "search_indexes"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    content_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    content_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
     title = Column(String(500), nullable=False)
     description = Column(Text)
     content_type = Column(String(50), nullable=False)

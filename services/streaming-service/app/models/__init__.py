@@ -8,6 +8,7 @@ from datetime import datetime
 from enum import Enum
 
 from sqlalchemy import (
+    mapped_column,
     Boolean,
     Column,
     DateTime,
@@ -22,7 +23,7 @@ from sqlalchemy import (
     Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import Mapped, declarative_base
 
 Base = declarative_base()
 
@@ -59,9 +60,9 @@ class PlaybackSession(Base):
     __tablename__ = "playback_session"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    content_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    episode_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    content_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    episode_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     device_id = Column(String(255), nullable=False, index=True)
 
     # Playback info

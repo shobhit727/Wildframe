@@ -1,3 +1,4 @@
+import uuid
 """Uploads service models.
 
 Two tables drive the chunked/resumable upload flow:
@@ -24,6 +25,7 @@ from enum import Enum
 from uuid import uuid4
 
 from sqlalchemy import (
+    mapped_column,
     BigInteger,
     Column,
     DateTime,
@@ -36,7 +38,7 @@ from sqlalchemy import (
     Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import Mapped, declarative_base
 
 Base = declarative_base()
 
@@ -54,7 +56,7 @@ class UploadSession(Base):
     __tablename__ = "upload_sessions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    creator_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     filename = Column(String(512), nullable=False)
     mime = Column(String(127), nullable=False)
     size_bytes = Column(BigInteger, nullable=False)
@@ -94,7 +96,7 @@ class UploadChunk(Base):
     __tablename__ = "upload_chunks"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    session_id = Column(
+    session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("upload_sessions.id", ondelete="CASCADE"),
         nullable=False,

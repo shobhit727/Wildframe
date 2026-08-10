@@ -69,7 +69,7 @@ class GenreRepository(BaseRepository):
     async def get_all(self) -> list[Genre]:
         """Get all genres."""
         result = await self.session.execute(select(Genre))
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def update(self, genre_id: UUID, **kwargs) -> Genre | None:
         """Update a genre."""
@@ -127,7 +127,7 @@ class CastMemberRepository(BaseRepository):
         result = await self.session.execute(
             select(CastMember).where(CastMember.name.ilike(f"%{name}%")).limit(20)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
 
 class ContentRepository(BaseRepository):
@@ -269,7 +269,7 @@ class ContentRepository(BaseRepository):
             )
             .limit(50)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_trending(self, limit: int = 10) -> list[Content]:
         """Get trending content by audience score and votes."""
@@ -279,7 +279,7 @@ class ContentRepository(BaseRepository):
             .order_by(Content.audience_score.desc(), Content.total_votes.desc())
             .limit(limit)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_premium(self) -> list[Content]:
         """Get premium content."""
@@ -288,7 +288,7 @@ class ContentRepository(BaseRepository):
                 and_(Content.is_premium == True, Content.status == ContentStatus.PUBLISHED)
             )
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def update(self, content_id: UUID, **kwargs) -> Content | None:
         """Update content."""
@@ -479,7 +479,7 @@ class EpisodeRepository(BaseRepository):
         result = await self.session.execute(
             select(Episode).where(Episode.season_id == season_id).order_by(Episode.episode_number)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def update(self, episode_id: UUID, **kwargs) -> Episode | None:
         """Update episode."""
@@ -541,7 +541,7 @@ class ContentRatingRepository(BaseRepository):
             .where(ContentRating.content_id == content_id)
             .order_by(ContentRating.created_at.desc())
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
 
 class ContentRecommendationRepository(BaseRepository):
@@ -575,7 +575,7 @@ class ContentRecommendationRepository(BaseRepository):
             .order_by(ContentRecommendation.similarity_score.desc())
             .limit(limit)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def delete(self, recommendation_id: UUID) -> bool:
         """Delete a recommendation."""

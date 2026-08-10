@@ -1,3 +1,4 @@
+import uuid
 """Creators service models."""
 
 from datetime import UTC, datetime
@@ -5,6 +6,7 @@ from enum import Enum
 from uuid import uuid4
 
 from sqlalchemy import (
+    mapped_column,
     Boolean,
     CheckConstraint,
     Column,
@@ -17,7 +19,7 @@ from sqlalchemy import (
 )
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import Mapped, declarative_base
 
 Base = declarative_base()
 
@@ -65,7 +67,7 @@ class CreatorAccount(Base):
     __tablename__ = "creator_accounts"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
     display_name = Column(String(255), nullable=False, default="")
     bio = Column(String(2000), nullable=False, default="")
     region_code = Column(String(8), nullable=False, default="US")
@@ -91,7 +93,7 @@ class EffectiveFloor(Base):
     __tablename__ = "effective_floors"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    creator_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
     per_minute_amount = Column(Float, nullable=False)
     currency = Column(String(8), nullable=False, default="USD")
     effective_from = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
@@ -157,7 +159,7 @@ class MilestoneTranche(Base):
     __tablename__ = "milestone_tranches"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    milestone_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    milestone_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     threshold = Column(Integer, nullable=False)
     amount_cents = Column(Integer, nullable=False, default=0)
     status = Column(SQLEnum(TrancheStatus), default=TrancheStatus.LOCKED, nullable=False)

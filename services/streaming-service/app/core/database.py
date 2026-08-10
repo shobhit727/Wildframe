@@ -3,7 +3,14 @@
 import logging
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from collections.abc import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool, QueuePool
 
 from app.core.settings import settings
@@ -14,16 +21,16 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     """Manages database connections."""
 
-    _instance = None
-    _engine = None
-    _session_factory = None
+    _instance: "DatabaseManager | None" = None
+    _engine: AsyncEngine | None = None
+    _session_factory: async_sessionmaker[AsyncSession] | None = None
 
-    def __new__(cls):
+    def __new__(cls) -> "DatabaseManager":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def get_engine(self):
+    def get_engine(self) -> AsyncEngine:
         """Get or create database engine."""
         if self._engine is None:
             pool_class = NullPool if settings.ENVIRONMENT == "development" else QueuePool
@@ -45,7 +52,7 @@ class DatabaseManager:
             )
         return self._engine
 
-    def get_session_factory(self):
+    def get_session_factory(self) -> async_sessionmaker[AsyncSession]:
         """Get or create session factory."""
         if self._session_factory is None:
             engine = self.get_engine()
@@ -57,7 +64,7 @@ class DatabaseManager:
             )
         return self._session_factory
 
-    async def get_session(self):
+    async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
         """Get async database session."""
         factory = self.get_session_factory()
         async with factory() as session:
@@ -74,7 +81,7 @@ class DatabaseManager:
             logger.error(f"Database health check failed: {e}")
             return False
 
-    async def close(self):
+    async def close(self) -> None:
         """Close database connections."""
         if self._engine:
             await self._engine.dispose()
@@ -85,7 +92,7 @@ class DatabaseManager:
 db_manager = DatabaseManager()
 
 
-async def get_db_session() -> AsyncSession:
+async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """Get database session for dependency injection.
 
     Yields:

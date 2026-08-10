@@ -1,11 +1,12 @@
+import uuid
 """Analytics service models."""
 
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import JSON, Column, DateTime, Float, Index, Integer, String
+from sqlalchemy import mapped_column, JSON, Column, DateTime, Float, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import Mapped, declarative_base
 
 Base = declarative_base()
 
@@ -15,10 +16,10 @@ class Event(Base):
 
     __tablename__ = "events"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     event_type = Column(String(100), nullable=False)
     event_data = Column(JSON)
-    content_id = Column(UUID(as_uuid=True), nullable=True)
+    content_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     timestamp = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     __table_args__ = (Index("idx_events_user_type", "user_id", "event_type"),)
@@ -30,7 +31,7 @@ class ContentViewEvent(Base):
     __tablename__ = "content_view_events"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     content_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    viewer_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    viewer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     watch_duration_seconds = Column(Integer, nullable=False, default=0)
     content_duration_seconds = Column(Integer, nullable=False, default=0)
     completion_pct = Column(Float, nullable=False, default=0.0)  # 0-100
@@ -49,7 +50,7 @@ class CreatorAnalyticsSnapshot(Base):
 
     __tablename__ = "creator_analytics_snapshots"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    creator_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     total_views = Column(Integer, nullable=False, default=0)
     total_watch_hours = Column(Float, nullable=False, default=0.0)
     avg_completion_rate = Column(Float, nullable=False, default=0.0)  # 0-100
