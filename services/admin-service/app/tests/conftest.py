@@ -5,8 +5,8 @@ import asyncio
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
-from testcontainers.postgres import PostgresContainer
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from testcontainers.postgres import PostgresContainer  # type: ignore[import-untyped]
 
 # Start PostgreSQL container for integration tests
 postgres = PostgresContainer("postgres:15-alpine")
@@ -16,7 +16,7 @@ postgres.start()
 DATABASE_URL = postgres.get_connection_url().replace("psycopg2", "asyncpg")
 
 engine = create_async_engine(DATABASE_URL, echo=False, future=True)
-async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 @pytest.fixture(scope="session")

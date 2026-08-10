@@ -6,7 +6,7 @@ from app.core.settings import settings
 
 class DatabaseManager:
     engine = None
-    session_factory = None
+    session_factory: async_sessionmaker[AsyncSession] | None = None
 
     @classmethod
     async def init(cls):
@@ -35,5 +35,6 @@ class DatabaseManager:
 async def get_db():
     if not DatabaseManager.session_factory:
         await DatabaseManager.init()
+    assert DatabaseManager.session_factory is not None
     async with DatabaseManager.session_factory() as session:
         yield session

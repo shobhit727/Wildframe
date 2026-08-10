@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from jose import jwt
+from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -33,10 +33,9 @@ async def get_current_admin_id(
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         if payload.get("role") != "admin":
             raise HTTPException(status_code=403, detail="Admin privileges required")
-        return payload.get("sub") or payload.get("user_id")
-    except jwt.JWTError:
+        return str(payload.get("sub") or payload.get("user_id"))
+    except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
-
 
 # --- Authorization helpers -------------------------------------------------
 # Issue #618 / #622: lookup-then-authorize-then-404. Never return 403 for

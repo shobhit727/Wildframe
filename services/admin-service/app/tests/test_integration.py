@@ -96,6 +96,7 @@ class TestContentModerationIntegration:
         request = ContentModerationRequest(
             content_id=content_id,
             content_type="movie",
+            status="flagged",
             reason="Inappropriate content",
         )
 
@@ -115,6 +116,7 @@ class TestContentModerationIntegration:
         request = ContentModerationRequest(
             content_id=content_id,
             content_type="show",
+            status="flagged",
             reason="Flagged for review",
         )
         await admin_service.flag_content(
@@ -135,6 +137,7 @@ class TestContentModerationIntegration:
             request = ContentModerationRequest(
                 content_id=content_id,
                 content_type="movie",
+            status="flagged",
                 reason=f"Reason {i}",
             )
             await admin_service.flag_content(
@@ -305,6 +308,7 @@ class TestAuditLogIntegration:
         request = ContentModerationRequest(
             content_id=content_id,
             content_type="movie",
+            status="flagged",
             reason="Resource audit test",
         )
         await admin_service.flag_content(

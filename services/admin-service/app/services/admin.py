@@ -214,6 +214,7 @@ class AdminService:
         else:
             config = await self.config_repo.create(key, value, config_type, description, admin_id)
 
+        assert config is not None
         await self.audit_repo.create(
             admin_id, "config_updated", "config", key, f"value={value}", ip_address
         )

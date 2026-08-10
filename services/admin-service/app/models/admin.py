@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
@@ -11,22 +11,24 @@ class Base(DeclarativeBase):
 class UserModeration(Base):
     __tablename__ = "user_moderations"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String(255), nullable=False, index=True)
-    status = Column(String(50), nullable=False, default="active", index=True)
-    reason = Column(Text, nullable=True)
-    moderated_by = Column(String(255), nullable=False)
-    moderated_at = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="active", index=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    moderated_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    moderated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
     )
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
-    is_active = Column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
         Index("idx_user_id", "user_id"),
@@ -38,23 +40,27 @@ class UserModeration(Base):
 class ContentModeration(Base):
     __tablename__ = "content_moderations"
 
-    id = Column(Integer, primary_key=True, index=True)
-    content_id = Column(String(255), nullable=False, index=True)
-    content_type = Column(String(50), nullable=False)
-    status = Column(String(50), nullable=False, default="active", index=True)
-    reason = Column(Text, nullable=True)
-    flagged_by = Column(String(255), nullable=True)
-    resolved_by = Column(String(255), nullable=True)
-    flagged_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
-    resolved_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    content_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    content_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="active", index=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    flagged_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    resolved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    flagged_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
-    is_active = Column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
         Index("idx_content_id", "content_id"),
@@ -66,22 +72,24 @@ class ContentModeration(Base):
 class SystemAlert(Base):
     __tablename__ = "system_alerts"
 
-    id = Column(Integer, primary_key=True, index=True)
-    alert_type = Column(String(50), nullable=False, index=True)
-    severity = Column(String(50), nullable=False)
-    message = Column(Text, nullable=False)
-    service = Column(String(255), nullable=False)
-    acknowledged = Column(Boolean, nullable=False, default=False, index=True)
-    acknowledged_by = Column(String(255), nullable=True)
-    acknowledged_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    alert_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(50), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    service: Mapped[str] = mapped_column(String(255), nullable=False)
+    acknowledged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    acknowledged_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
-    is_active = Column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
         Index("idx_alert_type", "alert_type"),
@@ -93,20 +101,22 @@ class SystemAlert(Base):
 class SystemConfig(Base):
     __tablename__ = "system_configs"
 
-    id = Column(Integer, primary_key=True, index=True)
-    key = Column(String(255), nullable=False, unique=True, index=True)
-    value = Column(Text, nullable=False)
-    config_type = Column(String(50), nullable=False)
-    description = Column(Text, nullable=True)
-    updated_by = Column(String(255), nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    config_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
-    is_active = Column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     __table_args__ = (Index("idx_key", "key"),)
 
@@ -114,15 +124,17 @@ class SystemConfig(Base):
 class AdminAuditLog(Base):
     __tablename__ = "admin_audit_logs"
 
-    id = Column(Integer, primary_key=True, index=True)
-    admin_id = Column(String(255), nullable=False, index=True)
-    action = Column(String(255), nullable=False)
-    resource_type = Column(String(50), nullable=False)
-    resource_id = Column(String(255), nullable=False)
-    changes = Column(Text, nullable=True)
-    ip_address = Column(String(45), nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
-    is_active = Column(Boolean, nullable=False, default=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    admin_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(255), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    changes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ip_address: Mapped[str] = mapped_column(String(45), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
         Index("idx_admin_id", "admin_id"),

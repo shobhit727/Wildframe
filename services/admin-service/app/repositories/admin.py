@@ -41,7 +41,7 @@ class UserModerationRepository:
             query = query.where(UserModeration.status == status)
         query = query.order_by(desc(UserModeration.created_at)).limit(limit).offset(offset)
         result = await self.db.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def update_status(
         self, user_id: str, status: str, reason: str | None, moderated_by: str
@@ -102,7 +102,7 @@ class ContentModerationRepository:
             .offset(offset)
         )
         result = await self.db.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def update_status(
         self, content_id: str, status: str, resolved_by: str
@@ -142,7 +142,7 @@ class SystemAlertRepository:
             .limit(limit)
         )
         result = await self.db.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def list_by_severity(self, severity: str, limit: int = 50) -> list[SystemAlert]:
         query = (
@@ -152,7 +152,7 @@ class SystemAlertRepository:
             .limit(limit)
         )
         result = await self.db.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def acknowledge(self, alert_id: int, admin_id: str) -> SystemAlert | None:
         alert = await self.get_by_id(alert_id)
@@ -195,7 +195,7 @@ class SystemConfigRepository:
             .limit(limit)
         )
         result = await self.db.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def update(self, key: str, value: str, updated_by: str) -> SystemConfig | None:
         config = await self.get_by_key(key)
@@ -241,7 +241,7 @@ class AdminAuditLogRepository:
             .limit(limit)
         )
         result = await self.db.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def list_by_resource(
         self, resource_type: str, resource_id: str, limit: int = 50
@@ -258,4 +258,4 @@ class AdminAuditLogRepository:
             .limit(limit)
         )
         result = await self.db.execute(query)
-        return result.scalars().all()
+        return list(result.scalars().all())
