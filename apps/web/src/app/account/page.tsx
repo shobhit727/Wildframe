@@ -179,7 +179,6 @@ export default function AccountPage() {
 
               <div className="flex items-center gap-4 mb-6">
                 {profile?.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={profile.avatar_url} alt="" className="w-20 h-20 rounded-full object-cover" />
                 ) : (
                   <div className="w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-white text-2xl font-bold">
