@@ -1,8 +1,9 @@
 """Notification service repositories."""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Notification
@@ -24,3 +25,18 @@ class NotificationRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()
+
+    async def mark_as_read(self, notification_id: UUID, user_id: UUID) -> bool:
+        """Mark a notification read only when it belongs to the caller."""
+        stmt = (
+            update(Notification)
+            .where(
+                (Notification.id == notification_id)
+                & (Notification.user_id == user_id)
+                & (Notification.is_read == False)
+            )
+            .values(is_read=True, read_at=datetime.now(UTC).replace(tzinfo=None))
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        return result.rowcount == 1
