@@ -56,7 +56,9 @@ async def proxy_request(
 
     service_name = service.split("/")[0]
     client_key = (
-        str(current_user.get("sub")) if current_user else (request.client.host or "unknown")
+        str(current_user.get("sub"))
+        if current_user
+        else (request.client.host if request.client else "unknown")
     )
     if rate_limiter and not await rate_limiter.check_rate_limit(client_key, service_name):
         raise HTTPException(status_code=429, detail="Rate limit exceeded")

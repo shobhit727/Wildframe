@@ -178,7 +178,7 @@ class RateLimiter:
         key = f"rate_limit:{user_id}:{service}"
         limit = self.limits.get(service, self.limits["default"])
 
-        count = await self.redis.incr(key)
+        count = int(await self.redis.incr(key))
         if count == 1:
             await self.redis.expire(key, 60)  # 1 minute window
 
@@ -215,6 +215,8 @@ async def get_current_user(request: Request) -> dict:
     """
     from .main import auth_middleware  # late import: set in startup
 
+    assert auth_middleware is not None, "auth_middleware initialised on startup"
+
     token_payload = await auth_middleware.verify_token(request)
     if not token_payload:
         raise HTTPException(
@@ -232,5 +234,7 @@ async def get_optional_user(request: Request) -> dict | None:
     upstream enforce their own auth.
     """
     from .main import auth_middleware  # late import: set in startup
+
+    assert auth_middleware is not None, "auth_middleware initialised on startup"
 
     return await auth_middleware.verify_token(request)
