@@ -244,6 +244,21 @@ class TestOptionalUser:
         assert "sub" in payload
 
     @pytest.mark.asyncio
+    async def test_verify_token_without_exp_returns_none(self):
+        import jwt
+        from fastapi import Request
+
+        from app.middleware import AuthenticationMiddleware
+
+        token = jwt.encode({"sub": "u1"}, "test-secret", algorithm="HS256")
+        mw = AuthenticationMiddleware("test-secret")
+        request = Request(
+            scope={"type": "http", "headers": [(b"authorization", f"Bearer {token}".encode())]}
+        )
+
+        assert await mw.verify_token(request) is None
+
+    @pytest.mark.asyncio
     async def test_verify_token_with_wrong_secret_returns_none(self):
         import jwt
         from fastapi import Request
