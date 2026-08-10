@@ -7,7 +7,6 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
-    mapped_column,
     Boolean,
     Column,
     DateTime,
@@ -18,7 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, declarative_base
+from sqlalchemy.orm import mapped_column, Mapped, declarative_base
 
 Base = declarative_base()
 

@@ -8,7 +8,6 @@ from datetime import datetime
 from enum import Enum
 
 from sqlalchemy import (
-    mapped_column,
     Boolean,
     Column,
     DateTime,
@@ -25,7 +24,7 @@ from sqlalchemy import (
     Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, declarative_base, relationship
+from sqlalchemy.orm import mapped_column, Mapped, declarative_base, relationship
 
 Base = declarative_base()
 

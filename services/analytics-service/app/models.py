@@ -4,9 +4,9 @@ import uuid
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import mapped_column, JSON, Column, DateTime, Float, Index, Integer, String
+from sqlalchemy import JSON, Column, DateTime, Float, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, declarative_base
+from sqlalchemy.orm import mapped_column, Mapped, declarative_base
 
 Base = declarative_base()
 

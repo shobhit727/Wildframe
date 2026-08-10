@@ -25,7 +25,6 @@ from enum import Enum
 from uuid import uuid4
 
 from sqlalchemy import (
-    mapped_column,
     BigInteger,
     Column,
     DateTime,
@@ -38,7 +37,7 @@ from sqlalchemy import (
     Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, declarative_base
+from sqlalchemy.orm import mapped_column, Mapped, declarative_base
 
 Base = declarative_base()
 

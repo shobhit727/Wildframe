@@ -4,9 +4,9 @@ import uuid
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import mapped_column, Boolean, Column, DateTime, Index, String
+from sqlalchemy import Boolean, Column, DateTime, Index, String
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, declarative_base
+from sqlalchemy.orm import mapped_column, Mapped, declarative_base
 
 Base = declarative_base()
 
