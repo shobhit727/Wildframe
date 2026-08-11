@@ -22,7 +22,6 @@ from uuid import uuid4
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    Column,
     DateTime,
     ForeignKey,
     Index,
@@ -225,7 +224,10 @@ class CreatorPoolDistribution(Base):
     )
     creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    floor_deficit: Mapped[Decimal] = mapped_column(Numeric(10, 2), comment="How far below floor before this distribution")
+    floor_deficit: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2),
+        comment="How far below floor before this distribution",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
 

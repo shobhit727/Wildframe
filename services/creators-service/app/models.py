@@ -9,7 +9,6 @@ from uuid import uuid4
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    Column,
     DateTime,
     Float,
     Index,
@@ -144,7 +143,11 @@ class Milestone(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    status: Mapped[MilestoneStatus] = mapped_column(SQLEnum(MilestoneStatus), default=MilestoneStatus.DRAFT, nullable=False)
+    status: Mapped[MilestoneStatus] = mapped_column(
+        SQLEnum(MilestoneStatus),
+        default=MilestoneStatus.DRAFT,
+        nullable=False,
+    )
     total_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
     goal: Mapped[str | None] = mapped_column(String(1000), nullable=True)
