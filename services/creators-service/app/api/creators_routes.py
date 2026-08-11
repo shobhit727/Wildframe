@@ -3,10 +3,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from jose import JWTError, jwt
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.database import get_db
+from app.core.settings import settings
 from app.repositories import (
     CreatorAccountRepository,
     CreatorPoolBalanceRepository,
@@ -35,14 +36,39 @@ router = APIRouter(prefix="/api/v1/creators", tags=["creators"])
 admin_router = APIRouter(prefix="/api/v1/admin/creators", tags=["admin-creators"])
 
 
-async def current_user() -> UUID:
-    """Trust the API-gateway JWT. In production this extracts the creator/user
-    id from the validated gateway token. Here we return a deterministic UUID so
-    the service is runnable standalone; the gateway replaces this at the edge.
-    """
-    # Placeholder identity — the real value is injected by the gateway.
-    return UUID("00000000-0000-0000-0000-000000000001")
+async def current_user(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> UUID:
+    """Resolve the authenticated user_id from the validated JWT sub claim.
 
+    The API gateway validates the access token at the edge; this verifier
+    re-checks the signature so that direct callers (or a misconfigured gateway)
+    cannot act as a hard-coded identity. Replace this with a shared verifier
+    if the SDK introduces one.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+    token = authorization.removeprefix("Bearer ")
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        )
+    sub = payload.get("sub") or payload.get("user_id")
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
+        )
+    try:
+        return UUID(str(sub))
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
+        )
 
 def get_service(db: Annotated[AsyncSession, Depends(get_db)]) -> CreatorService:
     return CreatorService(

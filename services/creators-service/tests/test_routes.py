@@ -14,6 +14,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.creators_routes import current_user
 from app.main import app
 
 
@@ -42,11 +43,15 @@ def make_acct(**overrides):
     for k, v in overrides.items():
         setattr(acct, k, v)
     return acct
+@pytest.fixture
+def auth_user_id():
+    return uuid4()
 
 
 @pytest.fixture
-def client():
+def client(auth_user_id):
     app.dependency_overrides.clear()
+    app.dependency_overrides[current_user] = lambda: auth_user_id
     yield TestClient(app, base_url="http://localhost")
     app.dependency_overrides.clear()
 
@@ -218,3 +223,29 @@ class TestPayouts:
         )
 
         assert response.status_code == 404
+
+
+class TestCurrentUserAuth:
+    """Regression for [#48]: ``current_user`` used to return a hard-coded UUID
+    instead of verifying the JWT, so every creator endpoint accepted anonymous
+    callers. These tests clear the auth override and prove the endpoints now
+    hold the 401 authentication boundary.
+    """
+
+    def test_no_token_rejected_on_me_profile(self, client, service):
+        service.get_profile.return_value = make_acct()
+        app.dependency_overrides.pop(current_user, None)
+        response = client.get("/api/v1/creators/me")
+        assert response.status_code == 401
+
+    def test_no_token_rejected_on_create_profile(self, client, service):
+        app.dependency_overrides.pop(current_user, None)
+        response = client.post(
+            "/api/v1/creators/onboard",
+            json={
+                "display_name": "Jane",
+                "region_code": "US",
+                "currency": "USD",
+            },
+        )
+        assert response.status_code == 401
