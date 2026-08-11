@@ -55,9 +55,7 @@ async def current_user(
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
     except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
         raise HTTPException(
@@ -69,6 +67,7 @@ async def current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
         )
+
 
 def get_service(db: Annotated[AsyncSession, Depends(get_db)]) -> CreatorService:
     return CreatorService(

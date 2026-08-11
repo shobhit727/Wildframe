@@ -43,6 +43,8 @@ def make_acct(**overrides):
     for k, v in overrides.items():
         setattr(acct, k, v)
     return acct
+
+
 @pytest.fixture
 def auth_user_id():
     return uuid4()

@@ -7,15 +7,14 @@ import base64
 import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
-from typing import Any, TYPE_CHECKING
+from typing import Any
 from uuid import UUID
 import bcrypt
 from app.core.settings import settings
 from jose import JWTError, jwt
 from jose.exceptions import ExpiredSignatureError
 
-if TYPE_CHECKING:
-    from app.models import User
+from app.models import User
 
 logger = logging.getLogger(__name__)
 

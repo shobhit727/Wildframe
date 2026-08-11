@@ -24,9 +24,13 @@ class UserPreferences(Base):
     )
     liked_genres: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     disliked_genres: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
-    preferred_languages: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["en"], nullable=False)
+    preferred_languages: Mapped[list[str]] = mapped_column(
+        JSON, default=lambda: ["en"], nullable=False
+    )
     watch_frequency: Mapped[str] = mapped_column(String(50), default="medium", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -44,5 +48,7 @@ class Recommendation(Base):
     score: Mapped[float] = mapped_column(Float, nullable=False)
     reason: Mapped[str | None] = mapped_column(String(255))
     algorithm: Mapped[str | None] = mapped_column(String(50))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
     __table_args__ = (Index("idx_recommendations_user", "user_id", "score"),)

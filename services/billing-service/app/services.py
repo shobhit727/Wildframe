@@ -135,6 +135,7 @@ class BillingService:
             assert updated is not None
             return updated
         return await self.sub_repo.create(user_id, tier, price)
+
     async def cancel_subscription(self, user_id: UUID) -> Subscription | None:
         """Cancel a subscription (reverts to AVOD)."""
         sub = await self.sub_repo.get_by_user(user_id)

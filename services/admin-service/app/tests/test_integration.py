@@ -137,7 +137,7 @@ class TestContentModerationIntegration:
             request = ContentModerationRequest(
                 content_id=content_id,
                 content_type="movie",
-            status="flagged",
+                status="flagged",
                 reason=f"Reason {i}",
             )
             await admin_service.flag_content(

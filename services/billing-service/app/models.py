@@ -72,7 +72,9 @@ class Subscription(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), nullable=False, unique=True, index=True
     )
-    tier: Mapped[RevenueTier] = mapped_column(SQLEnum(RevenueTier), default=RevenueTier.AVOD, nullable=False)
+    tier: Mapped[RevenueTier] = mapped_column(
+        SQLEnum(RevenueTier), default=RevenueTier.AVOD, nullable=False
+    )
     monthly_price: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), default=Decimal("0.00"), nullable=False
     )
@@ -144,7 +146,9 @@ class Invoice(Base):
         default=Decimal("0.00"),
         comment="Portion of this invoice allocated to creators (>=55% of net for SVOD).",
     )
-    status: Mapped[InvoiceStatus] = mapped_column(SQLEnum(InvoiceStatus), default=InvoiceStatus.PENDING)
+    status: Mapped[InvoiceStatus] = mapped_column(
+        SQLEnum(InvoiceStatus), default=InvoiceStatus.PENDING
+    )
     issued_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
     due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -173,8 +177,12 @@ class RegionFloor(Base):
         String(10), nullable=False, unique=True, comment="ISO 3166-1 alpha-2 or custom code"
     )
     currency: Mapped[str] = mapped_column(String(3), nullable=False, comment="ISO 4217")
-    floor_low: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False, comment="Minimum per finished minute")
-    floor_high: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False, comment="Maximum per finished minute")
+    floor_low: Mapped[Decimal] = mapped_column(
+        Numeric(10, 4), nullable=False, comment="Minimum per finished minute"
+    )
+    floor_high: Mapped[Decimal] = mapped_column(
+        Numeric(10, 4), nullable=False, comment="Maximum per finished minute"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -258,7 +266,9 @@ class Milestone(Base):
     creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     project_title: Mapped[str] = mapped_column(String(255), nullable=False)
     total_commitment: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    status: Mapped[MilestoneStatus] = mapped_column(SQLEnum(MilestoneStatus), default=MilestoneStatus.PENDING)
+    status: Mapped[MilestoneStatus] = mapped_column(
+        SQLEnum(MilestoneStatus), default=MilestoneStatus.PENDING
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -291,14 +301,18 @@ class MilestoneTranche(Base):
     milestone_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("milestones.id"), nullable=False, index=True
     )
-    tranche_number: Mapped[int] = mapped_column(Integer, nullable=False, comment="1-4, representing 10/20/30/40%")
+    tranche_number: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="1-4, representing 10/20/30/40%"
+    )
     percentage: Mapped[Decimal] = mapped_column(
         Numeric(5, 2), nullable=False, comment="10.00, 20.00, 30.00, or 40.00"
     )
     amount: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), nullable=False, comment="= milestone.total_commitment * percentage"
     )
-    status: Mapped[TrancheStatus] = mapped_column(SQLEnum(TrancheStatus), default=TrancheStatus.LOCKED)
+    status: Mapped[TrancheStatus] = mapped_column(
+        SQLEnum(TrancheStatus), default=TrancheStatus.LOCKED
+    )
     released_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     reverted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
@@ -341,7 +355,9 @@ class PayoutLedger(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
-    status: Mapped[PayoutStatus] = mapped_column(SQLEnum(PayoutStatus), default=PayoutStatus.ACCRUED)
+    status: Mapped[PayoutStatus] = mapped_column(
+        SQLEnum(PayoutStatus), default=PayoutStatus.ACCRUED
+    )
     breakdown: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         comment="JSON breakdown: {floor_payment, svod_share, avod_share, pool_top_up, tvod_share}",

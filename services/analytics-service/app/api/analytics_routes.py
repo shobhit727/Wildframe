@@ -147,6 +147,7 @@ async def get_creator_analytics(
         return {"creator_id": str(creator_id), "analytics": None}
     return analytics
 
+
 @router.get("/content/{content_id}")
 async def get_content_performance(
     content_id: UUID,

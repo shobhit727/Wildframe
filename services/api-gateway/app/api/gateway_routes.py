@@ -24,6 +24,7 @@ async def gateway_health(request: Request):
     """Gateway liveness probe — see /ready for dependency verification."""
     return {"status": "healthy", "service": "api-gateway"}
 
+
 @router.get("/gateway/ready")
 async def gateway_ready(request: Request):
     """Gateway readiness probe — bounded Redis ping (max 2s).

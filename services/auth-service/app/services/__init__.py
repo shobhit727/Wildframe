@@ -163,9 +163,7 @@ class AuthService:
 
         # MFA gate: password verified, but the user must prove TOTP possession
         if user.mfa_enabled:
-            challenge = self.token_manager.create_mfa_challenge_token(
-                user.id, user.email
-            )
+            challenge = self.token_manager.create_mfa_challenge_token(user.id, user.email)
             logger.info(f"Login awaiting MFA challenge for user: {user.email}")
             raise MfaChallengeRequired(challenge)
 

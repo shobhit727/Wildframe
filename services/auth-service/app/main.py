@@ -130,9 +130,8 @@ def create_app() -> FastAPI:
         response.headers["X-Correlation-ID"] = correlation_id
         response.headers["X-Request-ID"] = request_id
         return response
-    def _serializable_errors(
-        errors: Sequence[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+
+    def _serializable_errors(errors: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
         """Sanitize Pydantic error ctx so JSON responses never carry non-serializable objects."""
         cleaned: list[dict[str, Any]] = []
         for error in errors:

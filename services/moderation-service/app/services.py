@@ -201,9 +201,7 @@ class ModerationService:
     # _issue_strike (private)
     # ------------------------------------------------------------------
 
-    async def _issue_strike(
-        self, flag: ContentFlag, moderator_id: UUID
-    ) -> CreatorStrike | None:
+    async def _issue_strike(self, flag: ContentFlag, moderator_id: UUID) -> CreatorStrike | None:
         """Issue a strike for a rejected flag and check suspension threshold.
 
         The strike is linked to the flag that caused it (``related_flag_id``)

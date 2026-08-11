@@ -424,7 +424,6 @@ async def test_copyright_flag_creates_copyright_strike():
     assert strike_repo.strikes[0].strike_reason == StrikeReason.COPYRIGHT
 
 
-
 @pytest.mark.asyncio
 async def test_issue_strike_targets_real_creator_not_content_id():
     """A strike is issued against content_creator_id, never content_id."""

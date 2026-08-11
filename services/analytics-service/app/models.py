@@ -23,7 +23,9 @@ class Event(Base):
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
     event_data: Mapped[dict | None] = mapped_column(JSON)
     content_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC), index=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     __table_args__ = (Index("idx_events_user_type", "user_id", "event_type"),)
 
@@ -38,7 +40,9 @@ class ContentViewEvent(Base):
     watch_duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     content_duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     completion_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)  # 0-100
-    playback_quality: Mapped[str | None] = mapped_column(String(20), nullable=True)  # 240p, 360p, 480p, 720p, 1080p, 4k
+    playback_quality: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # 240p, 360p, 480p, 720p, 1080p, 4k
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
@@ -70,7 +74,9 @@ class ContentPerformanceMetrics(Base):
 
     __tablename__ = "content_performance_metrics"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    content_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    content_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, unique=True, index=True
+    )
     views_7d: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     views_30d: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     avg_completion_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)  # 0-100

@@ -12,6 +12,7 @@ from wildframe_observability.wire import wire_observability
 from app.api.gateway_routes import router as gateway_router
 from app.core.settings import settings
 from app.middleware import AuthenticationMiddleware, RateLimiter
+
 logger = logging.getLogger(__name__)
 
 # Global middleware instances

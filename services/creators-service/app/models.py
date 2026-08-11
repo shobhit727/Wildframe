@@ -76,7 +76,9 @@ class CreatorAccount(Base):
     region_code: Mapped[str] = mapped_column(String(8), nullable=False, default="US")
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
     stripe_connect_account_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    kyc_status: Mapped[KYCStatus] = mapped_column(SQLEnum(KYCStatus), default=KYCStatus.PENDING, nullable=False)
+    kyc_status: Mapped[KYCStatus] = mapped_column(
+        SQLEnum(KYCStatus), default=KYCStatus.PENDING, nullable=False
+    )
     kyc_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
@@ -101,7 +103,9 @@ class EffectiveFloor(Base):
     )
     per_minute_amount: Mapped[float] = mapped_column(Float, nullable=False)
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
-    effective_from: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    effective_from: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(UTC)
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     last_adjusted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -119,7 +123,9 @@ class CreatorPoolBalance(Base):
     __tablename__ = "creator_pool_balances"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    creator_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, unique=True, index=True
+    )
     accrued_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     contributed_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_payout_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -171,7 +177,9 @@ class MilestoneTranche(Base):
     milestone_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     threshold: Mapped[int] = mapped_column(Integer, nullable=False)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    status: Mapped[TrancheStatus] = mapped_column(SQLEnum(TrancheStatus), default=TrancheStatus.LOCKED, nullable=False)
+    status: Mapped[TrancheStatus] = mapped_column(
+        SQLEnum(TrancheStatus), default=TrancheStatus.LOCKED, nullable=False
+    )
     release_condition: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     released_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -202,7 +210,9 @@ class PayoutLedger(Base):
     stripe_fee_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     net_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     stripe_transfer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    status: Mapped[PayoutStatus] = mapped_column(SQLEnum(PayoutStatus), default=PayoutStatus.ACCRUED, nullable=False)
+    status: Mapped[PayoutStatus] = mapped_column(
+        SQLEnum(PayoutStatus), default=PayoutStatus.ACCRUED, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     __table_args__ = (

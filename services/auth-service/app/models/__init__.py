@@ -250,9 +250,7 @@ class TokenBlacklist(Base, BaseModel):
         index=True,
     )
 
-    __table_args__ = (
-        Index("idx_token_blacklist_user_expires", "user_id", "expires_at"),
-    )
+    __table_args__ = (Index("idx_token_blacklist_user_expires", "user_id", "expires_at"),)
 
 
 class LoginAudit(Base, BaseModel):

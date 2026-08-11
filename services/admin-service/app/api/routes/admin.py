@@ -37,6 +37,7 @@ async def get_current_admin_id(
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+
 # --- Authorization helpers -------------------------------------------------
 # Issue #618 / #622: lookup-then-authorize-then-404. Never return 403 for
 # resources the caller cannot see — return 404 so existence is not leaked.

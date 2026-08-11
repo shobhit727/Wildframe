@@ -168,10 +168,16 @@ async def test_generate_excludes_disliked_genre_expressed_by_slug(service):
     kept_id = str(uuid4())
     other_id = str(uuid4())
     global_items = [
-        {"id": kept_id, "audience_score": 70,
-         "genres": [{"id": other_id, "name": "Other", "slug": "other"}]},
-        {"id": str(uuid4()), "audience_score": 95,
-         "genres": [{"id": action_id, "name": "Action", "slug": "action"}]},
+        {
+            "id": kept_id,
+            "audience_score": 70,
+            "genres": [{"id": other_id, "name": "Other", "slug": "other"}],
+        },
+        {
+            "id": str(uuid4()),
+            "audience_score": 95,
+            "genres": [{"id": action_id, "name": "Action", "slug": "action"}],
+        },
     ]
     client = make_client(
         fetch_genres=AsyncMock(return_value=genres),

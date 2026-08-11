@@ -86,6 +86,7 @@ class RecommendationService:
             genres = await catalog.fetch_genres()
             by_slug = {str(g.get("slug", "")).lower(): g for g in genres}
             by_name = {str(g.get("name", "")).lower(): g for g in genres}
+
             # Resolve a user-supplied genre reference by either slug or name
             # so a preference like "Science Fiction" matches the genre whose
             # slug is "science-fiction" and vice versa. This resolution was
@@ -98,14 +99,10 @@ class RecommendationService:
 
             liked = [g for g in (resolve(x) for x in liked_genres) if g]
 
-            disliked_genres_resolved = [
-                g for g in (resolve(x) for x in disliked_genres) if g
-            ]
+            disliked_genres_resolved = [g for g in (resolve(x) for x in disliked_genres) if g]
             disliked_ids = {str(g.get("id")) for g in disliked_genres_resolved if g.get("id")}
             disliked_slugs = {
-                str(g.get("slug", "")).lower()
-                for g in disliked_genres_resolved
-                if g.get("slug")
+                str(g.get("slug", "")).lower() for g in disliked_genres_resolved if g.get("slug")
             }
 
             scored: dict[str, tuple[float, str]] = {}
@@ -125,9 +122,7 @@ class RecommendationService:
                         if g.get("slug")
                     }
                     item_genre_ids = {
-                        str(g.get("id"))
-                        for g in (item.get("genres") or [])
-                        if g.get("id")
+                        str(g.get("id")) for g in (item.get("genres") or []) if g.get("id")
                     }
                     if genre_slugs & disliked_slugs or item_genre_ids & disliked_ids:
                         continue
@@ -156,9 +151,7 @@ class RecommendationService:
                         if g.get("slug")
                     }
                     item_genre_ids = {
-                        str(g.get("id"))
-                        for g in (item.get("genres") or [])
-                        if g.get("id")
+                        str(g.get("id")) for g in (item.get("genres") or []) if g.get("id")
                     }
                     if genre_slugs & disliked_slugs or item_genre_ids & disliked_ids:
                         continue
