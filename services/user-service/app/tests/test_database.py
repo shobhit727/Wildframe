@@ -9,6 +9,7 @@ These cover two confirmed bugs:
    never defined it, raising ``ImportError`` at import time.
 """
 
+from datetime import datetime
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -68,7 +69,7 @@ def test_health_check_response_importable_from_schemas():
         status="healthy",
         service="user-service",
         version="1.0.0",
-        timestamp="2026-01-01T00:00:00Z",
+        timestamp=datetime.fromisoformat("2026-01-01T00:00:00+00:00"),
     )
     assert response.status == "healthy"
     assert response.service == "user-service"

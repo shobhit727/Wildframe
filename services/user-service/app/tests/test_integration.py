@@ -80,6 +80,9 @@ class TestUserProfileIntegration:
             bio="Updated bio",
             country="US",
             language="en-US",
+            avatar_url=None,
+            phone_number=None,
+            timezone=None,
         )
 
         updated = await user_service.update_user_profile(user_id, update_request)
@@ -121,6 +124,8 @@ class TestUserDeviceIntegration:
             device_type="web",
             os_name="macOS",
             browser_name="Chrome",
+            os_version=None,
+            browser_version=None,
         )
 
         device = await user_service.register_device(user_id, device_request, "127.0.0.1")
@@ -143,6 +148,10 @@ class TestUserDeviceIntegration:
             device_id="device-456",
             device_name="Second Device",
             device_type="ios",
+            os_name=None,
+            os_version=None,
+            browser_name=None,
+            browser_version=None,
         )
 
         await user_service.register_device(user_id, device_request, "127.0.0.1")
@@ -181,6 +190,11 @@ class TestUserPreferenceIntegration:
             theme="light",
             language="fr-FR",
             autoplay=False,
+            subtitle_language=None,
+            subtitle_size=None,
+            default_video_quality=None,
+            default_audio_language=None,
+            content_rating=None,
         )
 
         updated = await user_service.update_preferences(user_id, update_request)
