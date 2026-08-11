@@ -252,9 +252,7 @@ class UserSubscriptionProfileRepository(BaseRepository):
 
             # Update tier and related limits
             subscription.subscription_tier = new_tier  # type: ignore[assignment]
-            subscription.max_concurrent_streams = (  # type: ignore[assignment]
-                1 if new_tier == "free" else (2 if new_tier == "basic" else 4)
-            )
+            subscription.max_concurrent_streams = 1 if new_tier == "free" else (2 if new_tier == "basic" else 4)  # type: ignore[assignment]
             subscription.can_download = new_tier != "free"  # type: ignore[assignment]
             subscription.can_use_4k = new_tier == "premium"  # type: ignore[assignment]
             subscription.ad_free = new_tier != "free"  # type: ignore[assignment]
