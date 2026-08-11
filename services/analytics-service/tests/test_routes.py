@@ -239,3 +239,25 @@ class TestIdorProtection:
             },
         )
         assert response.status_code == 403
+
+
+class TestCreatorContentAuth:
+    """Regression for [#90]: the creator/content analytics endpoints must
+    require authentication — they used to be callable anonymously.
+    Authenticated access is still allowed because the fixture overrides the
+    auth dependency; the 401 paths below prove the endpoints now hold the
+    authentication boundary.
+    """
+
+    def test_creator_analytics_requires_token(self, client):
+        app.dependency_overrides.clear()
+        # get_analytics_service still needs to resolve, so set it back.
+        app.dependency_overrides[get_analytics_service] = override(MagicMock())
+        response = client.get(f"/api/v1/analytics/creators/{uuid4()}")
+        assert response.status_code == 401
+
+    def test_content_performance_requires_token(self, client):
+        app.dependency_overrides.clear()
+        app.dependency_overrides[get_analytics_service] = override(MagicMock())
+        response = client.get(f"/api/v1/analytics/content/{uuid4()}")
+        assert response.status_code == 401

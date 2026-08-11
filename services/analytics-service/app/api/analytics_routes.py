@@ -135,20 +135,27 @@ async def record_view_event(
 
 @router.get("/creators/{creator_id}")
 async def get_creator_analytics(
-    creator_id: UUID, service: AnalyticsService = Depends(get_analytics_service)  # noqa: B008
+    creator_id: UUID,
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
+    service: AnalyticsService = Depends(get_analytics_service),  # noqa: B008
 ):
-    """Get analytics for a creator."""
+    """Get analytics for a creator. Authentication required — these metrics
+    are not public; ownership/role enforcement is the next layer.
+    """
     analytics = await service.get_creator_analytics(creator_id)
     if not analytics:
         return {"creator_id": str(creator_id), "analytics": None}
     return analytics
 
-
 @router.get("/content/{content_id}")
 async def get_content_performance(
-    content_id: UUID, service: AnalyticsService = Depends(get_analytics_service)  # noqa: B008
+    content_id: UUID,
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
+    service: AnalyticsService = Depends(get_analytics_service),  # noqa: B008
 ):
-    """Get performance metrics for content."""
+    """Get performance metrics for content. Authentication required — these
+    metrics are not public; ownership/role enforcement is the next layer.
+    """
     performance = await service.get_content_performance(content_id)
     if not performance:
         return {"content_id": str(content_id), "metrics": None}
