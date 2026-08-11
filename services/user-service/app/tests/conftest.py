@@ -16,7 +16,7 @@ postgres.start()
 DATABASE_URL = postgres.get_connection_url().replace("psycopg2", "asyncpg")
 
 engine = create_async_engine(DATABASE_URL, echo=False, future=True)
-async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore[call-overload]
+async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 @pytest.fixture(scope="session")
