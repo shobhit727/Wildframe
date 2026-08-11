@@ -86,13 +86,27 @@ class RecommendationService:
             genres = await catalog.fetch_genres()
             by_slug = {str(g.get("slug", "")).lower(): g for g in genres}
             by_name = {str(g.get("name", "")).lower(): g for g in genres}
-            disliked = {str(s).strip().lower() for s in disliked_genres if s}
-
+            # Resolve a user-supplied genre reference by either slug or name
+            # so a preference like "Science Fiction" matches the genre whose
+            # slug is "science-fiction" and vice versa. This resolution was
+            # previously applied only to liked genres; disliked genres were
+            # compared against slugs only, leaking content from name-only
+            # dislikes (see test_generate_excludes_disliked_genre_*).
             def resolve(genre_ref: str) -> dict | None:
                 ref = str(genre_ref).strip().lower()
                 return by_slug.get(ref) or by_name.get(ref)
 
             liked = [g for g in (resolve(x) for x in liked_genres) if g]
+
+            disliked_genres_resolved = [
+                g for g in (resolve(x) for x in disliked_genres) if g
+            ]
+            disliked_ids = {str(g.get("id")) for g in disliked_genres_resolved if g.get("id")}
+            disliked_slugs = {
+                str(g.get("slug", "")).lower()
+                for g in disliked_genres_resolved
+                if g.get("slug")
+            }
 
             scored: dict[str, tuple[float, str]] = {}
             seen: set[str] = set()
@@ -110,7 +124,12 @@ class RecommendationService:
                         for g in (item.get("genres") or [])
                         if g.get("slug")
                     }
-                    if genre_slugs & disliked:
+                    item_genre_ids = {
+                        str(g.get("id"))
+                        for g in (item.get("genres") or [])
+                        if g.get("id")
+                    }
+                    if genre_slugs & disliked_slugs or item_genre_ids & disliked_ids:
                         continue
                     if cid in seen:
                         continue
@@ -136,7 +155,12 @@ class RecommendationService:
                         for g in (item.get("genres") or [])
                         if g.get("slug")
                     }
-                    if genre_slugs & disliked:
+                    item_genre_ids = {
+                        str(g.get("id"))
+                        for g in (item.get("genres") or [])
+                        if g.get("id")
+                    }
+                    if genre_slugs & disliked_slugs or item_genre_ids & disliked_ids:
                         continue
                     if cid in seen:
                         continue

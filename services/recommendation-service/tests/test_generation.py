@@ -1,7 +1,7 @@
 """Tests for the recommendation generation logic."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -114,3 +114,73 @@ async def test_update_preferences_regenerates(service):
 
     service.rec_repo.clear_for_user.assert_awaited_once()
     service.pref_repo.session.commit.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_generate_excludes_disliked_genre_expressed_by_name(service):
+    """Disliked genres expressed by name (not slug) must still be excluded.
+
+    Regression for the [SECURITY] finding that disliked name strings were
+    only compared against genre slugs, so "Action" failed to exclude
+    content whose genre slug was "action".
+    """
+    # Catalog exposes one genre named "Action" with slug "action".
+    action_id = str(uuid4())
+    genres = [{"id": action_id, "name": "Action", "slug": "action"}]
+    # Two items: one belongs to the Action genre (should be excluded),
+    # the other belongs to a different genre (should be kept).
+    other_id = str(uuid4())
+    kept_id = str(uuid4())
+    global_items = [
+        {
+            "id": kept_id,
+            "title": "Other Movie",
+            "audience_score": 70,
+            "genres": [{"id": other_id, "name": "Other", "slug": "other"}],
+        },
+        {
+            "id": str(uuid4()),
+            "title": "Action Movie",
+            "audience_score": 95,
+            "genres": [{"id": action_id, "name": "Action", "slug": "action"}],
+        },
+    ]
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=genres),
+        fetch_global=AsyncMock(return_value=global_items),
+    )
+    with patch("app.services.ContentCatalogClient", return_value=client):
+        # Disliked expressed only by name (capitalised, not as slug).
+        count = await service.generate(uuid4(), [], ["Action"], limit=10)
+
+    assert count == 1
+    # The one recommendation must be the non-Action item.
+    args, kwargs = service.rec_repo.create.await_args_list[0]
+    assert kwargs.get("content_id") == UUID(kept_id) or (args and args[1] == UUID(kept_id))
+
+
+@pytest.mark.asyncio
+async def test_generate_excludes_disliked_genre_expressed_by_slug(service):
+    """Slug-based disliked genres continue working alongside the new
+    name resolution path (regression guard)."""
+    action_id = str(uuid4())
+    genres = [{"id": action_id, "name": "Action", "slug": "action"}]
+    kept_id = str(uuid4())
+    other_id = str(uuid4())
+    global_items = [
+        {"id": kept_id, "audience_score": 70,
+         "genres": [{"id": other_id, "name": "Other", "slug": "other"}]},
+        {"id": str(uuid4()), "audience_score": 95,
+         "genres": [{"id": action_id, "name": "Action", "slug": "action"}]},
+    ]
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=genres),
+        fetch_global=AsyncMock(return_value=global_items),
+    )
+    with patch("app.services.ContentCatalogClient", return_value=client):
+        # Disliked expressed by slug "action" — already worked pre-fix.
+        count = await service.generate(uuid4(), [], ["action"], limit=10)
+
+    assert count == 1
+    args, kwargs = service.rec_repo.create.await_args_list[0]
+    assert kwargs.get("content_id") == UUID(kept_id) or (args and args[1] == UUID(kept_id))
