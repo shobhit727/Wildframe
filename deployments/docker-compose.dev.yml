@@ -111,8 +111,6 @@ services:
     - wildframe-network
   prometheus:
     image: prom/prometheus:latest
-    ports:
-    - 9090:9090
     volumes:
     - ../infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     - prometheus_data:/prometheus
@@ -144,19 +142,64 @@ services:
     - wildframe-network
   pgadmin:
     image: dpage/pgadmin4:latest
-    ports:
-    - 5050:80
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@example.com
       PGADMIN_DEFAULT_PASSWORD: admin
+      PROXY_X_FOR_COUNT: '1'
+      PROXY_X_PROTO_COUNT: '1'
     depends_on:
     - postgres
     networks:
     - wildframe-network
+  caddy:
+    image: caddy:2
+    ports:
+    - 8000:8000
+    - 8001:8001
+    - 8002:8002
+    - 8003:8003
+    - 8004:8004
+    - 8005:8005
+    - 8006:8006
+    - 8007:8007
+    - 8008:8008
+    - 8009:8009
+    - 8010:8010
+    - 8011:8011
+    - 8012:8012
+    - 8013:8013
+    - 8014:8014
+    - 5050:5050
+    - 9090:9090
+    - 3100:3100
+    - 16686:16686
+    volumes:
+    - ../infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    - ../apps/web/certificates:/etc/caddy/certs:ro
+    depends_on:
+    - api-gateway
+    - auth-service
+    - user-service
+    - content-service
+    - streaming-service
+    - search-service
+    - admin-service
+    - recommendation-service
+    - billing-service
+    - analytics-service
+    - notification-service
+    - media-pipeline
+    - creators-service
+    - moderation-service
+    - uploads-service
+    - pgadmin
+    - prometheus
+    - loki
+    - jaeger
+    networks:
+    - wildframe-network
   loki:
     image: grafana/loki:latest
-    ports:
-    - 3100:3100
     volumes:
     - ../infrastructure/loki/loki-config.yml:/etc/loki/local-config.yaml
     - loki_data:/loki
@@ -167,7 +210,6 @@ services:
   jaeger:
     image: jaegertracing/all-in-one:latest
     ports:
-    - 16686:16686
     - 14268:14268
     - 14250:14250
     environment:
@@ -181,8 +223,6 @@ services:
       context: ..
       dockerfile: services/auth-service/Dockerfile
       target: development
-    ports:
-    - 8001:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/auth_db
       REDIS_URL: redis://redis:6379/0
@@ -216,8 +256,6 @@ services:
       context: ..
       dockerfile: services/user-service/Dockerfile
       target: development
-    ports:
-    - 8002:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/users_db
       REDIS_URL: redis://redis:6379/1
@@ -247,8 +285,6 @@ services:
       context: ..
       dockerfile: services/admin-service/Dockerfile
       target: development
-    ports:
-    - 8006:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/admin_db
       REDIS_URL: redis://redis:6379/3
@@ -278,8 +314,6 @@ services:
       context: ..
       dockerfile: services/content-service/Dockerfile
       target: development
-    ports:
-    - 8003:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/content_db
       REDIS_URL: redis://redis:6379/2
@@ -309,8 +343,6 @@ services:
       context: ..
       dockerfile: services/api-gateway/Dockerfile
       target: development
-    ports:
-    - 8000:8000
     environment:
       AUTH_SERVICE_URL: http://auth-service:8000
       USER_SERVICE_URL: http://user-service:8000
@@ -339,8 +371,6 @@ services:
       context: ..
       dockerfile: services/streaming-service/Dockerfile
       target: development
-    ports:
-    - 8004:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/streaming_db
       REDIS_URL: redis://redis:6379/4
@@ -365,8 +395,6 @@ services:
       context: ..
       dockerfile: services/search-service/Dockerfile
       target: development
-    ports:
-    - 8005:8000
     environment:
       ELASTICSEARCH_URL: http://elasticsearch:9200
       REDIS_URL: redis://redis:6379/5
@@ -391,8 +419,6 @@ services:
       context: ..
       dockerfile: services/recommendation-service/Dockerfile
       target: development
-    ports:
-    - 8007:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/recommendation_db
       CONTENT_SERVICE_URL: http://content-service:8000
@@ -418,8 +444,6 @@ services:
       context: ..
       dockerfile: services/billing-service/Dockerfile
       target: development
-    ports:
-    - 8008:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/billing_db
       REDIS_URL: redis://redis:6379/7
@@ -444,8 +468,6 @@ services:
       context: ..
       dockerfile: services/analytics-service/Dockerfile
       target: development
-    ports:
-    - 8009:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/analytics_db
       REDIS_URL: redis://redis:6379/8
@@ -470,8 +492,6 @@ services:
       context: ..
       dockerfile: services/notification-service/Dockerfile
       target: development
-    ports:
-    - 8010:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/notification_db
       REDIS_URL: redis://redis:6379/9
@@ -496,8 +516,6 @@ services:
       context: ..
       dockerfile: services/creators-service/Dockerfile
       target: development
-    ports:
-    - 8012:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/creators_db
       REDIS_URL: redis://redis:6379/11
@@ -524,8 +542,6 @@ services:
       context: ..
       dockerfile: services/moderation-service/Dockerfile
       target: development
-    ports:
-    - 8013:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/moderation_db
       REDIS_URL: redis://redis:6379/12
@@ -552,8 +568,6 @@ services:
       context: ..
       dockerfile: services/uploads-service/Dockerfile
       target: development
-    ports:
-    - 8014:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/uploads_db
       REDIS_URL: redis://redis:6379/13
@@ -580,8 +594,6 @@ services:
       context: ..
       dockerfile: services/media-pipeline/Dockerfile
       target: development
-    ports:
-    - 8011:8000
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/media_db
       REDIS_URL: redis://redis:6379/10

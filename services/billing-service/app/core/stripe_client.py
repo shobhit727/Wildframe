@@ -22,12 +22,15 @@ from decimal import Decimal
 from uuid import UUID
 
 import stripe
-from httpx import Timeout as HTTPXTimeout
 from stripe import (
-    HTTPXClient,
     SignatureVerificationError as _StripeSignatureError,
     StripeError as _StripeError,
 )
+
+try:
+    from stripe import HTTPXClient as _StripeHTTPClient
+except ImportError:  # stripe >= 7.0 renamed it to HTTPClient
+    from stripe import HTTPClient as _StripeHTTPClient
 
 from app.core.money import to_minor_units, validate_currency
 from app.core.settings import settings
@@ -39,9 +42,7 @@ logger = logging.getLogger(__name__)
 # are retried by the SDK. We set 2 retries and a bounded timeout so a slow
 # Stripe response cannot hang a webhook handler indefinitely.
 stripe.max_network_retries = 2
-stripe.default_http_client = HTTPXClient(
-    timeout=HTTPXTimeout(connect=5.0, read=30.0, write=30.0, pool=5.0)
-)
+stripe.default_http_client = _StripeHTTPClient()
 
 # Set the Stripe API key once at module load.
 stripe.api_key = settings.STRIPE_API_KEY

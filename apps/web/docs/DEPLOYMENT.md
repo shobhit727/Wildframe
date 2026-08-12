@@ -112,8 +112,8 @@ Check their documentation for specific steps.
 ### Development (.env.local)
 ```
 NEXT_PUBLIC_APP_NAME=MyApp
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_APP_URL=https://localhost:3000
+NEXT_PUBLIC_API_URL=https://localhost:8000
 ```
 
 ### Production

@@ -261,7 +261,7 @@ Coverage target: 70%+ on `src/components/` and `src/hooks/`.
 
 | Var | Purpose |
 |---|---|
-| `NEXT_PUBLIC_API_URL` | Backend gateway (default `http://localhost:8000`) |
+| `NEXT_PUBLIC_API_URL` | Backend gateway (default `https://localhost:8000`) |
 | `NEXT_PUBLIC_CDN_URL` | Media CDN base |
 | `WILDFRAME_SESSION_SECRET` | Cookie signing (server-only) |
 

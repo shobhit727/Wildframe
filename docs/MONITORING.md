@@ -152,7 +152,7 @@ database_connection_pool_available{service="auth_db"} 7.0
 kubectl port-forward svc/prometheus 9090:9090 -n wildframe
 
 # Query metrics via API
-curl 'http://localhost:9090/api/v1/query?query=fastapi_requests_total'
+curl 'https://localhost:9090/api/v1/query?query=fastapi_requests_total'
 
 # Example response:
 # {
@@ -238,7 +238,7 @@ Trace ID: 4bf92f3577b34da6a3ce929d0e0e4736
 # Port forward to Jaeger UI
 kubectl port-forward svc/jaeger 16686:16686 -n wildframe
 
-# Open http://localhost:16686
+# Open https://localhost:16686
 ```
 
 ### Trace Analysis

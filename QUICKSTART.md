@@ -30,12 +30,12 @@ docker-compose -f deployments/docker-compose.dev.yml up -d
 sleep 30
 
 # Verify health
-curl http://localhost:8001/health  # Auth Service
-curl http://localhost:8002/health  # User Service
-curl http://localhost:8003/health  # Content Service
-curl http://localhost:8004/health  # Streaming Service
-curl http://localhost:8006/health  # Admin Service
-curl http://localhost:8011/health  # Media Pipeline
+curl https://localhost:8001/health  # Auth Service
+curl https://localhost:8002/health  # User Service
+curl https://localhost:8003/health  # Content Service
+curl https://localhost:8004/health  # Streaming Service
+curl https://localhost:8006/health  # Admin Service
+curl https://localhost:8011/health  # Media Pipeline
 ```
 
 **What runs**: Postgres (per-service), Redis, Kafka + 6 core services.
@@ -72,18 +72,18 @@ cd services/media-pipeline && poetry install && poetry run uvicorn app.main:app 
 
 ```bash
 # 1. Register (works)
-curl -X POST http://localhost:8001/api/v1/auth/register \
+curl -X POST https://localhost:8001/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"SecurePass123!","first_name":"John","last_name":"Doe"}'
 
 # 2. Login (works - returns access_token + refresh_token)
-curl -X POST http://localhost:8001/api/v1/auth/login \
+curl -X POST https://localhost:8001/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"SecurePass123!"}'
 
 # 3. Use access_token for protected endpoints
 TOKEN="<access_token_from_login>"
-curl http://localhost:8001/api/v1/users/me -H "Authorization: Bearer $TOKEN"
+curl https://localhost:8001/api/v1/users/me -H "Authorization: Bearer $TOKEN"
 ```
 
 **What returns 501 (not implemented)**:
@@ -97,20 +97,20 @@ curl http://localhost:8001/api/v1/users/me -H "Authorization: Bearer $TOKEN"
 
 ```bash
 # User Service - create profile (needs auth)
-curl -X POST http://localhost:8002/api/v1/profiles \
+curl -X POST https://localhost:8002/api/v1/profiles \
   -H "Authorization: Bearer $TOKEN"
 
 # Content Service - list content
-curl http://localhost:8003/api/v1/content
+curl https://localhost:8003/api/v1/content
 
 # Streaming Service - health
-curl http://localhost:8004/health
+curl https://localhost:8004/health
 
 # Admin Service - health
-curl http://localhost:8006/health
+curl https://localhost:8006/health
 
 # Media Pipeline - health
-curl http://localhost:8011/health
+curl https://localhost:8011/health
 ```
 
 ---
@@ -139,7 +139,7 @@ black --check services/
 cd apps/web
 npm install
 npm run dev
-# http://localhost:3000
+# https://localhost:3000
 ```
 
 ---

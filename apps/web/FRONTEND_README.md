@@ -42,7 +42,7 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [https://localhost:3000](https://localhost:3000) in your browser.
 
 ## Project Structure
 
@@ -200,7 +200,7 @@ npm run start
 ## Troubleshooting
 
 ### API Connection Error
-- Ensure backend is running on http://localhost:8000
+- Ensure backend is running on https://localhost:8000
 - Check `.env.local` has correct `NEXT_PUBLIC_API_URL`
 - Verify CORS is enabled in backend
 

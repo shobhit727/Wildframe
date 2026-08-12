@@ -88,7 +88,7 @@ async def get_streaming_service(
 async def start_playback(
     request: PlaybackSessionCreateRequest,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
-    current_user: Annotated[UUID, Depends(get_current_user_id)] = Depends(get_current_user_id),
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
     """Start a new playback session."""
     if request.user_id != current_user:
@@ -302,7 +302,7 @@ async def list_cdn_regions(service: Annotated[StreamingService, Depends(get_stre
 async def create_download(
     request: DownloadSessionCreateRequest,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
-    current_user: Annotated[UUID, Depends(get_current_user_id)] = Depends(get_current_user_id),
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
     """Create download session."""
     if request.user_id != current_user:

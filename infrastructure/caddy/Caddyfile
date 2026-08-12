@@ -1,0 +1,102 @@
+{
+	auto_https off
+}
+
+(tls) {
+	tls /etc/caddy/certs/localhost.pem /etc/caddy/certs/localhost-key.pem
+}
+
+https://localhost:8000 {
+	import tls
+	reverse_proxy api-gateway:8000
+}
+
+https://localhost:8001 {
+	import tls
+	reverse_proxy auth-service:8000
+}
+
+https://localhost:8002 {
+	import tls
+	reverse_proxy user-service:8000
+}
+
+https://localhost:8003 {
+	import tls
+	reverse_proxy content-service:8000
+}
+
+https://localhost:8004 {
+	import tls
+	reverse_proxy streaming-service:8000
+}
+
+https://localhost:8005 {
+	import tls
+	reverse_proxy search-service:8000
+}
+
+https://localhost:8006 {
+	import tls
+	reverse_proxy admin-service:8000
+}
+
+https://localhost:8007 {
+	import tls
+	reverse_proxy recommendation-service:8000
+}
+
+https://localhost:8008 {
+	import tls
+	reverse_proxy billing-service:8000
+}
+
+https://localhost:8009 {
+	import tls
+	reverse_proxy analytics-service:8000
+}
+
+https://localhost:8010 {
+	import tls
+	reverse_proxy notification-service:8000
+}
+
+https://localhost:8011 {
+	import tls
+	reverse_proxy media-pipeline:8000
+}
+
+https://localhost:8012 {
+	import tls
+	reverse_proxy creators-service:8000
+}
+
+https://localhost:8013 {
+	import tls
+	reverse_proxy moderation-service:8000
+}
+
+https://localhost:8014 {
+	import tls
+	reverse_proxy uploads-service:8000
+}
+
+https://localhost:5050 {
+	import tls
+	reverse_proxy pgadmin:80
+}
+
+https://localhost:9090 {
+	import tls
+	reverse_proxy prometheus:9090
+}
+
+https://localhost:3100 {
+	import tls
+	reverse_proxy loki:3100
+}
+
+https://localhost:16686 {
+	import tls
+	reverse_proxy jaeger:16686
+}

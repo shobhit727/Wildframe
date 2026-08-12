@@ -5,7 +5,7 @@
 npm install
 npm run dev
 \`\`\`
-Open http://localhost:3000
+Open https://localhost:3000
 
 ## Project Structure
 ```
@@ -52,8 +52,8 @@ import { Button, Card, Section, Grid } from '@/components/common';
 ## Environment Variables
 \`\`\`
 NEXT_PUBLIC_APP_NAME=YourApp
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-NEXT_PUBLIC_API_URL=http://localhost:8000  # Optional
+NEXT_PUBLIC_APP_URL=https://localhost:3000
+NEXT_PUBLIC_API_URL=https://localhost:8000  # Optional
 \`\`\`
 
 ## Available Scripts

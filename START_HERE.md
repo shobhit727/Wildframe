@@ -109,7 +109,7 @@ cd services/auth-service && python3 -m pytest tests/ -v
 
 1. **Read**: HOW_TO_RUN_TESTS.md (2 min read)
 2. **Run**: Copy-paste the test commands above
-3. **View**: Check Grafana at http://localhost:3000 for dashboards
+3. **View**: Check Grafana at https://localhost:3000 for dashboards
 4. **Develop**: Edit services and they auto-reload!
 5. **Deploy**: Follow QUICKSTART.md for production deployment
 
@@ -121,8 +121,8 @@ cd services/auth-service && python3 -m pytest tests/ -v
 - All health checks available at `/health` endpoint on each service
 - Logs viewable with: `docker-compose logs -f <service>`
 - Database accessible at localhost:5432 (credentials in docker-compose)
-- Metrics at http://localhost:9090
-- Traces at http://localhost:16686
+- Metrics at https://localhost:9090
+- Traces at https://localhost:16686
 
 ---
 

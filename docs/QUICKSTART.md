@@ -75,13 +75,13 @@ All services should show `Up` / `healthy`.
 
 ```bash
 # API gateway health
-curl http://localhost:8000/health
+curl https://localhost:8000/health
 
 # Auth service health
-curl http://localhost:8001/health
+curl https://localhost:8001/health
 
 # Content service health
-curl http://localhost:8003/health
+curl https://localhost:8003/health
 ```
 
 A healthy response looks like:
@@ -104,7 +104,7 @@ cd apps/web
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open https://localhost:3000.
 
 ---
 

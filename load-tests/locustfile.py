@@ -3,7 +3,7 @@
 Simulates realistic viewer traffic against the dev stack:
 
     docker compose -f deployments/docker-compose.dev.yml up --build -d
-    locust -f load-tests/locustfile.py --host http://localhost:8000
+    locust -f load-tests/locustfile.py --host https://localhost:8000
 
 Flows (all through the gateway on :8000):
   * health    — GET /health (gateway + service health)

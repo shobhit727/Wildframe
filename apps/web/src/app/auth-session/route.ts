@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://localhost:8000';
 const REFRESH_COOKIE = 'wf_refresh';
 const REFRESH_ENDPOINT = `${API_BASE_URL}/auth/api/v1/auth/refresh`;
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days

@@ -306,7 +306,7 @@ aws elasticache create-replication-group \
 # Port forward to local
 kubectl port-forward svc/prometheus 9090:9090 -n monitoring
 
-# Access at http://localhost:9090
+# Access at https://localhost:9090
 
 # Query examples
 # P95 latency
@@ -322,7 +322,7 @@ rate(http_requests_total{status=~"5.."}[5m])
 # Port forward to local
 kubectl port-forward svc/grafana 3000:3000 -n monitoring
 
-# Access at http://localhost:3000
+# Access at https://localhost:3000
 # Default: admin/admin
 ```
 

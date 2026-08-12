@@ -22,14 +22,19 @@ pip install locust
 
 ```bash
 # Local run: 50 users ramping 10/s, auto-quit after 60s, HTML report
-locust -f load-tests/locustfile.py --host http://localhost:8000 \
+locust -f load-tests/locustfile.py --host https://localhost:8000 \
   --autostart --autoquit 60 -u 50 -r 10 --html load-test-report.html
 ```
+
+> The dev gateway is TLS-only (self-signed cert via the Caddy proxy). Locust
+> verifies TLS by default, so for local runs set `self.client.verify = False`
+> in `locustfile.py`, or trust the local CA used to generate
+> `apps/web/certificates/localhost.pem`.
 
 Interactive (headless UI on http://localhost:8089):
 
 ```bash
-locust -f load-tests/locustfile.py --host http://localhost:8000
+locust -f load-tests/locustfile.py --host https://localhost:8000
 ```
 
 Seed the catalog first for realistic browse/stream results:
@@ -64,7 +69,7 @@ Key details baked into the flows:
 
 ```bash
 # master
-locust -f load-tests/locustfile.py --master --host http://localhost:8000
+locust -f load-tests/locustfile.py --master --host https://localhost:8000
 # workers (one per core)
 locust -f load-tests/locustfile.py --worker --master-host=localhost
 ```

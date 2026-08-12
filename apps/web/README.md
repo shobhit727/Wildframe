@@ -21,7 +21,7 @@ cp .env.example .env.local
 # Run development server
 npm run dev
 
-# Open http://localhost:3000
+# Open https://localhost:3000
 ```
 
 ### Available Scripts
@@ -81,8 +81,8 @@ src/
 Create `.env.local`:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_IMAGE_URL=http://localhost:8000/images
+NEXT_PUBLIC_API_URL=https://localhost:8000
+NEXT_PUBLIC_IMAGE_URL=https://localhost:8000/images
 NEXT_PUBLIC_GA_ID=your-ga-id
 NEXT_PUBLIC_STRIPE_KEY=pk_test_your-key
 ```

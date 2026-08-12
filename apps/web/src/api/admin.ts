@@ -26,7 +26,7 @@ import axios from 'axios';
 import { getAccessToken } from './client';
 
 const baseURL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  process.env.NEXT_PUBLIC_API_URL || 'https://localhost:8000';
 
 function authHeaders() {
   const token = getAccessToken();

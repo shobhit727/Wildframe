@@ -263,12 +263,12 @@ nvm use 18
 
 1. Check API URL
    ```
-   NEXT_PUBLIC_API_URL=http://localhost:8000
+   NEXT_PUBLIC_API_URL=https://localhost:8000
    ```
 
 2. Verify backend is running
    ```bash
-   curl http://localhost:8000/health
+   curl https://localhost:8000/health
    ```
 
 3. Check CORS headers
@@ -318,7 +318,7 @@ nvm use 18
    
    app.add_middleware(
        CORSMiddleware,
-       allow_origins=["http://localhost:3000"],
+       allow_origins=["https://localhost:3000"],
        allow_credentials=True,
        allow_methods=["*"],
        allow_headers=["*"],

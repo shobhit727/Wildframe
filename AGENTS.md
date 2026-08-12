@@ -23,7 +23,7 @@ for svc in services/*/; do
 done
 
 # Frontend (Next.js 15)
-cd apps/web && npm install && npm run dev   # http://localhost:3000
+cd apps/web && npm install && npm run dev   # https://localhost:3000
 ```
 
 ## Project Structure
@@ -98,6 +98,31 @@ wildframe/
 
 Inside the Docker network every service is reachable at the container port it
 actually binds (8000 for most; 8003 for content, 8004 for streaming).
+
+## HTTPS / TLS (dev)
+
+- A **Caddy reverse proxy** (`deployments/docker-compose.dev.yml` → `caddy`
+  service, config in `infrastructure/caddy/Caddyfile`) is the only host-facing
+  entry point for the services, pgAdmin (:5050), Prometheus (:9090), Loki
+  (:3100), Jaeger UI (:16686) and Grafana (:3001, native HTTPS). Host port
+  bindings on the app services are removed from compose; `http://` on those
+  ports is refused. Plain `http://` to a proxied port surfaces as
+  SSL_ERROR_RX_RECORD_TOO_LONG in browsers.
+- Certificates are the self-signed pair in `apps/web/certificates/`
+  (`localhost.pem` / `localhost-key.pem`, SANs: localhost, 127.0.0.1, ::1).
+  Regenerate with:
+  `openssl req -x509 -newkey rsa:2048 -keyout apps/web/certificates/localhost-key.pem -out apps/web/certificates/localhost.pem -days 365 -nodes -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1"`
+  then `chmod 644` both files (Caddy/Grafana containers read them as non-root)
+  and restart `caddy` + `grafana`.
+- The Next.js dev server (`apps/web`, `npm run dev`) serves HTTPS itself via
+  `--experimental-https` with the same cert pair (see `dev` script); never
+  point it at `http://localhost:3000`.
+- `NEXT_PUBLIC_API_URL` defaults to `https://localhost:8000` (Caddy → gateway).
+  Internal service-to-service traffic stays plain HTTP on the docker network —
+  only host-facing ports are TLS.
+- Infra ports are **not** proxied: postgres 5432, redis 6379, kafka 9092,
+  zookeeper 2181, elasticsearch 9200, exporters 9121/9187, jaeger ingest
+  14250/14268.
 
 ## Code Conventions
 

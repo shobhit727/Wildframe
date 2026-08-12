@@ -521,7 +521,7 @@ kubectl logs deployment/auth-service -n wildframe-prod
 
 # Test health endpoint
 kubectl port-forward svc/auth-service 8000:8000 -n wildframe-prod
-curl http://localhost:8000/health
+curl https://localhost:8000/health
 ```
 
 ### Troubleshooting

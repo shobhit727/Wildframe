@@ -21,10 +21,10 @@ docker-compose -f deployments/docker-compose.dev.yml up -d
 docker-compose -f deployments/docker-compose.dev.yml ps
 
 # Verify all services are running
-curl http://localhost:8000/health   # API Gateway
-curl http://localhost:8001/health   # Auth Service
-curl http://localhost:8002/health   # User Service
-curl http://localhost:8003/health   # Content Service
+curl https://localhost:8000/health   # API Gateway
+curl https://localhost:8001/health   # Auth Service
+curl https://localhost:8002/health   # User Service
+curl https://localhost:8003/health   # Content Service
 ```
 
 ### Option 2: Run Unit Tests Locally (Fast Feedback)
@@ -142,10 +142,10 @@ python3 -m pytest tests/test_admin_service.py::TestSystemConfig -v
 ### Test Auth Service Endpoints
 ```bash
 # Health check
-curl http://localhost:8001/health
+curl https://localhost:8001/health
 
 # Register user
-curl -X POST http://localhost:8001/api/v1/auth/register \
+curl -X POST https://localhost:8001/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -154,7 +154,7 @@ curl -X POST http://localhost:8001/api/v1/auth/register \
   }'
 
 # Login
-curl -X POST http://localhost:8001/api/v1/auth/login \
+curl -X POST https://localhost:8001/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -162,7 +162,7 @@ curl -X POST http://localhost:8001/api/v1/auth/login \
   }'
 
 # Refresh token (requires TOKEN from login response)
-curl -X POST http://localhost:8001/api/v1/auth/refresh \
+curl -X POST https://localhost:8001/api/v1/auth/refresh \
   -H "Content-Type: application/json" \
   -d '{
     "refresh_token": "your_refresh_token_here"
@@ -174,11 +174,11 @@ curl -X POST http://localhost:8001/api/v1/auth/refresh \
 # Get user profile (requires Bearer token from auth)
 TOKEN="your_access_token_here"
 
-curl http://localhost:8002/users/me \
+curl https://localhost:8002/users/me \
   -H "Authorization: Bearer $TOKEN"
 
 # Update profile
-curl -X PUT http://localhost:8002/users/me \
+curl -X PUT https://localhost:8002/users/me \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -188,11 +188,11 @@ curl -X PUT http://localhost:8002/users/me \
   }'
 
 # List devices
-curl http://localhost:8002/users/devices \
+curl https://localhost:8002/users/devices \
   -H "Authorization: Bearer $TOKEN"
 
 # Register device
-curl -X POST http://localhost:8002/users/devices \
+curl -X POST https://localhost:8002/users/devices \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -205,37 +205,37 @@ curl -X POST http://localhost:8002/users/devices \
 ### Test Content Service Endpoints
 ```bash
 # List genres
-curl http://localhost:8003/genres
+curl https://localhost:8003/genres
 
 # Search movies
-curl "http://localhost:8003/movies/search?query=inception"
+curl "https://localhost:8003/movies/search?query=inception"
 
 # Get movie details
-curl http://localhost:8003/movies/{movie_id}
+curl https://localhost:8003/movies/{movie_id}
 
 # List trending movies
-curl "http://localhost:8003/movies/trending?limit=20"
+curl "https://localhost:8003/movies/trending?limit=20"
 
 # List recent movies
-curl "http://localhost:8003/movies/recent?limit=20"
+curl "https://localhost:8003/movies/recent?limit=20"
 ```
 
 ### Test Admin Service Endpoints
 ```bash
 # Health check
-curl http://localhost:8006/health
+curl https://localhost:8006/health
 
 # Get system alerts
-curl http://localhost:8006/admin/alerts
+curl https://localhost:8006/admin/alerts
 
 # Get system stats
-curl http://localhost:8006/admin/stats
+curl https://localhost:8006/admin/stats
 
 # List moderated users
-curl "http://localhost:8006/admin/users/moderated?status=suspended"
+curl "https://localhost:8006/admin/users/moderated?status=suspended"
 
 # List flagged content
-curl "http://localhost:8006/admin/content/flagged"
+curl "https://localhost:8006/admin/content/flagged"
 ```
 
 ---
@@ -246,20 +246,20 @@ curl "http://localhost:8006/admin/content/flagged"
 
 ```bash
 # Prometheus - Metrics
-# URL: http://localhost:9090
+# URL: https://localhost:9090
 
 # Grafana - Dashboards
-# URL: http://localhost:3000
+# URL: https://localhost:3000
 # Default credentials: admin / admin
 
 # Jaeger - Distributed Tracing
-# URL: http://localhost:16686
+# URL: https://localhost:16686
 
 # Loki - Log Aggregation
-# URL: http://localhost:3100
+# URL: https://localhost:3100
 
 # pgAdmin - PostgreSQL Management
-# URL: http://localhost:5050
+# URL: https://localhost:5050
 # Email: admin@example.com
 # Password: admin
 
@@ -304,7 +304,7 @@ class AuthUser(HttpUser):
 ### Run Load Test
 ```bash
 cd services/auth-service
-locust -f locustfile.py -u 100 -r 10 -t 5m --headless -H http://localhost:8001
+locust -f locustfile.py -u 100 -r 10 -t 5m --headless -H https://localhost:8001
 ```
 
 ---

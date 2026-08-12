@@ -29,8 +29,8 @@ cp .env.local.example .env.local
 Edit `.env.local` to customize:
 ```
 NEXT_PUBLIC_APP_NAME=YourApp
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-# NEXT_PUBLIC_API_URL=http://localhost:8000  # Uncomment for backend
+NEXT_PUBLIC_APP_URL=https://localhost:3000
+# NEXT_PUBLIC_API_URL=https://localhost:8000  # Uncomment for backend
 ```
 
 ### 4. Start Development Server
@@ -43,14 +43,14 @@ Output:
 > next dev
 
   ▲ Next.js 15.0.0
-  - Local:        http://localhost:3000
+  - Local:        https://localhost:3000
   - Environments: .env.local
 
 ✓ Ready in 2.5s
 ```
 
 ### 5. Open in Browser
-Visit: **http://localhost:3000**
+Visit: **https://localhost:3000**
 
 ---
 

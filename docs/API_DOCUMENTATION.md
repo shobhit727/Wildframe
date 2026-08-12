@@ -24,7 +24,7 @@ Complete API reference for all Wildframe microservices. This guide documents eve
 
 | Environment | URL |
 |-------------|-----|
-| **Development** | `http://localhost:8000` |
+| **Development** | `https://localhost:8000` |
 | **Staging** | `https://staging-api.wildframe.com` |
 | **Production** | `https://api.wildframe.com` |
 
@@ -62,7 +62,7 @@ Token lifetime (auth-service defaults):
 
 > Note: routes are mounted under `/api/v1` on each service and reachable
 > through the gateway at `/{service}/api/v1/...` (e.g.
-> `http://localhost:8000/auth/api/v1/auth/login`).
+> `https://localhost:8000/auth/api/v1/auth/login`).
 
 ---
 

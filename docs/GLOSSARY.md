@@ -152,7 +152,7 @@ A query parameter that narrows results based on criteria.
 
 **Grafana**
 A visualization and monitoring platform used to create dashboards and alerts.
-*Access: `http://localhost:3000`*
+*Access: `https://localhost:3000`*
 
 **GraphQL**
 (Potential future addition) A query language for APIs that allows clients to request specific fields.

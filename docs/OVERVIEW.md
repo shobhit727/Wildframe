@@ -94,10 +94,10 @@ See [DEVELOPMENT.md](DEVELOPMENT.md#development-setup) for full instructions.
 python -m uvicorn services/auth-service/app/main:app --reload --port 8001
 
 # Access
-- Frontend: http://localhost:3000
-- API: http://localhost:8001
-- Prometheus: http://localhost:9090
-- Grafana: http://localhost:3000 (admin/admin)
+- Frontend: https://localhost:3000
+- API: https://localhost:8001
+- Prometheus: https://localhost:9090
+- Grafana: https://localhost:3000 (admin/admin)
 ```
 
 ---

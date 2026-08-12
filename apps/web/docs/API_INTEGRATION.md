@@ -7,7 +7,7 @@ Learn how to connect your frontend to a backend API.
 ### 1. Enable API URL
 Edit `.env.local`:
 ```
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=https://localhost:8000
 ```
 
 ### 2. Create API Client

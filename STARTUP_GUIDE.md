@@ -38,8 +38,8 @@ npm install  # First time only
 npm run dev
 ```
 
-✅ **Frontend**: http://localhost:3000
-✅ **Backend**: http://localhost:8000
+✅ **Frontend**: https://localhost:3000
+✅ **Backend**: https://localhost:8000
 
 ---
 
@@ -92,24 +92,24 @@ npm install
 cp .env.local.example .env.local
 
 # Verify backend URL in .env.local
-# Should be: NEXT_PUBLIC_API_URL=http://localhost:8000
+# Should be: NEXT_PUBLIC_API_URL=https://localhost:8000
 
 # Start development server
 npm run dev
 ```
 
-**Frontend runs on:** http://localhost:3000
+**Frontend runs on:** https://localhost:3000
 
 ---
 
 ## Testing the Platform
 
 ### 1. Authentication Flow
-1. Go to http://localhost:3000
+1. Go to https://localhost:3000
 2. Click "Sign Up"
 3. Fill form with test data
 4. Account created ✅
-5. Go to http://localhost:3000/login
+5. Go to https://localhost:3000/login
 6. Login with created credentials ✅
 
 ### 2. Browse Content
@@ -228,7 +228,7 @@ docker-compose -f deployments/docker-compose.dev.yml down -v
 **Solution:**
 - Ensure Docker containers are running: `docker ps`
 - Check API Gateway logs: `docker logs <container_id>`
-- Verify API URL in `.env.local` is `http://localhost:8000`
+- Verify API URL in `.env.local` is `https://localhost:8000`
 
 ### Issue: "Port 3000 already in use"
 **Solution:**

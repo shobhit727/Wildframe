@@ -17,7 +17,7 @@ npm install
 # Start development server
 npm run dev
 
-# Open http://localhost:3000
+# Open https://localhost:3000
 ```
 
 ---
@@ -94,7 +94,7 @@ export default function MyPage() {
 ### Connect to Backend
 Uncomment in `.env.local`:
 ```
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=https://localhost:8000
 ```
 
 Then create your API client:
@@ -282,7 +282,7 @@ Free to use for personal and commercial projects.
 
 - [ ] Run `npm install`
 - [ ] Run `npm run dev`
-- [ ] Visit http://localhost:3000
+- [ ] Visit https://localhost:3000
 - [ ] Edit the landing page
 - [ ] Change the branding
 - [ ] Add your content

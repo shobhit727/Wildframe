@@ -214,8 +214,8 @@ The Aug 9, 2026 security sweep used exactly this flow (see
 ### Smoke test (after deployment)
 
 ```bash
-curl http://localhost:8000/health
-curl -X POST http://localhost:8000/auth/api/v1/auth/login \
+curl https://localhost:8000/health
+curl -X POST https://localhost:8000/auth/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"demo@wildframe.com","password":"DemoPass123!"}'
 ```

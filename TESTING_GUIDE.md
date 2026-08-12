@@ -46,7 +46,7 @@ docker-compose -f deployments/docker-compose.dev.yml ps
 
 Register user:
 ```bash
-curl -X POST http://localhost:8001/auth/register \
+curl -X POST https://localhost:8001/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -58,7 +58,7 @@ curl -X POST http://localhost:8001/auth/register \
 
 Login:
 ```bash
-curl -X POST http://localhost:8001/auth/login \
+curl -X POST https://localhost:8001/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -68,7 +68,7 @@ curl -X POST http://localhost:8001/auth/login \
 
 Verify token:
 ```bash
-curl -X GET http://localhost:8001/auth/verify \
+curl -X GET https://localhost:8001/auth/verify \
   -H "Authorization: Bearer {TOKEN}"
 ```
 
@@ -76,13 +76,13 @@ curl -X GET http://localhost:8001/auth/verify \
 
 Get user profile:
 ```bash
-curl -X GET http://localhost:8002/users/me \
+curl -X GET https://localhost:8002/users/me \
   -H "Authorization: Bearer {TOKEN}"
 ```
 
 Update preferences:
 ```bash
-curl -X PUT http://localhost:8002/users/preferences \
+curl -X PUT https://localhost:8002/users/preferences \
   -H "Authorization: Bearer {TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -95,24 +95,24 @@ curl -X PUT http://localhost:8002/users/preferences \
 
 List movies:
 ```bash
-curl -X GET "http://localhost:8003/content/movies?limit=10&offset=0"
+curl -X GET "https://localhost:8003/content/movies?limit=10&offset=0"
 ```
 
 Search content:
 ```bash
-curl -X GET "http://localhost:8003/content/search?q=action&type=movie"
+curl -X GET "https://localhost:8003/content/search?q=action&type=movie"
 ```
 
 Get movie details:
 ```bash
-curl -X GET http://localhost:8003/content/movies/{movie_id}
+curl -X GET https://localhost:8003/content/movies/{movie_id}
 ```
 
 #### Streaming Service (Port 8004)
 
 Start streaming session:
 ```bash
-curl -X POST http://localhost:8004/streaming/session/start \
+curl -X POST https://localhost:8004/streaming/session/start \
   -H "Authorization: Bearer {TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -123,43 +123,43 @@ curl -X POST http://localhost:8004/streaming/session/start \
 
 Get video manifest:
 ```bash
-curl -X GET "http://localhost:8004/streaming/manifest/{CONTENT_ID}?quality=1080p"
+curl -X GET "https://localhost:8004/streaming/manifest/{CONTENT_ID}?quality=1080p"
 ```
 
 Update watch position:
 ```bash
-curl -X PUT http://localhost:8004/streaming/session/{SESSION_ID}/position \
+curl -X PUT https://localhost:8004/streaming/session/{SESSION_ID}/position \
   -H "Content-Type: application/json" \
   -d '{"position_seconds": 1200}'
 ```
 
 Get watch history:
 ```bash
-curl -X GET http://localhost:8004/streaming/watch-history/{USER_ID}
+curl -X GET https://localhost:8004/streaming/watch-history/{USER_ID}
 ```
 
 #### Search Service (Port 8005)
 
 Search content:
 ```bash
-curl -X GET "http://localhost:8005/search/query?q=action&content_type=movie&limit=20"
+curl -X GET "https://localhost:8005/search/query?q=action&content_type=movie&limit=20"
 ```
 
 Get trending:
 ```bash
-curl -X GET "http://localhost:8005/search/trending?content_type=movie&limit=10"
+curl -X GET "https://localhost:8005/search/trending?content_type=movie&limit=10"
 ```
 
 #### Recommendation Service (Port 8007)
 
 Get recommendations:
 ```bash
-curl -X GET "http://localhost:8007/recommendations/for-user/{USER_ID}?limit=20"
+curl -X GET "https://localhost:8007/recommendations/for-user/{USER_ID}?limit=20"
 ```
 
 Update preferences:
 ```bash
-curl -X PUT http://localhost:8007/recommendations/preferences/{USER_ID} \
+curl -X PUT https://localhost:8007/recommendations/preferences/{USER_ID} \
   -H "Content-Type: application/json" \
   -d '{"liked_genres": ["Action", "Thriller"]}'
 ```
@@ -168,12 +168,12 @@ curl -X PUT http://localhost:8007/recommendations/preferences/{USER_ID} \
 
 Get subscription:
 ```bash
-curl -X GET http://localhost:8008/billing/subscription/{USER_ID}
+curl -X GET https://localhost:8008/billing/subscription/{USER_ID}
 ```
 
 Upgrade subscription:
 ```bash
-curl -X POST http://localhost:8008/billing/upgrade/{USER_ID} \
+curl -X POST https://localhost:8008/billing/upgrade/{USER_ID} \
   -H "Content-Type: application/json" \
   -d '{"tier": "premium"}'
 ```
@@ -182,7 +182,7 @@ curl -X POST http://localhost:8008/billing/upgrade/{USER_ID} \
 
 Log event:
 ```bash
-curl -X POST http://localhost:8009/analytics/events \
+curl -X POST https://localhost:8009/analytics/events \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": "{USER_ID}",
@@ -194,14 +194,14 @@ curl -X POST http://localhost:8009/analytics/events \
 
 Get user events:
 ```bash
-curl -X GET "http://localhost:8009/analytics/user-events/{USER_ID}?limit=100"
+curl -X GET "https://localhost:8009/analytics/user-events/{USER_ID}?limit=100"
 ```
 
 #### Notification Service (Port 8010)
 
 Send notification:
 ```bash
-curl -X POST http://localhost:8010/notifications/send \
+curl -X POST https://localhost:8010/notifications/send \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": "{USER_ID}",
@@ -215,7 +215,7 @@ curl -X POST http://localhost:8010/notifications/send \
 
 Start transcoding:
 ```bash
-curl -X POST http://localhost:8011/media/transcode \
+curl -X POST https://localhost:8011/media/transcode \
   -H "Content-Type: application/json" \
   -d '{
     "content_id": "{CONTENT_ID}",
@@ -225,15 +225,15 @@ curl -X POST http://localhost:8011/media/transcode \
 
 Get transcoding status:
 ```bash
-curl -X GET http://localhost:8011/media/job-status/{CONTENT_ID}
+curl -X GET https://localhost:8011/media/job-status/{CONTENT_ID}
 ```
 
 ### 4. Monitoring
 
-- **Prometheus**: http://localhost:9090
-- **Grafana**: http://localhost:3000 (admin/admin)
-- **Jaeger**: http://localhost:16686
-- **Loki**: http://localhost:3100
+- **Prometheus**: https://localhost:9090
+- **Grafana**: https://localhost:3000 (admin/admin)
+- **Jaeger**: https://localhost:16686
+- **Loki**: https://localhost:3100
 
 ### 5. Database Operations
 
@@ -362,12 +362,12 @@ redis-cli -h localhost ping
 
 Load test with Apache Bench:
 ```bash
-ab -n 1000 -c 10 http://localhost:8000/health
+ab -n 1000 -c 10 https://localhost:8000/health
 ```
 
 Load test with wrk:
 ```bash
-wrk -t4 -c100 -d30s http://localhost:8000/health
+wrk -t4 -c100 -d30s https://localhost:8000/health
 ```
 
 ## Integration Testing

@@ -19,7 +19,7 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Open [https://localhost:3000](https://localhost:3000)
 
 ---
 
@@ -243,7 +243,7 @@ npm run test:e2e         # Run E2E tests
 ### Enable API Integration
 1. Uncomment in `.env.local`:
    ```
-   NEXT_PUBLIC_API_URL=http://localhost:8000
+   NEXT_PUBLIC_API_URL=https://localhost:8000
    ```
 
 2. Create API client:

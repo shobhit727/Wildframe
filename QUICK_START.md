@@ -17,12 +17,12 @@ docker-compose -f deployments/docker-compose.dev.yml up -d
 sleep 30
 
 # Verify health
-curl http://localhost:8001/health  # Auth
-curl http://localhost:8002/health  # User
-curl http://localhost:8003/health  # Content
-curl http://localhost:8004/health  # Streaming
-curl http://localhost:8006/health  # Admin
-curl http://localhost:8011/health  # Media Pipeline
+curl https://localhost:8001/health  # Auth
+curl https://localhost:8002/health  # User
+curl https://localhost:8003/health  # Content
+curl https://localhost:8004/health  # Streaming
+curl https://localhost:8006/health  # Admin
+curl https://localhost:8011/health  # Media Pipeline
 ```
 
 ---
@@ -46,25 +46,25 @@ curl http://localhost:8011/health  # Media Pipeline
 
 ```bash
 # Register
-curl -X POST http://localhost:8001/api/v1/auth/register \
+curl -X POST https://localhost:8001/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"SecurePass123!","first_name":"John","last_name":"Doe"}'
 
 # Login → returns access_token + refresh_token
-curl -X POST http://localhost:8001/api/v1/auth/login \
+curl -X POST https://localhost:8001/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"SecurePass123!"}'
 
 # Protected endpoint
 TOKEN="<access_token>"
-curl http://localhost:8001/api/v1/users/me -H "Authorization: Bearer $TOKEN"
+curl https://localhost:8001/api/v1/users/me -H "Authorization: Bearer $TOKEN"
 
 # Content
-curl http://localhost:8003/api/v1/content
-curl http://localhost:8003/api/v1/content/trending
+curl https://localhost:8003/api/v1/content
+curl https://localhost:8003/api/v1/content/trending
 
 # Health
-curl http://localhost:8001/health
+curl https://localhost:8001/health
 ```
 
 ---
