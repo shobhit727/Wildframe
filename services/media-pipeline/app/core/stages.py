@@ -1,7 +1,3 @@
-from __future__ import annotations
-
-from typing import Any
-
 """Pipeline stages: a ``Stage`` port + registry + the concrete stages.
 
 Each stage is an independently-retryable, callable unit of work. Stages are
@@ -28,11 +24,18 @@ one success event; failures are logged and surfaced via the job's stage log and,
 on retry exhaustion, the ``content.pipeline.failed`` DLQ event.
 """
 
+from typing import Any
+from __future__ import annotations
+
 import asyncio
 import logging
+import os
+import shutil
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+
+from app.core.security import UnsafeInput, sanitize_metadata, validate_manifest_no_origin_urls
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +43,16 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Stage port.
 # ---------------------------------------------------------------------------
+
+
+class StageInputError(Exception):
+    """Permanent input failure for a stage — caller-supplied data is invalid.
+
+    The orchestrator treats this like ``PipelineNonRetryable``: the job fails
+    immediately without retries. Use for traversal attempts, absolute URLs,
+    or manifest validation failures that indicate a fundamental contract
+    violation rather than a transient infrastructure blip.
+    """
 
 
 class Stage(ABC):
@@ -187,12 +200,19 @@ class MetadataExtractor(ABC):
     """Port: extract media metadata (ffprobe-like)."""
 
     @abstractmethod
-    async def extract(self, path: str) -> dict[str, Any]:
+    async def extract(
+        self,
+        path: str,
+        *,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
         raise NotImplementedError
 
 
 class StubMetadataExtractor(MetadataExtractor):
-    async def extract(self, path: str) -> dict[str, Any]:
+    async def extract(
+        self, path: str, *, timeout: float | None = None
+    ) -> dict[str, Any]:
         return {
             "duration_seconds": 0,
             "width": 0,
@@ -207,12 +227,20 @@ class ThumbnailGenerator(ABC):
     """Port: generate poster/thumbnails (ffmpeg-like)."""
 
     @abstractmethod
-    async def generate(self, path: str, out_dir: str) -> list[str]:
+    async def generate(
+        self,
+        path: str,
+        out_dir: str,
+        *,
+        timeout: float | None = None,
+    ) -> list[str]:
         raise NotImplementedError
 
 
 class StubThumbnailGenerator(ThumbnailGenerator):
-    async def generate(self, path: str, out_dir: str) -> list[str]:
+    async def generate(
+        self, path: str, out_dir: str, *, timeout: float | None = None
+    ) -> list[str]:
         return [f"{out_dir}/poster.jpg"]
 
 
@@ -220,13 +248,31 @@ class MultiBitrateEncoder(ABC):
     """Port: ffmpeg multi-bitrate encode."""
 
     @abstractmethod
-    async def encode(self, path: str, out_dir: str, bitrates: list[int]) -> dict[int, str]:
+    async def encode(
+        self,
+        path: str,
+        out_dir: str,
+        bitrates: list[int],
+        *,
+        timeout: float | None = None,
+        cpu_threads: int | None = None,
+        max_output_bytes: int | None = None,
+    ) -> dict[int, str]:
         """Return bitrate_kbps -> output path."""
         raise NotImplementedError
 
 
 class StubMultiBitrateEncoder(MultiBitrateEncoder):
-    async def encode(self, path: str, out_dir: str, bitrates: list[int]) -> dict[int, str]:
+    async def encode(
+        self,
+        path: str,
+        out_dir: str,
+        bitrates: list[int],
+        *,
+        timeout: float | None = None,
+        cpu_threads: int | None = None,
+        max_output_bytes: int | None = None,
+    ) -> dict[int, str]:
         return {br: f"{out_dir}/v_{br}.mp4" for br in bitrates}
 
 
@@ -234,19 +280,35 @@ class Packager(ABC):
     """Port: package encoded outputs into HLS / DASH."""
 
     @abstractmethod
-    async def package_hls(self, inputs: dict[int, str], out_dir: str) -> str:
+    async def package_hls(
+        self,
+        inputs: dict[int, str],
+        out_dir: str,
+        *,
+        timeout: float | None = None,
+    ) -> str:
         raise NotImplementedError
 
     @abstractmethod
-    async def package_dash(self, inputs: dict[int, str], out_dir: str) -> str:
+    async def package_dash(
+        self,
+        inputs: dict[int, str],
+        out_dir: str,
+        *,
+        timeout: float | None = None,
+    ) -> str:
         raise NotImplementedError
 
 
 class StubPackager(Packager):
-    async def package_hls(self, inputs: dict[int, str], out_dir: str) -> str:
+    async def package_hls(
+        self, inputs: dict[int, str], out_dir: str, *, timeout: float | None = None
+    ) -> str:
         return f"{out_dir}/master.m3u8"
 
-    async def package_dash(self, inputs: dict[int, str], out_dir: str) -> str:
+    async def package_dash(
+        self, inputs: dict[int, str], out_dir: str, *, timeout: float | None = None
+    ) -> str:
         return f"{out_dir}/manifest.mpd"
 
 
@@ -291,6 +353,34 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _work_dir(ctx: dict[str, Any], *parts: str) -> str:
+    """Return a per-job, per-stage working directory under the work root."""
+    root = ctx.get("work_root", "/tmp/wildframe/work")
+    base = os.path.join(root, str(ctx["job_id"]))
+    if parts:
+        return os.path.join(base, *parts)
+    return base
+
+
+def _quarantine_path(ctx: dict[str, Any], storage_key: str) -> str:
+    """Derive the quarantine local path from a sanitized storage key segment."""
+    root = ctx.get("quarantine_root", "/tmp/wildframe/quarantine")
+    # The storage key is already sanitized by the service layer; use its
+    # basename as the local filename (no directories in the key).
+    safe_name = os.path.basename(storage_key) or "source"
+    return os.path.join(root, str(ctx["job_id"]), safe_name)
+
+
+def _cleanup_job(ctx: dict[str, Any]) -> None:
+    """Best-effort removal of per-job work and quarantine directories."""
+    work_root = ctx.get("work_root", "/tmp/wildframe/work")
+    quarantine_root = ctx.get("quarantine_root", "/tmp/wildframe/quarantine")
+    job_id = str(ctx.get("job_id", ""))
+    if job_id:
+        shutil.rmtree(os.path.join(work_root, job_id), ignore_errors=True)
+        shutil.rmtree(os.path.join(quarantine_root, job_id), ignore_errors=True)
+
+
 @as_stage(name="quarantine_store", success_event="content.quarantined")
 async def quarantine_store(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 1: move the uploaded bytes into an isolated quarantine area.
@@ -299,8 +389,7 @@ async def quarantine_store(ctx: dict[str, Any]) -> dict[str, Any]:
     Output: ctx["quarantine_path"] — local path the bytes now live at.
     """
     storage_key = ctx["storage_key"]
-    quarantine_root = ctx.get("quarantine_root", "/tmp/wildframe/quarantine")
-    quarantine_path = f"{quarantine_root}/{ctx['job_id']}/{storage_key}"
+    quarantine_path = _quarantine_path(ctx, storage_key)
     # In a real impl this copies the object from the uploads bucket into an
     # isolated prefix. Here we record the path; the bytes are assumed present.
     ctx["quarantine_path"] = quarantine_path
@@ -325,9 +414,17 @@ async def virus_scan(ctx: dict[str, Any]) -> dict[str, Any]:
 
 @as_stage(name="metadata_extract", success_event="content.metadata_extracted")
 async def metadata_extract(ctx: dict[str, Any]) -> dict[str, Any]:
-    """Stage 3: extract technical metadata (resolution, codecs, duration)."""
+    """Stage 3: extract technical metadata (resolution, codecs, duration).
+
+    The extractor's output is sanitized and clamped to resource ceilings so
+    untrusted probe data cannot influence downstream decisions (#287, #288).
+    """
     extractor: MetadataExtractor = ctx["metadata_extractor"]
-    ctx["metadata"] = await extractor.extract(ctx["quarantine_path"])
+    raw = await extractor.extract(
+        ctx["quarantine_path"],
+        timeout=ctx.get("stage_timeout"),
+    )
+    ctx["metadata"] = sanitize_metadata(raw)
     return ctx
 
 
@@ -339,8 +436,12 @@ async def metadata_extract(ctx: dict[str, Any]) -> dict[str, Any]:
 async def thumbnail_generate(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 4: generate poster/thumbnails (best-effort)."""
     gen: ThumbnailGenerator = ctx["thumbnail_generator"]
-    out_dir = f"/tmp/wildframe/work/{ctx['job_id']}/thumbs"
-    ctx["thumbnails"] = await gen.generate(ctx["quarantine_path"], out_dir)
+    out_dir = _work_dir(ctx, "thumbs")
+    ctx["thumbnails"] = await gen.generate(
+        ctx["quarantine_path"],
+        out_dir,
+        timeout=ctx.get("stage_timeout"),
+    )
     return ctx
 
 
@@ -351,7 +452,7 @@ async def thumbnail_generate(ctx: dict[str, Any]) -> dict[str, Any]:
 )
 async def audio_extract(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 5: extract audio tracks (best-effort)."""
-    ctx["audio_tracks"] = [f"/tmp/wildframe/work/{ctx['job_id']}/audio_en.m4a"]
+    ctx["audio_tracks"] = [_work_dir(ctx, "audio_en.m4a")]
     return ctx
 
 
@@ -362,7 +463,7 @@ async def audio_extract(ctx: dict[str, Any]) -> dict[str, Any]:
 )
 async def subtitle_extract(ctx: dict[str, Any]) -> dict[str, Any]:
     """Stage 6: extract subtitle tracks (best-effort)."""
-    ctx["subtitle_tracks"] = [f"/tmp/wildframe/work/{ctx['job_id']}/subs_en.vtt"]
+    ctx["subtitle_tracks"] = [_work_dir(ctx, "subs_en.vtt")]
     return ctx
 
 
@@ -373,18 +474,36 @@ async def ffmpeg_multi_bitrate_encode(ctx: dict[str, Any]) -> dict[str, Any]:
     Output: ctx["encoded"] = {bitrate_kbps: path}.
     """
     encoder: MultiBitrateEncoder = ctx["encoder"]
-    out_dir = f"/tmp/wildframe/work/{ctx['job_id']}/encoded"
+    out_dir = _work_dir(ctx, "encoded")
     bitrates = ctx.get("bitrates", [400, 800, 1200, 2400, 4800])
-    ctx["encoded"] = await encoder.encode(ctx["quarantine_path"], out_dir, bitrates)
+    ctx["encoded"] = await encoder.encode(
+        ctx["quarantine_path"],
+        out_dir,
+        bitrates,
+        timeout=ctx.get("stage_timeout"),
+        cpu_threads=ctx.get("cpu_threads"),
+        max_output_bytes=ctx.get("max_output_bytes"),
+    )
     return ctx
 
 
 @as_stage(name="hls_package", success_event="content.packaged")
 async def hls_package(ctx: dict[str, Any]) -> dict[str, Any]:
-    """Stage 8a: package encoded outputs into HLS."""
+    """Stage 8a: package encoded outputs into HLS.
+
+    Validates the generated manifest contains no absolute origin URLs (#283).
+    """
     packager: Packager = ctx["packager"]
-    out_dir = f"/tmp/wildframe/work/{ctx['job_id']}/hls"
-    ctx["hls_url"] = await packager.package_hls(ctx["encoded"], out_dir)
+    out_dir = _work_dir(ctx, "hls")
+    hls_url = await packager.package_hls(
+        ctx["encoded"],
+        out_dir,
+        timeout=ctx.get("stage_timeout"),
+    )
+    # Defense in depth: if the packager produced a real file, validate it.
+    if os.path.isfile(hls_url):
+        validate_manifest_no_origin_urls(hls_url)
+    ctx["hls_url"] = hls_url
     return ctx
 
 
@@ -397,8 +516,15 @@ async def dash_package(ctx: dict[str, Any]) -> dict[str, Any]:
     exist.
     """
     packager: Packager = ctx["packager"]
-    out_dir = f"/tmp/wildframe/work/{ctx['job_id']}/dash"
-    ctx["dash_url"] = await packager.package_dash(ctx["encoded"], out_dir)
+    out_dir = _work_dir(ctx, "dash")
+    dash_url = await packager.package_dash(
+        ctx["encoded"],
+        out_dir,
+        timeout=ctx.get("stage_timeout"),
+    )
+    if os.path.isfile(dash_url):
+        validate_manifest_no_origin_urls(dash_url)
+    ctx["dash_url"] = dash_url
     return ctx
 
 

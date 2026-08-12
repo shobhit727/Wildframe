@@ -1,5 +1,3 @@
-from typing import Any
-
 """Stripe Connect client for the Wildframe billing service.
 
 Wraps the Stripe SDK to provide:
@@ -11,17 +9,33 @@ Wraps the Stripe SDK to provide:
 
 All methods raise StripeError on failure so callers can translate
 into domain-specific errors.
+
+#67: Stripe SDK retry/timeout policy
+  - max_network_retries = 2 (only safe operations are retried)
+  - default_http_client = HTTPXClient with bounded connect/read timeout
+  - Transfer idempotency already handled via idempotency_key at call site
 """
+
 import logging
+from typing import Any
 from decimal import Decimal
 from uuid import UUID
 
 import stripe
-from stripe import SignatureVerificationError as _StripeSignatureError, StripeError as _StripeError
+from httpx import Timeout as HTTPXTimeout
+from stripe import HTTPXClient, SignatureVerificationError as _StripeSignatureError, StripeError as _StripeError
 
+from app.core.money import CurrencyError, to_minor_units, validate_currency
 from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
+
+# Stripe SDK global retry/timeout policy (#67).
+# Only safe operations (idempotent GET, idempotent POST with idempotency_key)
+# are retried by the SDK. We set 2 retries and a bounded timeout so a slow
+# Stripe response cannot hang a webhook handler indefinitely.
+stripe.max_network_retries = 2
+stripe.default_http_client = HTTPXClient(timeout=HTTPXTimeout(connect=5.0, read=30.0, write=30.0, pool=5.0))
 
 # Set the Stripe API key once at module load.
 stripe.api_key = settings.STRIPE_API_KEY
@@ -79,7 +93,7 @@ class StripeClient:
                 tier,
                 session.id,
             )
-            return session
+            return session  # type: ignore[return-value]
         except _StripeError as exc:
             logger.error("Stripe create_checkout_session failed: %s", exc)
             raise StripeError(f"Failed to create checkout session: {exc}") from exc
@@ -100,10 +114,12 @@ class StripeClient:
 
         The session is created in ``payment`` mode. The price is passed
         as a PriceData object so each title can have its own price
-        without pre-creating Stripe Price objects.
+        without pre-creating Stripe Price objects. Currency validated
+        against ISO-4217; amount converted to minor units via to_minor_units.
 
         Returns the Stripe Session object.
         """
+        validate_currency(settings.DEFAULT_CURRENCY)
         try:
             session = stripe.checkout.Session.create(
                 payment_method_types=["card"],
@@ -116,7 +132,7 @@ class StripeClient:
                                 "name": f"Title {content_id}",
                                 "metadata": {"content_id": str(content_id)},
                             },
-                            "unit_amount": int(price * 100),  # Stripe uses cents
+                            "unit_amount": to_minor_units(price, settings.DEFAULT_CURRENCY),
                         },
                         "quantity": 1,
                     }
@@ -136,7 +152,7 @@ class StripeClient:
                 content_id,
                 session.id,
             )
-            return session
+            return session  # type: ignore[return-value]
         except _StripeError as exc:
             logger.error("Stripe create_tvod_purchase_session failed: %s", exc)
             raise StripeError(f"Failed to create TVOD purchase session: {exc}") from exc
@@ -211,7 +227,7 @@ class StripeClient:
                 creator_id,
                 account.id,
             )
-            return account
+            return account  # type: ignore[return-value]
         except _StripeError as exc:
             logger.error("Stripe create_connect_account failed: %s", exc)
             raise StripeError(f"Failed to create Connect account: {exc}") from exc
@@ -229,15 +245,16 @@ class StripeClient:
         """Transfer funds to a creator's Stripe Connect account.
 
         The amount is in the major currency unit (e.g. dollars) and
-        Stripe converts to cents internally. The idempotency_key is
+        Stripe converts to minor units internally. The idempotency_key is
         forwarded to Stripe so retried calls don't create duplicate
         transfers.
 
         Returns the Stripe Transfer object.
         """
+        validate_currency(settings.DEFAULT_CURRENCY)
         try:
             transfer = stripe.Transfer.create(
-                amount=int(amount * 100),  # Stripe uses cents
+                amount=to_minor_units(amount, settings.DEFAULT_CURRENCY),
                 currency=settings.DEFAULT_CURRENCY.lower(),
                 destination=creator_stripe_account_id,
                 metadata={"platform": "wildframe"},
@@ -251,7 +268,7 @@ class StripeClient:
                 transfer.id,
                 idempotency_key,
             )
-            return transfer
+            return transfer  # type: ignore[return-value]
         except _StripeError as exc:
             logger.error("Stripe transfer_to_creator failed: %s", exc)
             raise StripeError(f"Failed to transfer to creator: {exc}") from exc

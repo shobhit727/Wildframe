@@ -65,8 +65,11 @@ class PipelineJob(Base):
     upload_session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), nullable=False, index=True
     )
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, unique=True, index=True
+    )
     current_stage = Column(String(100), nullable=True)
-    status = Column(
+    status = Column(  # type: ignore[var-annotated]
         SQLEnum(PipelineJobStatus),
         default=PipelineJobStatus.PENDING,
         nullable=False,
@@ -81,6 +84,8 @@ class PipelineJob(Base):
     # orchestrator can resume across requests (see app.services.advance()).
     context = Column(JSONB, nullable=False, default=dict)
     started_at = Column(DateTime(timezone=True), nullable=True)
+    leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    leased_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -96,6 +101,7 @@ class PipelineJob(Base):
     __table_args__ = (
         Index("idx_pipeline_job_status", "status"),
         Index("idx_pipeline_job_upload_session", "upload_session_id"),
+        Index("idx_pipeline_job_idempotency_key", "idempotency_key"),
     )
 
 
@@ -112,7 +118,7 @@ class PipelineStageLog(Base):
         index=True,
     )
     stage = Column(String(100), nullable=False)
-    status = Column(SQLEnum(PipelineStageStatus), nullable=False)
+    status = Column(SQLEnum(PipelineStageStatus), nullable=False)  # type: ignore[var-annotated]
     duration_ms = Column(Integer, nullable=False, default=0)
     message = Column(Text, nullable=True)
     created_at = Column(
@@ -152,7 +158,7 @@ class TranscodingJob(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     content_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
     source_url = Column(String(2048), nullable=False)
-    status = Column(SQLEnum(TranscodingStatus), default=TranscodingStatus.PENDING)
+    status = Column(SQLEnum(TranscodingStatus), default=TranscodingStatus.PENDING)  # type: ignore[var-annotated]
     progress_percentage = Column(Integer, default=0)
     output_hls_url = Column(String(2048), nullable=True)
     output_dash_url = Column(String(2048), nullable=True)

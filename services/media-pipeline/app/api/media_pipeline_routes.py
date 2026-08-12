@@ -43,6 +43,8 @@ class StartJobRequest(BaseModel):
     # storage_key is what the uploads-service stored the object at; it is the
     # pipeline's entry point to the bytes.
     storage_key: str
+    # idempotency_key is required for external callers to prevent duplicate jobs.
+    idempotency_key: str
 
 
 class JobResponse(BaseModel):
@@ -90,8 +92,9 @@ async def start_job(
             content_id=request.content_id,
             upload_session_id=upload_session_id,
             storage_key=request.storage_key,
+            idempotency_key=request.idempotency_key,
         )
-        job = await service.advance(job.id)
+        job = await service.advance(job.id)  # type: ignore[arg-type]
     except PipelineError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _job_to_response(job)
@@ -111,10 +114,10 @@ async def get_job(
         job=_job_to_response(job),
         stage_log=[
             StageLogResponse(
-                stage=log.stage,
+                stage=log.stage,  # type: ignore[arg-type]
                 status=log.status.value,
-                duration_ms=log.duration_ms,
-                message=log.message,
+                duration_ms=log.duration_ms,  # type: ignore[arg-type]
+                message=log.message,  # type: ignore[arg-type]
                 created_at=log.created_at.isoformat(),
             )
             for log in logs

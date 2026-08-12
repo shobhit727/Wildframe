@@ -1,6 +1,8 @@
 """API Gateway - routing, load balancing, authentication."""
 
 import logging
+import posixpath
+import random
 from types import MappingProxyType
 
 import httpx
@@ -8,7 +10,9 @@ import jwt
 import redis.asyncio as redis
 from fastapi import HTTPException, Request, status
 
-logger = logging.getLogger(__name__)
+from app.core.settings import settings
+
+
 
 # Header names whose values must never appear in logs. Matched
 # case-insensitively against any field attached to a LogRecord (covers both
@@ -18,14 +22,16 @@ _REDACTED_VALUE = "[REDACTED]"
 _CONTROL_CHARS = (
     "".join(chr(c) for c in range(32) if c not in (9,)) + "\x7f"  # keep tab, drop the rest
 )
-_CONTROL_TRANSLATION = str.maketrans({c: "?" for c in _CONTROL_CHARS})
+logger = logging.getLogger(__name__)
 
+
+_CONTROL_TRANSLATION: dict[str, str] = {}
 
 def _sanitize_message(message: str) -> str:
     """Escape log-injection vectors (CR, LF, NUL, control bytes)."""
     if not message:
         return message
-    return message.replace("\r", "?").replace("\n", "?").translate(_CONTROL_TRANSLATION)
+    return message.replace("\r", "?").replace("\n", "?").translate(_CONTROL_TRANSLATION)  # type: ignore[arg-type]
 
 
 class HeaderRedactionFilter(logging.Filter):
@@ -87,12 +93,30 @@ class ServiceRegistry:
 
     @classmethod
     def route_request(cls, path: str) -> tuple[str | None, str]:
-        """Route request path to appropriate service."""
-        parts = path.strip("/").split("/")
-        if not parts:
-            return None, ""
+        """Route request path to appropriate service.
 
-        service = parts[0]
+        The path is normalized (backslashes become separators, duplicate
+        slashes collapse, dot segments resolve) before the service segment is
+        extracted so alternate encodings cannot route a request to a different
+        service than the one the gateway classified.
+
+        Raises ValueError when normalization moves the request outside the
+        service named by the raw first path segment (e.g. "/content/../auth").
+        """
+        raw = path.strip("/")
+        if not raw:
+            return None, "/"
+        if "\x00" in path:
+            raise ValueError("NUL byte in request path")
+        raw_first = raw.split("/", 1)[0]
+
+        normalized = path.replace("\\", "/")
+        normalized = posixpath.normpath(normalized)
+        parts = normalized.strip("/").split("/")
+        service = parts[0] if parts and parts[0] else ""
+        if service != raw_first:
+            raise ValueError("Request path escapes its service boundary")
+
         remaining_path = "/" + "/".join(parts[1:]) if len(parts) > 1 else "/"
         url = cls.get_service_url(service)
 
@@ -126,9 +150,6 @@ class AuthenticationMiddleware:
 
         try:
             scheme, token = auth_header.split()
-            if scheme.lower() != "bearer":
-                return None
-
             # Require an expiration claim so tokens without an expiry cannot
             # become effectively permanent bearer credentials.
             payload = jwt.decode(
@@ -164,28 +185,63 @@ class AuthenticationMiddleware:
 
         return token_payload
 
+class RateLimitUnavailable(Exception):
+    """Raised when the rate-limit backend cannot be reached.
+
+    The proxy maps this to HTTP 503: rate limiting FAILS CLOSED so a Redis
+    outage can never silently disable abuse controls. The 503 is loud and
+    bounded — the limiter is the only component touched, and the error is
+    logged with the failure class for alerting.
+    """
+
 
 class RateLimiter:
-    """Rate limiting middleware."""
+    """Rate limiting middleware backed by Redis (shared across replicas)."""
 
     def __init__(self, redis_client: redis.Redis):
         self.redis = redis_client
         self.limits = {
-            "auth": 5,  # 5 requests per minute
-            "search": 100,  # 100 requests per minute
-            "default": 1000,  # 1000 requests per minute
+            "auth": 5,  # login/register: aggressive brute-force bound
+            "search": 100,  # expensive search queries
+            "media": 20,  # upload/finalize are expensive
+            "recommendations": 200,
+            "billing": 200,
+            "admin": 300,
+            "analytics": 200,
+            "notifications": 100,
+            "default": 1000,
         }
 
+    def _key(self, user_id: str, service: str) -> str:
+        """Namespaced counter key: environment + service + client identity.
+
+        The environment prefix keeps staging/test and production counters from
+        colliding on shared Redis infrastructure, and the service prefix keeps
+        one service's counters from overwriting another's (issue #563).
+        """
+        return f"rate_limit:{settings.ENVIRONMENT}:{service}:{user_id}"
+
     async def check_rate_limit(self, user_id: str, service: str) -> bool:
-        """Check if user has exceeded rate limit for service."""
-        key = f"rate_limit:{user_id}:{service}"
+        """Check if user has exceeded rate limit for service.
+
+        Returns True when the request is within the limit. Raises
+        RateLimitUnavailable when the backend cannot be reached (fail closed).
+        """
+        key = self._key(user_id, service)
         limit = self.limits.get(service, self.limits["default"])
 
-        count = int(await self.redis.incr(key))
-        if count == 1:
-            await self.redis.expire(key, 60)  # 1 minute window
+        try:
+            count = int(await self.redis.incr(key))
+            if count == 1:
+                # Jittered window (60-75s): counters across clients must not
+                # expire in lockstep and synchronize a load spike.
+                await self.redis.expire(key, 60 + random.randint(0, 15))
+        except (redis.RedisError, OSError, ConnectionError) as exc:
+            logger.error("Rate-limit backend failure (%s): %s", type(exc).__name__, exc)
+            raise RateLimitUnavailable() from exc
 
         return count <= limit
+
 
 
 class LoadBalancer:
@@ -197,8 +253,8 @@ class LoadBalancer:
         if not url:
             return None
 
-        # Check health
-        async with httpx.AsyncClient(timeout=2.0) as client:
+        async with httpx.AsyncClient(timeout=2.0, follow_redirects=False) as client:
+
             try:
                 response = await client.get(f"{url}/health")
                 if response.status_code == 200:

@@ -8,12 +8,16 @@ CorrelationMiddleware:
 RequestLoggingMiddleware:
   - Logs every request with method, path, status_code, duration_ms
   - Uses structured JSON logging via the shared setup_logging
+
+Security: all header values used in correlation IDs are sanitized via
+:func:`wildframe_observability.logging._sanitize_for_log` to prevent
+log-injection attacks (CRLF, ANSI escapes, control chars).
 """
 from __future__ import annotations
 
+import logging
 import time
 import uuid
-import logging
 from typing import Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -21,8 +25,9 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from wildframe_observability.logging import (
-    set_request_id,
     set_correlation_id,
+    set_request_id,
+    _sanitize_for_log,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,12 +43,19 @@ class CorrelationMiddleware(BaseHTTPMiddleware):
     If the client sends these headers, we honour them (trust boundary:
     the API gateway should strip/replace them at the edge). If not, we
     generate fresh UUIDs.
+
+    All header values are sanitized before being stored in contextvars
+    or echoed in response headers.
     """
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Read or generate IDs.
-        req_id = request.headers.get(REQUEST_ID_HEADER) or str(uuid.uuid4())
-        corr_id = request.headers.get(CORRELATION_ID_HEADER) or str(uuid.uuid4())
+        raw_req_id = request.headers.get(REQUEST_ID_HEADER) or str(uuid.uuid4())
+        raw_corr_id = request.headers.get(CORRELATION_ID_HEADER) or str(uuid.uuid4())
+
+        # Sanitize header values to prevent log injection via headers.
+        req_id = _sanitize_for_log(raw_req_id)
+        corr_id = _sanitize_for_log(raw_corr_id)
 
         # Store in contextvars for downstream log correlation.
         set_request_id(req_id)
@@ -52,10 +64,10 @@ class CorrelationMiddleware(BaseHTTPMiddleware):
         # Process the request.
         response = await call_next(request)
 
-        # Propagate IDs in response headers.
+        # Propagate IDs in response headers (sanitized versions).
         response.headers[REQUEST_ID_HEADER] = req_id
         response.headers[CORRELATION_ID_HEADER] = corr_id
-        return response
+        return response  # type: ignore[no-any-return]
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
@@ -77,7 +89,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         # Skip logging for health/metrics edges to reduce noise.
         if path in ("/health", "/metrics", "/favicon.ico"):
-            return await call_next(request)
+            return await call_next(request)  # type: ignore[no-any-return]
 
         response = await call_next(request)
 
@@ -92,4 +104,4 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 "service_name": self.service_name,
             },
         )
-        return response
+        return response  # type: ignore[no-any-return]

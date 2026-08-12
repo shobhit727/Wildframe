@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,6 +11,27 @@ from app.core.database import DatabaseManager
 from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
+
+
+async def _background_workers() -> None:
+    """Drain the transactional outbox and reap expired upload sessions."""
+    from app.repositories import UploadChunkRepository
+    from app.services import UploadService
+
+    last_reap = 0.0
+    while True:
+        try:
+            assert DatabaseManager.session_factory is not None
+            async with DatabaseManager.session_factory() as session:
+                service = UploadService(UploadChunkRepository(session))
+                await service.drain_outbox()
+                if time.monotonic() - last_reap >= settings.REAPER_INTERVAL_SECONDS:
+                    await service.reap_expired()
+                    last_reap = time.monotonic()
+        except Exception:  # noqa: BLE001 - workers must survive transient errors
+            logger.exception("background worker iteration failed")
+        await asyncio.sleep(settings.OUTBOX_POLL_INTERVAL_SECONDS)
+
 
 
 @asynccontextmanager
@@ -26,9 +49,15 @@ async def lifespan(app: FastAPI):
 
     logger.info("All startup checks passed")
 
+    workers_task = asyncio.create_task(_background_workers())
     yield
 
     # Shutdown
+    workers_task.cancel()
+    try:
+        await workers_task
+    except asyncio.CancelledError:
+        pass
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
     await DatabaseManager.close()
     logger.info("Shutdown complete")

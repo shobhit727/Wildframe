@@ -1,13 +1,18 @@
 """Uploads service repositories."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import UploadChunk, UploadSession
-
+from app.models import (
+    OutboxEvent,
+    OutboxEventStatus,
+    UploadChunk,
+    UploadSession,
+    UploadSessionStatus,
+)
 
 class UploadChunkRepository:
     """Persistence for upload chunks and sessions.
@@ -43,7 +48,7 @@ class UploadChunkRepository:
         return list(result.scalars().all())
 
     async def save(self, session: UploadSession) -> UploadSession:
-        session.updated_at = datetime.now(UTC)
+        session.updated_at = datetime.now(UTC)  # type: ignore[assignment]
         await self.session.flush()
         return session
 
@@ -67,3 +72,55 @@ class UploadChunkRepository:
             .order_by(UploadChunk.index)
         )
         return [row[0] for row in result.all()]
+
+    # -- Outbox --------------------------------------------------------------
+
+    async def enqueue_event(self, topic: str, event_key: str, payload: dict) -> OutboxEvent:
+        """Persist an event row in the current transaction (transactional outbox)."""
+        row = OutboxEvent(topic=topic, event_key=event_key, payload=payload)
+        self.session.add(row)
+        await self.session.flush()
+        return row
+
+    async def pending_events(self, limit: int = 100) -> list[OutboxEvent]:
+        result = await self.session.execute(
+            select(OutboxEvent)
+            .where(OutboxEvent.status == OutboxEventStatus.PENDING)
+            .order_by(OutboxEvent.created_at)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def mark_dispatched(self, event_id: UUID) -> None:
+        row = await self.session.get(OutboxEvent, event_id)
+        if row is not None:
+            row.status = OutboxEventStatus.DISPATCHED  # type: ignore[assignment]
+            row.dispatched_at = datetime.now(UTC)  # type: ignore[assignment]
+            await self.session.flush()
+
+    # -- Reaper --------------------------------------------------------------
+
+    async def expired_sessions(self, now: datetime) -> list[UploadSession]:
+        """Sessions still in flight past their expiry (stale and safe to reap)."""
+        result = await self.session.execute(
+            select(UploadSession).where(
+                UploadSession.expires_at < now,
+                UploadSession.status.in_(
+                    [UploadSessionStatus.INITIATED, UploadSessionStatus.UPLOADING]
+                ),
+            )
+        )
+        return list(result.scalars().all())
+
+    async def uncleaned_aborted(
+        self, now: datetime, grace: timedelta
+    ) -> list[UploadSession]:
+        """Aborted sessions whose storage cleanup never completed (retry)."""
+        result = await self.session.execute(
+            select(UploadSession).where(
+                UploadSession.status == UploadSessionStatus.ABORTED,
+                UploadSession.storage_cleaned_at.is_(None),
+                UploadSession.updated_at < now - grace,
+            )
+        )
+        return list(result.scalars().all())

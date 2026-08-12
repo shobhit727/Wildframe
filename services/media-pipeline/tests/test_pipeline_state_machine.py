@@ -35,6 +35,9 @@ class FakeJobRepo:
         self.jobs: dict[UUID, PipelineJob] = {}
 
     async def create(self, job: PipelineJob) -> PipelineJob:
+        if job.id is None:
+            from uuid import uuid4
+            job.id = uuid4()
         self.jobs[job.id] = job
         return job
 
@@ -47,12 +50,15 @@ class FakeJobRepo:
                 return job
         return None
 
+    async def get_by_idempotency_key(self, key: str):
+        for job in self.jobs.values():
+            if getattr(job, "idempotency_key", None) == key:
+                return job
+        return None
+
     async def save(self, job: PipelineJob) -> PipelineJob:
         self.jobs[job.id] = job
         return job
-
-    async def list_by_status(self, status, limit: int = 50):
-        return [j for j in self.jobs.values() if j.status == status][:limit]
 
 
 class FakeLogRepo:

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 async def _warm_search_index() -> None:
     """Create the ES index and backfill from content-service, tolerantly."""
     try:
-        async for session in DatabaseManager.session_factory():
+        async for session in DatabaseManager.session_factory():  # type: ignore[misc,union-attr]
             service = SearchService(
                 es_client(), SearchQueryRepository(session), SearchIndexRepository(session)
             )
@@ -64,14 +65,38 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict:
-        """Health check endpoint."""
-        db_ok = await DatabaseManager.health_check()
+        """Liveness probe: cheap, no external dependencies.
+
+        Kubernetes should use this to detect dead processes.
+        """
         return {
-            "status": "healthy" if db_ok else "degraded",
+            "status": "ok",
+            "service": "search",
+            "version": settings.SERVICE_VERSION,
+        }
+
+    @app.get("/ready")
+    async def ready() -> dict:
+        """Readiness probe: verifies database and Elasticsearch connectivity.
+
+        Returns 200 when healthy, 503 when degraded.
+        """
+        db_ok = await DatabaseManager.health_check()
+        es_ok = False
+        try:
+            # Bounded ES ping to avoid hanging the probe.
+            es_ok = bool(await asyncio.wait_for(es_client().ping(), timeout=3.0))
+        except Exception:
+            es_ok = False
+
+        status_code = 200 if (db_ok and es_ok) else 503
+        return {  # type: ignore[return-value]
+            "status": "ready" if (db_ok and es_ok) else "not_ready",
             "service": "search",
             "version": settings.SERVICE_VERSION,
             "database": "ok" if db_ok else "unavailable",
-        }
+            "elasticsearch": "ok" if es_ok else "unavailable",
+        }, status_code
 
     app.include_router(search_router)
 

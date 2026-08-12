@@ -23,9 +23,9 @@ def test_settings_importable_from_core():
     """
     from app.core.settings import settings
 
-    assert settings.settings.SERVICE_NAME == "streaming-service"
-    assert isinstance(settings.settings.CORS_ALLOWED_ORIGINS, list)
-    assert settings.settings.CORS_ALLOWED_ORIGINS
+    assert settings.settings.SERVICE_NAME == "streaming-service"  # type: ignore[attr-defined]
+    assert isinstance(settings.settings.CORS_ALLOWED_ORIGINS, list)  # type: ignore[attr-defined]
+    assert settings.settings.CORS_ALLOWED_ORIGINS  # type: ignore[attr-defined]
 
 
 @pytest.mark.unit
@@ -69,7 +69,7 @@ def test_construct_app_imports_cleanly():
 
     assert main.app is not None
 
-    from app.api import streaming_routes as _streaming_routes
+    from app.api import streaming_routes as _streaming_routes  # type: ignore[attr-defined]
 
     assert _streaming_routes.router is not None
 

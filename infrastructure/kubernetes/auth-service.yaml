@@ -56,6 +56,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       
       # Init containers for migrations
       initContainers:
@@ -123,7 +125,7 @@ spec:
         # Readiness probe
         readinessProbe:
           httpGet:
-            path: /health
+            path: /ready
             port: http
             scheme: HTTP
           initialDelaySeconds: 10
@@ -145,7 +147,7 @@ spec:
         # Startup probe (for slow services)
         startupProbe:
           httpGet:
-            path: /health
+            path: /ready
             port: http
             scheme: HTTP
           initialDelaySeconds: 0
@@ -340,6 +342,18 @@ spec:
     ports:
     - protocol: TCP
       port: 8000
+  # Prometheus scrape of the metrics port (9000) from the app namespace
+  # and the monitoring namespace where Prometheus is deployed.
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          app: wildframe
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+    ports:
+    - protocol: TCP
+      port: 9000
   egress:
   - to:
     - podSelector:
@@ -362,6 +376,14 @@ spec:
     ports:
     - protocol: TCP
       port: 9092
+  # Jaeger agent span ingestion (UDP 6831) for distributed tracing.
+  - to:
+    - podSelector:
+        matchLabels:
+          app: jaeger-agent
+    ports:
+    - protocol: UDP
+      port: 6831
   - to:
     - namespaceSelector: {}
     ports:

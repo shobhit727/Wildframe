@@ -30,8 +30,11 @@ class Settings(BaseSettings):
     REDIS_TIMEOUT: int = 5
 
     # JWT Configuration
-    JWT_SECRET_KEY: str = "dev-secret-key"
+    JWT_SECRET_KEY: str = "dev-secret-key-change-in-production-min-32-bytes"
     JWT_ALGORITHM: str = "HS256"
+    JWT_ISSUER: str = "wildframe-auth"
+    JWT_AUDIENCE: str = "wildframe-api"
+    JWT_LEEWAY_SECONDS: int = 60
     JWT_EXPIRATION_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRATION_DAYS: int = 7
     TOKEN_BLACKLIST_ENABLED: bool = True

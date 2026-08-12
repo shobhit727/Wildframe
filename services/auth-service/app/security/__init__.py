@@ -11,8 +11,8 @@ from typing import Any
 from uuid import UUID
 import bcrypt
 from app.core.settings import settings
-from jose import JWTError, jwt
-from jose.exceptions import ExpiredSignatureError
+from jose import JWTError, jwt  # type: ignore[import-untyped]
+from jose.exceptions import ExpiredSignatureError  # type: ignore[import-untyped]
 
 from app.models import User
 
@@ -102,6 +102,8 @@ class TokenManager:
             "type": "access",
             "iat": now,
             "exp": expires_at,
+            "iss": settings.JWT_ISSUER,
+            "aud": settings.JWT_AUDIENCE,
             "jti": f"access_{user_id}_{now.timestamp()}",
         }
 
@@ -110,7 +112,7 @@ class TokenManager:
             settings.JWT_SECRET_KEY,
             algorithm=settings.JWT_ALGORITHM,
         )
-        return token
+        return token  # type: ignore[no-any-return]
 
     @staticmethod
     def create_refresh_token(user_id: UUID) -> str:
@@ -131,6 +133,8 @@ class TokenManager:
             "type": "refresh",
             "iat": now,
             "exp": expires_at,
+            "iss": settings.JWT_ISSUER,
+            "aud": settings.JWT_AUDIENCE,
             "jti": f"refresh_{user_id}_{now.timestamp()}",
         }
 
@@ -139,7 +143,7 @@ class TokenManager:
             settings.JWT_SECRET_KEY,
             algorithm=settings.JWT_ALGORITHM,
         )
-        return token
+        return token  # type: ignore[no-any-return]
 
     @staticmethod
     def create_email_verification_token(user_id: UUID, email: str) -> str:
@@ -160,9 +164,11 @@ class TokenManager:
             "type": "email_verification",
             "iat": now,
             "exp": expires_at,
+            "iss": settings.JWT_ISSUER,
+            "aud": settings.JWT_AUDIENCE,
             "jti": f"emailverify_{user_id}_{now.timestamp()}",
         }
-        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)  # type: ignore[no-any-return]
 
     @staticmethod
     def create_mfa_challenge_token(user_id: UUID, email: str) -> str:
@@ -181,9 +187,11 @@ class TokenManager:
             "type": "mfa_challenge",
             "iat": now,
             "exp": expires_at,
+            "iss": settings.JWT_ISSUER,
+            "aud": settings.JWT_AUDIENCE,
             "jti": f"mfa_{user_id}_{now.timestamp()}",
         }
-        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)  # type: ignore[no-any-return]
 
     @staticmethod
     def verify_mfa_challenge(token: str) -> UUID | None:
@@ -220,13 +228,16 @@ class TokenManager:
                 token,
                 settings.JWT_SECRET_KEY,
                 algorithms=[settings.JWT_ALGORITHM],
+                issuer=settings.JWT_ISSUER,
+                audience=settings.JWT_AUDIENCE,
+                leeway=settings.JWT_LEEWAY_SECONDS,
             )
 
             if payload.get("type") != token_type:
                 logger.warning(f"Invalid token type: expected {token_type}")
                 raise JWTError(f"Invalid token type: expected {token_type}")
 
-            return payload
+            return payload  # type: ignore[no-any-return]
 
         except ExpiredSignatureError:
             logger.debug("Token expired")

@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { getApiErrorMessage } from '@/api/client';
 
 export function SignupForm() {
   const [email, setEmail] = useState('');
@@ -23,9 +24,10 @@ export function SignupForm() {
       await register(email, password, firstName, lastName);
       toast.success('Welcome to Wildframe!');
       router.push('/browse');
-    } catch {
-      setErrors({ email: 'Failed to create account' });
-      toast.error('Sign up failed');
+    } catch (error) {
+      const msg = getApiErrorMessage(error, 'Failed to create account', 'Email already registered');
+      setErrors({ email: msg });
+      toast.error(msg);
     }
   };
 
@@ -34,17 +36,23 @@ export function SignupForm() {
       <div className="w-full max-w-md bg-dark-900/80 backdrop-blur-xl border border-dark-700/50 p-8 rounded-xl shadow-2xl">
         <h1 className="text-3xl font-bold text-white mb-8">Sign Up</h1>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-5" noValidate>
           {errors.email && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg text-sm">
+            <div
+              role="alert"
+              className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg text-sm"
+            >
               {errors.email}
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">First Name</label>
+              <label htmlFor="firstName" className="block text-sm font-medium text-gray-300 mb-2">
+                First Name
+              </label>
               <input
+                id="firstName"
                 type="text"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
@@ -54,8 +62,11 @@ export function SignupForm() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Last Name</label>
+              <label htmlFor="lastName" className="block text-sm font-medium text-gray-300 mb-2">
+                Last Name
+              </label>
               <input
+                id="lastName"
                 type="text"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
@@ -67,8 +78,11 @@ export function SignupForm() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
+              Email
+            </label>
             <input
+              id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -79,8 +93,11 @@ export function SignupForm() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Password</label>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
+              Password
+            </label>
             <input
+              id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

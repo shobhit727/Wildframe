@@ -41,7 +41,7 @@ class FakeJobRepo:
         self.jobs: dict[UUID, PipelineJob] = {}
 
     async def create(self, job: PipelineJob) -> PipelineJob:
-        self.jobs[job.id] = job
+        self.jobs[job.id] = job  # type: ignore[index]
         return job
 
     async def get(self, job_id: UUID):
@@ -54,7 +54,7 @@ class FakeJobRepo:
         return None
 
     async def save(self, job: PipelineJob) -> PipelineJob:
-        self.jobs[job.id] = job
+        self.jobs[job.id] = job  # type: ignore[index]
         return job
 
     async def list_by_status(self, status, limit: int = 50):
@@ -117,8 +117,8 @@ def _fresh_registry() -> StageRegistry:
 def make_service(registry: StageRegistry, max_attempts: int = 3, backoff_base: float = 0.0):
     set_event_publisher(InMemoryEventPublisher())
     return MediaPipelineService(
-        job_repo=FakeJobRepo(),
-        log_repo=FakeLogRepo(),
+        job_repo=FakeJobRepo(),  # type: ignore[arg-type]
+        log_repo=FakeLogRepo(),  # type: ignore[arg-type]
         registry=registry,
         max_attempts=max_attempts,
         backoff_base=backoff_base,
@@ -204,7 +204,7 @@ async def test_retry_then_fail_emits_pipeline_failed_dlq():
     assert job.current_stage == "flaky"
     # 3 attempts were made.
     stage = reg.get("flaky")
-    assert stage.calls == 3
+    assert stage.calls == 3  # type: ignore[attr-defined]
     # The DLQ event was emitted.
     dlq = [e for e in service.publisher.sent if e.topic == "content.pipeline.failed"]
     assert len(dlq) == 1
@@ -269,7 +269,7 @@ async def test_non_retryable_fails_immediately_without_retries():
     job = await service.advance(job.id)
     assert job.status == PipelineJobStatus.FAILED
     # Only one attempt — non-retryable failures don't consume retries.
-    assert reg.get("fatal").calls == 1
+    assert reg.get("fatal").calls == 1  # type: ignore[attr-defined]
     assert any(e.topic == "content.pipeline.failed" for e in service.publisher.sent)
 
 
@@ -298,6 +298,6 @@ async def test_start_job_persists_to_db(db):
         storage_key="uploads/x/clip.mp4",
     )
     assert job.id is not None
-    fetched = await service.job_repo.get(job.id)
+    fetched = await service.job_repo.get(job.id)  # type: ignore[arg-type]
     assert fetched is not None
     assert fetched.status == PipelineJobStatus.PENDING

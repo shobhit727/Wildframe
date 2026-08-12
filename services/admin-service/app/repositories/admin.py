@@ -1,8 +1,12 @@
+from datetime import UTC, datetime
+
 from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.secrets import redact_secrets
 from app.models.admin import (
     AdminAuditLog,
+    AuditLogAppendOnlyError,
     ContentModeration,
     SystemAlert,
     SystemConfig,
@@ -25,12 +29,15 @@ class UserModerationRepository:
         await self.db.refresh(moderation)
         return moderation
 
-    async def get_by_user_id(self, user_id: str) -> UserModeration | None:
-        result = await self.db.execute(
+    async def get_by_user_id(self, user_id: str, for_update: bool = False) -> UserModeration | None:
+        query = (
             select(UserModeration)
             .where(UserModeration.user_id == user_id)
             .order_by(desc(UserModeration.created_at))
         )
+        if for_update:
+            query = query.with_for_update()
+        result = await self.db.execute(query)
         return result.scalars().first()
 
     async def list_moderated_users(
@@ -46,7 +53,9 @@ class UserModerationRepository:
     async def update_status(
         self, user_id: str, status: str, reason: str | None, moderated_by: str
     ) -> UserModeration | None:
-        moderation = await self.get_by_user_id(user_id)
+        # Row lock makes the read-modify-write of a moderation decision atomic
+        # under concurrency: concurrent decisions serialize instead of racing.
+        moderation = await self.get_by_user_id(user_id, for_update=True)
         if moderation:
             moderation.status = status
             moderation.reason = reason
@@ -83,10 +92,31 @@ class ContentModerationRepository:
     async def get_by_id(self, moderation_id: int) -> ContentModeration | None:
         return await self.db.get(ContentModeration, moderation_id)
 
-    async def get_by_content_id(self, content_id: str) -> ContentModeration | None:
-        result = await self.db.execute(
+    async def get_by_content_id(
+        self, content_id: str, for_update: bool = False
+    ) -> ContentModeration | None:
+        query = (
             select(ContentModeration)
             .where(ContentModeration.content_id == content_id)
+            .order_by(desc(ContentModeration.created_at))
+        )
+        if for_update:
+            query = query.with_for_update()
+        result = await self.db.execute(query)
+        return result.scalars().first()
+
+    async def get_active_flag(self, content_id: str, flagged_by: str) -> ContentModeration | None:
+        """Latest still-open flag of ``content_id`` raised by ``flagged_by``."""
+        result = await self.db.execute(
+            select(ContentModeration)
+            .where(
+                and_(
+                    ContentModeration.content_id == content_id,
+                    ContentModeration.flagged_by == flagged_by,
+                    ContentModeration.is_active == True,
+                    ContentModeration.status == "flagged",
+                )
+            )
             .order_by(desc(ContentModeration.created_at))
         )
         return result.scalars().first()
@@ -107,10 +137,11 @@ class ContentModerationRepository:
     async def update_status(
         self, content_id: str, status: str, resolved_by: str
     ) -> ContentModeration | None:
-        moderation = await self.get_by_content_id(content_id)
+        moderation = await self.get_by_content_id(content_id, for_update=True)
         if moderation:
             moderation.status = status
             moderation.resolved_by = resolved_by
+            moderation.resolved_at = datetime.now(UTC) if status == "removed" else None
             await self.db.commit()
             await self.db.refresh(moderation)
         return moderation
@@ -156,7 +187,7 @@ class SystemAlertRepository:
 
     async def acknowledge(self, alert_id: int, admin_id: str) -> SystemAlert | None:
         alert = await self.get_by_id(alert_id)
-        if alert:
+        if alert and not alert.acknowledged:
             alert.acknowledged = True
             alert.acknowledged_by = admin_id
             await self.db.commit()
@@ -208,6 +239,13 @@ class SystemConfigRepository:
 
 
 class AdminAuditLogRepository:
+    """Append-only audit persistence.
+
+    Records can only be created and read. Any update or delete attempt is
+    rejected (see also the ORM-level guards on ``AdminAuditLog``); corrections
+    must be recorded as new events.
+    """
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
@@ -225,13 +263,21 @@ class AdminAuditLogRepository:
             action=action,
             resource_type=resource_type,
             resource_id=resource_id,
-            changes=changes,
+            changes=redact_secrets(changes),
             ip_address=ip_address,
         )
         self.db.add(log)
         await self.db.commit()
         await self.db.refresh(log)
         return log
+
+    async def update(self, *args, **kwargs) -> AdminAuditLog:
+        raise AuditLogAppendOnlyError(
+            "admin audit logs are append-only: corrections must be recorded as new events"
+        )
+
+    async def delete(self, *args, **kwargs) -> None:
+        raise AuditLogAppendOnlyError("admin audit logs are append-only: deletion is not permitted")
 
     async def list_by_admin(self, admin_id: str, limit: int = 50) -> list[AdminAuditLog]:
         query = (

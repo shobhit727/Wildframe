@@ -40,10 +40,10 @@ def _setup_tracing(service_name: str) -> None:
         return
     try:
         from opentelemetry import trace
-        from opentelemetry.exporter.jaeger.thrift import JaegerExporter
-        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.exporter.jaeger.thrift import JaegerExporter  # type: ignore[import-not-found]
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # type: ignore[import-not-found]
+        from opentelemetry.sdk.trace import TracerProvider  # type: ignore[attr-defined]
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore[attr-defined]
 
         host = os.getenv("JAEGER_AGENT_HOST", "localhost")
         port = int(os.getenv("JAEGER_AGENT_PORT", "6831"))

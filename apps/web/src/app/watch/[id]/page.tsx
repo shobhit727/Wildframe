@@ -77,6 +77,8 @@ export default function WatchPage() {
     if (!isAuthenticated || !user || !contentId) return;
     if (isStarting === false) return;
 
+    let cancelled = false;
+
     const startSession = async () => {
       try {
         const session = await apiClient.startPlaybackSession({
@@ -85,24 +87,29 @@ export default function WatchPage() {
           episode_id: selectedEpisode?.id,
           device_id: 'web-player',
         });
+        if (cancelled) return;
         setSessionId(session.id);
         setIsStarting(false);
 
-        // Resolve a playable URL: prefer a real packaged manifest, else the
-        // public HLS test stream (media-pipeline emits stub manifests today).
         if (selectedEpisode) {
           const manifest = await apiClient.getManifestForEpisode(selectedEpisode.id);
+          if (cancelled) return;
           setStreamUrl(manifest?.manifest_url || DEMO_HLS_URL);
         } else {
           setStreamUrl(DEMO_HLS_URL);
         }
       } catch (error) {
+        if (cancelled) return;
         toast.error('Failed to start playback. Please try again.');
         router.push('/browse');
       }
     };
 
     startSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, [contentId, selectedEpisode, user, isAuthenticated, router, isStarting]);
 
   const similarContent: Content[] = useMemo(

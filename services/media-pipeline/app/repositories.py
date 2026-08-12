@@ -34,18 +34,29 @@ class PipelineJobRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_idempotency_key(self, key: str) -> PipelineJob | None:
+        result = await self.session.execute(
+            select(PipelineJob).where(PipelineJob.idempotency_key == key)
+        )
+        return result.scalar_one_or_none()
+
     async def save(self, job: PipelineJob) -> PipelineJob:
-        job.updated_at = datetime.now(UTC)
+        job.updated_at = datetime.now(UTC)  # type: ignore[assignment]
         await self.session.flush()
         return job
 
     async def list_by_status(self, status: PipelineJobStatus, limit: int = 50) -> list[PipelineJob]:
         result = await self.session.execute(
-            select(PipelineJob)
-            .where(PipelineJob.status == status)
-            .order_by(PipelineJob.created_at.desc())
-            .limit(limit)
+            select(PipelineJob).where(PipelineJob.status == status).limit(limit)
         )
+        return list(result.scalars().all())
+
+    async def list_stale(self, before: datetime, status: PipelineJobStatus | None = None) -> list[PipelineJob]:
+        """Return jobs with leased_at < before (optionally filtered by status)."""
+        stmt = select(PipelineJob).where(PipelineJob.leased_at is not None, PipelineJob.leased_at < before)  # type: ignore[arg-type]
+        if status is not None:
+            stmt = stmt.where(PipelineJob.status == status)
+        result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
 
@@ -98,6 +109,6 @@ class TranscodingJobRepository:
     async def update_progress(self, job_id: UUID, progress: int) -> TranscodingJob:
         job = await self.session.get(TranscodingJob, job_id)
         if job:
-            job.progress_percentage = progress
+            job.progress_percentage = progress  # type: ignore[assignment]
             await self.session.flush()
-        return job
+        return job  # type: ignore[return-value]

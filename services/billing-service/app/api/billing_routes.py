@@ -1,3 +1,7 @@
+from http import HTTPStatus as http_status
+import jwt
+from app.core.settings import settings
+from jose import JWTError  # type: ignore[import-untyped]
 """Billing service API routes.
 
 Exposes the Sustenance Engine endpoints:
@@ -13,13 +17,11 @@ from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from jose import JWTError, jwt
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status as http_status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.settings import settings
 from app.repositories import (
     CreatorPoolRepository,
     InvoiceRepository,
@@ -27,7 +29,9 @@ from app.repositories import (
     PayoutLedgerRepository,
     PurchaseRepository,
     RegionFloorRepository,
+    RefundRepository,
     SubscriptionRepository,
+    WebhookEventRepository,
 )
 from app.services import BillingError, BillingService, TierInvalidError
 
@@ -40,24 +44,24 @@ async def get_current_user_id(
     """Resolve the authenticated user id from the JWT sub claim."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
-            status_code=http_status.HTTP_401_UNAUTHORIZED,
+            status_code=http_status.UNAUTHORIZED,
             detail="Missing or invalid authorization header",
         )
     token = authorization.removeprefix("Bearer ")
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
     except JWTError:
-        raise HTTPException(status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token")
     sub = str(payload.get("sub") or payload.get("user_id"))
     if not sub:
         raise HTTPException(
-            status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
+            status_code=http_status.UNAUTHORIZED, detail="Invalid token subject"
         )
     try:
         return UUID(sub)
     except ValueError:
         raise HTTPException(
-            status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
+            status_code=http_status.UNAUTHORIZED, detail="Invalid token subject"
         )
 
 
@@ -70,7 +74,7 @@ async def require_self(
     if path_user_id is None or str(path_user_id) == str(jwt_user_id):
         return jwt_user_id
     raise HTTPException(
-        status_code=http_status.HTTP_403_FORBIDDEN,
+        status_code=http_status.FORBIDDEN,
         detail="You can only access your own data",
     )
 
@@ -90,6 +94,8 @@ async def get_billing_service(db: Annotated[AsyncSession, Depends(get_db)]) -> B
         pool_repo=CreatorPoolRepository(db),
         milestone_repo=MilestoneRepository(db),
         payout_repo=PayoutLedgerRepository(db),
+        refund_repo=RefundRepository(db),
+        webhook_events_repo=WebhookEventRepository(db),
     )
 
 
@@ -187,7 +193,7 @@ async def purchase_title(
     """Record a pay-per-view (TVOD) purchase."""
     if request.user_id != current_user:
         raise HTTPException(
-            status_code=http_status.HTTP_403_FORBIDDEN,
+            status_code=http_status.FORBIDDEN,
             detail="You can only purchase content for your own account",
         )
     try:
@@ -338,7 +344,7 @@ async def get_payout_history(
     """Get a creator's full payout ledger history (owner only)."""
     if creator_id != current_user:
         raise HTTPException(
-            status_code=http_status.HTTP_403_FORBIDDEN, detail="You can only access your own data"
+            status_code=http_status.FORBIDDEN, detail="You can only access your own data"
         )
     payouts = await service.get_payout_history(creator_id)
     return [

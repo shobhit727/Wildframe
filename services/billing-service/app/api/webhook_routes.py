@@ -3,17 +3,20 @@ from typing import Annotated, Any
 """Stripe webhook handler for the billing service.
 
 Receives events from Stripe, verifies their signature, and dispatches
-to the appropriate handler. All processing is idempotent — we use
-the Stripe event ID as the idempotency key so replayed webhooks are
-silently ignored.
+to the appropriate handler. All processing is idempotent -- we use
+the Stripe event ID as the idempotency key backed by the durable
+stripe_webhook_events table (#47). Replayed webhooks race on the
+unique event_id constraint; exactly one wins and processes.
 
 Handled events:
-  - checkout.session.completed  → activate SVOD sub or record TVOD purchase
-  - customer.subscription.updated → sync subscription status
-  - customer.subscription.deleted → cancel sub (revert to AVOD)
-  - invoice.paid                → record invoice payment
-  - payment_intent.succeeded    → trigger payout ledger accrual
+  - checkout.session.completed  -> activate SVOD sub or record TVOD purchase
+  - customer.subscription.updated -> sync subscription status (monotonic guard)
+  - customer.subscription.deleted -> cancel sub (revert to AVOD)
+  - invoice.paid                -> record invoice payment (PENDING/FAILED->PAID)
+  - payment_intent.succeeded    -> trigger payout ledger accrual
+  - charge.refunded / refund.created -> process refund idempotently
 """
+
 import logging
 from datetime import datetime
 from decimal import Decimal
@@ -24,6 +27,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.stripe_client import StripeClient, StripeError
+from app.models import (
+    InvoiceStatus,
+    RefundStatus,
+    RevenueTier,
+    SubscriptionStatus,
+    WebhookEventStatus,
+)
 from app.repositories import (
     CreatorPoolRepository,
     InvoiceRepository,
@@ -31,9 +41,11 @@ from app.repositories import (
     PayoutLedgerRepository,
     PurchaseRepository,
     RegionFloorRepository,
+    RefundRepository,
     SubscriptionRepository,
+    WebhookEventRepository,
 )
-from app.services import BillingService
+from app.services import BillingService, TIER_PRICES
 
 logger = logging.getLogger(__name__)
 
@@ -55,34 +67,13 @@ async def get_billing_service(db: Annotated[AsyncSession, Depends(get_db)]) -> B
         pool_repo=CreatorPoolRepository(db),
         milestone_repo=MilestoneRepository(db),
         payout_repo=PayoutLedgerRepository(db),
+        refund_repo=RefundRepository(db),
+        webhook_events_repo=WebhookEventRepository(db),
     )
 
 
 # ---------------------------------------------------------------------------
-# Idempotency guard
-# ---------------------------------------------------------------------------
-
-# Auxiliary in-process dedupe. The durable guard for payouts is the unique
-# constraint on PayoutLedger.idempotency_key (DB-level, survives restart);
-# this set only avoids re-running handlers for a *single* process lifetime.
-# It is bounded so a long-running replica can't grow without limit.
-_MAX_PROCESSED_EVENTS = 100_000
-_processed_events: dict[str, bool] = {}  # insertion-ordered
-
-
-def _is_event_processed(event_id: str) -> bool:
-    return event_id in _processed_events
-
-
-def _mark_event_processed(event_id: str) -> None:
-    _processed_events[event_id] = True
-    # Drop oldest entries beyond the cap (LRU-ish via dict insertion order).
-    while len(_processed_events) > _MAX_PROCESSED_EVENTS:
-        _processed_events.pop(next(iter(_processed_events)))
-
-
-# ---------------------------------------------------------------------------
-# Event handlers
+# Event handlers (all async; called after durable claim + commit)
 # ---------------------------------------------------------------------------
 
 
@@ -103,27 +94,21 @@ async def _handle_checkout_session_completed(
         return
 
     user_id = UUID(user_id_str)
-    event["id"]
-
     tier = metadata.get("tier")
     if tier:
         # SVOD subscription activation / upgrade.
-        from app.models import RevenueTier
-
         try:
             tier_enum = RevenueTier(tier.lower())
         except ValueError:
             logger.warning("Unknown tier '%s' in checkout.session.completed", tier)
             return
 
-        from app.services import TIER_PRICES
-
         price = TIER_PRICES.get(tier_enum, Decimal("0.00"))
         sub = await service.sub_repo.get_by_user(user_id)
         if sub:
-            await service.sub_repo.update_tier(user_id, tier_enum, price)
+            await service.subscribe(user_id, tier_enum.value)
         else:
-            await service.sub_repo.create(user_id, tier_enum, price)
+            await service.subscribe(user_id, tier_enum.value)
 
         logger.info("SVOD subscription activated for user %s (tier=%s)", user_id, tier)
 
@@ -136,7 +121,15 @@ async def _handle_checkout_session_completed(
 
         content_id = UUID(content_id_str)
         amount = Decimal(str(session["amount_total"])) / Decimal(100)
-        await service.purchase_title(user_id, content_id, amount)
+        currency = session.get("currency", "USD").upper()
+        stripe_payment_intent_id = session.get("payment_intent")
+        await service.purchase_title(
+            user_id,
+            content_id,
+            amount,
+            currency=currency,
+            stripe_payment_intent_id=stripe_payment_intent_id,
+        )
         logger.info(
             "TVOD purchase recorded for user %s (content=%s, amount=%s)",
             user_id,
@@ -151,7 +144,8 @@ async def _handle_subscription_updated(
 ) -> None:
     """Handle customer.subscription.updated.
 
-    Syncs the subscription tier and active status in our DB.
+    Syncs the subscription status in our DB via sync_subscription_from_stripe
+    which enforces a monotonic guard on event.created.
     """
     sub_obj = event["data"]["object"]
     metadata = sub_obj.get("metadata", {})
@@ -161,18 +155,9 @@ async def _handle_subscription_updated(
 
     user_id = UUID(user_id_str)
     stripe_status = sub_obj.get("status")  # active, past_due, canceled, etc.
-
-    from app.models import RevenueTier
-
-    tier = RevenueTier.SVOD if stripe_status == "active" else RevenueTier.AVOD
-    from app.services import TIER_PRICES
-
-    price = TIER_PRICES[tier]
-
-    existing = await service.sub_repo.get_by_user(user_id)
-    if existing:
-        await service.sub_repo.update_tier(user_id, tier, price)
-        logger.info("Subscription synced for user %s (stripe_status=%s)", user_id, stripe_status)
+    event_created = event.get("created", 0)
+    await service.sync_subscription_from_stripe(user_id, stripe_status, event_created)
+    logger.info("Subscription synced for user %s (stripe_status=%s)", user_id, stripe_status)
 
 
 async def _handle_subscription_deleted(
@@ -190,7 +175,8 @@ async def _handle_subscription_deleted(
         return
 
     user_id = UUID(user_id_str)
-    await service.cancel_subscription(user_id)
+    event_created = event.get("created", 0)
+    await service.sync_subscription_from_stripe(user_id, "canceled", event_created)
     logger.info("Subscription cancelled for user %s (reverted to AVOD)", user_id)
 
 
@@ -201,19 +187,20 @@ async def _handle_invoice_paid(
     """Handle invoice.paid.
 
     Records the invoice payment in our local Invoice table.
+    Deduplicates on stripe_invoice_id (unique constraint).
     """
     invoice_obj = event["data"]["object"]
-    event_id = event["id"]
-    idem_key = f"stripe:invoice_paid:{event_id}"
-
-    # Idempotency guard.
-    if _is_event_processed(idem_key):
-        logger.info("invoice.paid already processed (%s), skipping", event_id)
+    stripe_invoice_id = invoice_obj.get("id")
+    if not stripe_invoice_id:
         return
-    _mark_event_processed(idem_key)
 
-    # The invoice has a subscription line — extract user_id from metadata
-    # or from the subscription object. For simplicity we look it up.
+    # Dedupe on Stripe invoice ID.
+    existing = await service.inv_repo.get_by_stripe_invoice_id(stripe_invoice_id)
+    if existing:
+        logger.info("Invoice %s already recorded (stripe_invoice_id=%s), skipping", existing.id, stripe_invoice_id)
+        return
+
+    # Extract user_id from subscription line metadata.
     lines = invoice_obj.get("lines", {}).get("data", [])
     for line in lines:
         metadata = line.get("metadata", {})
@@ -221,16 +208,18 @@ async def _handle_invoice_paid(
         if user_id_str:
             user_id = UUID(user_id_str)
             amount = Decimal(str(invoice_obj["total"])) / Decimal(100)
-            from app.models import InvoiceStatus
+            currency = invoice_obj.get("currency", "USD").upper()
 
             new_inv = await service.inv_repo.create(
                 user_id=user_id,
                 amount=amount,
+                currency=currency,
                 subscription_id=None,
+                stripe_invoice_id=stripe_invoice_id,
             )
             new_inv.status = InvoiceStatus.PAID
             new_inv.paid_at = datetime.utcnow()
-            logger.info("Invoice payment recorded for user %s (amount=%s)", user_id, amount)
+            logger.info("Invoice payment recorded for user %s (amount=%s, stripe_invoice_id=%s)", user_id, amount, stripe_invoice_id)
             break
 
 
@@ -245,16 +234,12 @@ async def _handle_payment_intent_succeeded(
     share is actually recorded.
     """
     pi = event["data"]["object"]
-    event_id = event["id"]
-    idem_key = f"stripe:payment_succeeded:{event_id}"
+    amount_minor = pi.get("amount", 0)
+    currency = pi.get("currency", "usd").upper()
+    # Convert minor units to major using our money helper (precise).
+    from app.core.money import from_minor_units
+    amount = from_minor_units(amount_minor, currency)
 
-    # Idempotency guard.
-    if _is_event_processed(idem_key):
-        logger.info("payment_intent.succeeded already processed (%s), skipping", event_id)
-        return
-    _mark_event_processed(idem_key)
-
-    amount = Decimal(str(pi["amount"])) / Decimal(100)
     # Calculate creator share (>=55%).
     creator_share = BillingService.calculate_creator_share(amount)
 
@@ -264,7 +249,63 @@ async def _handle_payment_intent_succeeded(
         "Payout accrual triggered: gross=%s, creator_share=%s (event=%s)",
         amount,
         creator_share,
-        event_id,
+        event["id"],
+    )
+
+
+async def _handle_refund(
+    event: dict[str, Any],
+    service: BillingService,
+) -> None:
+    """Handle charge.refunded / refund.created.
+
+    Applies the refund idempotently to the latest invoice for the
+    customer (or the invoice linked via metadata).
+    """
+    obj = event["data"]["object"]
+    refund_id = obj.get("id")
+    if not refund_id:
+        return
+
+    charge_id = obj.get("charge") if event["type"] == "refund.created" else obj.get("id")
+    amount_minor = obj.get("amount", 0)
+    currency = obj.get("currency", "usd").upper()
+    reason = obj.get("reason")
+    event_created = event.get("created", 0)
+
+    from app.core.money import from_minor_units
+    amount = from_minor_units(amount_minor, currency)
+
+    # Try to resolve user_id / invoice_id from metadata or charge.
+    user_id = None
+    invoice_id = None
+    metadata = obj.get("metadata", {})
+    if metadata.get("user_id"):
+        user_id = UUID(metadata["user_id"])
+    if metadata.get("invoice_id"):
+        invoice_id = UUID(metadata["invoice_id"])
+
+    # Fallback: if charge has an invoice, use that.
+    if user_id is None and charge_id:
+        # Stripe charge doesn't directly carry invoice; we'd need to
+        # fetch it via Stripe SDK. For now rely on metadata.
+        pass
+
+    await service.process_refund(
+        refund_id=refund_id,
+        charge_id=charge_id or "",
+        amount=amount,
+        currency=currency,
+        invoice_id=invoice_id,
+        user_id=user_id,
+        reason=reason,
+    )
+    logger.info(
+        "Refund %s processed for charge %s (amount=%s %s, status inferred)",
+        refund_id,
+        charge_id,
+        amount,
+        currency,
     )
 
 
@@ -278,6 +319,8 @@ _EVENT_HANDLERS = {
     "customer.subscription.deleted": _handle_subscription_deleted,
     "invoice.paid": _handle_invoice_paid,
     "payment_intent.succeeded": _handle_payment_intent_succeeded,
+    "charge.refunded": _handle_refund,
+    "refund.created": _handle_refund,
 }
 
 
@@ -289,20 +332,27 @@ _EVENT_HANDLERS = {
 @router.post("/webhooks/stripe", include_in_schema=False)
 async def stripe_webhook(
     request: Request,
-    service: Annotated[BillingService, Depends(get_billing_service)],
+    service: BillingService = Depends(get_billing_service),
     stripe_signature: str = Header(None, alias="Stripe-Signature"),
 ):
     """Receive and process Stripe webhook events.
 
-    Flow:
+    Durable idempotency flow (#47):
       1. Read the raw request body.
       2. Verify the Stripe signature.
-      3. Dispatch to the appropriate handler based on event type.
-      4. Return 200 OK on success so Stripe doesn't retry.
+      3. Claim the event in the durable inbox (INSERT ... ON CONFLICT).
+         - If already PROCESSED: return 200 immediately.
+         - If PROCESSING but stale: reclaim and retry.
+         - If FAILED and attempts < max: reclaim and retry.
+         - Else: return 200 (someone else is handling it).
+      4. COMMIT the claim transaction (durable claim survives handler crash).
+      5. Execute the handler.
+      6. On success: mark PROCESSED + commit.
+      7. On failure: mark FAILED + commit + return 500 so Stripe retries.
     """
     payload = await request.body()
 
-    # Step 1: Verify signature.
+    # Step 1: Verify signature (never skip).
     try:
         event = StripeClient.handle_webhook(payload, stripe_signature or "")
     except StripeError as exc:
@@ -311,22 +361,33 @@ async def stripe_webhook(
     event_type = event.get("type", "")
     event_id = event.get("id", "")
 
-    # Step 2: Idempotency guard at the event level.
-    if _is_event_processed(event_id):
-        logger.info("Event %s (%s) already processed, skipping", event_id, event_type)
+    # Step 2: Durable claim.
+    claimed = await service.webhook_events_repo.claim(event_id, event_type)
+    if not claimed:
+        # Could be already PROCESSED, or PROCESSING not stale, or FAILED exhausted.
+        logger.info("Event %s (%s) not claimed (already processed or busy)", event_id, event_type)
         return {"status": "ok", "idempotent": True}
 
-    # Step 3: Dispatch.
+    # Step 3: Commit the claim so it survives a handler crash.
+    await service.webhook_events_repo.commit()
+
+    # Step 4: Dispatch.
     handler = _EVENT_HANDLERS.get(event_type)
     if handler is None:
+        # Unhandled event types: mark as processed (we acknowledged receipt).
+        await service.webhook_events_repo.complete(event_id)
+        await service.webhook_events_repo.commit()
         logger.info("Unhandled Stripe event type: %s (%s)", event_type, event_id)
         return {"status": "ok", "event_type": event_type, "handled": False}
 
     try:
         await handler(event, service)
-        _mark_event_processed(event_id)
+        await service.webhook_events_repo.complete(event_id)
+        await service.webhook_events_repo.commit()
     except Exception as exc:
         logger.error("Error handling Stripe event %s (%s): %s", event_id, event_type, exc)
+        await service.webhook_events_repo.fail(event_id, str(exc))
+        await service.webhook_events_repo.commit()
         raise HTTPException(status_code=500, detail="Webhook handler failed") from exc
 
     return {"status": "ok", "event_type": event_type, "handled": True}

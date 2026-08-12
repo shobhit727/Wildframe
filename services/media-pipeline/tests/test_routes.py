@@ -80,6 +80,7 @@ class TestStartJob:
                 "content_id": str(job.content_id),
                 "upload_session_id": str(upload_id),
                 "storage_key": "uploads/abc/video.mp4",
+                "idempotency_key": f"test-{upload_id}",
             },
         )
 
@@ -93,13 +94,13 @@ class TestStartJob:
         service.start_job.side_effect = PipelineError("upload not found")
         app.dependency_overrides[get_pipeline_service] = override(service)
         upload_id = uuid4()
-
         response = client.post(
             f"/api/v1/pipeline/jobs/{upload_id}/start",
             json={
                 "content_id": str(uuid4()),
                 "upload_session_id": str(upload_id),
                 "storage_key": "uploads/x/v.mp4",
+                "idempotency_key": f"test-{upload_id}",
             },
         )
 

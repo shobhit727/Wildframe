@@ -3,6 +3,7 @@ Repository layer for Streaming Service data access.
 """
 
 import logging
+from typing import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -73,7 +74,7 @@ class PlaybackSessionRepository(BaseRepository):
         """Get session by ID."""
         return await self.session.get(PlaybackSession, session_id)
 
-    async def get_active_sessions(self, user_id: UUID) -> list[PlaybackSession]:
+    async def get_active_sessions(self, user_id: UUID) -> Sequence[PlaybackSession]:
         """Get active sessions for user."""
         result = await self.session.execute(
             select(PlaybackSession).where(
@@ -181,7 +182,7 @@ class TranscodingJobRepository(BaseRepository):
         """Get job by ID."""
         return await self.session.get(TranscodingJob, job_id)
 
-    async def get_pending_jobs(self, limit: int = 10) -> list[TranscodingJob]:
+    async def get_pending_jobs(self, limit: int = 10) -> Sequence[TranscodingJob]:
         """Get pending transcoding jobs ordered by priority."""
         result = await self.session.execute(
             select(TranscodingJob)
@@ -238,7 +239,7 @@ class QualityProfileRepository(BaseRepository):
         )
         return result.scalars().first()
 
-    async def get_all_active(self) -> list[StreamingQualityProfile]:
+    async def get_all_active(self) -> Sequence[StreamingQualityProfile]:
         """Get all active quality profiles."""
         result = await self.session.execute(
             select(StreamingQualityProfile).where(StreamingQualityProfile.is_active == True)
@@ -275,7 +276,7 @@ class CDNRegionRepository(BaseRepository):
         """Get region by ID."""
         return await self.session.get(CDNRegion, region_id)
 
-    async def get_all_active(self) -> list[CDNRegion]:
+    async def get_all_active(self) -> Sequence[CDNRegion]:
         """Get all active CDN regions."""
         result = await self.session.execute(select(CDNRegion).where(CDNRegion.is_active == True))
         return result.scalars().all()
@@ -341,7 +342,7 @@ class DownloadSessionRepository(BaseRepository):
         """Get download by ID."""
         return await self.session.get(DownloadSession, download_id)
 
-    async def get_user_downloads(self, user_id: UUID) -> list[DownloadSession]:
+    async def get_user_downloads(self, user_id: UUID) -> Sequence[DownloadSession]:
         """Get all downloads for user."""
         result = await self.session.execute(
             select(DownloadSession).where(DownloadSession.user_id == user_id)

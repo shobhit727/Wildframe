@@ -1,10 +1,13 @@
 """Configuration settings for Media Pipeline Service."""
 
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings."""
+
+    model_config = SettingsConfigDict(env_file=".env")
 
     SERVICE_NAME: str = "Media Pipeline"
     SERVICE_VERSION: str = "1.0.0"
@@ -39,8 +42,26 @@ class Settings(BaseSettings):
     PIPELINE_BACKOFF_BASE_SECONDS: float = 1.0
     PIPELINE_BACKOFF_CAP_SECONDS: float = 30.0
 
-    class Config:
-        env_file = ".env"
+    # Pipeline hardening / resource limits (additive, generous defaults so
+    # existing tests with stubs are unaffected).
+    PIPELINE_WORK_ROOT: str = "/tmp/wildframe/work"
+    PIPELINE_QUARANTINE_ROOT: str = "/tmp/wildframe/quarantine"
+    PIPELINE_STAGE_TIMEOUT_SECONDS: float = 3600.0
+    PIPELINE_MAX_TOTAL_RETRY_TIME_SECONDS: float = 7200.0
+    PIPELINE_JOB_LEASE_SECONDS: float = 300.0
+    PIPELINE_DISK_QUOTA_BYTES: int = 0  # 0 = unlimited
+    PIPELINE_MAX_GLOBAL_JOBS: int = 0  # 0 = unlimited
+    PIPELINE_MAX_JOBS_PER_CONTENT: int = 0  # 0 = unlimited
+    PIPELINE_CIRCUIT_BREAKER_THRESHOLD: int = 10
+    PIPELINE_MAX_DURATION_SECONDS: float = 4 * 3600.0
+    PIPELINE_MAX_OUTPUT_BYTES: int = 0  # 0 = unlimited (per rendition)
+    PIPELINE_MAX_CPU_THREADS: int = 2
+
+    # Adapter selection: "stub" (default, no binaries) or "ffmpeg" (real
+    # hardened subprocess adapters). Controlled via env for prod vs test.
+    MEDIA_PIPELINE_ADAPTERS: str = "stub"
+    FFMPEG_BIN: str = "ffmpeg"
+    FFPROBE_BIN: str = "ffprobe"
 
 
 settings = Settings()

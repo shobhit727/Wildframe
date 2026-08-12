@@ -10,14 +10,32 @@ the domain entity's identity (e.g. ``billing.payout.accrued`` uses
 key are deduplicated at the consumer.
 
 Ordering: within a partition key (typically the entity ID), events are
-strictly ordered. Cross-key ordering is not guaranteed.
+strictly ordered. Cross-key ordering is not guaranteed. Partition keys
+are set via the event ``key`` field (see :class:`wildframe_events.event.DomainEvent`).
 
 Retry strategy: exponential backoff with jitter, max 3 attempts before
 DLQ. Non-retryable errors (e.g. virus_detected) fail immediately.
 
 DLQ: ``<topic>.dlq`` — every stuck event lands here with its error
-context, never in a black hole.
+context, never in a black hole. The DLQ payload includes the original
+envelope, error type/message, attempt count, and consumer group. See
+:mod:`wildframe_events.subscriber` for the quarantine contract.
+
+Schema evolution: events are versioned via the ``schema_version`` field
+(default 1). Consumers MUST handle missing optional fields gracefully
+and MUST reject events with a schema_version they do not understand
+(:class:`wildframe_events.event.SchemaVersionError`). Breaking changes
+require a new topic name (e.g. ``content.published.v2``), never a
+schema_version bump on the same topic.
+
+Least-privilege ACL: use :func:`topic_acl` to generate the produce/
+consume permission matrix for each service role. Services should only
+be granted the topics they actually need.
 """
+
+from __future__ import annotations
+
+from typing import Dict, List, Set
 
 
 class Topic:
@@ -155,7 +173,7 @@ class Topic:
 
 
 # ---------------------------------------------------------------------------
-# Topic metadata — for documentation and validation
+# Topic metadata — for documentation, validation, and tooling
 # ---------------------------------------------------------------------------
 
 TOPIC_METADATA = {
@@ -211,7 +229,7 @@ TOPIC_METADATA = {
         "producer": "media-pipeline",
         "consumers": ["notification-service", "content-service"],
         "idempotency_key_pattern": "failed:{pipeline_job_id}",
-        "retry_strategy": "none",  # Terminal event
+        "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
     Topic.BILLING_SUBSCRIPTION_CREATED: {
         "producer": "billing-service",
@@ -222,7 +240,7 @@ TOPIC_METADATA = {
             "creators-service",
         ],
         "idempotency_key_pattern": "sub:created:{stripe_customer_id}",
-        "retry_strategy": "exponential_backoff(max_attempts=5)",
+        "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
     Topic.BILLING_SUBSCRIPTION_UPDATED: {
         "producer": "billing-service",
@@ -245,19 +263,25 @@ TOPIC_METADATA = {
     Topic.BILLING_PAYOUT_ACCRUED: {
         "producer": "billing-service",
         "consumers": ["creators-service"],
-        "idempotency_key_pattern": "payout:{idempotency_key}",
-        "retry_strategy": "exponential_backoff(max_attempts=5)",
+        "idempotency_key_pattern": "payout:{creator_id}:{cycle_start}",
+        "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
     Topic.BILLING_PAYOUT_TRANSFERRED: {
         "producer": "billing-service",
         "consumers": ["creators-service", "notification-service"],
-        "idempotency_key_pattern": "payout:{idempotency_key}",
-        "retry_strategy": "exponential_backoff(max_attempts=5)",
+        "idempotency_key_pattern": "payout:{creator_id}:{cycle_start}",
+        "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
     Topic.CREATOR_ONBOARDED: {
         "producer": "creators-service",
         "consumers": ["billing-service", "notification-service"],
         "idempotency_key_pattern": "creator:onboarded:{creator_id}",
+        "retry_strategy": "exponential_backoff(max_attempts=3)",
+    },
+    Topic.CREATOR_MILESTONE_REACHED: {
+        "producer": "creators-service",
+        "consumers": ["billing-service", "notification-service"],
+        "idempotency_key_pattern": "milestone:{milestone_id}:{tranche_number}",
         "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
     Topic.CREATOR_FLOOR_ADJUSTED: {
@@ -266,10 +290,15 @@ TOPIC_METADATA = {
         "idempotency_key_pattern": "floor:{creator_id}:{effective_date}",
         "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
-    Topic.CREATOR_MILESTONE_REACHED: {
-        "producer": "creators-service",
-        "consumers": ["billing-service", "notification-service"],
-        "idempotency_key_pattern": "milestone:{milestone_id}:{tranche_number}",
+    Topic.CREATOR_SUSPENDED: {
+        "producer": "moderation-service",
+        "consumers": [
+            "billing-service",
+            "content-service",
+            "notification-service",
+            "creators-service",
+        ],
+        "idempotency_key_pattern": "suspended:{creator_id}",
         "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
     Topic.MODERATION_FLAGGED: {
@@ -289,15 +318,202 @@ TOPIC_METADATA = {
         "idempotency_key_pattern": "decision:{decision_id}",
         "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
-    Topic.CREATOR_SUSPENDED: {
-        "producer": "moderation-service",
-        "consumers": [
-            "billing-service",
-            "content-service",
-            "notification-service",
-            "creators-service",
+}
+
+
+# ---------------------------------------------------------------------------
+# Least-privilege ACL matrix
+# ---------------------------------------------------------------------------
+
+# Map service role -> { "produce": [topics], "consume": [topics] }
+# This is the source of truth for Kafka ACLs / RBAC policy.
+# Services should ONLY be granted the topics they actually need.
+_SERVICE_ACL: Dict[str, Dict[str, List[str]]] = {
+    "uploads-service": {
+        "produce": [
+            Topic.CONTENT_UPLOADED,
+            Topic.CONTENT_UPLOAD_ABORTED,
         ],
-        "idempotency_key_pattern": "suspended:{creator_id}",
-        "retry_strategy": "exponential_backoff(max_attempts=5)",
+        "consume": [],
+    },
+    "media-pipeline": {
+        "produce": [
+            Topic.CONTENT_SCANNED,
+            Topic.CONTENT_METADATA_EXTRACTED,
+            Topic.CONTENT_ENCODED,
+            Topic.CONTENT_PACKAGED,
+            Topic.CONTENT_PIPELINE_FAILED,
+        ],
+        "consume": [
+            Topic.CONTENT_UPLOADED,
+        ],
+    },
+    "content-service": {
+        "produce": [
+            Topic.CONTENT_PUBLISHED,
+        ],
+        "consume": [
+            Topic.CONTENT_UPLOADED,
+            Topic.CONTENT_UPLOAD_ABORTED,
+            Topic.CONTENT_METADATA_EXTRACTED,
+            Topic.CONTENT_ENCODED,
+            Topic.CONTENT_PACKAGED,
+            Topic.CONTENT_PIPELINE_FAILED,
+            Topic.CREATOR_SUSPENDED,
+            Topic.MODERATION_DECISION_MADE,
+        ],
+    },
+    "streaming-service": {
+        "produce": [],
+        "consume": [
+            Topic.CONTENT_ENCODED,
+            Topic.CONTENT_PACKAGED,
+            Topic.CONTENT_PUBLISHED,
+        ],
+    },
+    "search-service": {
+        "produce": [],
+        "consume": [
+            Topic.CONTENT_METADATA_EXTRACTED,
+            Topic.CONTENT_PUBLISHED,
+        ],
+    },
+    "recommendation-service": {
+        "produce": [],
+        "consume": [
+            Topic.CONTENT_PUBLISHED,
+        ],
+    },
+    "billing-service": {
+        "produce": [
+            Topic.BILLING_SUBSCRIPTION_CREATED,
+            Topic.BILLING_SUBSCRIPTION_UPDATED,
+            Topic.BILLING_SUBSCRIPTION_CANCELLED,
+            Topic.BILLING_CHECKOUT_SESSION_CREATED,
+            Topic.BILLING_PAYOUT_ACCRUED,
+            Topic.BILLING_PAYOUT_TRANSFERRED,
+        ],
+        "consume": [
+            Topic.CREATOR_ONBOARDED,
+            Topic.CREATOR_MILESTONE_REACHED,
+            Topic.CREATOR_FLOOR_ADJUSTED,
+            Topic.CREATOR_SUSPENDED,
+        ],
+    },
+    "creators-service": {
+        "produce": [
+            Topic.CREATOR_ONBOARDED,
+            Topic.CREATOR_MILESTONE_REACHED,
+            Topic.CREATOR_FLOOR_ADJUSTED,
+        ],
+        "consume": [
+            Topic.BILLING_SUBSCRIPTION_CREATED,
+            Topic.BILLING_SUBSCRIPTION_CANCELLED,
+            Topic.BILLING_PAYOUT_ACCRUED,
+            Topic.BILLING_PAYOUT_TRANSFERRED,
+            Topic.CREATOR_SUSPENDED,
+        ],
+    },
+    "moderation-service": {
+        "produce": [
+            Topic.MODERATION_FLAGGED,
+            Topic.MODERATION_DECISION_MADE,
+            Topic.CREATOR_SUSPENDED,
+        ],
+        "consume": [
+            Topic.CONTENT_SCANNED,
+        ],
+    },
+    "notification-service": {
+        "produce": [],
+        "consume": [
+            Topic.CONTENT_SCANNED,
+            Topic.CONTENT_PUBLISHED,
+            Topic.CONTENT_PIPELINE_FAILED,
+            Topic.BILLING_SUBSCRIPTION_CREATED,
+            Topic.BILLING_SUBSCRIPTION_UPDATED,
+            Topic.BILLING_SUBSCRIPTION_CANCELLED,
+            Topic.CREATOR_ONBOARDED,
+            Topic.CREATOR_MILESTONE_REACHED,
+            Topic.CREATOR_SUSPENDED,
+            Topic.MODERATION_FLAGGED,
+            Topic.MODERATION_DECISION_MADE,
+            Topic.BILLING_PAYOUT_TRANSFERRED,
+        ],
+    },
+    "analytics-service": {
+        "produce": [],
+        "consume": [
+            Topic.CONTENT_PUBLISHED,
+            Topic.BILLING_SUBSCRIPTION_CREATED,
+            Topic.BILLING_SUBSCRIPTION_CANCELLED,
+            Topic.BILLING_CHECKOUT_SESSION_CREATED,
+            Topic.CREATOR_FLOOR_ADJUSTED,
+            Topic.MODERATION_FLAGGED,
+            Topic.MODERATION_DECISION_MADE,
+        ],
+    },
+    "user-service": {
+        "produce": [],
+        "consume": [
+            Topic.BILLING_SUBSCRIPTION_CREATED,
+            Topic.BILLING_SUBSCRIPTION_UPDATED,
+            Topic.BILLING_SUBSCRIPTION_CANCELLED,
+        ],
     },
 }
+
+
+def topic_acl(
+    service_role: str,
+    *,
+    include_dlq: bool = True,
+) -> Dict[str, List[str]]:
+    """Return the least-privilege produce/consume topic set for a service.
+
+    Args:
+        service_role: The service name (e.g. ``"billing-service"``).
+        include_dlq: If True, append the DLQ topic (``<topic>.dlq``) to
+            the produce set for every topic the service consumes, since
+            the consumer also produces to its DLQ on failure.
+
+    Returns:
+        Dict with keys ``"produce"`` and ``"consume"`` containing topic
+        names. Returns empty lists for unknown service roles.
+    """
+    acl = _SERVICE_ACL.get(service_role, {"produce": [], "consume": []})
+    produce = list(acl["produce"])
+    consume = list(acl["consume"])
+    if include_dlq:
+        for topic in consume:
+            produce.append(topic + Topic.DLQ_SUFFIX)
+    return {"produce": produce, "consume": consume}
+
+
+def all_topics() -> Set[str]:
+    """Return the set of all canonical topic names (excludes DLQs)."""
+    return {
+        getattr(Topic, attr)
+        for attr in dir(Topic)
+        if not attr.startswith("_")
+        and attr != "DLQ_SUFFIX"
+        and isinstance(getattr(Topic, attr), str)
+    }
+
+def all_dlq_topics() -> Set[str]:
+    """Return the set of all DLQ topic names (``<topic>.dlq``)."""
+    return {t + Topic.DLQ_SUFFIX for t in all_topics()}
+
+
+def validate_topic_metadata() -> None:
+    """Assert every Topic constant appears in TOPIC_METADATA and vice versa.
+
+    Raises:
+        AssertionError: if the sets differ.
+    """
+    declared = all_topics()
+    metadata_keys = set(TOPIC_METADATA.keys())
+    assert declared == metadata_keys, (
+        "TOPIC_METADATA keys mismatch: "
+        f"missing={metadata_keys - declared}, extra={declared - metadata_keys}"
+    )

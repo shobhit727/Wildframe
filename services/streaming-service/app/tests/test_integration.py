@@ -77,7 +77,7 @@ class TestPlaybackSessionIntegration:
 
         session = await streaming_service.start_playback_session(request)
 
-        update_request = PlaybackSessionUpdateRequest(
+        update_request = PlaybackSessionUpdateRequest(  # type: ignore[call-arg]
             current_position_seconds=3600,
             resolution="720p",
         )
@@ -262,7 +262,7 @@ class TestDownloadIntegration:
         """Test updating download progress."""
         from app.schemas import DownloadSessionCreateRequest
 
-        request = DownloadSessionCreateRequest(
+        request = DownloadSessionCreateRequest(  # type: ignore[call-arg]
             user_id=uuid4(),
             episode_id=uuid4(),
             device_id="device-progress",

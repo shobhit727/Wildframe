@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "dev-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     LOG_LEVEL: str = "INFO"
+    # When True, the first X-Forwarded-For hop is trusted for audit IPs.
+    # Keep False unless this service only sits behind a trusted proxy.
+    TRUST_PROXY: bool = False
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

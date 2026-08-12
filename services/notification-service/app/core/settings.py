@@ -25,6 +25,19 @@ class Settings(BaseSettings):
     # Logging
     LOG_LEVEL: str = "INFO"
 
+    # SMTP (email channel); an empty SMTP_HOST marks the channel unavailable.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "no-reply@wildframe.local"
+    SMTP_STARTTLS: bool = True
+    SMTP_TIMEOUT: int = 10
+
+    # Per-channel delivery retry (exponential backoff).
+    DELIVERY_RETRY_ATTEMPTS: int = 3
+    DELIVERY_RETRY_BASE_DELAY: float = 0.1
+
     # CORS
     CORS_ALLOWED_ORIGINS: list[str] = ["*"]
     CORS_ALLOW_CREDENTIALS: bool = True

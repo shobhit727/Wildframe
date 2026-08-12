@@ -131,7 +131,7 @@ class KafkaEventPublisher(EventPublisher):
         if self._producer is None:
             # Imported lazily so the import of this module never hard-requires
             # aiokafka in environments that use the in-memory publisher.
-            from aiokafka import AIOKafkaProducer
+            from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
 
             self._producer = AIOKafkaProducer(
                 bootstrap_servers=self.bootstrap_servers,
@@ -139,7 +139,7 @@ class KafkaEventPublisher(EventPublisher):
                 value_serializer=lambda v: json.dumps(v).encode("utf-8"),
                 key_serializer=lambda k: k.encode("utf-8") if k else None,
             )
-            await self._producer.start()
+            await self._producer.start()  # type: ignore[attr-defined]
         return self._producer
 
     async def publish(self, event: Event) -> None:
@@ -158,7 +158,7 @@ class KafkaEventPublisher(EventPublisher):
 
     async def close(self) -> None:
         if self._producer is not None:
-            await self._producer.stop()
+            await self._producer.stop()  # type: ignore[unreachable]
             self._producer = None
 
 

@@ -23,12 +23,13 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
   const [quality, setQuality] = useState('auto');
   const [showControls, setShowControls] = useState(true);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const hideControlsDelayed = useCallback(() => {
+    if (!isPlaying) return;
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-    controlsTimeoutRef.current = setTimeout(() => {
-      if (isPlaying) setShowControls(false);
-    }, 3000);
+    controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 2500);
   }, [isPlaying]);
 
   const handleMouseMove = () => {
@@ -36,7 +37,14 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
     hideControlsDelayed();
   };
 
+  const handleRetry = () => {
+    setLoadError(false);
+    setLoadAttempt((c) => c + 1);
+  };
+
   useEffect(() => {
+    let cancelled = false;
+
     const initPlayer = async () => {
       try {
         let url = src;
@@ -48,7 +56,7 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
             type = response.protocol === 'dash' ? 'dash' : 'hls';
           }
         }
-        if (!url || !videoRef.current) return;
+        if (cancelled || !url || !videoRef.current) return;
 
         if (type === 'hls') {
           // Dynamic import to avoid SSR issues
@@ -61,6 +69,15 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
             hls.loadSource(url);
             hls.attachMedia(videoRef.current);
             playerRef.current = hls;
+
+            // Fatal HLS errors -> show retry overlay
+            hls.on(Hls.Events.ERROR, (_e, data) => {
+              if (cancelled) return;
+              if (data.fatal) {
+                console.error('HLS fatal error:', data);
+                setLoadError(true);
+              }
+            });
           } else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
             videoRef.current.src = url;
           }
@@ -73,28 +90,31 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
           videoRef.current.src = url;
         }
       } catch (error) {
-        console.error('Failed to load video:', error);
+        if (!cancelled) {
+          console.error('Failed to load video:', error);
+          setLoadError(true);
+        }
       }
     };
 
     initPlayer();
 
     return () => {
-      // Cleanup
+      cancelled = true;
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
       const player = playerRef.current;
       if (player && typeof (player as { destroy?: () => void }).destroy === 'function') {
         (player as { destroy: () => void }).destroy();
       }
       playerRef.current = null;
     };
-  }, [contentId, quality, src, srcType]);
+  }, [contentId, quality, src, srcType, loadAttempt]);
 
   const handleTimeUpdate = () => {
     if (!videoRef.current) return;
     const t = videoRef.current.currentTime;
     setCurrentTime(t);
 
-    // Save position every 30 seconds
     if (Math.floor(t) % 30 === 0 && Math.floor(t) > 0) {
       apiClient.updatePlaybackPosition(sessionId, t).catch(() => {});
     }
@@ -102,9 +122,7 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
 
   const handleEnded = async () => {
     setIsPlaying(false);
-    try {
-      await apiClient.endPlaybackSession(sessionId);
-    } catch {}
+    await apiClient.endPlaybackSession(sessionId).catch(() => {});
     onEnded?.();
   };
 
@@ -113,8 +131,9 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
     if (isPlaying) {
       videoRef.current.pause();
     } else {
-      videoRef.current.play();
+      videoRef.current.play().catch(() => {});
     }
+    setIsPlaying(!isPlaying);
   };
 
   const toggleMute = () => {
@@ -124,164 +143,183 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = parseFloat(e.target.value);
+    if (!videoRef.current) return;
+    const v = Number(e.target.value);
+    videoRef.current.volume = v;
     setVolume(v);
-    if (videoRef.current) videoRef.current.volume = v;
+    setIsMuted(v === 0);
   };
 
   const toggleFullscreen = async () => {
-    const container = videoRef.current?.parentElement;
-    if (!container) return;
-    try {
-      if (!document.fullscreenElement) {
-        await container.requestFullscreen();
-        setIsFullscreen(true);
-      } else {
-        await document.exitFullscreen();
-        setIsFullscreen(false);
+    if (!videoRef.current) return;
+    if (!isFullscreen) {
+      try {
+        await videoRef.current.requestFullscreen();
+      } catch {
+        // ignore
       }
-    } catch {}
+    } else {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // ignore
+      }
+    }
+    setIsFullscreen(!isFullscreen);
   };
 
   const seek = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!videoRef.current || duration === 0) return;
+    if (!videoRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const pos = (e.clientX - rect.left) / rect.width;
-    videoRef.current.currentTime = pos * duration;
+    const percentage = (e.clientX - rect.left) / rect.width;
+    videoRef.current.currentTime = percentage * duration;
   };
 
   const formatTime = (s: number) => {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
     const sec = Math.floor(s % 60);
-    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-    return `${m}:${String(sec).padStart(2, '0')}`;
+    return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}` : `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
     <div
-      className="relative w-full bg-black group/player"
+      className="relative w-full aspect-video bg-black"
       onMouseMove={handleMouseMove}
-      onMouseLeave={() => isPlaying && setShowControls(false)}
+      onMouseLeave={() => {
+        if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+        controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 1500);
+      }}
     >
-      {/* Video Element */}
       <video
         ref={videoRef}
-        className="w-full aspect-video bg-black"
+        className="w-full h-full object-contain"
+        onLoadedMetadata={() => videoRef.current && setDuration(videoRef.current.duration)}
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
-        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-        onClick={togglePlay}
+        onError={() => {
+          if (!cancelled) setLoadError(true);
+        }}
+        playsInline
       />
-
-      {/* Big Center Play Button (when paused) */}
-      {!isPlaying && (
-        <button
-          onClick={togglePlay}
-          className="absolute inset-0 flex items-center justify-center z-10"
+      {loadError && (
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-10"
+          role="alert"
+          aria-live="assertive"
         >
-          <div className="w-20 h-20 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center border border-white/20 hover:bg-black/60 transition-colors">
-            <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          </div>
-        </button>
-      )}
-
-      {/* Controls Overlay */}
-      <div
-        className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent pt-16 pb-3 px-4 transition-opacity duration-300 ${
-          showControls ? 'opacity-100' : 'opacity-0'
-        }`}
-      >
-        {/* Progress Bar */}
-        <div className="group/progress mb-3 cursor-pointer" onClick={seek}>
-          <div className="h-1 group-hover/progress:h-2 bg-white/20 rounded-full transition-all relative">
-            <div
-              className="h-full bg-red-600 rounded-full relative"
-              style={{ width: `${progress}%` }}
-            >
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-red-600 rounded-full opacity-0 group-hover/progress:opacity-100 transition-opacity shadow-lg" />
-            </div>
-          </div>
+          <p className="text-white text-lg mb-4">Unable to play video</p>
+          <button
+            onClick={handleRetry}
+            className="px-6 py-3 bg-white text-black rounded font-medium hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-white"
+          >
+            Retry
+          </button>
         </div>
-
-        {/* Controls Row */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {/* Play/Pause */}
-            <button onClick={togglePlay} className="text-white hover:text-gray-300 transition-colors" aria-label={isPlaying ? 'Pause' : 'Play'}>
-              {isPlaying ? (
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-              ) : (
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-              )}
-            </button>
-
-            {/* Skip Back */}
-            <button onClick={() => { if (videoRef.current) videoRef.current.currentTime -= 10; }} className="text-white hover:text-gray-300 transition-colors" aria-label="Skip back 10s">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>
-            </button>
-
-            {/* Skip Forward */}
-            <button onClick={() => { if (videoRef.current) videoRef.current.currentTime += 10; }} className="text-white hover:text-gray-300 transition-colors" aria-label="Skip forward 10s">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15 15l6-6m0 0l-6-6m6 6H9a6 6 0 000 12h3" /></svg>
-            </button>
-
-            {/* Volume */}
-            <div className="flex items-center gap-2 group/vol">
-              <button onClick={toggleMute} className="text-white hover:text-gray-300 transition-colors" aria-label={isMuted ? 'Unmute' : 'Mute'}>
-                {isMuted || volume === 0 ? (
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.25L19.5 7m0 0L21 5.25m-1.5 1.75L17.25 9.25M3 9.75l4.5 3V18l4.5-3 4.5 3V9.75" /></svg>
+      )}
+      {showControls && (
+        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/90 to-transparent transition-opacity duration-300">
+          <div className="mb-2 h-1 bg-gray-700 rounded-full cursor-pointer relative" onClick={seek}>
+            <div
+              className="h-full bg-white rounded-full"
+              style={{ width: `${progress}%` }}
+              role="slider"
+              aria-label="Playback progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(progress)}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={togglePlay}
+                className="p-2 text-white hover:text-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-white rounded"
+                aria-label={isPlaying ? 'Pause' : 'Play'}
+              >
+                {isPlaying ? (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                  </svg>
                 ) : (
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 9.75l4.5 3V18l4.5-3 4.5 3V9.75M15.75 15a3.75 3.75 0 01-7.5 0" /></svg>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
                 )}
               </button>
+              <span className="text-white text-sm font-mono">
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 ml-auto">
+              <label htmlFor="volume" className="sr-only">Volume</label>
               <input
+                id="volume"
                 type="range"
                 min={0}
                 max={1}
-                step={0.05}
+                step={0.1}
                 value={isMuted ? 0 : volume}
                 onChange={handleVolumeChange}
-                className="w-0 group-hover/vol:w-20 transition-all duration-200 accent-red-600 h-1 cursor-pointer"
+                className="w-24 h-2 accent-white"
+                aria-label="Volume"
               />
+              <button
+                onClick={toggleMute}
+                className="p-2 text-white hover:text-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-white rounded"
+                aria-label={isMuted ? 'Unmute' : 'Mute'}
+              >
+                {isMuted || volume === 0 ? (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+                  </svg>
+                ) : (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+                  </svg>
+                )}
+              </button>
+              <label htmlFor="quality" className="sr-only">Video quality</label>
+              <select
+                id="quality"
+                value={quality}
+                onChange={(e) => setQuality(e.target.value)}
+                className="bg-gray-800 text-white px-3 py-1.5 rounded border border-gray-600 text-sm focus:outline-none focus:ring-2 focus:ring-white"
+                aria-label="Video quality"
+              >
+                <option value="auto">Auto</option>
+                <option value="1080p">1080p</option>
+                <option value="720p">720p</option>
+                <option value="480p">480p</option>
+              </select>
+              <button
+                onClick={toggleFullscreen}
+                className="p-2 text-white hover:text-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-white rounded"
+                aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+              >
+                {isFullscreen ? (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <path d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                    <path d="M16 8h2a2 2 0 0 1 2 2v2" />
+                    <path d="M12 12v-2h2" />
+                  </svg>
+                ) : (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                    <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+                    <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+                    <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+                  </svg>
+                )}
+              </button>
             </div>
-
-            {/* Time */}
-            <span className="text-sm text-gray-300 font-mono">
-              {formatTime(currentTime)} / {formatTime(duration)}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* Quality Selector */}
-            <select
-              value={quality}
-              onChange={(e) => setQuality(e.target.value)}
-              className="bg-transparent text-white text-xs border border-white/20 rounded px-2 py-1 cursor-pointer hover:border-white/40 transition-colors"
-            >
-              <option value="auto" className="bg-dark-900">Auto</option>
-              <option value="1080p" className="bg-dark-900">1080p</option>
-              <option value="720p" className="bg-dark-900">720p</option>
-              <option value="480p" className="bg-dark-900">480p</option>
-            </select>
-
-            {/* Fullscreen */}
-            <button onClick={toggleFullscreen} className="text-white hover:text-gray-300 transition-colors" aria-label="Fullscreen">
-              {isFullscreen ? (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" /></svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>
-              )}
-            </button>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

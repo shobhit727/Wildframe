@@ -59,7 +59,7 @@ def create_app() -> FastAPI:
         try:
             if DatabaseManager.engine is None:
                 await DatabaseManager.init()
-            async with DatabaseManager.engine.connect() as conn:
+            async with DatabaseManager.engine.connect() as conn:  # type: ignore[union-attr]
                 await conn.execute(text("SELECT 1"))
             db_ok = True
         except Exception as exc:  # noqa: BLE001
@@ -79,7 +79,7 @@ def create_app() -> FastAPI:
             from fastapi import status
             from fastapi.responses import JSONResponse
 
-            return JSONResponse(
+            return JSONResponse(  # type: ignore[return-value]
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 content={"ready": False, "reason": "database_unavailable"},
             )

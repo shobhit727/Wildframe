@@ -4,6 +4,7 @@ Provides abstraction over database operations with transaction management.
 """
 
 import logging
+from typing import Sequence
 from uuid import UUID
 
 from sqlalchemy import and_, or_, select
@@ -196,7 +197,7 @@ class ContentRepository(BaseRepository):
         result = await self.session.execute(select(Content).where(Content.slug == slug))
         return result.scalars().first()
 
-    async def get_published(self) -> list[Content]:
+    async def get_published(self) -> Sequence[Content]:
         """Get all published content."""
         result = await self.session.execute(
             select(Content)
@@ -212,7 +213,7 @@ class ContentRepository(BaseRepository):
         content_type: str | None = None,
         status: str | None = None,
         genre_id: UUID | None = None,
-    ) -> list[Content]:
+    ) -> Sequence[Content]:
         """Get paginated content with optional type/status/genre filters."""
         stmt = select(Content).options(selectinload(Content.genres))
 
@@ -228,13 +229,15 @@ class ContentRepository(BaseRepository):
             stmt = stmt.join(Content.genres).where(Genre.id == genre_id)
 
         stmt = (
-            stmt.order_by(Content.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+            stmt.order_by(Content.created_at.desc(), Content.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
         )
 
         result = await self.session.execute(stmt)
         return result.scalars().unique().all()
 
-    async def get_by_type(self, content_type: ContentType) -> list[Content]:
+    async def get_by_type(self, content_type: ContentType) -> Sequence[Content]:
         """Get content by type."""
         result = await self.session.execute(
             select(Content)
@@ -247,7 +250,7 @@ class ContentRepository(BaseRepository):
         )
         return result.scalars().unique().all()
 
-    async def get_by_genre(self, genre_id: UUID) -> list[Content]:
+    async def get_by_genre(self, genre_id: UUID) -> Sequence[Content]:
         """Get content by genre."""
         result = await self.session.execute(
             select(Content)
@@ -257,7 +260,7 @@ class ContentRepository(BaseRepository):
         )
         return result.scalars().unique().all()
 
-    async def search(self, query: str) -> list[Content]:
+    async def search(self, query: str) -> Sequence[Content]:
         """Search content by title and description."""
         result = await self.session.execute(
             select(Content)
@@ -271,17 +274,17 @@ class ContentRepository(BaseRepository):
         )
         return list(result.scalars().all())
 
-    async def get_trending(self, limit: int = 10) -> list[Content]:
+    async def get_trending(self, limit: int = 10) -> Sequence[Content]:
         """Get trending content by audience score and votes."""
         result = await self.session.execute(
             select(Content)
             .where(Content.status == ContentStatus.PUBLISHED)
-            .order_by(Content.audience_score.desc(), Content.total_votes.desc())
+            .order_by(Content.audience_score.desc(), Content.total_votes.desc(), Content.id.desc())
             .limit(limit)
         )
         return list(result.scalars().all())
 
-    async def get_premium(self) -> list[Content]:
+    async def get_premium(self) -> Sequence[Content]:
         """Get premium content."""
         result = await self.session.execute(
             select(Content).where(
@@ -316,7 +319,7 @@ class ContentRepository(BaseRepository):
 
     async def get_by_animation_style(
         self, animation_style: AnimationStyle, limit: int = 50, offset: int = 0
-    ) -> list[Content]:
+    ) -> Sequence[Content]:
         """Get content by animation style."""
         result = await self.session.execute(
             select(Content)
@@ -326,7 +329,7 @@ class ContentRepository(BaseRepository):
                     Content.status == ContentStatus.PUBLISHED,
                 )
             )
-            .order_by(Content.created_at.desc())
+            .order_by(Content.created_at.desc(), Content.id.desc())
             .limit(limit)
             .offset(offset)
         )
@@ -334,14 +337,14 @@ class ContentRepository(BaseRepository):
 
     async def get_series_episodes(
         self, series_id: UUID, limit: int = 50, offset: int = 0
-    ) -> list[Content]:
+    ) -> Sequence[Content]:
         """Get episodes belonging to a series."""
         result = await self.session.execute(
             select(Content)
             .where(
                 and_(Content.series_id == series_id, Content.content_type == ContentType.EPISODE)
             )
-            .order_by(Content.season_number.asc(), Content.episode_number.asc())
+            .order_by(Content.season_number.asc(), Content.episode_number.asc(), Content.id.asc())
             .limit(limit)
             .offset(offset)
         )
@@ -349,14 +352,14 @@ class ContentRepository(BaseRepository):
 
     async def get_creator_filmography(
         self, creator_id: UUID, limit: int = 50, offset: int = 0
-    ) -> list[Content]:
+    ) -> Sequence[Content]:
         """Get content credited to a creator."""
         result = await self.session.execute(
             select(Content)
             .where(
                 and_(Content.creator_id == creator_id, Content.status == ContentStatus.PUBLISHED)
             )
-            .order_by(Content.created_at.desc())
+            .order_by(Content.created_at.desc(), Content.id.desc())
             .limit(limit)
             .offset(offset)
         )
@@ -406,7 +409,7 @@ class SeasonRepository(BaseRepository):
         )
         return result.scalars().unique().first()
 
-    async def get_content_seasons(self, content_id: UUID) -> list[Season]:
+    async def get_content_seasons(self, content_id: UUID) -> Sequence[Season]:
         """Get all seasons for content."""
         result = await self.session.execute(
             select(Season)
@@ -474,7 +477,7 @@ class EpisodeRepository(BaseRepository):
         """Get episode by ID."""
         return await self.session.get(Episode, episode_id)
 
-    async def get_season_episodes(self, season_id: UUID) -> list[Episode]:
+    async def get_season_episodes(self, season_id: UUID) -> Sequence[Episode]:
         """Get all episodes in a season."""
         result = await self.session.execute(
             select(Episode).where(Episode.season_id == season_id).order_by(Episode.episode_number)
@@ -513,8 +516,8 @@ class ContentRatingRepository(BaseRepository):
         """Create or update a content rating."""
         existing = await self.get_user_rating(content_id, user_id)
         if existing:
-            existing.rating = rating
-            existing.review = review
+            existing.rating = rating  # type: ignore[assignment]
+            existing.review = review  # type: ignore[assignment]
             await self.flush()
             return existing
 

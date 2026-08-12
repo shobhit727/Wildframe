@@ -1,7 +1,8 @@
 // Zustand store for auth state.
 import { create } from 'zustand';
 import { User } from '@/types';
-import { apiClient, clearTokens } from '@/api/client';
+import { apiClient, clearTokens, getAccessToken } from '@/api/client';
+import { queryClient } from '@/utils/queryClient';
 
 export interface AuthStore {
   user: User | null;
@@ -38,7 +39,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       }
       const tokens = data as { access_token: string };
       const user = await apiClient.getMe();
-      localStorage.setItem('user', JSON.stringify(user));
       set({
         token: tokens.access_token,
         user,
@@ -60,7 +60,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const tokens = await apiClient.verifyMfaLogin(challenge, code);
       const user = await apiClient.getMe();
-      localStorage.setItem('user', JSON.stringify(user));
       set({
         token: tokens.access_token,
         user,
@@ -79,7 +78,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const tokens = await apiClient.register(email, password, firstName, lastName);
       const user = await apiClient.getMe();
-      localStorage.setItem('user', JSON.stringify(user));
       set({
         token: tokens.access_token,
         user,
@@ -98,14 +96,13 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     } catch (error) {
       console.error('Logout error:', error);
     }
-
-    clearTokens();
-    localStorage.removeItem('user');
-
+    // Drop all cached query data so the next session starts fresh.
+    queryClient.clear();
     set({
       user: null,
       token: null,
       isAuthenticated: false,
+      mfaChallenge: null,
     });
   },
 
@@ -113,19 +110,20 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   setToken: (token: string | null) => set({ token }),
 
   hydrate: async () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+    let token = getAccessToken();
     if (!token) {
-      set({ user: null, token: null, isAuthenticated: false });
-      return;
+      token = await apiClient.refreshAccessToken();
+      if (!token) {
+        set({ user: null, token: null, isAuthenticated: false });
+        return;
+      }
     }
     set({ token, isAuthenticated: true });
     try {
       const user = await apiClient.getMe();
-      localStorage.setItem('user', JSON.stringify(user));
       set({ user });
     } catch {
-      // Token invalid/expired — keep token; getMe will 401 and the client
-      // interceptor will refresh or bounce to /login on the next call.
+      // Token invalid/expired — the interceptor will handle the next 401.
     }
   },
 
@@ -133,7 +131,6 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     if (!get().isAuthenticated) return;
     try {
       const user = await apiClient.getMe();
-      localStorage.setItem('user', JSON.stringify(user));
       set({ user });
     } catch {
       // ignore

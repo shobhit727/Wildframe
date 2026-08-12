@@ -1,11 +1,25 @@
 import type { NextConfig } from "next";
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const isDev = process.env.NODE_ENV === "development";
+
+const cspHeader = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' blob: data: https:",
+  "media-src 'self' blob: https:",
+  "font-src 'self' data:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  `connect-src 'self' ${apiUrl} https:`,
+  "worker-src 'self' blob:",
+  ...(isDev ? [] : ['upgrade-insecure-requests']),
+].join("; ");
 
 const nextConfig: NextConfig = {
-  reactStrictMode: true,
-  poweredByHeader: false,
-  // The local .eslintrc references @typescript-eslint rules, but the plugin
   // isn't installed in this environment. Type-checking (tsc) still runs in CI;
   // skip the lint gate during build so missing rule defs don't fail it.
   eslint: { ignoreDuringBuilds: true },
@@ -41,6 +55,14 @@ const nextConfig: NextConfig = {
         {
           key: "X-XSS-Protection",
           value: "1; mode=block",
+        },
+        {
+          key: "Referrer-Policy",
+          value: "strict-origin-when-cross-origin",
+        },
+        {
+          key: "Content-Security-Policy",
+          value: cspHeader,
         },
         {
           key: "Referrer-Policy",

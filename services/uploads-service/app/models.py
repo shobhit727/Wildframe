@@ -26,6 +26,7 @@ from enum import Enum
 from uuid import uuid4
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Column,
     DateTime,
@@ -52,6 +53,13 @@ class UploadSessionStatus(str, Enum):
     ABORTED = "aborted"
 
 
+class OutboxEventStatus(str, Enum):
+    """Delivery state of an outbox row (at-least-once event publishing)."""
+
+    PENDING = "pending"
+    DISPATCHED = "dispatched"
+
+
 class UploadSession(Base):
     """A chunked/resumable upload session."""
 
@@ -62,7 +70,7 @@ class UploadSession(Base):
     filename = Column(String(512), nullable=False)
     mime = Column(String(127), nullable=False)
     size_bytes = Column(BigInteger, nullable=False)
-    status = Column(
+    status = Column(  # type: ignore[var-annotated]
         SQLEnum(UploadSessionStatus),
         default=UploadSessionStatus.INITIATED,
         nullable=False,
@@ -86,6 +94,10 @@ class UploadSession(Base):
         nullable=False,
     )
 
+    # Set when object-storage cleanup for this session has fully succeeded
+    # (sessions aborted or expired re-run cleanup until this is set).
+    storage_cleaned_at = Column(DateTime(timezone=True), nullable=True)
+
     __table_args__ = (
         Index("idx_upload_session_creator", "creator_id", "status"),
         Index("idx_upload_session_expires", "expires_at"),
@@ -107,6 +119,9 @@ class UploadChunk(Base):
     index = Column(Integer, nullable=False)
     size_bytes = Column(BigInteger, nullable=False)
     etag = Column(String(255), nullable=True)
+    # Server-verified digest of the stored chunk bytes (from storage
+    # metadata), never a client assertion.
+    checksum_sha256 = Column(String(64), nullable=True)
     received_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -118,3 +133,29 @@ class UploadChunk(Base):
         # a client bug / replay and must not double-count.
         Index("idx_upload_chunk_session_index", "session_id", "index", unique=True),
     )
+
+
+class OutboxEvent(Base):
+    """Transactional outbox row: an event persisted in the same DB transaction
+    as the state change that produced it (dual-write avoidance). A background
+    worker drains PENDING rows to the event bus and marks them DISPATCHED.
+    """
+
+    __tablename__ = "outbox_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    topic = Column(String(127), nullable=False)
+    event_key = Column(String(255), nullable=False)
+    payload = Column(JSON, nullable=False)
+    status = Column(  # type: ignore[var-annotated]
+        SQLEnum(OutboxEventStatus),
+        default=OutboxEventStatus.PENDING,
+        nullable=False,
+        index=True,
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    dispatched_at = Column(DateTime(timezone=True), nullable=True)

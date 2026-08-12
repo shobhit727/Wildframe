@@ -13,7 +13,7 @@ Endpoints:
 from typing import Annotated
 from uuid import UUID
 
-from jose import jwt
+from jose import jwt  # type: ignore[import-untyped]
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status as http_status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -91,7 +91,9 @@ class CreateSessionResponse(BaseModel):
 
 class RegisterChunkRequest(BaseModel):
     index: int
-    size_bytes: int
+    # Deprecated: the service reads the authoritative byte count from object
+    # storage; client-reported values are ignored.
+    size_bytes: int | None = None
     etag: str | None = None
 
 
@@ -118,7 +120,7 @@ class SessionResponse(BaseModel):
 async def create_session(
     request: CreateSessionRequest,
     service: Annotated[UploadService, Depends(get_upload_service)],
-    current_user: Annotated[UUID, Depends(get_current_user_id)] = ...,
+    current_user: Annotated[UUID, Depends(get_current_user_id)] = ...,  # type: ignore[assignment]
 ):
     """Create an upload session and return a pre-signed URL per chunk."""
     if request.creator_id != current_user:
@@ -139,10 +141,10 @@ async def create_session(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return CreateSessionResponse(
-        session_id=session.id,
+        session_id=session.id,  # type: ignore[arg-type]
         status=session.status.value,
-        chunk_size=session.chunk_size,
-        total_chunks=session.total_chunks,
+        chunk_size=session.chunk_size,  # type: ignore[arg-type]
+        total_chunks=session.total_chunks,  # type: ignore[arg-type]
         expires_at=session.expires_at.isoformat(),
         uploads=[
             PresignedUploadResponse(
@@ -160,13 +162,12 @@ async def create_session(
 async def get_session(
     session_id: UUID,
     service: Annotated[UploadService, Depends(get_upload_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)] = ...,  # type: ignore[assignment]
 ):
-    """Get an upload session's current status."""
+    """Get an upload session's current status (owner only)."""
     from app.models import UploadSession as _  # noqa: F401 (ensure importable)
 
-    session = await service.repo.get(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Upload session not found")
+    session = await _get_owned_session(service, session_id, current_user)
     return _session_to_response(session)
 
 
@@ -175,8 +176,10 @@ async def register_chunk(
     session_id: UUID,
     request: RegisterChunkRequest,
     service: Annotated[UploadService, Depends(get_upload_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)] = ...,  # type: ignore[assignment]
 ):
-    """Register a received chunk."""
+    """Register a received chunk (owner only)."""
+    await _get_owned_session(service, session_id, current_user)
     try:
         chunk = await service.register_chunk(
             session_id=session_id,
@@ -198,9 +201,11 @@ async def register_chunk(
 async def complete_session(
     session_id: UUID,
     service: Annotated[UploadService, Depends(get_upload_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)] = ...,  # type: ignore[assignment]
     checksum_sha256: Annotated[str | None, Body()] = None,
 ):
-    """Verify all chunks + checksum and finalize the upload."""
+    """Verify all chunks + checksum and finalize (owner only)."""
+    await _get_owned_session(service, session_id, current_user)
     try:
         session = await service.complete_session(session_id, checksum_sha256=checksum_sha256)
     except UploadError as exc:
@@ -212,9 +217,11 @@ async def complete_session(
 async def abort_session(
     session_id: UUID,
     service: Annotated[UploadService, Depends(get_upload_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)] = ...,  # type: ignore[assignment]
     reason: Annotated[str, Body()] = "",
 ):
-    """Abort an in-progress upload."""
+    """Abort an in-progress upload (owner only)."""
+    await _get_owned_session(service, session_id, current_user)
     try:
         session = await service.abort(session_id, reason=reason)
     except UploadError as exc:
@@ -236,3 +243,11 @@ def _session_to_response(session) -> SessionResponse:
         uploaded_chunks=session.uploaded_chunks,
         expires_at=session.expires_at.isoformat(),
     )
+
+
+async def _get_owned_session(service, session_id: UUID, current_user: UUID):
+    """Load a session and enforce ownership (404 for unknown/foreign sessions)."""
+    session = await service.repo.get(session_id)
+    if session is None or session.creator_id != current_user:
+        raise HTTPException(status_code=404, detail="Upload session not found")
+    return session

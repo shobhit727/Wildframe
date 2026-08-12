@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { REGEX } from '@/constants';
+import { getApiErrorMessage } from '@/api/client';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -38,9 +39,10 @@ export default function LoginPage() {
       await login(email, password);
       toast.success('Welcome back!');
       router.push('/browse');
-    } catch {
-      setErrors({ password: 'Invalid email or password. Please try again.' });
-      toast.error('Sign in failed');
+    } catch (error) {
+      const msg = getApiErrorMessage(error, 'Invalid email or password. Please try again.');
+      setErrors({ password: msg });
+      toast.error(msg);
     }
   };
 
@@ -62,73 +64,70 @@ export default function LoginPage() {
         <div className="w-full max-w-md bg-black/70 border border-white/5 p-14 rounded-lg animate-fade-in">
           <h1 className="text-3xl font-bold text-white mb-7">Sign In</h1>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <div>
+              <label htmlFor="email" className="sr-only">
+                Email
+              </label>
               <input
                 id="email"
                 type="email"
                 value={email}
-                onChange={(e) => { setEmail(e.target.value); setErrors((p) => ({ ...p, email: undefined })); }}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setErrors((p) => ({ ...p, email: undefined }));
+                }}
                 className={inputClass('email')}
                 placeholder="Email or phone number"
                 aria-label="Email"
               />
-              {errors.email && <p className="text-[#e87c03] text-[13px] mt-1.5">{errors.email}</p>}
+              {errors.email && (
+                <p role="alert" className="text-[#e87c03] text-[13px] mt-1.5">
+                  {errors.email}
+                </p>
+              )}
             </div>
 
             <div>
+              <label htmlFor="password" className="sr-only">
+                Password
+              </label>
               <input
                 id="password"
                 type="password"
                 value={password}
-                onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: undefined })); }}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setErrors((p) => ({ ...p, password: undefined }));
+                }}
                 className={inputClass('password')}
                 placeholder="Password"
                 aria-label="Password"
               />
-              {errors.password && <p className="text-[#e87c03] text-[13px] mt-1.5">{errors.password}</p>}
+              {errors.password && (
+                <p role="alert" className="text-[#e87c03] text-[13px] mt-1.5">
+                  {errors.password}
+                </p>
+              )}
             </div>
 
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-[#E50914] hover:bg-[#F6121D] text-white py-3 rounded font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full bg-[#E50914] hover:bg-[#f40612] text-white py-3.5 rounded font-semibold transition-colors disabled:opacity-50"
             >
-              {isLoading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Signing in...
-                </span>
-              ) : 'Sign In'}
+              {isLoading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
 
-          <p className="text-[15px] text-gray-400 mt-6">
+          <p className="text-gray-400 mt-6 text-center text-sm">
             New to Wildframe?{' '}
-            <Link href="/signup" className="text-white hover:underline">
+            <Link href="/signup" className="text-white font-medium hover:text-[#E50914] transition-colors">
               Sign up now
             </Link>
           </p>
-          <p className="text-[13px] text-gray-500 mt-4 leading-relaxed">
-            This page is protected by reCAPTCHA-like measures so we know you&apos;re not a bot.
-          </p>
         </div>
       </div>
-
-      {/* Footer bar */}
-      <footer className="w-full bg-black/80 border-t border-white/5 py-8 px-8">
-        <div className="max-w-md mx-auto">
-          <p className="text-[#737373] text-sm mb-4">Questions? Contact us.</p>
-          <div className="grid grid-cols-2 gap-2 text-[13px] text-[#737373]">
-            {['FAQ', 'Help Center', 'Terms of Use', 'Privacy'].map((l) => (
-              <Link key={l} href="#" className="hover:underline">{l}</Link>
-            ))}
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

@@ -5,8 +5,9 @@ import logging
 from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from wildframe_observability.wire import wire_observability
 
 from app.api.gateway_routes import router as gateway_router
@@ -42,13 +43,20 @@ async def lifespan(app: FastAPI):
     from app.middleware import install_header_redaction
 
     install_header_redaction()
-
     yield
 
-    # Shutdown
+    # Shutdown ordering (issue #426): uvicorn has already stopped accepting
+    # new connections before lifespan teardown runs. Mark the app so any
+    # in-flight proxy request refuses to start new upstream work, then close
+    # dependencies — Redis is closed last because the rate limiter may still
+    # be finishing a check.
+    app.state.shutting_down = True
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
-    await redis_client.close()
-    logger.info("Shutdown complete")
+    try:
+        await redis_client.close()
+    finally:
+        logger.info("Shutdown complete")
+
 
 
 def create_app() -> FastAPI:
@@ -60,13 +68,33 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS middleware — credentials require explicit origins, never "*".
+
+    # CORS middleware — credentials require explicit origins, never "*"
+    # (production rejects wildcard origins with credentials at Settings
+    # construction). Methods and headers are the explicit minimal set the
+    # frontend actually uses, not "*".
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ALLOWED_ORIGINS,
         allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "X-Request-ID",
+            "X-Correlation-ID",
+            "Accept",
+            "Accept-Language",
+            "Origin",
+            "Range",
+        ],
+        expose_headers=[
+            "X-Request-ID",
+            "X-Correlation-ID",
+            "Content-Range",
+            "Accept-Ranges",
+        ],
+        max_age=600,
     )
 
     # Liveness probe — process/event loop is alive and serving HTTP. Does NOT
@@ -120,11 +148,20 @@ def create_app() -> FastAPI:
 
     # Include gateway routes
     app.include_router(gateway_router)
-
-    # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
-    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
+    # Production-safe exception mapping: generic failures become a stable
+    # public error while the traceback stays in server logs only. Database,
+    # storage, or upstream exception text can disclose secrets/topology.
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception(
+            "Unhandled exception while serving %s %s",
+            request.method,
+            request.url.path,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal server error"},
+        )
 
     return app
-
-
 app = create_app()

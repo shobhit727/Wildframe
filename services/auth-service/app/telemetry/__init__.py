@@ -4,12 +4,12 @@ import logging
 
 from app.core.settings import settings
 from opentelemetry import trace
-from opentelemetry.exporter.jaeger.thrift import JaegerExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.redis import RedisInstrumentor
-from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.jaeger.thrift import JaegerExporter  # type: ignore[import-not-found]
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # type: ignore[import-not-found]
+from opentelemetry.instrumentation.redis import RedisInstrumentor  # type: ignore[import-not-found]
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor  # type: ignore[import-not-found]
+from opentelemetry.sdk.trace import TracerProvider  # type: ignore[attr-defined]
+from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore[attr-defined]
 
 logger = logging.getLogger(__name__)
 

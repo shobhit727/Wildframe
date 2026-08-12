@@ -1,9 +1,15 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class UserModerationRequest(BaseModel):
+class _StrictRequest(BaseModel):
+    """Request base: unknown fields (e.g. caller-supplied actor IDs) are rejected."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class UserModerationRequest(_StrictRequest):
     user_id: str = Field(..., min_length=1)
     status: str = Field(..., pattern="^(active|suspended|banned)$")
     reason: str | None = None
@@ -20,7 +26,7 @@ class UserModerationResponse(BaseModel):
     updated_at: datetime
 
 
-class ContentModerationRequest(BaseModel):
+class ContentModerationRequest(_StrictRequest):
     content_id: str = Field(..., min_length=1)
     content_type: str = Field(..., pattern="^(movie|show|episode)$")
     status: str = Field(..., pattern="^(active|flagged|removed)$")
@@ -38,7 +44,7 @@ class ContentModerationResponse(BaseModel):
     created_at: datetime
 
 
-class SystemAlertRequest(BaseModel):
+class SystemAlertRequest(_StrictRequest):
     alert_type: str = Field(..., min_length=1)
     severity: str = Field(..., pattern="^(info|warning|critical)$")
     message: str = Field(..., min_length=1)
@@ -56,7 +62,7 @@ class SystemAlertResponse(BaseModel):
     created_at: datetime
 
 
-class SystemConfigRequest(BaseModel):
+class SystemConfigRequest(_StrictRequest):
     key: str = Field(..., min_length=1)
     value: str = Field(..., min_length=1)
     config_type: str = Field(..., pattern="^(string|integer|boolean|json)$")

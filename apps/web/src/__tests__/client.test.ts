@@ -34,6 +34,13 @@ describe('token helpers', () => {
     clearTokens();
     expect(getAccessToken()).toBeNull();
   });
+
+  it('keeps tokens out of localStorage (XSS hardening)', () => {
+    setTokens({ access_token: access, refresh_token: refresh });
+    expect(localStorage.getItem('accessToken')).toBeNull();
+    expect(localStorage.getItem('refreshToken')).toBeNull();
+    expect(localStorage.getItem('user')).toBeNull();
+  });
 });
 
 describe('normalizeContent', () => {

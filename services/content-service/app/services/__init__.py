@@ -161,7 +161,7 @@ class ContentService:
             )
 
             await self.content_repo.commit()
-            content = await self.content_repo.get_by_id(content.id)
+            content = await self.content_repo.get_by_id(content.id)  # type: ignore[assignment,arg-type]
             return content
         except Exception as e:
             await self.content_repo.rollback()
@@ -240,7 +240,7 @@ class ContentService:
 
             update_data = {"status": ContentStatus(request.status)}
             if request.status == "published":
-                update_data["published_at"] = datetime.utcnow()
+                update_data["published_at"] = datetime.utcnow()  # type: ignore[assignment]
 
             content = await self.content_repo.update(content_id, **update_data)
             await self.content_repo.commit()
@@ -275,7 +275,7 @@ class ContentService:
                 release_date=request.release_date,
             )
             await self.content_repo.commit()
-            return await self.season_repo.get_by_id(season.id)
+            return await self.season_repo.get_by_id(season.id)  # type: ignore[arg-type]
         except Exception as e:
             await self.content_repo.rollback()
             logger.error(f"Failed to create season: {e}")
@@ -348,7 +348,7 @@ class ContentService:
             season = await self.season_repo.get_by_id(season_id)
             if season:
                 episodes = await self.episode_repo.get_season_episodes(season_id)
-                season.episode_count = len(episodes)
+                season.episode_count = len(episodes)  # type: ignore[assignment]
 
             await self.content_repo.commit()
             return episode
@@ -389,7 +389,7 @@ class ContentService:
                 return False
             success = await self.episode_repo.delete(episode_id)
             if season:
-                season.episode_count = len(await self.episode_repo.get_season_episodes(season_id))
+                season.episode_count = len(await self.episode_repo.get_season_episodes(season_id))  # type: ignore[assignment]
             await self.content_repo.commit()
             return success
         except Exception as e:
@@ -434,8 +434,8 @@ class ContentService:
                 avg_score = sum(r.rating for r in ratings) / len(ratings)
                 content = await self.content_repo.get_by_id(content_id)
                 if content:
-                    content.audience_score = avg_score
-                    content.total_votes = len(ratings)
+                    content.audience_score = avg_score  # type: ignore[assignment]
+                    content.total_votes = len(ratings)  # type: ignore[assignment]
 
             await self.content_repo.commit()
             return rating

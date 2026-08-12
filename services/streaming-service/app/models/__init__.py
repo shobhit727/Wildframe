@@ -75,12 +75,12 @@ class PlaybackSession(Base):
     # Playback info
     status = Column(
         SQLEnum(PlaybackSessionStatus), nullable=False, default=PlaybackSessionStatus.ACTIVE
-    )
+    )  # type: ignore[var-annotated]
     current_position_seconds = Column(Integer, default=0)  # Current playback position
     total_duration_seconds = Column(Integer, nullable=False)
 
     # Delivery info
-    protocol = Column(SQLEnum(DeliveryProtocol), nullable=False, default=DeliveryProtocol.HLS)
+    protocol = Column(SQLEnum(DeliveryProtocol), nullable=False, default=DeliveryProtocol.HLS)  # type: ignore[var-annotated]
     resolution = Column(String(20), nullable=False)  # e.g., "1080p", "720p", "480p"
     bitrate_kbps = Column(Integer, nullable=False)  # Target bitrate
 
@@ -127,13 +127,13 @@ class VideoManifest(Base):
     content_id = Column(UUID(as_uuid=True), nullable=False, index=True)
 
     # Manifest info
-    protocol = Column(SQLEnum(DeliveryProtocol), nullable=False, index=True)
+    protocol = Column(SQLEnum(DeliveryProtocol), nullable=False, index=True)  # type: ignore[var-annotated]
     manifest_url = Column(String(500), nullable=False)
     manifest_content = Column(Text, nullable=False)  # M3U8 or MPD content
 
     # Available variants (resolutions)
-    variants = Column(ARRAY(String), nullable=False, default=[])  # ["1080p", "720p", "480p"]
-    available_bitrates = Column(ARRAY(Integer), nullable=False, default=[])  # [5000, 2500, 1000]
+    variants = Column(ARRAY(String), nullable=False, default=[])  # type: ignore[var-annotated]  # ["1080p", "720p", "480p"]
+    available_bitrates = Column(ARRAY(Integer), nullable=False, default=[])  # type: ignore[var-annotated]  # [5000, 2500, 1000]
 
     # Manifest options
     include_subtitles = Column(Boolean, default=True)
@@ -166,7 +166,7 @@ class TranscodingJob(Base):
     # Job info
     status = Column(
         SQLEnum(TranscodingStatus), nullable=False, default=TranscodingStatus.PENDING, index=True
-    )
+    )  # type: ignore[var-annotated]
     priority = Column(Integer, default=5)  # 1-10, higher = more important
 
     # Input file
@@ -175,8 +175,8 @@ class TranscodingJob(Base):
     input_file_size_mb = Column(Float, nullable=True)
 
     # Transcoding targets
-    target_resolutions = Column(ARRAY(String), nullable=False)  # ["1080p", "720p", "480p"]
-    target_bitrates = Column(ARRAY(Integer), nullable=False)  # [5000, 2500, 1000]
+    target_resolutions = Column(ARRAY(String), nullable=False)  # type: ignore[var-annotated]  # ["1080p", "720p", "480p"]
+    target_bitrates = Column(ARRAY(Integer), nullable=False)  # type: ignore[var-annotated]  # [5000, 2500, 1000]
 
     # Output files
     output_paths = Column(JSONB, default={})  # {"1080p": "/path/...", "720p": "/path/..."}
@@ -220,7 +220,7 @@ class StreamingQualityProfile(Base):
     audio_bitrate_kbps = Column(Integer, default=128)
 
     # Compatibility
-    supported_devices = Column(
+    supported_devices = Column(  # type: ignore[var-annotated]
         ARRAY(String), nullable=False, default=[]
     )  # ["web", "ios", "android"]
 
@@ -252,7 +252,7 @@ class CDNRegion(Base):
 
     # CDN provider
     cdn_provider = Column(String(100), nullable=False)  # Cloudflare, Akamai, etc.
-    edge_server_ips = Column(ARRAY(String), nullable=False, default=[])
+    edge_server_ips = Column(ARRAY(String), nullable=False, default=[])  # type: ignore[var-annotated]
 
     # Capacity
     max_concurrent_streams = Column(Integer, default=10000)

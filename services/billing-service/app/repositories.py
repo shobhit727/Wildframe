@@ -2,28 +2,159 @@
 
 One repository per aggregate root. All database access goes through these
 classes — the service layer never touches the session directly for queries.
+
+Financial invariants (#191/#220/#428):
+  - State-changing writes use guarded/conditional UPDATEs or unique
+    constraints (equivalent transactional strategy at READ COMMITTED) so
+    concurrent requests cannot double-apply or regress state.
+  - Financial records (purchases, invoices, payouts, refunds) are
+    append-only: no repository exposes a delete operation.
 """
 
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     CreatorPoolEntry,
     Invoice,
+    InvoiceStatus,
     Milestone,
     MilestoneTranche,
     PayoutLedger,
     Purchase,
+    Refund,
+    RefundStatus,
     RegionFloor,
     RevenueTier,
+    StripeWebhookEvent,
     Subscription,
+    WebhookEventStatus,
 )
 
 
+
+
+
+class WebhookEventRepository:
+    """Durable inbox for Stripe webhook events (#47).
+
+    ``claim`` is the atomic arbitration point: concurrent deliveries and
+    post-restart replays all INSERT the same unique ``event_id`` and the
+    unique constraint lets exactly one win. A FAILED row (or a PROCESSING
+    row whose lease is stale) is reclaimed through a guarded UPDATE so
+    two retries cannot both take it over.
+    """
+
+    DEFAULT_STALE_AFTER_SECONDS = 60
+    DEFAULT_MAX_ATTEMPTS = 3
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get(self, event_id: str) -> StripeWebhookEvent | None:
+        stmt = select(StripeWebhookEvent).where(StripeWebhookEvent.event_id == event_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def claim(
+        self,
+        event_id: str,
+        event_type: str,
+        *,
+        stale_after_seconds: int = DEFAULT_STALE_AFTER_SECONDS,
+        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+    ) -> bool:
+        """Atomically claim the event for this request.
+
+        Returns True when this request wins the claim and may run side
+        effects, False when the event is already claimed/processed.
+        """
+        row = StripeWebhookEvent(
+            event_id=event_id,
+            event_type=event_type,
+            status=WebhookEventStatus.PROCESSING,
+            attempts=1,
+            claimed_at=datetime.utcnow(),
+        )
+        self.session.add(row)
+        try:
+            await self.session.flush()
+            return True
+        except IntegrityError:
+            # Lost the insert race (or a replay after a crash). The unique
+            # constraint guarantees one row per event_id.
+            await self.session.rollback()
+            existing = await self.get(event_id)
+            if existing is None:
+                return False
+            if existing.status == WebhookEventStatus.PROCESSED:
+                return False
+
+            now = datetime.utcnow()
+            reclaimable = False
+            if existing.status == WebhookEventStatus.FAILED and existing.attempts < max_attempts:
+                reclaimable = True
+            elif existing.status == WebhookEventStatus.PROCESSING and (
+                existing.claimed_at is None
+                or (now - existing.claimed_at).total_seconds() >= stale_after_seconds
+            ):
+                reclaimable = True
+            if not reclaimable:
+                return False
+
+            # Guarded reclaim: only one concurrent retry can match the
+            # current status/attempts, so the row cannot be double-taken.
+            stmt = (
+                update(StripeWebhookEvent)
+                .where(
+                    StripeWebhookEvent.event_id == event_id,
+                    StripeWebhookEvent.status == existing.status,
+                    StripeWebhookEvent.attempts == existing.attempts,
+                )
+                .values(
+                    status=WebhookEventStatus.PROCESSING,
+                    attempts=existing.attempts + 1,
+                    claimed_at=now,
+                    last_error=None,
+                )
+            )
+            result = await self.session.execute(stmt)
+            return bool(result.rowcount)  # type: ignore[attr-defined]
+
+    async def complete(self, event_id: str) -> bool:
+        """Mark a PROCESSING event as PROCESSED (guarded; no-op if already done)."""
+        stmt = (
+            update(StripeWebhookEvent)
+            .where(
+                StripeWebhookEvent.event_id == event_id,
+                StripeWebhookEvent.status == WebhookEventStatus.PROCESSING,
+            )
+            .values(status=WebhookEventStatus.PROCESSED, processed_at=datetime.utcnow())
+        )
+        result = await self.session.execute(stmt)
+        return bool(result.rowcount)  # type: ignore[attr-defined]
+
+    async def fail(self, event_id: str, error: str) -> bool:
+        """Mark a PROCESSING event as FAILED with the error, for bounded retry."""
+        stmt = (
+            update(StripeWebhookEvent)
+            .where(
+                StripeWebhookEvent.event_id == event_id,
+                StripeWebhookEvent.status == WebhookEventStatus.PROCESSING,
+            )
+            .values(status=WebhookEventStatus.FAILED, last_error=error[:500])
+        )
+        result = await self.session.execute(stmt)
+        return bool(result.rowcount)  # type: ignore[attr-defined]
+
+    async def commit(self) -> None:
+        """Commit the inbox transaction so a claim survives handler failure."""
+        await self.session.commit()
 class SubscriptionRepository:
     """CRUD for Subscription aggregate."""
 
@@ -68,13 +199,21 @@ class PurchaseRepository:
         return result.scalar_one_or_none()
 
     async def create(
-        self, user_id: UUID, content_id: UUID, price: Decimal, idempotency_key: str
+        self,
+        user_id: UUID,
+        content_id: UUID,
+        price: Decimal,
+        idempotency_key: str,
+        currency: str = "USD",
+        stripe_payment_intent_id: str | None = None,
     ) -> Purchase:
         purchase = Purchase(
             user_id=user_id,
             content_id=content_id,
             price=price,
+            currency=currency,
             idempotency_key=idempotency_key,
+            stripe_payment_intent_id=stripe_payment_intent_id,
         )
         self.session.add(purchase)
         await self.session.flush()
@@ -93,16 +232,41 @@ class InvoiceRepository:
         amount: Decimal,
         subscription_id: UUID | None = None,
         purchase_id: UUID | None = None,
+        currency: str = "USD",
+        stripe_invoice_id: str | None = None,
     ) -> Invoice:
         inv = Invoice(
             subscription_id=subscription_id,
             purchase_id=purchase_id,
             user_id=user_id,
             amount=amount,
+            currency=currency,
+            stripe_invoice_id=stripe_invoice_id,
         )
         self.session.add(inv)
         await self.session.flush()
         return inv
+
+    async def get(self, invoice_id: UUID) -> Invoice | None:
+        stmt = select(Invoice).where(Invoice.id == invoice_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_by_stripe_invoice_id(self, stripe_invoice_id: str) -> Invoice | None:
+        stmt = select(Invoice).where(Invoice.stripe_invoice_id == stripe_invoice_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_latest_for_user(self, user_id: UUID) -> Invoice | None:
+        """Newest invoice for a user (refund target lookup)."""
+        stmt = (
+            select(Invoice)
+            .where(Invoice.user_id == user_id)
+            .order_by(Invoice.issued_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def get_by_user(self, user_id: UUID) -> list[Invoice]:
         stmt = select(Invoice).where(Invoice.user_id == user_id).order_by(Invoice.issued_at.desc())
@@ -256,3 +420,80 @@ class PayoutLedgerRepository:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+
+class RefundRepository:
+    """CRUD for ``Refund`` records (#191/#478).
+
+    Refunds are append-only: ``create`` is idempotent on ``refund_id``
+    (the Stripe refund id). The Stripe webhook can therefore be replayed
+    safely. ``apply_to_invoice`` performs the only refund-bounds mutation
+    (incrementing ``Invoice.refunded_amount``) under a guarded UPDATE so
+    concurrent refunds cannot exceed ``Invoice.amount``.
+    """
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get_by_refund_id(self, refund_id: str) -> Refund | None:
+        stmt = select(Refund).where(Refund.refund_id == refund_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def create(
+        self,
+        refund_id: str,
+        amount: Decimal,
+        currency: str,
+        *,
+        charge_id: str | None = None,
+        invoice_id: UUID | None = None,
+        user_id: UUID | None = None,
+        reason: str | None = None,
+        status: RefundStatus = RefundStatus.PROCESSED,
+    ) -> Refund:
+        """Insert idempotently on ``refund_id``; return existing on duplicate."""
+        existing = await self.get_by_refund_id(refund_id)
+        if existing:
+            return existing
+        refund = Refund(
+            refund_id=refund_id,
+            charge_id=charge_id,
+            invoice_id=invoice_id,
+            user_id=user_id,
+            amount=amount,
+            currency=currency,
+            reason=reason,
+            status=status,
+        )
+        self.session.add(refund)
+        try:
+            await self.session.flush()
+            return refund
+        except IntegrityError:
+            await self.session.rollback()
+            existing = await self.get_by_refund_id(refund_id)
+            if existing:
+                return existing
+            raise
+
+    async def apply_to_invoice(self, invoice_id: UUID, amount: Decimal) -> bool:
+        """Increment ``refunded_amount`` atomically, bounded by ``amount``.
+
+        Returns True when the guard matched (refund applied) and False
+        when the bounds would be exceeded (caller must record a REJECTED
+        refund instead of raising — money has already left Stripe).
+        """
+        stmt = (
+            update(Invoice)
+            .where(
+                Invoice.id == invoice_id,
+                Invoice.refunded_amount + amount <= Invoice.amount,
+            )
+            .values(
+                refunded_amount=Invoice.refunded_amount + amount,
+                status=InvoiceStatus.REFUNDED,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return bool(result.rowcount)  # type: ignore[attr-defined]

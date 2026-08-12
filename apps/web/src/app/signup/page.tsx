@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { REGEX } from '@/constants';
+import { getApiErrorMessage } from '@/api/client';
 
 export default function SignupPage() {
   const [firstName, setFirstName] = useState('');
@@ -48,9 +49,10 @@ export default function SignupPage() {
       await register(email, password, firstName, lastName);
       toast.success('Account created! Please sign in.');
       router.push('/login');
-    } catch {
-      setErrors({ email: 'An account with this email may already exist.' });
-      toast.error('Sign up failed');
+    } catch (error) {
+      const msg = getApiErrorMessage(error, 'An account with this email may already exist.', 'Email already registered');
+      setErrors({ email: msg });
+      toast.error(msg);
     }
   };
 
@@ -72,67 +74,112 @@ export default function SignupPage() {
         <div className="w-full max-w-md bg-black/70 border border-white/5 p-14 rounded-lg animate-fade-in">
           <h1 className="text-3xl font-bold text-white mb-7">Create Account</h1>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             {/* Name Row */}
             <div className="grid grid-cols-2 gap-4">
               <div>
+                <label htmlFor="firstName" className="sr-only">First name</label>
                 <input
+                  id="firstName"
                   type="text"
                   value={firstName}
-                  onChange={(e) => { setFirstName(e.target.value); setErrors((p) => ({ ...p, firstName: '' })); }}
+                  onChange={(e) => {
+                    setFirstName(e.target.value);
+                    setErrors((p) => ({ ...p, firstName: '' }));
+                  }}
                   className={inputClass('firstName')}
                   placeholder="First name"
                   aria-label="First name"
                 />
-                {errors.firstName && <p className="text-[#e87c03] text-[13px] mt-1.5">{errors.firstName}</p>}
+                {errors.firstName && (
+                  <p role="alert" className="text-[#e87c03] text-[13px] mt-1.5">
+                    {errors.firstName}
+                  </p>
+                )}
               </div>
               <div>
+                <label htmlFor="lastName" className="sr-only">Last name</label>
                 <input
+                  id="lastName"
                   type="text"
                   value={lastName}
-                  onChange={(e) => { setLastName(e.target.value); setErrors((p) => ({ ...p, lastName: '' })); }}
+                  onChange={(e) => {
+                    setLastName(e.target.value);
+                    setErrors((p) => ({ ...p, lastName: '' }));
+                  }}
                   className={inputClass('lastName')}
                   placeholder="Last name"
                   aria-label="Last name"
                 />
-                {errors.lastName && <p className="text-[#e87c03] text-[13px] mt-1.5">{errors.lastName}</p>}
+                {errors.lastName && (
+                  <p role="alert" className="text-[#e87c03] text-[13px] mt-1.5">
+                    {errors.lastName}
+                  </p>
+                )}
               </div>
             </div>
 
             <div>
+              <label htmlFor="email" className="sr-only">Email</label>
               <input
+                id="email"
                 type="email"
                 value={email}
-                onChange={(e) => { setEmail(e.target.value); setErrors((p) => ({ ...p, email: '' })); }}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setErrors((p) => ({ ...p, email: '' }));
+                }}
                 className={inputClass('email')}
                 placeholder="Email or phone number"
                 aria-label="Email"
               />
-              {errors.email && <p className="text-[#e87c03] text-[13px] mt-1.5">{errors.email}</p>}
+              {errors.email && (
+                <p role="alert" className="text-[#e87c03] text-[13px] mt-1.5">
+                  {errors.email}
+                </p>
+              )}
             </div>
 
             <div>
+              <label htmlFor="password" className="sr-only">Password</label>
               <input
+                id="password"
                 type="password"
                 value={password}
-                onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: '' })); }}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setErrors((p) => ({ ...p, password: '' }));
+                }}
                 className={inputClass('password')}
                 placeholder="Password"
                 aria-label="Password"
               />
-              {errors.password && <p className="text-[#e87c03] text-[13px] mt-1.5">{errors.password}</p>}
+              {errors.password && (
+                <p role="alert" className="text-[#e87c03] text-[13px] mt-1.5">
+                  {errors.password}
+                </p>
+              )}
             </div>
 
             <div>
+              <label htmlFor="confirmPassword" className="sr-only">Confirm password</label>
               <input
+                id="confirmPassword"
                 type="password"
                 value={confirmPassword}
-                onChange={(e) => { setConfirmPassword(e.target.value); setErrors((p) => ({ ...p, confirmPassword: '' })); }}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  setErrors((p) => ({ ...p, confirmPassword: '' }));
+                }}
                 className={inputClass('confirmPassword')}
                 placeholder="Confirm your password"
                 aria-label="Confirm password"
               />
-              {errors.confirmPassword && <p className="text-[#e87c03] text-[13px] mt-1.5">{errors.confirmPassword}</p>}
+              {errors.confirmPassword && (
+                <p role="alert" className="text-[#e87c03] text-[13px] mt-1.5">
+                  {errors.confirmPassword}
+                </p>
+              )}
             </div>
 
             <button
@@ -140,41 +187,18 @@ export default function SignupPage() {
               disabled={isLoading}
               className="w-full bg-[#E50914] hover:bg-[#F6121D] text-white py-3 rounded font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {isLoading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Creating account...
-                </span>
-              ) : 'Create Account'}
+              {isLoading ? 'Creating account...' : 'Create Account'}
             </button>
           </form>
 
-          <p className="text-[15px] text-gray-400 mt-6">
+          <p className="text-gray-400 mt-6 text-center text-sm">
             Already have an account?{' '}
-            <Link href="/login" className="text-white hover:underline">
+            <Link href="/login" className="text-white font-medium hover:text-[#E50914] transition-colors">
               Sign in
             </Link>
           </p>
-          <p className="text-[13px] text-gray-500 mt-4 leading-relaxed">
-            By creating an account you agree to our Terms of Service and Privacy Policy.
-          </p>
         </div>
       </div>
-
-      {/* Footer bar */}
-      <footer className="w-full bg-black/80 border-t border-white/5 py-8 px-8">
-        <div className="max-w-md mx-auto">
-          <p className="text-[#737373] text-sm mb-4">Questions? Contact us.</p>
-          <div className="grid grid-cols-2 gap-2 text-[13px] text-[#737373]">
-            {['FAQ', 'Help Center', 'Terms of Use', 'Privacy'].map((l) => (
-              <Link key={l} href="#" className="hover:underline">{l}</Link>
-            ))}
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

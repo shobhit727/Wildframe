@@ -1,6 +1,6 @@
 /**
  * Admin API helpers — mirror services/admin-service/app/api/routes/admin.py.
- * Uses the shared axios client (attaches Bearer token from localStorage).
+ * Uses the shared in-memory access token (via getAccessToken) for Authorization.
  */
 import type {
   AdminUser,
@@ -23,12 +23,13 @@ export interface ListParams {
 // The backend client exposes `client` privately; re-create a thin wrapper that
 // reuses the same baseURL + interceptor behavior via a fresh axios instance.
 import axios from 'axios';
+import { getAccessToken } from './client';
 
 const baseURL =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 function authHeaders() {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+  const token = getAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 

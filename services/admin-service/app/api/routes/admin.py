@@ -1,7 +1,7 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from jose import JWTError, jwt
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from jose import JWTError, jwt  # type: ignore[import-untyped]
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -32,10 +32,27 @@ async def get_current_admin_id(
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         if payload.get("role") != "admin":
+            # Least privilege: a token without the admin role claim (plain user
+            # or API-key-scoped identity) must never inherit admin privileges.
             raise HTTPException(status_code=403, detail="Admin privileges required")
         return str(payload.get("sub") or payload.get("user_id"))
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def _client_ip(request: Request) -> str:
+    """Best-effort client address for audit records (never hard-coded).
+
+    X-Forwarded-For is only honored when the service is explicitly deployed
+    behind a trusted proxy; otherwise the direct peer address is recorded.
+    """
+    if settings.TRUST_PROXY:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    if request.client is not None:
+        return request.client.host
+    return "unknown"
 
 
 # --- Authorization helpers -------------------------------------------------
@@ -60,13 +77,14 @@ def _ensure_admin_can_view_resource(resource_type: str, viewer_id: str) -> None:
 @router.post("/users/moderate", response_model=UserModerationResponse)
 async def moderate_user(
     request: UserModerationRequest,
+    request_meta: Request,
     admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Moderate a user (suspend/ban/activate)"""
     service = AdminService(db)
     return await service.moderate_user(
-        request.user_id, request.status, request.reason, admin_id, "0.0.0.0"
+        request.user_id, request.status, request.reason, admin_id, _client_ip(request_meta)
     )
 
 
@@ -101,13 +119,14 @@ async def list_moderated_users(
 @router.post("/content/flag", response_model=ContentModerationResponse)
 async def flag_content(
     request: ContentModerationRequest,
+    request_meta: Request,
     admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Flag inappropriate content"""
     service = AdminService(db)
     return await service.flag_content(
-        request.content_id, request.content_type, request.reason, admin_id, "0.0.0.0"
+        request.content_id, request.content_type, request.reason, admin_id, _client_ip(request_meta)
     )
 
 
@@ -116,11 +135,14 @@ async def resolve_content_flag(
     content_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     admin_id: Annotated[str, Depends(get_current_admin_id)],
+    request_meta: Request,
     status: Annotated[str, Query(pattern="^(active|removed)$")],
 ):
     """Resolve flagged content. Returns 404 if the flag does not exist."""
     service = AdminService(db)
-    result = await service.resolve_content_flag(content_id, status, admin_id, "0.0.0.0")
+    result = await service.resolve_content_flag(
+        content_id, status, admin_id, _client_ip(request_meta)
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Not found")
     return result
@@ -191,13 +213,19 @@ async def acknowledge_alert(
 @router.post("/config", response_model=SystemConfigResponse)
 async def set_config(
     request: SystemConfigRequest,
+    request_meta: Request,
     admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Set system configuration"""
     service = AdminService(db)
     return await service.set_config(
-        request.key, request.value, request.config_type, request.description, admin_id, "0.0.0.0"
+        request.key,
+        request.value,
+        request.config_type,
+        request.description,
+        admin_id,
+        _client_ip(request_meta),
     )
 
 

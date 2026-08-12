@@ -6,11 +6,12 @@ Key settings:
   - MILESTONE_TRANCHE_PERCENTAGES: 10/20/30/40 split
   - MAX_STAGE_ATTEMPTS: kill threshold for stalled milestones
 """
-
 from decimal import Decimal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+from app.core.money import CurrencyError, validate_currency
 
 
 class Settings(BaseSettings):
@@ -86,15 +87,19 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if running in production with default insecure secrets."""
-        default_secrets = [
-            "your-secret-key-change-in-production",
-            "dev-secret-key",
-        ]
-        if self.ENVIRONMENT == "production" and self.JWT_SECRET_KEY in default_secrets:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value in production. "
-                "Refusing to start with default insecure secret."
-            )
+        if self.ENVIRONMENT == "production":
+            if self.STRIPE_API_KEY.startswith("sk_test_"):
+                raise ValueError("STRIPE_API_KEY must be a live key in production")
+            if self.STRIPE_WEBHOOK_SECRET.startswith("whsec_default"):
+                raise ValueError("STRIPE_WEBHOOK_SECRET must be set in production")
+            if self.JWT_SECRET_KEY == "your-secret-key-change-in-production":
+                raise ValueError("JWT_SECRET_KEY must be set in production")
+        return self
+
+    @model_validator(mode="after")
+    def validate_currency(self) -> "Settings":
+        """Validate DEFAULT_CURRENCY against ISO-4217 allowlist (#477/#478)."""
+        validate_currency(self.DEFAULT_CURRENCY)
         return self
 
     class Config:

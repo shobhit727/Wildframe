@@ -29,33 +29,95 @@ const ACCESS_KEY = 'accessToken';
 const REFRESH_KEY = 'refreshToken';
 const USER_KEY = 'user';
 
-export function getAccessToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem(ACCESS_KEY);
+// Auth endpoints that MUST NOT trigger the 401 refresh loop.
+// A failed login/register/MFA/refresh/logout should surface the error directly.
+const AUTH_ENDPOINTS = [
+  '/auth/api/v1/auth/login',
+  '/auth/api/v1/auth/register',
+  '/auth/api/v1/auth/mfa/login-verify',
+  '/auth/api/v1/auth/refresh',
+  '/auth/api/v1/auth/logout',
+];
+
+function isAuthEndpoint(url: string | undefined): boolean {
+  return !!url && AUTH_ENDPOINTS.some((p) => url.includes(p));
 }
 
-export function getRefreshToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem(REFRESH_KEY);
-}
+/**
+ * In-memory access token. The refresh token is persisted as an HttpOnly
+ * cookie by the /auth-session route handler and never lives in localStorage.
+ * This prevents XSS from extracting credentials.
+ */
+let accessToken: string | null = null;
+// Transient refresh token held only between login response and cookie persistence.
+let refreshToken: string | null = null;
 
-export function setTokens(tokens: AuthTokens): void {
-  localStorage.setItem(ACCESS_KEY, tokens.access_token);
-  localStorage.setItem(REFRESH_KEY, tokens.refresh_token);
-  // Keep the middleware's server-side cookie in sync (middleware.ts guards
-  // /browse etc. by checking the accessToken cookie).
-  if (typeof document !== 'undefined') {
-    document.cookie = `${ACCESS_KEY}=${tokens.access_token}; path=/; max-age=900; samesite=strict`;
-  }
-}
-
-export function clearTokens(): void {
+/**
+ * Remove any legacy localStorage/cookie tokens left by pre-HttpOnly builds.
+ * Runs on module load (browser) and after every successful token rotation.
+ */
+function sweepLegacyTokenStorage(): void {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
   localStorage.removeItem(USER_KEY);
-  // Expire the auth cookie so middleware stops letting us onto protected routes.
+  // Also expire the old non-HttpOnly cookie the middleware used to read.
   if (typeof document !== 'undefined') {
     document.cookie = `${ACCESS_KEY}=; path=/; max-age=0; samesite=strict`;
+  }
+}
+
+// Run once on load so upgraded users are migrated immediately.
+if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+  sweepLegacyTokenStorage();
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+export function getRefreshToken(): string | null {
+  // The refresh token is no longer stored client-side; it lives in an
+  // HttpOnly cookie managed by the /auth-session route handler.
+  // This getter exists for API compatibility and returns the transient
+  // in-memory value (usually null after the first persist).
+  return refreshToken;
+}
+
+async function persistRefreshToken(token: string): Promise<void> {
+  try {
+    await fetch('/auth-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: token }),
+      credentials: 'same-origin',
+    });
+  } catch {
+    // Session persistence is best-effort; auth still works via the login
+    // response until the next reload.
+  }
+}
+
+export function setTokens(tokens: AuthTokens): void {
+  accessToken = tokens.access_token;
+  if (tokens.refresh_token) {
+    refreshToken = tokens.refresh_token;
+    void persistRefreshToken(tokens.refresh_token);
+  }
+  sweepLegacyTokenStorage();
+}
+
+export function clearTokens(): void {
+  accessToken = null;
+  refreshToken = null;
+  sweepLegacyTokenStorage();
+  // Tell the server to drop the HttpOnly refresh cookie (best-effort).
+  if (typeof fetch === 'function') {
+    try {
+      void fetch('/auth-session', { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
+    } catch {
+      // Ignore synchronous fetch failures (e.g., jsdom in tests).
+    }
   }
 }
 
@@ -97,6 +159,25 @@ export function normalizeUser(payload: Record<string, unknown>): User {
   };
 }
 
+/**
+ * Convert an arbitrary error from axios/fetch into a user-facing message.
+ * Handles rate-limit (429) and unauthorized (401) with tailored copy.
+ */
+export function getApiErrorMessage(
+  error: unknown,
+  fallback: string,
+  unauthorizedMessage?: string
+): string {
+  const status = (error as { response?: { status?: number } })?.response?.status;
+  if (status === 429) {
+    return 'Too many attempts. Please wait a minute and try again.';
+  }
+  if (status === 401) {
+    return unauthorizedMessage ?? fallback;
+  }
+  return fallback;
+}
+
 let refreshPromise: Promise<string | null> | null = null;
 
 class APIClient {
@@ -119,10 +200,16 @@ class APIClient {
       (response) => response,
       async (error) => {
         const original = error.config;
-        if (error.response?.status !== 401 || !original || original._retried) {
+        // Skip refresh on auth endpoints to avoid infinite loops on bad credentials.
+        if (
+          error.response?.status !== 401 ||
+          !original ||
+          (original as { _retried?: boolean })._retried ||
+          isAuthEndpoint(original.url)
+        ) {
           return Promise.reject(error);
         }
-        original._retried = true;
+        (original as { _retried?: boolean })._retried = true;
         const token = await this.refreshAccessToken();
         if (token) {
           original.headers.Authorization = `Bearer ${token}`;
@@ -137,15 +224,17 @@ class APIClient {
   async refreshAccessToken(): Promise<string | null> {
     if (!refreshPromise) {
       refreshPromise = (async () => {
-        const refreshToken = getRefreshToken();
-        if (!refreshToken) return null;
         try {
-          const { data } = await axios.post(`${API_BASE_URL}/auth/api/v1/auth/refresh`, {
-            refresh_token: refreshToken,
+          const response = await fetch('/auth-session', {
+            method: 'GET',
+            credentials: 'same-origin',
+            cache: 'no-store',
           });
-          const tokens = data as AuthTokens;
-          setTokens(tokens);
-          return tokens.access_token;
+          if (!response.ok) return null;
+          const data = (await response.json()) as { access_token?: unknown };
+          if (typeof data.access_token !== 'string' || !data.access_token) return null;
+          accessToken = data.access_token;
+          return data.access_token;
         } catch {
           return null;
         } finally {
@@ -183,8 +272,6 @@ class APIClient {
   async login(email: string, password: string) {
     const { data } = await this.client.post('/auth/api/v1/auth/login', { email, password });
     if ((data as { requires_mfa?: boolean }).requires_mfa) {
-      // MFA-gated account: password verified, but no tokens yet. Caller must
-      // collect the TOTP code and call verifyMfaLogin with the challenge.
       return data as { requires_mfa: true; mfa_challenge: string; expires_in: number };
     }
     setTokens(data as AuthTokens);
@@ -219,7 +306,6 @@ class APIClient {
     try {
       return await this.unwrap(this.client.get(`/users/api/v1/profiles/${userId}`));
     } catch (err) {
-      // Profile not provisioned yet — create it for the JWT user, then retry.
       const is404 = (err as { response?: { status?: number } })?.response?.status === 404;
       if (is404) {
         const created = await this.unwrap<UserProfile>(
@@ -291,7 +377,6 @@ class APIClient {
       const results = await this.unwrap<{ query: string; results: Record<string, unknown>[] }>(
         this.client.get('/search/api/v1/search/query', { params: { q: query, limit: 30 } })
       );
-      // search-service returns ES _source docs; map loosely to our shape
       return results.results
         .filter((r) => r.title)
         .map(
@@ -309,7 +394,6 @@ class APIClient {
           })
         );
     } catch {
-      // Fallback: filter the content catalog client-side.
       const all = await this.getContentList({ page_size: 100 });
       const q = query.toLowerCase();
       return all.filter(

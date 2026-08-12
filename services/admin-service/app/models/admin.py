@@ -1,7 +1,11 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class AuditLogAppendOnlyError(RuntimeError):
+    """Raised when code attempts to modify or delete an audit log record."""
 
 
 class Base(DeclarativeBase):
@@ -141,3 +145,15 @@ class AdminAuditLog(Base):
         Index("idx_action", "action"),
         Index("idx_created_at", "created_at"),
     )
+
+
+@event.listens_for(AdminAuditLog, "before_update")
+def _block_audit_log_update(_mapper, _connection, _target) -> None:
+    raise AuditLogAppendOnlyError(
+        "admin audit logs are append-only: corrections must be recorded as new events"
+    )
+
+
+@event.listens_for(AdminAuditLog, "before_delete")
+def _block_audit_log_delete(_mapper, _connection, _target) -> None:
+    raise AuditLogAppendOnlyError("admin audit logs are append-only: deletion is not permitted")

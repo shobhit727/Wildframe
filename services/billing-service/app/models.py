@@ -1,5 +1,3 @@
-import uuid
-
 """Billing service domain models.
 
 Implements the Sustenance Engine architecture from PRODUCT_VISION.md:
@@ -11,15 +9,25 @@ Implements the Sustenance Engine architecture from PRODUCT_VISION.md:
 
 Key invariant: >= 55% of net SVOD revenue goes to creators. This is
 calculated BEFORE platform costs are deducted (contractual floor, not target).
-"""
 
+Monetary invariants (see #189/#191/#477/#478):
+  - Amounts are Numeric columns (exact decimal), never binary floats.
+  - Currency codes are ISO-4217 and immutable after a record exists: no
+    repository or service method ever rewrites currency on an existing row.
+  - Invoices keep their original ``amount`` forever; refunds only move
+    ``refunded_amount`` (bounded by a check constraint).
+  - Provider event/payment identifiers carry unique constraints so replays
+    cannot duplicate financial or entitlement rows.
+"""
 from datetime import datetime
 from typing import Any
 from decimal import Decimal
 from enum import Enum
+import uuid
 from uuid import uuid4
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -28,6 +36,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
 )
 from sqlalchemy import (
     Enum as SQLEnum,
@@ -36,9 +45,103 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
+
+
 class Base(DeclarativeBase):
     """SQLAlchemy 2.0 declarative base (mypy-friendly vs declarative_base())."""
 
+
+
+# ---------------------------------------------------------------------------
+# Webhook inbox + Refund (new tables for #47/#191/#478)
+# ---------------------------------------------------------------------------
+
+
+class WebhookEventStatus(str, Enum):
+    """Processing state of a received Stripe webhook event."""
+
+    PROCESSING = "processing"  # Claimed; handler executing.
+    PROCESSED = "processed"  # Handler completed successfully.
+    FAILED = "failed"  # Handler failed; eligible for bounded retry.
+
+
+class StripeWebhookEvent(Base):
+    """Durable inbox row for Stripe webhook events (#47).
+
+    The unique constraint on ``event_id`` makes event-level idempotency
+    database-backed instead of process-local: concurrent deliveries and
+    post-restart replays race on the same unique key, and only one claim
+    wins. FAILED rows are reclaimed up to ``max_attempts`` times so a
+    crashed handler can be retried by Stripe's next delivery.
+    """
+
+    __tablename__ = "stripe_webhook_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    event_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[WebhookEventStatus] = mapped_column(
+        SQLEnum(WebhookEventStatus), default=WebhookEventStatus.PROCESSING, nullable=False
+    )
+    attempts: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.utcnow(),
+        onupdate=lambda: datetime.utcnow(),
+    )
+
+
+class RefundStatus(str, Enum):
+    PROCESSED = "processed"
+    REJECTED = "rejected"  # Refund could not be applied (bounds violation).
+
+
+class Refund(Base):
+    """A Stripe refund, recorded idempotently (#191/#478).
+
+    ``refund_id`` (the Stripe refund id) is unique, so replayed
+    ``charge.refunded`` / ``refund.created`` events can never create a
+    second record or apply a refund twice.
+    """
+
+    __tablename__ = "refunds"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    refund_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    invoice_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoices.id"), nullable=True, index=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    status: Mapped[RefundStatus] = mapped_column(
+        SQLEnum(RefundStatus), default=RefundStatus.PROCESSED, nullable=False
+    )
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+
+
+# ---------------------------------------------------------------------------
+# SubscriptionStatus enum (moved from before Subscription class)
+# ---------------------------------------------------------------------------
+
+
+class SubscriptionStatus(str, Enum):
+    """Server-enforced subscription lifecycle state (#190/#482).
+
+    Legal transitions (see SUBSCRIPTION_TRANSITIONS in services.py):
+    ACTIVE -> CANCELLED (cancel), CANCELLED -> ACTIVE (re-subscribe /
+    Stripe reactivation). ``is_active`` mirrors this state and is only
+    ever written through the same transition.
+    """
+
+    ACTIVE = "active"
+    CANCELLED = "cancelled"
 
 # ---------------------------------------------------------------------------
 # Revenue Tiers (§3 of PRODUCT_VISION.md)
@@ -56,6 +159,8 @@ class RevenueTier(str, Enum):
     AVOD = "avod"
     SVOD = "svod"
     TVOD = "tvod"
+
+
 
 
 class Subscription(Base):
@@ -77,6 +182,17 @@ class Subscription(Base):
     )
     monthly_price: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    )
+    currency: Mapped[str] = mapped_column(
+        String(3), default="USD", nullable=False, comment="ISO 4217; immutable once set"
+    )
+    status: Mapped[SubscriptionStatus] = mapped_column(
+        SQLEnum(SubscriptionStatus), default=SubscriptionStatus.ACTIVE, nullable=False, index=True
+    )
+    last_stripe_event_ts: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+        comment="Epoch seconds of the newest Stripe event applied; monotonic guard (#482).",
     )
     started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
     renewal_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -104,11 +220,23 @@ class Purchase(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     content_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3), default="USD", nullable=False, comment="ISO 4217; immutable once set"
+    )
     idempotency_key: Mapped[str] = mapped_column(
         String(128),
         unique=True,
         nullable=False,
         comment="Prevents duplicate charges from retried requests.",
+    )
+    stripe_payment_intent_id: Mapped[str | None] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=True,
+        comment="Prevents duplicate entitlements from replayed payment events (#481).",
+    )
+    refunded_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="Set exactly once when a TVOD refund is applied."
     )
     purchased_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
 
@@ -140,7 +268,12 @@ class Invoice(Base):
         UUID(as_uuid=True), ForeignKey("purchases.id"), nullable=True, index=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), nullable=False, comment="Immutable after creation (#191)."
+    )
+    currency: Mapped[str] = mapped_column(
+        String(3), default="USD", nullable=False, comment="ISO 4217; immutable once set"
+    )
     creator_share_amount: Mapped[Decimal] = mapped_column(
         Numeric(10, 2),
         default=Decimal("0.00"),
@@ -149,10 +282,29 @@ class Invoice(Base):
     status: Mapped[InvoiceStatus] = mapped_column(
         SQLEnum(InvoiceStatus), default=InvoiceStatus.PENDING
     )
+    stripe_invoice_id: Mapped[str | None] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=True,
+        comment="Stripe invoice id; unique so invoice.paid replays cannot duplicate rows (#191).",
+    )
+    refunded_amount: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2),
+        default=Decimal("0.00"),
+        nullable=False,
+        comment="Cumulative refunds applied; bounded by amount via check constraint.",
+    )
     issued_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
     due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+
+    __table_args__ = (
+        CheckConstraint(
+            "refunded_amount >= 0 AND refunded_amount <= amount",
+            name="ck_invoice_refund_bounds",
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

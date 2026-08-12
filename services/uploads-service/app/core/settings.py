@@ -39,9 +39,48 @@ class Settings(BaseSettings):
     DEFAULT_CHUNK_SIZE_BYTES: int = 5 * 1024 * 1024
     # A single session may not exceed this many chunks (bounds bookkeeping).
     MAX_CHUNKS_PER_SESSION: int = 10_000
+    # Hard ceiling for a single upload (file size limit, enforced server-side).
+    MAX_UPLOAD_SIZE_BYTES: int = 10 * 1024 * 1024 * 1024
+    # Media types a session may declare. Anything else is rejected at session
+    # creation; completion re-verifies the stored object's content type.
+    ALLOWED_UPLOAD_MIME_TYPES: list[str] = [
+        "video/mp4",
+        "video/webm",
+        "video/quicktime",
+        "video/x-matroska",
+        "audio/mpeg",
+        "audio/aac",
+        "audio/ogg",
+        "audio/wav",
+        "audio/flac",
+        "audio/mp4",
+        "image/jpeg",
+        "image/png",
+        "image/gif",
+        "image/webp",
+        "image/avif",
+        "image/heic",
+        "image/heif",
+        "application/pdf",
+        "application/zip",
+    ]
+    # Ceiling for server-side SHA-256 verification of the assembled object
+    # (bytes). Larger objects rely on storage-provider integrity metadata
+    # (multipart ETags) and record no verified checksum.
+    CHECKSUM_VERIFY_MAX_BYTES: int = 512 * 1024 * 1024
+    # Hard cap on pre-signed URL lifetime: endpoint-specific TTLs must never be
+    # configurable to indefinite lifetimes.
+    PRESIGNED_URL_MAX_TTL_SECONDS: int = 3600
     # How long an initiated/ uploading session stays alive before it is considered
     # stale and safe to reap (hours).
     SESSION_EXPIRES_HOURS: int = 24
+    # Outbox drain + expiry reaper cadence (seconds).
+    OUTBOX_POLL_INTERVAL_SECONDS: int = 2
+    REAPER_INTERVAL_SECONDS: int = 300
+    OUTBOX_BATCH_SIZE: int = 100
+    # Grace period before the reaper retries storage cleanup of aborted sessions
+    # whose first cleanup attempt failed (seconds).
+    CLEANUP_RETRY_GRACE_SECONDS: int = 900
 
     # Storage / event-bus adapters.
     # ``storage_backend`` selects the pre-signed-URL provider; ``event_publisher``
@@ -57,7 +96,7 @@ class Settings(BaseSettings):
     S3_ENDPOINT_URL: str = ""
     S3_ACCESS_KEY_ID: str = ""
     S3_SECRET_ACCESS_KEY: str = ""
-    # Pre-signed URL lifetime in seconds.
+    # Pre-signed URL lifetime in seconds (clamped to PRESIGNED_URL_MAX_TTL_SECONDS).
     S3_PRESIGNED_URL_TTL_SECONDS: int = 3600
 
     @model_validator(mode="after")

@@ -70,7 +70,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
         # Skip metrics for the /metrics endpoint itself to avoid recursion.
         if path == "/metrics":
-            return await call_next(request)
+            return await call_next(request)  # type: ignore[no-any-return]
 
         ACTIVE_REQUESTS.labels(service=self.service_name).inc()
         start = time.monotonic()
@@ -98,7 +98,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
                 service=self.service_name,
             ).observe(duration)
 
-        return response
+        return response  # type: ignore[no-any-return]
 
 
 def _normalize_endpoint(path: str) -> str:

@@ -13,7 +13,7 @@ from app.services import ContentService
 @pytest_asyncio.fixture
 async def client():
     """Async HTTP client for testing."""
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(app=app, base_url="http://test") as ac:  # type: ignore[call-arg]
         yield ac
 
 
@@ -73,7 +73,7 @@ class TestContentIntegration:
         from app.models import ContentType
         from app.schemas import ContentCreateRequest
 
-        request = ContentCreateRequest(
+        request = ContentCreateRequest(  # type: ignore[call-arg]
             title="Test Movie",
             slug="test-movie",
             description="A test movie",
@@ -120,7 +120,7 @@ class TestContentIntegration:
             )()
         )
 
-        request = ContentCreateRequest(
+        request = ContentCreateRequest(  # type: ignore[call-arg]
             title="Adventure Movie",
             slug="adventure-movie",
             description="An adventure movie",
@@ -139,7 +139,7 @@ class TestContentIntegration:
         from app.schemas import ContentCreateRequest, ContentUpdateRequest
 
         # Create content
-        request = ContentCreateRequest(
+        request = ContentCreateRequest(  # type: ignore[call-arg]
             title="Original Title",
             slug="original-title",
             description="Original description",
@@ -148,7 +148,7 @@ class TestContentIntegration:
         content = await content_service.create_content(request)
 
         # Update content
-        update_request = ContentUpdateRequest(
+        update_request = ContentUpdateRequest(  # type: ignore[call-arg]
             title="Updated Title",
             description="Updated description",
         )
@@ -163,7 +163,7 @@ class TestContentIntegration:
         from app.models import ContentStatus
         from app.schemas import ContentCreateRequest, ContentPublishRequest
 
-        request = ContentCreateRequest(
+        request = ContentCreateRequest(  # type: ignore[call-arg]
             title="To Publish",
             slug="to-publish",
             description="Will be published",
@@ -191,7 +191,7 @@ class TestSeasonIntegration:
         from app.schemas import ContentCreateRequest, SeasonCreateRequest
 
         # Create content first
-        content_request = ContentCreateRequest(
+        content_request = ContentCreateRequest(  # type: ignore[call-arg]
             title="Test Show",
             slug="test-show",
             description="A test show",
@@ -226,7 +226,7 @@ class TestEpisodeIntegration:
         )
 
         # Create content
-        content_request = ContentCreateRequest(
+        content_request = ContentCreateRequest(  # type: ignore[call-arg]
             title="Show with Episodes",
             slug="show-with-episodes",
             description="A show",
@@ -265,7 +265,7 @@ class TestRatingIntegration:
 
         from app.schemas import ContentCreateRequest, ContentRatingCreateRequest
 
-        request = ContentCreateRequest(
+        request = ContentCreateRequest(  # type: ignore[call-arg]
             title="Rated Content",
             slug="rated-content",
             description="Content to rate",
@@ -295,7 +295,7 @@ class TestRecommendationIntegration:
         from app.schemas import ContentCreateRequest, ContentRecommendationCreateRequest
 
         # Create two content items
-        content1 = ContentCreateRequest(
+        content1 = ContentCreateRequest(  # type: ignore[call-arg]
             title="Content 1",
             slug="content-1",
             description="First",
@@ -303,7 +303,7 @@ class TestRecommendationIntegration:
         )
         c1 = await content_service.create_content(content1)
 
-        content2 = ContentCreateRequest(
+        content2 = ContentCreateRequest(  # type: ignore[call-arg]
             title="Content 2",
             slug="content-2",
             description="Second",

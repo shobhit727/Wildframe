@@ -101,11 +101,11 @@ class Content(Base):
     title = Column(String(255), nullable=False, index=True)
     slug = Column(String(255), nullable=False, unique=True, index=True)
     description = Column(Text, nullable=False)
-    content_type = Column(SQLEnum(ContentType), nullable=False, index=True)
-    status = Column(SQLEnum(ContentStatus), nullable=False, default=ContentStatus.DRAFT)
+    content_type = Column(SQLEnum(ContentType), nullable=False, index=True)  # type: ignore[var-annotated]
+    status = Column(SQLEnum(ContentStatus), nullable=False, default=ContentStatus.DRAFT)  # type: ignore[var-annotated]
 
     # Animation-specific fields
-    animation_style = Column(SQLEnum(AnimationStyle), nullable=True, index=True)
+    animation_style = Column(SQLEnum(AnimationStyle), nullable=True, index=True)  # type: ignore[var-annotated]
     maturity_rating = Column(
         String(20), nullable=True
     )  # G, PG, PG-13, R, TV-Y, TV-Y7, TV-PG, TV-14, TV-MA
@@ -404,7 +404,7 @@ class ContentSeries(Base):
     title = Column(String(255), nullable=False, index=True)
     slug = Column(String(255), nullable=False, unique=True, index=True)
     description = Column(Text, nullable=True)
-    animation_style = Column(SQLEnum(AnimationStyle), nullable=True, index=True)
+    animation_style = Column(SQLEnum(AnimationStyle), nullable=True, index=True)  # type: ignore[var-annotated]
 
     total_seasons = Column(Integer, default=0, nullable=False)
     total_episodes = Column(Integer, default=0, nullable=False)
