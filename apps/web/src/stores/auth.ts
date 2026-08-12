@@ -1,7 +1,7 @@
 // Zustand store for auth state.
 import { create } from 'zustand';
 import { User } from '@/types';
-import { apiClient, clearTokens, getAccessToken } from '@/api/client';
+import { apiClient, getAccessToken } from '@/api/client';
 import { queryClient } from '@/utils/queryClient';
 
 export interface AuthStore {

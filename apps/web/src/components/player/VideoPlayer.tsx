@@ -14,6 +14,7 @@ interface VideoPlayerProps {
 export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnded }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<unknown>(null);
+  const cancelledRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -43,7 +44,7 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
   };
 
   useEffect(() => {
-    let cancelled = false;
+    cancelledRef.current = false;
 
     const initPlayer = async () => {
       try {
@@ -56,7 +57,7 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
             type = response.protocol === 'dash' ? 'dash' : 'hls';
           }
         }
-        if (cancelled || !url || !videoRef.current) return;
+        if (cancelledRef.current || !url || !videoRef.current) return;
 
         if (type === 'hls') {
           // Dynamic import to avoid SSR issues
@@ -72,7 +73,7 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
 
             // Fatal HLS errors -> show retry overlay
             hls.on(Hls.Events.ERROR, (_e, data) => {
-              if (cancelled) return;
+              if (cancelledRef.current) return;
               if (data.fatal) {
                 console.error('HLS fatal error:', data);
                 setLoadError(true);
@@ -90,7 +91,7 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
           videoRef.current.src = url;
         }
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelledRef.current) {
           console.error('Failed to load video:', error);
           setLoadError(true);
         }
@@ -100,13 +101,12 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
     initPlayer();
 
     return () => {
-      cancelled = true;
-      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-      const player = playerRef.current;
-      if (player && typeof (player as { destroy?: () => void }).destroy === 'function') {
-        (player as { destroy: () => void }).destroy();
+      cancelledRef.current = true;
+      if (playerRef.current) {
+        if (typeof (playerRef.current as { destroy?: () => void }).destroy === 'function') {
+          (playerRef.current as { destroy: () => void }).destroy();
+        }
       }
-      playerRef.current = null;
     };
   }, [contentId, quality, src, srcType, loadAttempt]);
 
@@ -202,7 +202,7 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onError={() => {
-          if (!cancelled) setLoadError(true);
+          if (!cancelledRef.current) setLoadError(true);
         }}
         playsInline
       />

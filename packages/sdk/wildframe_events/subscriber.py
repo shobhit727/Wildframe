@@ -452,9 +452,9 @@ class KafkaEventSubscriber(EventSubscriber):
                         exc,
                         delay_s * 1000,
                     )
-                    _RETRIES_TOTAL.inc(event.topic)  # type: ignore[arg-type]
+                    _RETRIES_TOTAL.labels(topic=event.topic).inc()
                     await asyncio.sleep(delay_s)
-        _PROCESSED_TOTAL.inc(event.topic)  # type: ignore[arg-type]
+        _PROCESSED_TOTAL.labels(topic=event.topic).inc()
 
     def _note_duplicate(self, event: DomainEvent) -> None:
         logger.info(
@@ -463,7 +463,7 @@ class KafkaEventSubscriber(EventSubscriber):
             event.key,
             event.event_id,
         )
-        _DUPLICATES_TOTAL.inc(event.topic)  # type: ignore[arg-type]
+        _DUPLICATES_TOTAL.labels(topic=event.topic).inc()
 
     # -- Dead-letter queue -------------------------------------------------
 
@@ -558,7 +558,7 @@ class KafkaEventSubscriber(EventSubscriber):
             if dlq_event.topic.endswith(Topic.DLQ_SUFFIX)
             else dlq_event.topic
         )
-        _DLQ_TOTAL.inc(orig_topic, "dlq")  # type: ignore[arg-type,arg-type]  # type: ignore[arg-type,arg-type]
+        _DLQ_TOTAL.labels(topic=orig_topic, reason="dlq").inc()
         logger.error(
             "event sent to DLQ: topic=%s key=%s error=%s",
             dlq_event.topic,
@@ -601,8 +601,11 @@ class KafkaEventSubscriber(EventSubscriber):
 class _CounterProxy:
     """No-op counter when prometheus_client is unavailable."""
 
-    def inc(self, topic: str, reason: str = "") -> None:  # noqa: ARG002
+    def inc(self, **labels) -> None:  # noqa: ARG002
         pass
+
+    def labels(self, **labels) -> "_CounterProxy":  # noqa: ARG002
+        return self
 
 
 try:

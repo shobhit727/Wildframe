@@ -259,11 +259,12 @@ class DomainEvent:
             raise PayloadValidationError(
                 f"event sequence must be an int, got {sequence!r}"
             )
-
+        payload = copy.deepcopy(data.get("payload", {}))
+        validate_payload(payload, forbid_secret_keys=True)
         return cls(
             topic=topic,
             key=key,
-            payload=copy.deepcopy(data.get("payload", {})),
+            payload=payload,
             event_id=data.get("event_id") or str(uuid4()),
             occurred_at=occurred_at,
             producer=data.get("producer", ""),
