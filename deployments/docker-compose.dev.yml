@@ -130,11 +130,27 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_SECURITY_ADMIN_USER: admin
       GF_INSTALL_PLUGINS: grafana-piechart-panel
+      GF_SERVER_PROTOCOL: https
+      GF_SERVER_CERT_FILE: /etc/grafana/certs/localhost.pem
+      GF_SERVER_CERT_KEY: /etc/grafana/certs/localhost-key.pem
+      GF_SERVER_ROOT_URL: https://localhost:3001
     volumes:
     - ../infrastructure/grafana/provisioning:/etc/grafana/provisioning
     - grafana_data:/var/lib/grafana
+    - ../apps/web/certificates:/etc/grafana/certs:ro
     depends_on:
     - prometheus
+    networks:
+    - wildframe-network
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    ports:
+    - 5050:80
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    depends_on:
+    - postgres
     networks:
     - wildframe-network
   loki:
