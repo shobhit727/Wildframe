@@ -12,8 +12,6 @@ from fastapi import HTTPException, Request, status
 
 from app.core.settings import settings
 
-
-
 # Header names whose values must never appear in logs. Matched
 # case-insensitively against any field attached to a LogRecord (covers both
 # the formatted message and `extra={...}` payloads).
@@ -26,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 _CONTROL_TRANSLATION: dict[str, str] = {}
+
 
 def _sanitize_message(message: str) -> str:
     """Escape log-injection vectors (CR, LF, NUL, control bytes)."""
@@ -185,6 +184,7 @@ class AuthenticationMiddleware:
 
         return token_payload
 
+
 class RateLimitUnavailable(Exception):
     """Raised when the rate-limit backend cannot be reached.
 
@@ -241,7 +241,6 @@ class RateLimiter:
             raise RateLimitUnavailable() from exc
 
         return count <= limit
-
 
 
 class LoadBalancer:

@@ -70,7 +70,9 @@ class TestUnreadEndpoints:
             "notifications": [],
             "total": 0,
         }
-        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {"count": 0}
+        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
+            "count": 0
+        }
 
         send(client, auth_user_id, title="New episode", message="S5 is out")
         send(client, auth_user_id, title="Comment", message="someone replied")
@@ -78,8 +80,12 @@ class TestUnreadEndpoints:
 
         data = client.get(f"/api/v1/notifications/unread/{auth_user_id}").json()
         assert data["total"] == 3
-        assert {"New episode", "Comment", "Read soon"} == {n["title"] for n in data["notifications"]}
-        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {"count": 3}
+        assert {"New episode", "Comment", "Read soon"} == {
+            n["title"] for n in data["notifications"]
+        }
+        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
+            "count": 3
+        }
 
         # Mark one read: excluded from list and count, but not deleted.
         notif_id = data["notifications"][1]["id"]
@@ -91,7 +97,9 @@ class TestUnreadEndpoints:
         data = client.get(f"/api/v1/notifications/unread/{auth_user_id}").json()
         assert data["total"] == 2
         assert notif_id not in {n["id"] for n in data["notifications"]}
-        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {"count": 2}
+        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
+            "count": 2
+        }
 
     def test_unread_other_user_inaccessible(self, client, auth_user_id, other_user_id):
         send(client, auth_user_id)
@@ -112,7 +120,9 @@ class TestUnreadEndpoints:
         assert {n["id"] for n in page["notifications"]} != {n["id"] for n in page2["notifications"]}
 
     def test_empty_account_returns_empty_legitimately(self, client, auth_user_id):
-        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {"count": 0}
+        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
+            "count": 0
+        }
 
 
 class TestIdempotency:
@@ -122,11 +132,15 @@ class TestIdempotency:
         second = send(client, auth_user_id, event_id=str(event_id)).json()
         assert first == {"status": "sent"}
         assert second == {"status": "sent"}
-        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {"count": 1}
+        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
+            "count": 1
+        }
 
     def test_mark_read_and_delete_scoped_to_owner(self, client, auth_user_id, other_user_id):
         send(client, auth_user_id, title="mine")
-        notif_id = client.get(f"/api/v1/notifications/unread/{auth_user_id}").json()["notifications"][0]["id"]
+        notif_id = client.get(f"/api/v1/notifications/unread/{auth_user_id}").json()[
+            "notifications"
+        ][0]["id"]
 
         # Other user cannot read/delete it.
         app.dependency_overrides[notif_user_di] = lambda: other_user_id
@@ -137,7 +151,9 @@ class TestIdempotency:
         # Owner deletes; row vanishes from every read path; double delete 404s.
         assert client.delete(f"/api/v1/notifications/{notif_id}").json() == {"status": "deleted"}
         assert client.delete(f"/api/v1/notifications/{notif_id}").status_code == 404
-        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {"count": 0}
+        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
+            "count": 0
+        }
         assert client.get(f"/api/v1/notifications/unread/{auth_user_id}").json() == {
             "notifications": [],
             "total": 0,
@@ -146,9 +162,7 @@ class TestIdempotency:
 
 class TestPreferenceGating:
     def test_disabled_channel_is_skipped_server_side(self, client, auth_user_id):
-        resp = client.put(
-            "/api/v1/notifications/preferences", json={"email_enabled": False}
-        )
+        resp = client.put("/api/v1/notifications/preferences", json={"email_enabled": False})
         assert resp.status_code == 200
         assert resp.json()["email_enabled"] is False
         assert client.get("/api/v1/notifications/preferences").json()["email_enabled"] is False
@@ -156,15 +170,21 @@ class TestPreferenceGating:
         # Email-only send: skipped, nothing persisted.
         result = send(client, auth_user_id, channel="email").json()
         assert result["status"] == "skipped"
-        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {"count": 0}
+        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
+            "count": 0
+        }
 
         # Multi-channel: email skipped, in-app still delivered.
         result = send(client, auth_user_id, channels=["email", "in-app"]).json()
         assert result["status"] == "partial"
-        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {"count": 1}
+        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
+            "count": 1
+        }
 
     def test_unknown_preference_field_rejected(self, client):
-        assert client.put("/api/v1/notifications/preferences", json={"spam": True}).status_code == 422
+        assert (
+            client.put("/api/v1/notifications/preferences", json={"spam": True}).status_code == 422
+        )
         assert client.put("/api/v1/notifications/preferences", json={}).status_code == 422
 
 
@@ -189,11 +209,11 @@ class TestChannelIsolationAndRetry:
             result = send(client, auth_user_id, channels=["in-app", "flaky"]).json()
         assert result["status"] == "partial"
         # Both channels were attempted; the row still exists.
-        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {"count": 1}
+        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
+            "count": 1
+        }
 
-    def test_retry_redelivers_failed_channel_without_duplicates(
-        self, client, auth_user_id, flaky
-    ):
+    def test_retry_redelivers_failed_channel_without_duplicates(self, client, auth_user_id, flaky):
         registry = {"in-app": MagicMock(name="in-app"), "flaky": flaky}
         registry["in-app"].name = "in-app"
         registry["in-app"].deliver = AsyncMock()
@@ -205,7 +225,9 @@ class TestChannelIsolationAndRetry:
             retry = client.post(f"/api/v1/notifications/{notif_id}/retry")
         assert retry.status_code == 200
         assert retry.json()["status"] == "sent"
-        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {"count": 1}
+        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
+            "count": 1
+        }
         assert flaky.deliver.await_count == 2  # initial failure + retry
 
     def test_retry_other_user_404(self, client, auth_user_id, other_user_id, flaky):
@@ -226,8 +248,9 @@ class TestChannelIsolationAndRetry:
         channel = MagicMock()
         channel.name = "email"
         channel.deliver = AsyncMock(side_effect=[DeliveryError("boom"), None])
-        with patch("app.core.settings.settings.DELIVERY_RETRY_ATTEMPTS", 3), patch(
-            "app.core.settings.settings.DELIVERY_RETRY_BASE_DELAY", 0.01
+        with (
+            patch("app.core.settings.settings.DELIVERY_RETRY_ATTEMPTS", 3),
+            patch("app.core.settings.settings.DELIVERY_RETRY_BASE_DELAY", 0.01),
         ):
             import asyncio
 
@@ -244,9 +267,11 @@ class TestTemplateSanitization:
             client,
             auth_user_id,
             title='<script>alert("xss")</script>',
-            message='<img src=x onerror=alert(1)> Hi',
+            message="<img src=x onerror=alert(1)> Hi",
         )
-        stored = client.get(f"/api/v1/notifications/unread/{auth_user_id}").json()["notifications"][0]
+        stored = client.get(f"/api/v1/notifications/unread/{auth_user_id}").json()["notifications"][
+            0
+        ]
         assert "<script>" not in stored["title"]
         assert "<script>" in stored["title"]
         assert "<img" not in stored["message"]
@@ -257,7 +282,7 @@ class TestTemplateSanitization:
         from app.templates import render_template
 
         subject, html_body, text_body = render_template(
-            "new_episode", title='<script>s</script>', message='<b>bold-ish</b>'
+            "new_episode", title="<script>s</script>", message="<b>bold-ish</b>"
         )
         assert "<script>" not in html_body
         assert "<script>" in html_body
@@ -269,14 +294,15 @@ class TestTemplateSanitization:
 
         channel = EmailChannel()
         smtp_mock = MagicMock()
-        with patch("app.channels.smtplib.SMTP", return_value=smtp_mock), patch(
-            "app.core.settings.settings.SMTP_HOST", "smtp.test"
+        with (
+            patch("app.channels.smtplib.SMTP", return_value=smtp_mock),
+            patch("app.core.settings.settings.SMTP_HOST", "smtp.test"),
         ):
             import asyncio
 
             async def run():
                 await channel.deliver(
-                    MagicMock(title='<script>alert(1)</script>', message="hello"),
+                    MagicMock(title="<script>alert(1)</script>", message="hello"),
                     recipient="user@example.com",
                     template="generic",
                 )

@@ -55,7 +55,9 @@ class NotificationRepository:
         stmt = select(Notification).where(Notification.event_id == event_id)
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
-    async def get_by_id(self, notification_id: UUID, user_id: UUID | None = None) -> Notification | None:
+    async def get_by_id(
+        self, notification_id: UUID, user_id: UUID | None = None
+    ) -> Notification | None:
         stmt = select(Notification).where(
             Notification.id == notification_id,
             Notification.deleted_at.is_(None),

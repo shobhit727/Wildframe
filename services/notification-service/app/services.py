@@ -60,10 +60,10 @@ class NotificationService:
         if not enabled:
             return {"status": "skipped"}
 
-        notif = await self.notif_repo.create(
-            user_id, title, message, primary_channel, event_id
+        notif = await self.notif_repo.create(user_id, title, message, primary_channel, event_id)
+        outcomes = await self._dispatch(
+            notif, enabled, email_address=email_address, template=template
         )
-        outcomes = await self._dispatch(notif, enabled, email_address=email_address, template=template)
         self._record_outcomes(notif, outcomes)
         await self.notif_repo.session.commit()
 
@@ -98,7 +98,9 @@ class NotificationService:
                 outcomes[name] = "skipped: preference disabled"
 
         if retryable:
-            new_outcomes = await self._dispatch(notif, retryable, email_address=None, template="generic")
+            new_outcomes = await self._dispatch(
+                notif, retryable, email_address=None, template="generic"
+            )
             outcomes.update(new_outcomes)
 
         notif.delivery_errors = json.dumps(outcomes)  # type: ignore[assignment]

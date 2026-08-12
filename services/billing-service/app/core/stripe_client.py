@@ -23,9 +23,13 @@ from uuid import UUID
 
 import stripe
 from httpx import Timeout as HTTPXTimeout
-from stripe import HTTPXClient, SignatureVerificationError as _StripeSignatureError, StripeError as _StripeError
+from stripe import (
+    HTTPXClient,
+    SignatureVerificationError as _StripeSignatureError,
+    StripeError as _StripeError,
+)
 
-from app.core.money import CurrencyError, to_minor_units, validate_currency
+from app.core.money import to_minor_units, validate_currency
 from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -35,7 +39,9 @@ logger = logging.getLogger(__name__)
 # are retried by the SDK. We set 2 retries and a bounded timeout so a slow
 # Stripe response cannot hang a webhook handler indefinitely.
 stripe.max_network_retries = 2
-stripe.default_http_client = HTTPXClient(timeout=HTTPXTimeout(connect=5.0, read=30.0, write=30.0, pool=5.0))
+stripe.default_http_client = HTTPXClient(
+    timeout=HTTPXTimeout(connect=5.0, read=30.0, write=30.0, pool=5.0)
+)
 
 # Set the Stripe API key once at module load.
 stripe.api_key = settings.STRIPE_API_KEY

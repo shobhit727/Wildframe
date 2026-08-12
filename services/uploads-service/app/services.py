@@ -90,15 +90,11 @@ class UploadService:
         parts = [part for part in normalized.split("/") if part]
         if not parts:
             raise UploadError("filename is empty after normalization")
-        basename = "".join(
-            ch for ch in parts[-1] if ch >= " " and ch != "\x7f"
-        ).strip()
+        basename = "".join(ch for ch in parts[-1] if ch >= " " and ch != "\x7f").strip()
         basename = basename.lstrip(".")
         if not basename:
             raise UploadError("filename is empty after normalization")
         return basename[:_FILENAME_MAX_LENGTH]
-
-
 
     @staticmethod
     def validate_mime(mime: str) -> str:
@@ -107,9 +103,7 @@ class UploadService:
         if not _MIME_RE.match(candidate):
             raise UploadError(f"invalid media type: {mime!r}")
         if candidate not in settings.ALLOWED_UPLOAD_MIME_TYPES:
-            raise UploadError(
-                f"media type {candidate!r} is not allowed for upload"
-            )
+            raise UploadError(f"media type {candidate!r} is not allowed for upload")
         return candidate
 
     @staticmethod
@@ -332,15 +326,11 @@ class UploadService:
 
         # Re-read authoritative metadata at finalization (never trust client
         # state): every chunk object must exist with the expected byte count.
-        chunk_keys = [
-            storage_key_for(str(session_id), index) for index in expected
-        ]
+        chunk_keys = [storage_key_for(str(session_id), index) for index in expected]
         for index, chunk_key in zip(expected, chunk_keys):
             metadata = await self.storage.get_object_metadata(storage_key=chunk_key)
             if metadata is None:
-                raise UploadError(
-                    f"chunk {index} object {chunk_key} missing at completion"
-                )
+                raise UploadError(f"chunk {index} object {chunk_key} missing at completion")
             expected_size = self._expected_chunk_size(session, index)
             if metadata.size_bytes != expected_size:
                 raise UploadError(
@@ -447,8 +437,7 @@ class UploadService:
         the reaper retries later.
         """
         chunk_keys = [
-            storage_key_for(str(session.id), index)
-            for index in range(session.total_chunks)
+            storage_key_for(str(session.id), index) for index in range(session.total_chunks)
         ]
         final_key = storage_key_for(str(session.id), None)
         try:
@@ -458,9 +447,7 @@ class UploadService:
                 final_key=final_key,
             )
         except Exception:  # noqa: BLE001 - reaper retries via storage_cleaned_at
-            logger.exception(
-                "storage cleanup failed for session %s; will retry", session.id
-            )
+            logger.exception("storage cleanup failed for session %s; will retry", session.id)
             return
         session.storage_cleaned_at = datetime.now(UTC)  # type: ignore[assignment]
         await self.repo.save(session)

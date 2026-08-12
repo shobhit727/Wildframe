@@ -24,8 +24,9 @@ one success event; failures are logged and surfaced via the job's stage log and,
 on retry exhaustion, the ``content.pipeline.failed`` DLQ event.
 """
 
-from typing import Any
 from __future__ import annotations
+
+from typing import Any
 
 import asyncio
 import logging
@@ -35,7 +36,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
-from app.core.security import UnsafeInput, sanitize_metadata, validate_manifest_no_origin_urls
+from app.core.security import sanitize_metadata, validate_manifest_no_origin_urls
 
 logger = logging.getLogger(__name__)
 
@@ -210,9 +211,7 @@ class MetadataExtractor(ABC):
 
 
 class StubMetadataExtractor(MetadataExtractor):
-    async def extract(
-        self, path: str, *, timeout: float | None = None
-    ) -> dict[str, Any]:
+    async def extract(self, path: str, *, timeout: float | None = None) -> dict[str, Any]:
         return {
             "duration_seconds": 0,
             "width": 0,
@@ -238,9 +237,7 @@ class ThumbnailGenerator(ABC):
 
 
 class StubThumbnailGenerator(ThumbnailGenerator):
-    async def generate(
-        self, path: str, out_dir: str, *, timeout: float | None = None
-    ) -> list[str]:
+    async def generate(self, path: str, out_dir: str, *, timeout: float | None = None) -> list[str]:
         return [f"{out_dir}/poster.jpg"]
 
 

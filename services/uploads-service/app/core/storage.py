@@ -91,9 +91,7 @@ class StoragePort(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_object_metadata(
-        self, *, storage_key: str
-    ) -> StorageObjectMetadata | None:
+    async def get_object_metadata(self, *, storage_key: str) -> StorageObjectMetadata | None:
         """Return authoritative metadata for an object, or None if missing."""
         raise NotImplementedError
 
@@ -181,9 +179,7 @@ class StubStoragePort(StoragePort):
             expires_in_seconds=self.ttl_seconds,
         )
 
-    async def get_object_metadata(
-        self, *, storage_key: str
-    ) -> StorageObjectMetadata | None:
+    async def get_object_metadata(self, *, storage_key: str) -> StorageObjectMetadata | None:
         data = self.objects.get(storage_key)
         if data is None:
             return None
@@ -346,9 +342,7 @@ class S3StoragePort(StoragePort):
             expires_in_seconds=self.ttl_seconds,
         )
 
-    async def get_object_metadata(
-        self, *, storage_key: str
-    ) -> StorageObjectMetadata | None:
+    async def get_object_metadata(self, *, storage_key: str) -> StorageObjectMetadata | None:
         import asyncio
 
         try:
@@ -357,9 +351,10 @@ class S3StoragePort(StoragePort):
                 lambda: self._client.head_object(Bucket=self.bucket, Key=storage_key),
             )
         except Exception as exc:  # noqa: BLE001 - botocore 404 surface
-            if getattr(exc, "response", {}).get("ResponseMetadata", {}).get(
-                "HTTPStatusCode"
-            ) == 404:
+            if (
+                getattr(exc, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
+                == 404
+            ):
                 return None
             raise
 
@@ -367,9 +362,7 @@ class S3StoragePort(StoragePort):
         if head["ContentLength"] <= self.checksum_verify_max_bytes:
             body = await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: self._client.get_object(Bucket=self.bucket, Key=storage_key)[
-                    "Body"
-                ].read(),
+                lambda: self._client.get_object(Bucket=self.bucket, Key=storage_key)["Body"].read(),
             )
             checksum = hashlib.sha256(body).hexdigest()
         return StorageObjectMetadata(
@@ -415,8 +408,7 @@ class S3StoragePort(StoragePort):
                     UploadId=upload_id,
                     MultipartUpload={
                         "Parts": [
-                            {"PartNumber": p["PartNumber"], "ETag": p["ETag"]}
-                            for p in listed
+                            {"PartNumber": p["PartNumber"], "ETag": p["ETag"]} for p in listed
                         ]
                     },
                 ),
@@ -465,9 +457,7 @@ class S3StoragePort(StoragePort):
                     ),
                 )
             except Exception:  # noqa: BLE001
-                logger.warning(
-                    "multipart abort failed for session %s", session_id, exc_info=True
-                )
+                logger.warning("multipart abort failed for session %s", session_id, exc_info=True)
 
 
 def _sha256(data: bytes) -> str:

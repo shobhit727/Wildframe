@@ -33,7 +33,6 @@ async def _background_workers() -> None:
         await asyncio.sleep(settings.OUTBOX_POLL_INTERVAL_SECONDS)
 
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage FastAPI application lifespan."""

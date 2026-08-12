@@ -1,10 +1,8 @@
 """Tests for Analytics Service business logic."""
 
-import json
-import math
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
@@ -13,7 +11,6 @@ from app.services import (
     MAX_EVENT_TYPE_LENGTH,
     MAX_EVENT_DATA_BYTES,
     MAX_DURATION_SECONDS,
-    ALLOWED_PLAYBACK_QUALITIES,
     AnalyticsService,
 )
 
@@ -243,7 +240,9 @@ class TestRecordViewEventValidation:
 
     @pytest.mark.asyncio
     async def test_rejects_negative_completion(self, service):
-        with pytest.raises(ValueError, match="completion_pct must be a finite number between 0 and 100"):
+        with pytest.raises(
+            ValueError, match="completion_pct must be a finite number between 0 and 100"
+        ):
             await service.record_view_event(
                 content_id=uuid4(),
                 viewer_id=uuid4(),
@@ -254,7 +253,9 @@ class TestRecordViewEventValidation:
 
     @pytest.mark.asyncio
     async def test_rejects_completion_above_100(self, service):
-        with pytest.raises(ValueError, match="completion_pct must be a finite number between 0 and 100"):
+        with pytest.raises(
+            ValueError, match="completion_pct must be a finite number between 0 and 100"
+        ):
             await service.record_view_event(
                 content_id=uuid4(),
                 viewer_id=uuid4(),
@@ -265,7 +266,9 @@ class TestRecordViewEventValidation:
 
     @pytest.mark.asyncio
     async def test_rejects_watch_above_content(self, service):
-        with pytest.raises(ValueError, match="watch_duration_seconds cannot exceed content_duration_seconds"):
+        with pytest.raises(
+            ValueError, match="watch_duration_seconds cannot exceed content_duration_seconds"
+        ):
             await service.record_view_event(
                 content_id=uuid4(),
                 viewer_id=uuid4(),
@@ -431,17 +434,13 @@ class TestCreatorSnapshotValidation:
             ("total_watch_hours", -1.0),
         ]:
             with pytest.raises(ValueError, match="cannot be negative"):
-                await service.save_creator_snapshot(
-                    creator_id=uuid4(), **{label: bad_val}
-                )
+                await service.save_creator_snapshot(creator_id=uuid4(), **{label: bad_val})
 
     @pytest.mark.asyncio
     async def test_rejects_invalid_avg_completion(self, service):
         for bad_val in [-1.0, 101.0, float("nan"), float("inf")]:
             with pytest.raises(ValueError, match="avg_completion_rate must be between 0 and 100"):
-                await service.save_creator_snapshot(
-                    creator_id=uuid4(), avg_completion_rate=bad_val
-                )
+                await service.save_creator_snapshot(creator_id=uuid4(), avg_completion_rate=bad_val)
 
 
 class TestContentPerformanceValidation:

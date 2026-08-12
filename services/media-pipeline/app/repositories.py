@@ -51,7 +51,9 @@ class PipelineJobRepository:
         )
         return list(result.scalars().all())
 
-    async def list_stale(self, before: datetime, status: PipelineJobStatus | None = None) -> list[PipelineJob]:
+    async def list_stale(
+        self, before: datetime, status: PipelineJobStatus | None = None
+    ) -> list[PipelineJob]:
         """Return jobs with leased_at < before (optionally filtered by status)."""
         stmt = select(PipelineJob).where(PipelineJob.leased_at is not None, PipelineJob.leased_at < before)  # type: ignore[arg-type]
         if status is not None:

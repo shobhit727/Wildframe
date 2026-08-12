@@ -2,6 +2,7 @@ from http import HTTPStatus as http_status
 import jwt
 from app.core.settings import settings
 from jose import JWTError  # type: ignore[import-untyped]
+
 """Billing service API routes.
 
 Exposes the Sustenance Engine endpoints:
@@ -54,15 +55,11 @@ async def get_current_user_id(
         raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token")
     sub = str(payload.get("sub") or payload.get("user_id"))
     if not sub:
-        raise HTTPException(
-            status_code=http_status.UNAUTHORIZED, detail="Invalid token subject"
-        )
+        raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token subject")
     try:
         return UUID(sub)
     except ValueError:
-        raise HTTPException(
-            status_code=http_status.UNAUTHORIZED, detail="Invalid token subject"
-        )
+        raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token subject")
 
 
 async def require_self(

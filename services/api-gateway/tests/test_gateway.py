@@ -91,6 +91,7 @@ class FakeAsyncClient:
 
         return StreamResponse(self.response)
 
+
 class TestServiceRegistry:
     def test_get_service_url_known(self):
         from app.middleware import ServiceRegistry
@@ -454,9 +455,7 @@ class TestRateLimiter:
         result = await limiter.check_rate_limit("user-1", "search")
 
         assert result is True
-        redis_mock.incr.assert_awaited_once_with(
-            f"rate_limit:{settings.ENVIRONMENT}:search:user-1"
-        )
+        redis_mock.incr.assert_awaited_once_with(f"rate_limit:{settings.ENVIRONMENT}:search:user-1")
 
     @pytest.mark.asyncio
     async def test_over_limit_rejected(self):

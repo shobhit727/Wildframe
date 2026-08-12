@@ -358,9 +358,7 @@ class FFmpegThumbnailGenerator(ThumbnailGenerator):
         self.work_root = work_root
         self.quarantine_root = quarantine_root
 
-    async def generate(
-        self, path: str, out_dir: str, *, timeout: float | None = None
-    ) -> list[str]:
+    async def generate(self, path: str, out_dir: str, *, timeout: float | None = None) -> list[str]:
         _require_local_input(path, self.work_root, self.quarantine_root)
         os.makedirs(out_dir, mode=0o700, exist_ok=True)
         out_path = os.path.join(out_dir, "poster.jpg")

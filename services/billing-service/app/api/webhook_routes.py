@@ -29,10 +29,7 @@ from app.core.database import get_db
 from app.core.stripe_client import StripeClient, StripeError
 from app.models import (
     InvoiceStatus,
-    RefundStatus,
     RevenueTier,
-    SubscriptionStatus,
-    WebhookEventStatus,
 )
 from app.repositories import (
     CreatorPoolRepository,
@@ -45,7 +42,7 @@ from app.repositories import (
     SubscriptionRepository,
     WebhookEventRepository,
 )
-from app.services import BillingService, TIER_PRICES
+from app.services import BillingService
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +100,6 @@ async def _handle_checkout_session_completed(
             logger.warning("Unknown tier '%s' in checkout.session.completed", tier)
             return
 
-        price = TIER_PRICES.get(tier_enum, Decimal("0.00"))
         sub = await service.sub_repo.get_by_user(user_id)
         if sub:
             await service.subscribe(user_id, tier_enum.value)
@@ -197,7 +193,11 @@ async def _handle_invoice_paid(
     # Dedupe on Stripe invoice ID.
     existing = await service.inv_repo.get_by_stripe_invoice_id(stripe_invoice_id)
     if existing:
-        logger.info("Invoice %s already recorded (stripe_invoice_id=%s), skipping", existing.id, stripe_invoice_id)
+        logger.info(
+            "Invoice %s already recorded (stripe_invoice_id=%s), skipping",
+            existing.id,
+            stripe_invoice_id,
+        )
         return
 
     # Extract user_id from subscription line metadata.
@@ -219,7 +219,12 @@ async def _handle_invoice_paid(
             )
             new_inv.status = InvoiceStatus.PAID
             new_inv.paid_at = datetime.utcnow()
-            logger.info("Invoice payment recorded for user %s (amount=%s, stripe_invoice_id=%s)", user_id, amount, stripe_invoice_id)
+            logger.info(
+                "Invoice payment recorded for user %s (amount=%s, stripe_invoice_id=%s)",
+                user_id,
+                amount,
+                stripe_invoice_id,
+            )
             break
 
 
@@ -238,6 +243,7 @@ async def _handle_payment_intent_succeeded(
     currency = pi.get("currency", "usd").upper()
     # Convert minor units to major using our money helper (precise).
     from app.core.money import from_minor_units
+
     amount = from_minor_units(amount_minor, currency)
 
     # Calculate creator share (>=55%).
@@ -271,9 +277,9 @@ async def _handle_refund(
     amount_minor = obj.get("amount", 0)
     currency = obj.get("currency", "usd").upper()
     reason = obj.get("reason")
-    event_created = event.get("created", 0)
 
     from app.core.money import from_minor_units
+
     amount = from_minor_units(amount_minor, currency)
 
     # Try to resolve user_id / invoice_id from metadata or charge.

@@ -8,7 +8,6 @@ import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from wildframe_observability.wire import wire_observability
 
 from app.api.gateway_routes import router as gateway_router
 from app.core.settings import settings
@@ -58,7 +57,6 @@ async def lifespan(app: FastAPI):
         logger.info("Shutdown complete")
 
 
-
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
     app = FastAPI(
@@ -67,7 +65,6 @@ def create_app() -> FastAPI:
         description="API Gateway Service - Request routing, authentication, rate limiting",
         lifespan=lifespan,
     )
-
 
     # CORS middleware — credentials require explicit origins, never "*"
     # (production rejects wildcard origins with credentials at Settings
@@ -148,6 +145,7 @@ def create_app() -> FastAPI:
 
     # Include gateway routes
     app.include_router(gateway_router)
+
     # Production-safe exception mapping: generic failures become a stable
     # public error while the traceback stays in server logs only. Database,
     # storage, or upstream exception text can disclose secrets/topology.
@@ -164,4 +162,6 @@ def create_app() -> FastAPI:
         )
 
     return app
+
+
 app = create_app()

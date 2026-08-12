@@ -37,9 +37,6 @@ from app.models import (
 )
 
 
-
-
-
 class WebhookEventRepository:
     """Durable inbox for Stripe webhook events (#47).
 
@@ -155,6 +152,8 @@ class WebhookEventRepository:
     async def commit(self) -> None:
         """Commit the inbox transaction so a claim survives handler failure."""
         await self.session.commit()
+
+
 class SubscriptionRepository:
     """CRUD for Subscription aggregate."""
 

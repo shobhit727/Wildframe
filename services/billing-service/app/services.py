@@ -33,10 +33,9 @@ from decimal import Decimal
 from typing import Mapping
 from uuid import UUID
 
-from app.core.money import CurrencyError, validate_currency
+from app.core.money import validate_currency
 from app.models import (
     CreatorPoolEntry,
-    Invoice,
     InvoiceStatus,
     Milestone,
     MilestoneStatus,
@@ -49,7 +48,6 @@ from app.models import (
     Subscription,
     SubscriptionStatus,
     TrancheStatus,
-    WebhookEventStatus,
 )
 from app.repositories import (
     CreatorPoolRepository,
@@ -78,6 +76,7 @@ CREATOR_SHARE_PERCENTAGE = Decimal("0.55")
 
 # Default Creator Pool percentage of net revenue (§2.2).
 CREATOR_POOL_PERCENTAGE = Decimal("0.15")
+
 
 class BillingError(Exception):
     """Base for billing-domain errors."""
@@ -148,6 +147,8 @@ def validate_transition(
         raise InvalidStateTransitionError(
             f"Invalid {context}: {cur_key} -> {tgt_key} not in {list(allowed.keys())}"
         )
+
+
 # ---------------------------------------------------------------------------
 # BillingService
 # ---------------------------------------------------------------------------
@@ -213,7 +214,12 @@ class BillingService:
             if existing.tier == tier:
                 return existing  # Idempotent no-op.
             # FSM transition on tier change.
-            validate_transition(existing.status, SubscriptionStatus.ACTIVE, SUBSCRIPTION_TRANSITIONS, context="subscribe")
+            validate_transition(
+                existing.status,
+                SubscriptionStatus.ACTIVE,
+                SUBSCRIPTION_TRANSITIONS,
+                context="subscribe",
+            )
             existing.tier = tier
             existing.monthly_price = price
             existing.status = SubscriptionStatus.ACTIVE
@@ -234,7 +240,9 @@ class BillingService:
             return None
         if sub.status == SubscriptionStatus.CANCELLED:
             return sub  # Idempotent no-op.
-        validate_transition(sub.status, SubscriptionStatus.CANCELLED, SUBSCRIPTION_TRANSITIONS, context="cancel")
+        validate_transition(
+            sub.status, SubscriptionStatus.CANCELLED, SUBSCRIPTION_TRANSITIONS, context="cancel"
+        )
         sub.tier = RevenueTier.AVOD
         sub.monthly_price = Decimal("0.00")
         sub.cancelled_at = datetime.utcnow()
@@ -303,7 +311,9 @@ class BillingService:
         if sub.last_stripe_event_ts is not None and event_created < sub.last_stripe_event_ts:
             self._logger.warning(
                 "Ignoring stale Stripe event for user %s: event_created=%d < last_applied=%d",
-                user_id, event_created, sub.last_stripe_event_ts
+                user_id,
+                event_created,
+                sub.last_stripe_event_ts,
             )
             return sub
 
@@ -318,7 +328,7 @@ class BillingService:
         if sub.status != target:
             validate_transition(sub.status, target, SUBSCRIPTION_TRANSITIONS, context="stripe_sync")
             sub.status = target
-            sub.is_active = (target == SubscriptionStatus.ACTIVE)
+            sub.is_active = target == SubscriptionStatus.ACTIVE
             if target == SubscriptionStatus.CANCELLED:
                 sub.cancelled_at = datetime.utcnow()
                 sub.tier = RevenueTier.AVOD
@@ -369,7 +379,10 @@ class BillingService:
         if invoice_id is not None and status == RefundStatus.REJECTED:
             self._logger.warning(
                 "Refund %s rejected: would exceed invoice %s amount (refunded=%s, amount=%s)",
-                refund_id, invoice_id, amount, amount  # simplified for log
+                refund_id,
+                invoice_id,
+                amount,
+                amount,  # simplified for log
             )
 
         refund = await self.refund_repo.create(
@@ -459,7 +472,9 @@ class BillingService:
         if not tranche:
             raise BillingError(f"Tranche {tranche_number} not found for milestone {milestone_id}")
 
-        validate_transition(tranche.status, TrancheStatus.RELEASED, TRANCHE_TRANSITIONS, context="release_tranche")
+        validate_transition(
+            tranche.status, TrancheStatus.RELEASED, TRANCHE_TRANSITIONS, context="release_tranche"
+        )
         tranche.status = TrancheStatus.RELEASED
         tranche.released_at = datetime.utcnow()
 

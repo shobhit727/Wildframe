@@ -60,7 +60,9 @@ class EmailChannel:
             raise DeliveryError(f"smtp send failed: {exc}") from exc
 
     def _send_smtp(self, message: EmailMessage) -> None:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=settings.SMTP_TIMEOUT) as server:
+        with smtplib.SMTP(
+            settings.SMTP_HOST, settings.SMTP_PORT, timeout=settings.SMTP_TIMEOUT
+        ) as server:
             if settings.SMTP_STARTTLS:
                 server.starttls()
             if settings.SMTP_USERNAME:

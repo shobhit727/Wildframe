@@ -37,6 +37,7 @@ class FakeJobRepo:
     async def create(self, job: PipelineJob) -> PipelineJob:
         if job.id is None:
             from uuid import uuid4
+
             job.id = uuid4()
         self.jobs[job.id] = job
         return job

@@ -19,6 +19,7 @@ Monetary invariants (see #189/#191/#477/#478):
   - Provider event/payment identifiers carry unique constraints so replays
     cannot duplicate financial or entitlement rows.
 """
+
 from datetime import datetime
 from typing import Any
 from decimal import Decimal
@@ -45,11 +46,8 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
-
-
 class Base(DeclarativeBase):
     """SQLAlchemy 2.0 declarative base (mypy-friendly vs declarative_base())."""
-
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +141,7 @@ class SubscriptionStatus(str, Enum):
     ACTIVE = "active"
     CANCELLED = "cancelled"
 
+
 # ---------------------------------------------------------------------------
 # Revenue Tiers (§3 of PRODUCT_VISION.md)
 # ---------------------------------------------------------------------------
@@ -159,8 +158,6 @@ class RevenueTier(str, Enum):
     AVOD = "avod"
     SVOD = "svod"
     TVOD = "tvod"
-
-
 
 
 class Subscription(Base):

@@ -152,14 +152,10 @@ def enforce_technical_limits(metadata: dict[str, Any]) -> None:
     for dim in ("width", "height"):
         size = metadata.get(dim)
         if isinstance(size, (int, float)) and 0 < size > MAX_DIMENSION_PIXELS:
-            raise UnsafeInput(
-                f"media dimension {dim}={size} exceeds limit {MAX_DIMENSION_PIXELS}"
-            )
+            raise UnsafeInput(f"media dimension {dim}={size} exceeds limit {MAX_DIMENSION_PIXELS}")
     bitrate = metadata.get("bitrate_kbps")
     if isinstance(bitrate, (int, float)) and 0 < bitrate > MAX_BITRATE_KBPS:
-        raise UnsafeInput(
-            f"media bitrate {bitrate} kbps exceeds limit {MAX_BITRATE_KBPS} kbps"
-        )
+        raise UnsafeInput(f"media bitrate {bitrate} kbps exceeds limit {MAX_BITRATE_KBPS} kbps")
 
 
 # ---------------------------------------------------------------------------
@@ -168,9 +164,7 @@ def enforce_technical_limits(metadata: dict[str, Any]) -> None:
 
 MAX_MANIFEST_BYTES = 4 << 20  # 4 MiB: HLS/DASH manifests are small text files.
 
-_ORIGIN_REFERENCE_RE = re.compile(
-    r"https?://|//[a-zA-Z0-9.\-]+[/:]", re.IGNORECASE
-)
+_ORIGIN_REFERENCE_RE = re.compile(r"https?://|//[a-zA-Z0-9.\-]+[/:]", re.IGNORECASE)
 
 
 def validate_manifest_no_origin_urls(manifest_path: str) -> None:

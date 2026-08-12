@@ -413,14 +413,14 @@ class TestSecretMasking:
         )
         admin_service.audit_repo.create = AsyncMock()
 
-        await admin_service.set_config(
+        result = await admin_service.set_config(
             "default_quality", "1080p", "string", None, "admin1", "10.0.0.1"
         )
 
         admin_service.audit_repo.create.assert_awaited_once()
         call_args = admin_service.audit_repo.create.call_args[0]
         assert call_args[4] == "value=1080p"
-        assert result["value"] == "4"
+        assert result["value"] == "1080p"
 
     @pytest.mark.asyncio
     async def test_list_configs_masks_secrets_only(self, admin_service):
@@ -455,55 +455,6 @@ class TestSecretMasking:
         assert result[0]["value"] == "********"  # api_token masked
         assert result[1]["value"] == "100MB"  # normal value shown
 
-    @pytest.mark.asyncio
-    async def test_set_config_audit_logs_masked_value(self, admin_service):
-        admin_service.config_repo.get_by_key = AsyncMock(return_value=None)
-        admin_service.config_repo.create = AsyncMock(
-            return_value=MagicMock(
-                id=1,
-                key="webhook_secret",
-                value="whsec_real",
-                config_type="string",
-                description=None,
-                updated_by="admin1",
-                created_at="2026-05-20",
-                updated_at="2026-05-20",
-            )
-        )
-        admin_service.audit_repo.create = AsyncMock()
-
-        await admin_service.set_config(
-            "webhook_secret", "whsec_real", "string", None, "admin1", "10.0.0.1"
-        )
-        # audit_repo.create called with masked value in reason (5th positional)
-        admin_service.audit_repo.create.assert_awaited_once()
-        call_args = admin_service.audit_repo.create.call_args[0]
-        assert call_args[4] == "value=********"
-
-    @pytest.mark.asyncio
-    async def test_set_config_audit_logs_plain_value_when_not_secret(self, admin_service):
-        admin_service.config_repo.get_by_key = AsyncMock(return_value=None)
-        admin_service.config_repo.create = AsyncMock(
-            return_value=MagicMock(
-                id=1,
-                key="default_quality",
-                value="1080p",
-                config_type="string",
-                description=None,
-                updated_by="admin1",
-                created_at="2026-05-20",
-                updated_at="2026-05-20",
-            )
-        )
-        admin_service.audit_repo.create = AsyncMock()
-
-        await admin_service.set_config(
-            "default_quality", "1080p", "string", None, "admin1", "10.0.0.1"
-        )
-
-        admin_service.audit_repo.create.assert_awaited_once()
-        call_args = admin_service.audit_repo.create.call_args[0]
-        assert call_args[4] == "value=1080p"
 
 class TestAppendOnlyAudit:
     """Audit log records are append-only; update/delete raise."""
@@ -573,9 +524,7 @@ class TestConcurrencyLocks:
         )
         admin_service.audit_repo.create = AsyncMock(return_value=None)
 
-        await admin_service.moderate_user(
-            "user123", "suspended", "spam", "admin1", "192.168.1.1"
-        )
+        await admin_service.moderate_user("user123", "suspended", "spam", "admin1", "192.168.1.1")
 
         # get_by_user_id called without for_update
         get_calls = admin_service.user_repo.get_by_user_id.call_args_list

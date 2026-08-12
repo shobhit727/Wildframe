@@ -556,18 +556,24 @@ class MediaPipelineService:
                     ctx["_total_retry_time_seconds"] = total_retry_time
                 except PipelineNonRetryable as exc:
                     # Immediate, non-retryable failure (e.g. virus). Fail the job.
-                    await self._record_stage(job, stage.name, PipelineStageStatus.FAILED, 0, str(exc))
+                    await self._record_stage(
+                        job, stage.name, PipelineStageStatus.FAILED, 0, str(exc)
+                    )
                     await self._fail_job(job, stage.name, str(exc))
                     self._cleanup_job_dirs(job)
                     return job
                 except CircuitBreakerOpen as exc:
                     # Circuit breaker open — fail the job immediately.
-                    await self._record_stage(job, stage.name, PipelineStageStatus.FAILED, 0, str(exc))
+                    await self._record_stage(
+                        job, stage.name, PipelineStageStatus.FAILED, 0, str(exc)
+                    )
                     await self._fail_job(job, stage.name, str(exc))
                     self._cleanup_job_dirs(job)
                     return job
                 except TotalRetryTimeExceeded as exc:
-                    await self._record_stage(job, stage.name, PipelineStageStatus.FAILED, 0, str(exc))
+                    await self._record_stage(
+                        job, stage.name, PipelineStageStatus.FAILED, 0, str(exc)
+                    )
                     await self._fail_job(job, stage.name, str(exc))
                     self._cleanup_job_dirs(job)
                     return job
@@ -706,7 +712,7 @@ class MediaPipelineService:
                     job.id,
                     exc,
                 )
-                stage_retry_time += (time.monotonic() - start)
+                stage_retry_time += time.monotonic() - start
 
                 # Check total retry time cap.
                 if total_retry_time_so_far + stage_retry_time >= max_total_retry:

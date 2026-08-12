@@ -14,6 +14,7 @@ from app.models import (
     UploadSessionStatus,
 )
 
+
 class UploadChunkRepository:
     """Persistence for upload chunks and sessions.
 
@@ -112,9 +113,7 @@ class UploadChunkRepository:
         )
         return list(result.scalars().all())
 
-    async def uncleaned_aborted(
-        self, now: datetime, grace: timedelta
-    ) -> list[UploadSession]:
+    async def uncleaned_aborted(self, now: datetime, grace: timedelta) -> list[UploadSession]:
         """Aborted sessions whose storage cleanup never completed (retry)."""
         result = await self.session.execute(
             select(UploadSession).where(

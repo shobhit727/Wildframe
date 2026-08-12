@@ -172,9 +172,7 @@ def _validate_request_syntax(request: Request) -> None:
     if not error:
         return
     if error.startswith(("Header field", "Request headers", "Too many")):
-        raise HTTPException(
-            status_code=431, detail="Request header fields too large"
-        )
+        raise HTTPException(status_code=431, detail="Request header fields too large")
     raise HTTPException(status_code=400, detail=error)
 
 
@@ -202,9 +200,7 @@ def _check_decompressed_size(body: bytes, encoding: str) -> None:
                 )
         decompressor.flush()
     except zlib.error as exc:
-        raise HTTPException(
-            status_code=400, detail="Invalid compressed request body"
-        ) from exc
+        raise HTTPException(status_code=400, detail="Invalid compressed request body") from exc
 
 
 async def _read_request_body(request: Request) -> bytes:
@@ -266,13 +262,8 @@ async def _send_upstream(
         max_attempts = settings.UPSTREAM_MAX_RETRIES + 1
     for attempt in range(max_attempts):
         try:
-            async with client.stream(
-                method, url, headers=headers, content=content
-            ) as response:
-                if (
-                    response.status_code in (502, 504)
-                    and attempt + 1 < max_attempts
-                ):
+            async with client.stream(method, url, headers=headers, content=content) as response:
+                if response.status_code in (502, 504) and attempt + 1 < max_attempts:
                     await asyncio.sleep(_retry_delay(attempt))
                     continue
                 body = await _read_response_body(response)
@@ -395,9 +386,7 @@ async def proxy_request(
     # Build the upstream header set: strip client-controlled forwarding,
     # credential and identity headers, then inject trusted values.
     headers = {
-        k: v
-        for k, v in request.headers.items()
-        if k.lower() not in _STRIPPED_UPSTREAM_HEADERS
+        k: v for k, v in request.headers.items() if k.lower() not in _STRIPPED_UPSTREAM_HEADERS
     }
     headers["x-forwarded-for"] = _peer_ip(request)
     headers["x-request-id"] = request.headers.get("x-request-id") or uuid.uuid4().hex
@@ -452,9 +441,7 @@ async def proxy_request(
 
     # Strip hop-by-hop headers that must not be relayed back to the client.
     payload_headers = {
-        k: v
-        for k, v in upstream_headers.items()
-        if k.lower() not in _RESPONSE_STRIPPED_HEADERS
+        k: v for k, v in upstream_headers.items() if k.lower() not in _RESPONSE_STRIPPED_HEADERS
     }
 
     return Response(
