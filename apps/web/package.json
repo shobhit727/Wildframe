@@ -35,7 +35,7 @@
     "react": "^19.0.0-rc",
     "react-dom": "^19.0.0-rc",
     "sonner": "^1.2.0",
-    "zustand": "^4.4.0"
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@next/eslint-plugin-next": "^15.0.0",
