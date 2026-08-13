@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import allow
 from app.core.settings import settings
 from app.repositories import (
     LoginAuditRepository,
@@ -41,6 +42,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Dependency injection
 rate_limiter = RateLimiter()
+
+# Enumeration-safe message used by the verification-resent flow (#54):
+# identical for unknown, verified and unverified addresses.
+_ENUMERATION_SAFE_MESSAGE = (
+    "If an account exists with this email and has not yet been verified, "
+    "a new verification email has been sent."
+)
 
 
 async def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
@@ -483,26 +491,44 @@ async def verify_email(
 @router.post("/resend-verification", status_code=status.HTTP_202_ACCEPTED)
 async def resend_verification(
     request: ResendVerificationRequest,
+    request_obj: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     """Send a new email verification token for an existing, unverified account.
 
+    Enumeration-resistant (#54): the response is identical whether the
+    email is unknown, verified, or unverified. Abuse controls: per-IP and
+    per-email quotas plus a cooldown between sends (Redis-backed, fail-open).
     In dev the token is returned so the flow is exercisable without an email
-    provider; in production it is logged for the mail transport and never
-    returned to the caller.
+    provider; in production it is never returned to the caller.
     """
     email = request.email.strip().lower()
+    client_ip = request_obj.client.host if request_obj.client else "unknown"
+
+    # Anti-abuse: per-IP quota + per-email quota with a send cooldown.
+    # Explicit 429s here do not leak account existence (applies to all emails).
+    if not await allow(
+        f"resend:ip:{client_ip}", max_requests=10, window_seconds=3600
+    ) or not await allow(
+        f"resend:email:{email}", max_requests=10, window_seconds=3600, cooldown_seconds=120
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests. Try again later.",
+        )
+
     user_repo = UserRepository(db)
     user = await user_repo.get_by_email(email)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    if user.email_verified:
-        return {"message": "Email already verified"}
+    if not user or user.email_verified:
+        # Indistinguishable from the real send, for unknown and verified
+        # addresses alike — no 404, no "already verified" signal.
+        logger.info("Resend-verification requested for %s (no email issued)", email)
+        return {"message": _ENUMERATION_SAFE_MESSAGE}
 
     token = TokenManager.create_email_verification_token(user.id, user.email)
-    logger.info(f"Email verification token issued for {user.email}")
+    logger.info("Email verification token issued for %s", user.email)
 
-    response: dict = {"message": "Verification email sent"}
+    response: dict = {"message": _ENUMERATION_SAFE_MESSAGE}
     if settings.ENVIRONMENT != "production":
         response["verification_token"] = token
     return response

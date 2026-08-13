@@ -9,11 +9,13 @@ Covers the endpoint-level branches the happy-path suites skip:
 """
 
 import pytest
+from app.api.routes import auth as auth_routes
 from app.core.database import DatabaseManager
 from app.main import create_app
 from app.models import Base
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from unittest.mock import AsyncMock, patch
 
 
 @pytest.fixture
@@ -110,12 +112,25 @@ class TestRefreshEdgeCases:
 
 
 class TestEmailVerificationEdgeCases:
-    def test_resend_for_unknown_email_returns_404(self, client):
+    GENERIC = (
+        "If an account exists with this email and has not yet been verified, "
+        "a new verification email has been sent."
+    )
+
+    @pytest.fixture(autouse=True)
+    def _no_rate_limit(self):
+        """Normal flows run with throttling disabled (unit-style contract tests)."""
+        with patch("app.api.routes.auth.allow", new=AsyncMock(return_value=True)):
+            yield
+
+    def test_resend_for_unknown_email_is_indistinguishable(self, client):
         response = client.post(
             "/api/v1/auth/resend-verification", json={"email": "nobody@example.com"}
         )
 
-        assert response.status_code == 404
+        assert response.status_code == 202
+        assert response.json()["message"] == self.GENERIC
+        assert "verification_token" not in response.json()
 
     def test_resend_when_already_verified(self, client, registered):
         resend = client.post(
@@ -135,9 +150,40 @@ class TestEmailVerificationEdgeCases:
             "/api/v1/auth/resend-verification", json={"email": "gapfill@example.com"}
         )
         assert again.status_code == 202
-        assert again.json()["message"] == "Email already verified"
+        assert again.json()["message"] == self.GENERIC
+        assert "verification_token" not in again.json()
 
-    def test_verify_email_for_unknown_user_returns_404(self, client):
+    def test_verified_and_unverified_are_indistinguishable(self, client, registered):
+        first = client.post(
+            "/api/v1/auth/resend-verification", json={"email": "gapfill@example.com"}
+        )
+        assert first.status_code == 202
+        assert first.json()["message"] == self.GENERIC
+        assert "verification_token" in first.json()
+
+        token = first.json()["verification_token"]
+        verify = client.post(
+            "/api/v1/auth/verify-email",
+            json={"email": "gapfill@example.com", "token": token},
+        )
+        assert verify.status_code == 200
+
+        second = client.post(
+            "/api/v1/auth/resend-verification", json={"email": "gapfill@example.com"}
+        )
+        assert second.status_code == 202
+        assert second.json()["message"] == self.GENERIC
+        assert second.json() == first.json() or "verification_token" not in second.json()
+
+    def test_resend_throttled_returns_429(self, client):
+        with patch("app.api.routes.auth.allow", new=AsyncMock(return_value=False)):
+            response = client.post(
+                "/api/v1/auth/resend-verification", json={"email": "flood@example.com"}
+            )
+
+        assert response.status_code == 429
+
+    def test_verify_email_for_unknown_user_returns_400(self, client):
         response = client.post(
             "/api/v1/auth/verify-email",
             json={"email": "nobody@example.com", "token": "some.jwt.here"},

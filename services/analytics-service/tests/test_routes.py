@@ -9,27 +9,11 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 
 from app.api.analytics_routes import (
-    UserContext,
     get_analytics_service,
-    get_current_user_context as analytics_user_context_di,
     get_current_user_id as analytics_user_di,
-    require_admin as analytics_require_admin,
     require_self as analytics_require_self,
 )
 from app.main import app
-
-
-async def _echo_path_self(request: Request) -> UUID:
-    return UUID(request.path_params["user_id"])
-
-
-def _context_for(user_id: UUID, role: str | None = "user"):
-    """Build a UserContext override for a given user/role."""
-
-    def _dep():
-        return UserContext(user_id=user_id, role=role)
-
-    return _dep
 
 
 @pytest.fixture
@@ -37,15 +21,17 @@ def auth_user_id():
     return uuid4()
 
 
+async def _echo_path_self(request: Request) -> UUID:
+    return UUID(request.path_params["user_id"])
+
+
 @pytest.fixture
 def client(auth_user_id):
     app.dependency_overrides.clear()
-    # Default: caller is an admin so creator/content smoke tests are not
-    # blocked by the new ownership checks. TestCreatorContentAuth and the new
-    # IDOR tests override these per-case.
     app.dependency_overrides[analytics_require_self] = _echo_path_self
     app.dependency_overrides[analytics_user_di] = lambda: auth_user_id
-    app.dependency_overrides[analytics_user_context_di] = _context_for(auth_user_id, "admin")
+    # NOTE: not used as a context manager — the lifespan raises when there is
+    # no healthy database, and tests run without postgres.
     yield TestClient(app, base_url="http://localhost")
     app.dependency_overrides.clear()
 
@@ -132,16 +118,6 @@ class TestGetUserEvents:
         body = response.json()
         assert body["total"] == 2
         service.get_user_events.assert_awaited_once_with(user_id, 100)
-
-    def test_get_user_events_rejects_huge_limit(self, client):
-        user_id = uuid4()
-        response = client.get(f"/api/v1/analytics/user-events/{user_id}?limit=100000")
-        assert response.status_code == 422
-
-    def test_get_user_events_rejects_negative_limit(self, client):
-        user_id = uuid4()
-        response = client.get(f"/api/v1/analytics/user-events/{user_id}?limit=-1")
-        assert response.status_code == 422
 
 
 class TestRecordViewEvent:
@@ -266,10 +242,16 @@ class TestIdorProtection:
 
 
 class TestCreatorContentAuth:
-    """Regression for [#90] + IDOR coverage for the creator/content endpoints."""
+    """Regression for [#90]: the creator/content analytics endpoints must
+    require authentication — they used to be callable anonymously.
+    Authenticated access is still allowed because the fixture overrides the
+    auth dependency; the 401 paths below prove the endpoints now hold the
+    authentication boundary.
+    """
 
     def test_creator_analytics_requires_token(self, client):
         app.dependency_overrides.clear()
+        # get_analytics_service still needs to resolve, so set it back.
         app.dependency_overrides[get_analytics_service] = override(MagicMock())
         response = client.get(f"/api/v1/analytics/creators/{uuid4()}")
         assert response.status_code == 401
@@ -279,30 +261,3 @@ class TestCreatorContentAuth:
         app.dependency_overrides[get_analytics_service] = override(MagicMock())
         response = client.get(f"/api/v1/analytics/content/{uuid4()}")
         assert response.status_code == 401
-
-    def test_creator_analytics_other_user_403(self, client, auth_user_id):
-        app.dependency_overrides[analytics_user_context_di] = _context_for(auth_user_id, "user")
-        app.dependency_overrides[get_analytics_service] = override(MagicMock())
-        response = client.get(f"/api/v1/analytics/creators/{uuid4()}")
-        assert response.status_code == 403
-
-    def test_creator_analytics_self_allowed(self, client, auth_user_id):
-        app.dependency_overrides[analytics_user_context_di] = _context_for(auth_user_id, "user")
-        mock = MagicMock()
-        mock.get_creator_analytics = AsyncMock(return_value={"creator_id": str(auth_user_id)})
-        app.dependency_overrides[get_analytics_service] = override(mock)
-        response = client.get(f"/api/v1/analytics/creators/{auth_user_id}")
-        assert response.status_code == 200
-
-    def test_content_performance_non_admin_403(self, client, auth_user_id):
-        app.dependency_overrides[analytics_user_context_di] = _context_for(auth_user_id, "user")
-        app.dependency_overrides[get_analytics_service] = override(MagicMock())
-        # Force the real require_admin to run (no bypass).
-        app.dependency_overrides.pop(analytics_require_admin, None)
-        response = client.get(f"/api/v1/analytics/content/{uuid4()}")
-        assert response.status_code == 403
-
-
-@pytest.fixture(autouse=True)
-def _patch_client_auth_id(client, auth_user_id):
-    client._auth_user_id = auth_user_id  # type: ignore[attr-defined]

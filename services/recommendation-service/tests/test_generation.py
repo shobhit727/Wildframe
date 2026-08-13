@@ -3,9 +3,10 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 
-from app.services import RecommendationService
+from app.services import ContentCatalogClient, RecommendationService
 
 GENRE_ID = str(uuid4())
 
@@ -80,6 +81,93 @@ async def test_generate_uses_global_fallback_without_prefs(service):
 
     assert count == 2
     service.rec_repo.create.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_fetch_global_uses_popularity_endpoint():
+    """The fallback must ask content-service for popularity-ranked items,
+    not treat the first catalog page as 'global'."""
+    resp = MagicMock()
+    resp.json.return_value = []
+    client = MagicMock()
+    client.aclose = AsyncMock()
+    client.get = AsyncMock(return_value=resp)
+    catalog = ContentCatalogClient.__new__(ContentCatalogClient)
+    catalog.client = client
+    catalog.base_url = "http://content-service:8000"
+
+    await catalog.fetch_global(page_size=100)
+
+    client.get.assert_awaited_once_with(
+        "/api/v1/content/trending", params={"limit": 100}
+    )
+
+
+@pytest.mark.asyncio
+async def test_fallback_selects_most_popular_outside_first_page(service):
+    """The most popular item must be selectable even when catalog creation
+    order would place it outside the first page."""
+    popular_and_late = str(uuid4())
+    early_mediocre = str(uuid4())
+    items = [
+        {"id": early_mediocre, "title": "Old filler", "audience_score": 50, "genres": []},
+        {"id": popular_and_late, "title": "New hit", "audience_score": 99, "genres": []},
+    ]
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=[]),
+        fetch_global=AsyncMock(return_value=items),
+    )
+    with patch("app.services.ContentCatalogClient", return_value=client):
+        count = await service.generate(uuid4(), [], [], limit=10)
+
+    created_ids = [
+        (args[1] if isinstance(args[1], UUID) else UUID(kwargs.get("content_id")))
+        for args, kwargs in service.rec_repo.create.await_args_list
+    ]
+    assert count == 2
+    assert UUID(popular_and_late) in created_ids
+    assert created_ids[0] == UUID(popular_and_late)
+
+
+@pytest.mark.asyncio
+async def test_fallback_ranking_is_deterministic_on_ties(service):
+    """Equal scores must resolve deterministically by content id, not
+    insertion order."""
+    a_id, b_id = str(uuid4()), str(uuid4())
+    if a_id > b_id:
+        a_id, b_id = b_id, a_id
+
+    def items():
+        return [
+            {"id": a_id, "audience_score": 80, "genres": []},
+            {"id": b_id, "audience_score": 80, "genres": []},
+        ]
+
+    def generated_ids():
+        return [
+            str(args[1] if isinstance(args[1], UUID) else UUID(kwargs.get("content_id")))
+            for args, kwargs in service.rec_repo.create.await_args_list
+        ]
+
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=[]),
+        fetch_global=AsyncMock(return_value=items()),
+    )
+    with patch("app.services.ContentCatalogClient", return_value=client):
+        await service.generate(uuid4(), [], [], limit=10)
+        first = generated_ids()
+
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=[]),
+        fetch_global=AsyncMock(return_value=list(reversed(items()))),
+    )
+    with patch("app.services.ContentCatalogClient", return_value=client):
+        service.rec_repo.create.reset_mock()
+        await service.generate(uuid4(), [], [], limit=10)
+        second = generated_ids()
+
+    assert first == [a_id, b_id]
+    assert second == first
 
 
 @pytest.mark.asyncio
@@ -168,16 +256,10 @@ async def test_generate_excludes_disliked_genre_expressed_by_slug(service):
     kept_id = str(uuid4())
     other_id = str(uuid4())
     global_items = [
-        {
-            "id": kept_id,
-            "audience_score": 70,
-            "genres": [{"id": other_id, "name": "Other", "slug": "other"}],
-        },
-        {
-            "id": str(uuid4()),
-            "audience_score": 95,
-            "genres": [{"id": action_id, "name": "Action", "slug": "action"}],
-        },
+        {"id": kept_id, "audience_score": 70,
+         "genres": [{"id": other_id, "name": "Other", "slug": "other"}]},
+        {"id": str(uuid4()), "audience_score": 95,
+         "genres": [{"id": action_id, "name": "Action", "slug": "action"}]},
     ]
     client = make_client(
         fetch_genres=AsyncMock(return_value=genres),

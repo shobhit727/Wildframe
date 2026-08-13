@@ -13,11 +13,29 @@ logger = logging.getLogger(__name__)
 
 
 class ContentCatalogClient:
-    """Fetches genres and published content from content-service."""
+    """Fetches genres and published content from content-service.
 
-    def __init__(self, base_url: str = settings.CONTENT_SERVICE_URL, timeout: float = 10.0):
+    Uses an httpx.AsyncClient with connection pooling and bounded
+    connection limits. One client is shared process-wide (see
+    get_catalog_client) rather than created per request.
+    """
+
+    def __init__(
+        self,
+        base_url: str = settings.CONTENT_SERVICE_URL,
+        timeout: float | None = None,
+        limits: httpx.Limits | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
-        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=timeout)
+        self.timeout = timeout if timeout is not None else settings.CONTENT_CATALOG_TIMEOUT_SECONDS
+        self.client = httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=self.timeout,
+            limits=limits or httpx.Limits(
+                max_connections=settings.CONTENT_CATALOG_MAX_CONNECTIONS,
+                max_keepalive_connections=settings.CONTENT_CATALOG_MAX_KEEPALIVE,
+            ),
+        )
 
     async def fetch_genres(self) -> list[dict]:
         resp = await self.client.get("/api/v1/genres")
@@ -33,12 +51,43 @@ class ContentCatalogClient:
         return list(resp.json())
 
     async def fetch_global(self, page_size: int = 100) -> list[dict]:
-        resp = await self.client.get("/api/v1/content", params={"page": 1, "page_size": page_size})
+        resp = await self.client.get(
+            "/api/v1/content/trending", params={"limit": page_size}
+        )
         resp.raise_for_status()
         return list(resp.json())
 
     async def aclose(self) -> None:
         await self.client.aclose()
+
+
+_catalog_client: ContentCatalogClient | None = None
+_catalog_client_class: type | None = None
+
+
+def get_catalog_client() -> ContentCatalogClient:
+    """Return the process-wide shared catalog client, creating it lazily.
+
+    The client is reused across all recommendation generations so HTTP
+    connection pooling and TLS sessions are amortized. The class identity
+    check exists so tests that patch ``ContentCatalogClient`` still get a
+    client built from the patched class (production never patches, so a
+    single shared client is used there).
+    """
+    global _catalog_client, _catalog_client_class
+    if _catalog_client is None or ContentCatalogClient is not _catalog_client_class:
+        _catalog_client = ContentCatalogClient()
+        _catalog_client_class = ContentCatalogClient
+    return _catalog_client
+
+
+async def close_catalog_client() -> None:
+    """Close the shared catalog client and release pooled connections."""
+    global _catalog_client, _catalog_client_class
+    if _catalog_client is not None:
+        await _catalog_client.aclose()
+        _catalog_client = None
+        _catalog_client_class = None
 
 
 class RecommendationService:
@@ -81,12 +130,11 @@ class RecommendationService:
         excluded. Without expressed preferences, the most popular catalog
         content is used so the user always sees a personalized-feel rail.
         """
-        catalog = ContentCatalogClient()
+        catalog = get_catalog_client()
         try:
             genres = await catalog.fetch_genres()
             by_slug = {str(g.get("slug", "")).lower(): g for g in genres}
             by_name = {str(g.get("name", "")).lower(): g for g in genres}
-
             # Resolve a user-supplied genre reference by either slug or name
             # so a preference like "Science Fiction" matches the genre whose
             # slug is "science-fiction" and vice versa. This resolution was
@@ -99,10 +147,14 @@ class RecommendationService:
 
             liked = [g for g in (resolve(x) for x in liked_genres) if g]
 
-            disliked_genres_resolved = [g for g in (resolve(x) for x in disliked_genres) if g]
+            disliked_genres_resolved = [
+                g for g in (resolve(x) for x in disliked_genres) if g
+            ]
             disliked_ids = {str(g.get("id")) for g in disliked_genres_resolved if g.get("id")}
             disliked_slugs = {
-                str(g.get("slug", "")).lower() for g in disliked_genres_resolved if g.get("slug")
+                str(g.get("slug", "")).lower()
+                for g in disliked_genres_resolved
+                if g.get("slug")
             }
 
             scored: dict[str, tuple[float, str]] = {}
@@ -122,7 +174,9 @@ class RecommendationService:
                         if g.get("slug")
                     }
                     item_genre_ids = {
-                        str(g.get("id")) for g in (item.get("genres") or []) if g.get("id")
+                        str(g.get("id"))
+                        for g in (item.get("genres") or [])
+                        if g.get("id")
                     }
                     if genre_slugs & disliked_slugs or item_genre_ids & disliked_ids:
                         continue
@@ -151,7 +205,9 @@ class RecommendationService:
                         if g.get("slug")
                     }
                     item_genre_ids = {
-                        str(g.get("id")) for g in (item.get("genres") or []) if g.get("id")
+                        str(g.get("id"))
+                        for g in (item.get("genres") or [])
+                        if g.get("id")
                     }
                     if genre_slugs & disliked_slugs or item_genre_ids & disliked_ids:
                         continue
@@ -161,7 +217,10 @@ class RecommendationService:
                     score = float(item.get("audience_score") or item.get("imdb_rating") or 50.0)
                     scored[cid] = (score, "Popular on Wildframe")
 
-            ranked = sorted(scored.items(), key=lambda kv: kv[1][0], reverse=True)[:limit]
+            ranked = sorted(
+                scored.items(),
+                key=lambda kv: (-kv[1][0], str(kv[0])),
+            )[:limit]
             await self.rec_repo.clear_for_user(user_id)
             for cid, (score, reason) in ranked:
                 await self.rec_repo.create(
@@ -169,8 +228,9 @@ class RecommendationService:
                 )
             await self.pref_repo.session.commit()
             return len(ranked)
-        finally:
-            await catalog.aclose()
+        except Exception:
+            logger.exception("Recommendation generation failed")
+            raise
 
     async def update_preferences(
         self,

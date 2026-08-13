@@ -32,6 +32,12 @@ def fake_service():
     service.pool_repo = AsyncMock()
     service.milestone_repo = AsyncMock()
     service.payout_repo = AsyncMock()
+    service.webhook_events_repo = AsyncMock()
+    service.webhook_events_repo.claim.return_value = True
+    service.subscribe = AsyncMock()
+    service.purchase_title = AsyncMock()
+    service.sync_subscription_from_stripe = AsyncMock()
+    service.process_refund = AsyncMock()
     return service
 
 
@@ -375,6 +381,7 @@ class TestWebhookRoutes:
         fake_service.sub_repo.get_by_user.assert_awaited_once()
 
     def test_webhook_idempotent_on_replay(self, client, fake_service):
+        fake_service.webhook_events_repo.claim.side_effect = [True, False]
         event = {
             "id": "evt_checkout_2",
             "type": "checkout.session.completed",
@@ -401,7 +408,7 @@ class TestWebhookRoutes:
     def test_webhook_unhandled_event_type(self, client, fake_service):
         event = {
             "id": "evt_unknown_1",
-            "type": "charge.refunded",
+            "type": "customer.created",
             "data": {"object": {}},
         }
         with patch("app.api.webhook_routes.StripeClient.handle_webhook", return_value=event):
@@ -412,6 +419,30 @@ class TestWebhookRoutes:
         assert response.status_code == 200
         body = response.json()
         assert body["handled"] is False
+
+    def test_webhook_handler_failure_marks_failed(self, client, fake_service):
+        fake_service.subscribe.side_effect = RuntimeError("boom")
+        event = {
+            "id": "evt_fail_1",
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": "cs_fail_1",
+                    "client_reference_id": str(uuid4()),
+                    "metadata": {"tier": "svod", "user_id": str(uuid4())},
+                }
+            },
+        }
+        with patch("app.api.webhook_routes.StripeClient.handle_webhook", return_value=event):
+            response = client.post(
+                "/api/v1/billing/webhooks/stripe", json=event, headers={"Stripe-Signature": "x"}
+            )
+
+        assert response.status_code == 500
+        # The aborted transaction must be rolled back before the FAILED mark,
+        # so the row becomes reclaimable by Stripe's retry.
+        fake_service.webhook_events_repo.session.rollback.assert_awaited_once()
+        fake_service.webhook_events_repo.fail.assert_awaited_once_with("evt_fail_1", "boom")
 
 
 class TestIdorProtection:

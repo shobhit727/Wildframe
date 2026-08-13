@@ -18,6 +18,7 @@ import pytest
 from app.core.events import InMemoryEventPublisher, set_event_publisher
 from app.core.stages import Stage, StageRegistry, install_default_stages
 from app.models import (
+    OutboxEventStatus,
     PipelineJob,
     PipelineJobStatus,
     PipelineStageLog,
@@ -30,9 +31,26 @@ from app.services import MediaPipelineService, PipelineNonRetryable
 # ---------------------------------------------------------------------------
 
 
+class FakeOutboxRow:
+    """In-memory stand-in for the outbox_events row."""
+
+    def __init__(self, topic: str, event_key: str, payload: dict) -> None:
+        from datetime import UTC, datetime
+        from uuid import uuid4
+
+        self.id = uuid4()
+        self.topic = topic
+        self.event_key = event_key
+        self.payload = payload
+        self.status = OutboxEventStatus.PENDING
+        self.created_at = datetime.now(UTC)
+        self.dispatched_at = None
+
+
 class FakeJobRepo:
     def __init__(self) -> None:
         self.jobs: dict[UUID, PipelineJob] = {}
+        self.events: list[FakeOutboxRow] = []
 
     async def create(self, job: PipelineJob) -> PipelineJob:
         if job.id is None:
@@ -60,6 +78,24 @@ class FakeJobRepo:
     async def save(self, job: PipelineJob) -> PipelineJob:
         self.jobs[job.id] = job
         return job
+
+    # -- Transactional outbox (in-memory stand-in) ---------------------------
+
+    async def enqueue_event(self, topic: str, event_key: str, payload: dict) -> FakeOutboxRow:
+        row = FakeOutboxRow(topic=topic, event_key=event_key, payload=payload)
+        self.events.append(row)
+        return row
+
+    async def pending_events(self, limit: int = 100) -> list[FakeOutboxRow]:
+        return [e for e in self.events if e.status == OutboxEventStatus.PENDING][:limit]
+
+    async def mark_dispatched(self, event_id: UUID) -> None:
+        from datetime import UTC, datetime
+
+        for row in self.events:
+            if row.id == event_id:
+                row.status = OutboxEventStatus.DISPATCHED
+                row.dispatched_at = datetime.now(UTC)
 
 
 class FakeLogRepo:
@@ -146,6 +182,7 @@ async def test_happy_path_advances_through_all_stages_and_publishes():
         storage_key="uploads/x/clip.mp4",
     )
     job = await service.advance(job.id)
+    await service.drain_outbox()
 
     assert job.status == PipelineJobStatus.COMPLETED
     assert "a" in job.stage_versions
@@ -169,6 +206,7 @@ async def test_per_stage_success_events_for_full_pipeline():
         storage_key="uploads/x/clip.mp4",
     )
     job = await service.advance(job.id)
+    await service.drain_outbox()
     assert job.status == PipelineJobStatus.COMPLETED
     topics = {e.topic for e in service.publisher.sent}
     for expected in (
@@ -206,7 +244,8 @@ async def test_retry_then_fail_emits_pipeline_failed_dlq():
     # 3 attempts were made.
     stage = reg.get("flaky")
     assert stage.calls == 3
-    # The DLQ event was emitted.
+    # The DLQ event was emitted (after the outbox drain).
+    await service.drain_outbox()
     dlq = [e for e in service.publisher.sent if e.topic == "content.pipeline.failed"]
     assert len(dlq) == 1
     assert dlq[0].payload["stage"] == "flaky"
@@ -231,6 +270,7 @@ async def test_retry_then_succeed_does_not_fail():
     assert job.status == PipelineJobStatus.COMPLETED
     assert job.stage_versions["recover"]["completed_at"]
     # No DLQ event.
+    await service.drain_outbox()
     assert not [e for e in service.publisher.sent if e.topic == "content.pipeline.failed"]
 
 
@@ -271,6 +311,7 @@ async def test_non_retryable_fails_immediately_without_retries():
     assert job.status == PipelineJobStatus.FAILED
     # Only one attempt — non-retryable failures don't consume retries.
     assert reg.get("fatal").calls == 1
+    await service.drain_outbox()
     assert any(e.topic == "content.pipeline.failed" for e in service.publisher.sent)
 
 

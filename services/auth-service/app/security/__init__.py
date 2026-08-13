@@ -5,6 +5,7 @@ Implements JWT token handling, password hashing, and validation.
 
 import base64
 import hashlib
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -230,7 +231,6 @@ class TokenManager:
                 algorithms=[settings.JWT_ALGORITHM],
                 issuer=settings.JWT_ISSUER,
                 audience=settings.JWT_AUDIENCE,
-                leeway=settings.JWT_LEEWAY_SECONDS,
             )
 
             if payload.get("type") != token_type:
@@ -259,15 +259,16 @@ class TokenManager:
             UUID | None: User ID if extractable, None otherwise
         """
         try:
-            payload = jwt.decode(
-                token,
-                settings.JWT_SECRET_KEY,
-                algorithms=[settings.JWT_ALGORITHM],
-            )
-            user_id_str = payload.get("user_id")
+            # No verification by design: this helper only reads the payload.
+            # python-jose's decode always applies claim checks even with
+            # options, so decode the unsigned payload segment directly.
+            segment = token.split(".")[1]
+            padded = segment + "=" * (-len(segment) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(padded))
+            user_id_str = payload.get("user_id") or payload.get("sub")
             if user_id_str:
                 return UUID(user_id_str)
-        except (JWTError, ValueError):
+        except (JWTError, ValueError, IndexError, UnicodeDecodeError, json.JSONDecodeError):
             pass
 
         return None

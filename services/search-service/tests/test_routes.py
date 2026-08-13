@@ -1,10 +1,12 @@
 """Tests for Search Service API routes."""
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import app.api.search_routes as search_routes
 from app.api.search_routes import get_search_service
 from app.main import app
 from app.services import ReindexResult
@@ -91,6 +93,24 @@ class TestSearchEndpoints:
 
         service.search.assert_awaited_once()
 
+    def test_search_identity_derived_from_token_not_query(self, client, service):
+        """#55: caller-supplied user_id is never trusted; the identity
+        verified from the bearer token is what reaches the service."""
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+        authenticated = Identity(user_id=uuid4(), role="user")
+        with patch(
+            "app.api.search_routes.get_optional_identity",
+            return_value=authenticated,
+        ):
+            client.get(
+                "/api/v1/search/query",
+                params={"q": "thriller", "limit": 5, "user_id": str(uuid4())},
+            )
+
+        call = service.search.await_args
+        assert call is not None
+        assert call.args[0] == authenticated.user_id
+
     def test_search_missing_query_returns_422(self, client, service):
         app.dependency_overrides[get_search_service] = override_get_search_service(service)
 
@@ -169,6 +189,47 @@ class TestSearchEndpoints:
         assert response.status_code == 200
         assert response.json() == {"indexed": 12, "index": "content_v1", "switched": True}
         service.reindex_catalog.assert_awaited_once()
+
+    def test_reindex_unauthenticated_returns_401(self, client, service):
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+
+        with patch(
+            "app.api.search_routes.get_admin_identity",
+            new=AsyncMock(
+                side_effect=HTTPException(status_code=401, detail="Authentication required")
+            ),
+        ):
+            response = client.post("/api/v1/search/reindex")
+
+        assert response.status_code == 401
+        service.reindex_catalog.assert_not_awaited()
+
+    def test_reindex_non_admin_returns_403(self, client, service):
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+
+        with patch(
+            "app.api.search_routes.get_admin_identity",
+            new=AsyncMock(
+                side_effect=HTTPException(
+                    status_code=403, detail="Administrator privileges required"
+                )
+            ),
+        ):
+            response = client.post("/api/v1/search/reindex")
+
+        assert response.status_code == 403
+        service.reindex_catalog.assert_not_awaited()
+
+    def test_reindex_concurrent_request_returns_409(self, client, service, admin_identity):
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+
+        with patch(
+            "app.api.search_routes.get_admin_identity", new=AsyncMock(return_value=admin_identity)
+        ), patch.object(search_routes._reindex_lock, "locked", return_value=True):
+            response = client.post("/api/v1/search/reindex")
+
+        assert response.status_code == 409
+        service.reindex_catalog.assert_not_awaited()
 
     def test_delete_content_admin(self, client, service, admin_identity):
         app.dependency_overrides[get_search_service] = override_get_search_service(service)

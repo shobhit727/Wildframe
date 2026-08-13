@@ -16,10 +16,14 @@ class Settings(BaseSettings):
 
     # Content catalog
     CONTENT_SERVICE_URL: str = "http://content-service:8000"
+    CONTENT_CATALOG_TIMEOUT_SECONDS: float = 10.0
+    CONTENT_CATALOG_MAX_CONNECTIONS: int = 20
+    CONTENT_CATALOG_MAX_KEEPALIVE: int = 10
 
     # Security
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
+    JWT_AUDIENCE: str = "wildframe-api"
     JWT_EXPIRATION_MINUTES: int = 15
 
     # Redis

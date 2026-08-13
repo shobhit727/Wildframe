@@ -16,7 +16,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes import get_content_service, get_current_user
+from app.api.routes import get_admin_identity, get_content_service, get_current_user
 from app.main import app
 from app.models import ContentStatus, ContentType
 from app.services import ContentService
@@ -49,6 +49,7 @@ def user_id():
 def override_deps(fake_service, user_id):
     app.dependency_overrides[get_content_service] = lambda: fake_service
     app.dependency_overrides[get_current_user] = lambda: user_id
+    app.dependency_overrides[get_admin_identity] = lambda: str(user_id)
     yield
     app.dependency_overrides.clear()
 
@@ -197,6 +198,94 @@ class TestGenreRoutes:
         assert response.status_code == 404
 
 
+class TestWriteAuthz:
+    """Catalog mutations must be admin-only, independently of the gateway (#51)."""
+
+    WRITE_ROUTES = [
+        ("post", "/api/v1/genres", {"name": "Action", "slug": "action"}),
+        (
+            "post",
+            "/api/v1/content",
+            {"title": "T", "slug": "t", "description": "d", "content_type": "movie"},
+        ),
+        ("post", "/api/v1/content/{cid}/seasons", {"season_number": 1, "title": "S1"}),
+        (
+            "post",
+            "/api/v1/content/{cid}/seasons/{sid}/episodes",
+            {"episode_number": 1, "title": "E1", "duration_minutes": 60},
+        ),
+        (
+            "post",
+            "/api/v1/content/{cid}/recommendations",
+            {"recommended_content_id": "00000000-0000-0000-0000-000000000099", "similarity_score": 0.5},
+        ),
+        ("post", "/api/v1/content/{cid}/cast", {"name": "Actor", "slug": "actor"}),
+        ("post", "/api/v1/content/{cid}/publish", {"status": "published"}),
+    ]
+
+    def _token(self, role: str | None) -> str:
+        import jwt
+        from app.core.settings import settings
+
+        payload = {"sub": str(uuid4()), "role": role} if role else {"sub": str(uuid4())}
+        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+    def test_write_without_token_is_401(self, client, content_id, season_id):
+        for method, path, body in self.WRITE_ROUTES:
+            path = path.format(cid=content_id, sid=season_id)
+            app.dependency_overrides.pop(get_admin_identity, None)
+            try:
+                response = getattr(client, method)(path, json=body)
+            finally:
+                app.dependency_overrides[get_admin_identity] = lambda: str(uuid4())
+            assert response.status_code == 401, (method, path)
+
+    def test_write_with_user_token_is_403(self, client, content_id, season_id):
+        bearer = {"Authorization": f"Bearer {self._token('user')}"}
+        for method, path, body in self.WRITE_ROUTES:
+            path = path.format(cid=content_id, sid=season_id)
+            app.dependency_overrides.pop(get_admin_identity, None)
+            try:
+                response = getattr(client, method)(path, json=body, headers=bearer)
+            finally:
+                app.dependency_overrides[get_admin_identity] = lambda: str(uuid4())
+            assert response.status_code == 403, (method, path)
+
+    def test_write_with_admin_token_is_allowed(self, client, fake_service, content_id):
+        fake_service.create_genre = AsyncMock(return_value=make_genre(uuid4()))
+        app.dependency_overrides.pop(get_admin_identity, None)
+        try:
+            response = client.post(
+                "/api/v1/genres",
+                json={"name": "SciFi", "slug": "scifi"},
+                headers={"Authorization": f"Bearer {self._token('admin')}"},
+            )
+        finally:
+            app.dependency_overrides[get_admin_identity] = lambda: str(uuid4())
+
+        assert response.status_code == 201
+
+    def test_ratings_require_any_authenticated_user_not_admin(self, client, fake_service, content_id):
+        rating = MagicMock()
+        rating.id = uuid4()
+        rating.user_id = uuid4()
+        rating.rating = 8.5
+        rating.review = None
+        rating.created_at = datetime(2026, 1, 1, tzinfo=UTC)
+        fake_service.rate_content = AsyncMock(return_value=rating)
+        app.dependency_overrides.pop(get_current_user, None)
+        try:
+            response = client.post(
+                f"/api/v1/content/{content_id}/ratings",
+                json={"rating": 8.5},
+                headers={"Authorization": f"Bearer {self._token('user')}"},
+            )
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: uuid4()
+
+        assert response.status_code == 201
+
+
 class TestContentRoutes:
     def test_create_content_returns_201(self, client, fake_service, content_id):
         content = make_content(content_id)
@@ -238,6 +327,28 @@ class TestContentRoutes:
 
         assert response.status_code == 200
         fake_service.list_content.assert_awaited_once_with(2, 50, "movie", None, None)
+
+    def test_trending_passes_limit(self, client, fake_service, content_id):
+        fake_service.get_trending_content = AsyncMock(return_value=[make_content(content_id)])
+
+        response = client.get("/api/v1/content/trending", params={"limit": 42})
+
+        assert response.status_code == 200
+        assert response.json()[0]["id"] == str(content_id)
+        fake_service.get_trending_content.assert_awaited_once_with(42)
+
+    def test_trending_rejects_unbounded_limits(self, client):
+        for bad in (0, 101):
+            response = client.get("/api/v1/content/trending", params={"limit": bad})
+            assert response.status_code == 422
+
+    def test_trending_does_not_shadow_content_id_route(self, client, fake_service):
+        fake_service.get_content = AsyncMock(return_value=None)
+
+        response = client.get("/api/v1/content/trending")
+
+        assert response.status_code == 200
+        fake_service.get_content.assert_not_awaited()
 
     def test_get_content_returns_200(self, client, fake_service, content_id):
         fake_service.get_content = AsyncMock(return_value=make_content(content_id))

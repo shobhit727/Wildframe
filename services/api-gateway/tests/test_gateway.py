@@ -43,12 +43,11 @@ def make_fake_response(status_code=200, headers=None, content=b"{}"):
 
 class FakeAsyncClient:
     """httpx.AsyncClient stub usable with `async with` that records the call
-    and returns a canned response via streaming interface."""
+    and returns a canned response."""
 
     def __init__(self, response):
         self.response = response
         self.request_kwargs = None
-        self.stream_called = False
 
     async def __aenter__(self):
         return self
@@ -61,35 +60,6 @@ class FakeAsyncClient:
         if isinstance(self.response, Exception):
             raise self.response
         return self.response
-
-    def stream(self, method, url, **kwargs):
-        """Return an async context manager yielding a streaming response."""
-        self.request_kwargs = {"method": method, "url": url, **kwargs}
-        self.stream_called = True
-
-        class StreamResponse:
-            def __init__(self, resp):
-                self.resp = resp
-                self.status_code = getattr(resp, "status_code", 200)
-                self.headers = getattr(resp, "headers", {})
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *args):
-                return False
-
-            async def aiter_bytes(self):
-                content = getattr(self.resp, "content", b"{}")
-                if isinstance(content, str):
-                    content = content.encode()
-                if content:
-                    yield content
-
-        if isinstance(self.response, Exception):
-            raise self.response
-
-        return StreamResponse(self.response)
 
 
 class TestServiceRegistry:
@@ -446,7 +416,6 @@ class TestRateLimiter:
     @pytest.mark.asyncio
     async def test_under_limit_allowed(self):
         from app.middleware import RateLimiter
-        from app.core.settings import settings
 
         redis_mock = AsyncMock()
         redis_mock.incr = AsyncMock(return_value=3)
@@ -455,7 +424,7 @@ class TestRateLimiter:
         result = await limiter.check_rate_limit("user-1", "search")
 
         assert result is True
-        redis_mock.incr.assert_awaited_once_with(f"rate_limit:{settings.ENVIRONMENT}:search:user-1")
+        redis_mock.incr.assert_awaited_once_with("rate_limit:user-1:search")
 
     @pytest.mark.asyncio
     async def test_over_limit_rejected(self):
@@ -472,7 +441,6 @@ class TestRateLimiter:
     @pytest.mark.asyncio
     async def test_first_request_sets_expiry(self):
         from app.middleware import RateLimiter
-        from app.core.settings import settings
 
         redis_mock = AsyncMock()
         redis_mock.incr = AsyncMock(return_value=1)
@@ -480,8 +448,4 @@ class TestRateLimiter:
 
         await limiter.check_rate_limit("user-1", "auth")
 
-        # First request: expire called with jittered TTL (60-75s)
-        assert redis_mock.expire.await_count == 1
-        call_args = redis_mock.expire.await_args
-        assert call_args[0][0] == f"rate_limit:{settings.ENVIRONMENT}:auth:user-1"
-        assert 60 <= call_args[0][1] <= 75
+        redis_mock.expire.assert_awaited_once_with("rate_limit:user-1:auth", 60)

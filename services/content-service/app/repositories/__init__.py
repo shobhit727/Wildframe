@@ -278,6 +278,7 @@ class ContentRepository(BaseRepository):
         """Get trending content by audience score and votes."""
         result = await self.session.execute(
             select(Content)
+            .options(selectinload(Content.genres))
             .where(Content.status == ContentStatus.PUBLISHED)
             .order_by(Content.audience_score.desc(), Content.total_votes.desc(), Content.id.desc())
             .limit(limit)

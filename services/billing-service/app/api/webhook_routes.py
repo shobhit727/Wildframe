@@ -392,6 +392,10 @@ async def stripe_webhook(
         await service.webhook_events_repo.commit()
     except Exception as exc:
         logger.error("Error handling Stripe event %s (%s): %s", event_id, event_type, exc)
+        # The handler exception aborts the session's transaction; roll back
+        # before attempting the FAILED update or the inbox row would stay
+        # PROCESSING and never become eligible for Stripe's retry.
+        await service.webhook_events_repo.session.rollback()
         await service.webhook_events_repo.fail(event_id, str(exc))
         await service.webhook_events_repo.commit()
         raise HTTPException(status_code=500, detail="Webhook handler failed") from exc

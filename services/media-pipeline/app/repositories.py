@@ -7,6 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    OutboxEvent,
+    OutboxEventStatus,
     PipelineJob,
     PipelineJobStatus,
     PipelineStageLog,
@@ -60,6 +62,31 @@ class PipelineJobRepository:
             stmt = stmt.where(PipelineJob.status == status)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    # -- Transactional outbox -------------------------------------------------
+
+    async def enqueue_event(self, topic: str, event_key: str, payload: dict) -> OutboxEvent:
+        """Persist an event row in the current transaction (transactional outbox)."""
+        row = OutboxEvent(topic=topic, event_key=event_key, payload=payload)
+        self.session.add(row)
+        await self.session.flush()
+        return row
+
+    async def pending_events(self, limit: int = 100) -> list[OutboxEvent]:
+        result = await self.session.execute(
+            select(OutboxEvent)
+            .where(OutboxEvent.status == OutboxEventStatus.PENDING)
+            .order_by(OutboxEvent.created_at)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def mark_dispatched(self, event_id: UUID) -> None:
+        row = await self.session.get(OutboxEvent, event_id)
+        if row is not None:
+            row.status = OutboxEventStatus.DISPATCHED
+            row.dispatched_at = datetime.now(UTC)
+            await self.session.flush()
 
 
 class PipelineStageLogRepository:

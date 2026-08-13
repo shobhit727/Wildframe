@@ -7,6 +7,7 @@ from wildframe_observability.wire import wire_observability
 from app.api.recommendation_routes import router as recommendation_router
 from app.core.database import DatabaseManager
 from app.core.settings import settings
+from app.services import close_catalog_client
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
+    await close_catalog_client()
     await DatabaseManager.close()
     logger.info("Shutdown complete")
 

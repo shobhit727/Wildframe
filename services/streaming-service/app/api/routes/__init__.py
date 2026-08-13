@@ -101,12 +101,19 @@ async def start_playback(
 
 @router.get("/playback-sessions/{session_id}", response_model=PlaybackSessionResponse)
 async def get_playback_session(
-    session_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]
+    session_id: UUID,
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
-    """Get playback session."""
+    """Get playback session (owner only)."""
     session = await service.get_playback_session(session_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    if session.user_id != current_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only access your own sessions",
+        )
     return session
 
 
@@ -124,22 +131,36 @@ async def update_playback_session(
     session_id: UUID,
     request: PlaybackSessionUpdateRequest,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
-    """Update playback session."""
-    session = await service.update_playback_session(session_id, request)
+    """Update playback session (owner only)."""
+    session = await service.get_playback_session(session_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
-    return session
+    if session.user_id != current_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only access your own sessions",
+        )
+    return await service.update_playback_session(session_id, request)
 
 
 @router.post("/playback-sessions/{session_id}/end", status_code=status.HTTP_204_NO_CONTENT)
 async def end_playback_session(
-    session_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]
+    session_id: UUID,
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
-    """End playback session."""
-    session = await service.end_playback_session(session_id)
+    """End playback session (owner only)."""
+    session = await service.get_playback_session(session_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    if session.user_id != current_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only access your own sessions",
+        )
+    await service.end_playback_session(session_id)
 
 
 # Video manifest endpoints
@@ -315,12 +336,19 @@ async def create_download(
 
 @router.get("/download-sessions/{download_id}", response_model=DownloadSessionResponse)
 async def get_download(
-    download_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]
+    download_id: UUID,
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
-    """Get download session."""
+    """Get download session (owner only)."""
     download = await service.get_download_session(download_id)
     if not download:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Download not found")
+    if download.user_id != current_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only access your own downloads",
+        )
     return download
 
 
@@ -337,10 +365,16 @@ async def get_user_downloads(
 async def update_download_progress(
     download_id: UUID,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
     bytes_downloaded: Annotated[int, Query(ge=0)],
 ):
-    """Update download progress."""
-    download = await service.update_download_progress(download_id, bytes_downloaded)
+    """Update download progress (owner only)."""
+    download = await service.get_download_session(download_id)
     if not download:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Download not found")
-    return download
+    if download.user_id != current_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only access your own downloads",
+        )
+    return await service.update_download_progress(download_id, bytes_downloaded)

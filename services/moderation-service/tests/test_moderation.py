@@ -6,7 +6,7 @@ threshold, decision making, and event emission. They use in-memory stubs
 for the event publisher and fake repositories.
 """
 
-from datetime import UTC
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -18,6 +18,7 @@ from app.models import (
     FlagReason,
     FlagStatus,
     ModerationDecision,
+    OutboxEventStatus,
     StrikeReason,
 )
 from app.services import ModerationError, ModerationService
@@ -29,10 +30,11 @@ from app.services import ModerationError, ModerationService
 
 
 class FakeFlagRepo:
-    """In-memory ContentFlagRepository stand-in."""
+    """In-memory ContentFlagRepository stand-in (includes the outbox)."""
 
     def __init__(self) -> None:
         self.flags: dict[UUID, ContentFlag] = {}
+        self.events: list[FakeOutboxRow] = []
 
     async def create(self, flag: ContentFlag) -> ContentFlag:
         if flag.id is None:
@@ -53,6 +55,35 @@ class FakeFlagRepo:
             flag.id = uuid4()
         self.flags[flag.id] = flag
         return flag
+
+    # -- Transactional outbox (in-memory stand-in) ---------------------------
+
+    async def enqueue_event(self, topic: str, event_key: str, payload: dict) -> FakeOutboxRow:
+        row = FakeOutboxRow(topic=topic, event_key=event_key, payload=payload)
+        self.events.append(row)
+        return row
+
+    async def pending_events(self, limit: int = 100) -> list[FakeOutboxRow]:
+        return [e for e in self.events if e.status == OutboxEventStatus.PENDING][:limit]
+
+    async def mark_dispatched(self, event_id: UUID) -> None:
+        for row in self.events:
+            if row.id == event_id:
+                row.status = OutboxEventStatus.DISPATCHED
+                row.dispatched_at = datetime.now(UTC)
+
+
+class FakeOutboxRow:
+    """In-memory stand-in for the outbox_events row."""
+
+    def __init__(self, topic: str, event_key: str, payload: dict) -> None:
+        self.id = uuid4()
+        self.topic = topic
+        self.event_key = event_key
+        self.payload = payload
+        self.status = OutboxEventStatus.PENDING
+        self.created_at = datetime.now(UTC)
+        self.dispatched_at = None
 
 
 class FakeDecisionRepo:
@@ -131,15 +162,17 @@ async def test_flag_content_creates_flag_and_emits_event():
     assert flag.status == FlagStatus.PENDING
     assert flag.id in flag_repo.flags
 
-    # The content.flagged event was emitted.
-    publisher = service.publisher
-    assert isinstance(publisher, InMemoryEventPublisher)
-    assert len(publisher.sent) == 1
-    event = publisher.sent[0]
-    assert event.topic == "content.flagged"
-    assert event.key == str(flag.id)
+    # The content.flagged event was enqueued in the transactional outbox
+    # (same DB transaction as the flag row), not published directly.
+    flagged_events = [e for e in flag_repo.events if e.topic == "content.flagged"]
+    assert len(flagged_events) == 1
+    event = flagged_events[0]
+    assert event.event_key == str(flag.id)
     assert event.payload["content_id"] == str(content_id)
     assert event.payload["flag_reason"] == "spam"
+    assert event.status == OutboxEventStatus.PENDING
+    # Nothing reaches the bus until the drain worker publishes it.
+    assert service.publisher.sent == []
 
 
 @pytest.mark.asyncio
@@ -212,12 +245,11 @@ async def test_make_decision_approve_resolves_flag_without_strike():
     # No strike was created.
     assert len(strike_repo.strikes) == 0
 
-    # moderation.decision_made event was emitted.
-    publisher = service.publisher
-    assert isinstance(publisher, InMemoryEventPublisher)
-    decision_events = [e for e in publisher.sent if e.topic == "moderation.decision_made"]
+    # moderation.decision_made event was enqueued (transactional outbox).
+    decision_events = [e for e in flag_repo.events if e.topic == "moderation.decision_made"]
     assert len(decision_events) == 1
     assert decision_events[0].payload["decision"] == "approve"
+    assert decision_events[0].status == OutboxEventStatus.PENDING
 
 
 @pytest.mark.asyncio
@@ -255,7 +287,7 @@ async def test_make_decision_reject_creates_strike():
 @pytest.mark.asyncio
 async def test_three_strikes_triggers_suspension():
     """3 rejections = 3 active strikes = creator.suspended event emitted."""
-    service, _, _, strike_repo = make_service()
+    service, flag_repo, _, strike_repo = make_service()
     creator_id = uuid4()
     moderator_id = uuid4()
 
@@ -278,19 +310,18 @@ async def test_three_strikes_triggers_suspension():
     assert len(strike_repo.strikes) == 3
     assert await strike_repo.count_active(creator_id) == 3
 
-    # creator.suspended event was emitted (on the 3rd rejection).
-    publisher = service.publisher
-    assert isinstance(publisher, InMemoryEventPublisher)
-    suspension_events = [e for e in publisher.sent if e.topic == "creator.suspended"]
+    # creator.suspended event was enqueued (on the 3rd rejection).
+    suspension_events = [e for e in flag_repo.events if e.topic == "creator.suspended"]
     assert len(suspension_events) == 1
     assert suspension_events[0].payload["creator_id"] == str(creator_id)
     assert suspension_events[0].payload["active_strikes"] == 3
+    assert suspension_events[0].status == OutboxEventStatus.PENDING
 
 
 @pytest.mark.asyncio
 async def test_two_strikes_does_not_trigger_suspension():
     """2 rejections = 2 active strikes = no suspension event."""
-    service, _, _, strike_repo = make_service()
+    service, flag_repo, _, strike_repo = make_service()
     creator_id = uuid4()
     moderator_id = uuid4()
 
@@ -310,8 +341,7 @@ async def test_two_strikes_does_not_trigger_suspension():
     assert len(strike_repo.strikes) == 2
     assert await strike_repo.count_active(creator_id) == 2
 
-    publisher = service.publisher
-    suspension_events = [e for e in publisher.sent if e.topic == "creator.suspended"]
+    suspension_events = [e for e in flag_repo.events if e.topic == "creator.suspended"]
     assert len(suspension_events) == 0
 
 
@@ -452,7 +482,7 @@ async def test_issue_strike_targets_real_creator_not_content_id():
 @pytest.mark.asyncio
 async def test_reject_without_content_creator_id_skips_strike():
     """If the creator could not be resolved, reject does not issue a strike."""
-    service, _, _, strike_repo = make_service()
+    service, flag_repo, _, strike_repo = make_service()
     flag = await service.flag_content(
         content_id=uuid4(),
         content_creator_id=None,
@@ -467,8 +497,82 @@ async def test_reject_without_content_creator_id_skips_strike():
 
     assert len(strike_repo.strikes) == 0
 
-    # No suspension event is emitted either.
+    # No suspension event is enqueued either.
+    suspension_events = [e for e in flag_repo.events if e.topic == "creator.suspended"]
+    assert len(suspension_events) == 0
+
+
+# ---------------------------------------------------------------------------
+# Transactional outbox drain (at-least-once delivery).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_drain_publishes_pending_rows_and_marks_dispatched():
+    """drain_outbox publishes PENDING rows once and marks them dispatched."""
+    service, flag_repo, _, _ = make_service()
+    await service.flag_content(
+        content_id=uuid4(), flag_reason=FlagReason.SPAM, reporter_id=uuid4()
+    )
+    await service.flag_content(
+        content_id=uuid4(), flag_reason=FlagReason.COPYRIGHT, reporter_id=uuid4()
+    )
+    assert len(flag_repo.events) == 2
+
+    processed = await service.drain_outbox()
+
+    assert processed == 2
     publisher = service.publisher
     assert isinstance(publisher, InMemoryEventPublisher)
-    suspension_events = [e for e in publisher.sent if e.topic == "creator.suspended"]
-    assert len(suspension_events) == 0
+    assert len(publisher.sent) == 2
+    assert all(
+        row.status == OutboxEventStatus.DISPATCHED and row.dispatched_at is not None
+        for row in flag_repo.events
+    )
+    # A second drain is a no-op for already-dispatched rows.
+    assert await service.drain_outbox() == 0
+
+
+@pytest.mark.asyncio
+async def test_drain_keeps_row_pending_on_publish_failure():
+    """Broker failure leaves the row PENDING so the next drain retries it."""
+    service, flag_repo, _, _ = make_service()
+    await service.flag_content(
+        content_id=uuid4(), flag_reason=FlagReason.SPAM, reporter_id=uuid4()
+    )
+    row = flag_repo.events[0]
+
+    class FailingPublisher:
+        async def publish(self, event):
+            raise OSError("broker unreachable")
+
+    service.publisher = FailingPublisher()
+    processed = await service.drain_outbox()
+
+    assert processed == 1
+    assert row.status == OutboxEventStatus.PENDING
+    assert row.dispatched_at is None
+
+    # Broker recovers: the same row now goes out.
+    service.publisher = InMemoryEventPublisher()
+    await service.drain_outbox()
+    assert row.status == OutboxEventStatus.DISPATCHED
+    assert service.publisher.sent[0].topic == "content.flagged"
+
+
+@pytest.mark.asyncio
+async def test_drain_publishes_in_fifo_order():
+    """PENDING rows are drained oldest-first (out-of-order prevention)."""
+    service, flag_repo, _, _ = make_service()
+    await service.flag_content(
+        content_id=uuid4(), flag_reason=FlagReason.SPAM, reporter_id=uuid4()
+    )
+    await service.flag_content(
+        content_id=uuid4(), flag_reason=FlagReason.COPYRIGHT, reporter_id=uuid4()
+    )
+
+    await service.drain_outbox()
+
+    sent_keys = [e.key for e in service.publisher.sent]
+    assert sent_keys == [str(e.event_key) for e in flag_repo.events]
+    assert flag_repo.events[0].created_at <= flag_repo.events[1].created_at

@@ -601,48 +601,42 @@ class MediaPipelineService:
                 # Disk quota check after each stage.
                 self._check_disk_quota(job)
 
-                # Emit the stage's success event, if any.
+                # Emit the stage's success event via the transactional outbox.
                 if stage.success_event:
-                    await self.publisher.publish(
-                        Event(
-                            topic=stage.success_event,
-                            key=str(job.id),
-                            payload={
-                                "job_id": str(job.id),
-                                "content_id": str(job.content_id),
-                                "stage": stage_name,
-                            },
-                        )
+                    await self.job_repo.enqueue_event(
+                        topic=stage.success_event,
+                        event_key=str(job.id),
+                        payload={
+                            "job_id": str(job.id),
+                            "content_id": str(job.content_id),
+                            "stage": stage_name,
+                        },
                     )
 
             # HLS + DASH packaging are reported as one packaged event.
             if "hls_package" in job.stage_versions and "dash_package" in job.stage_versions:
-                await self.publisher.publish(
-                    Event(
-                        topic="content.packaged",
-                        key=str(job.id),
-                        payload={
-                            "job_id": str(job.id),
-                            "content_id": str(job.content_id),
-                            "hls_url": ctx.get("hls_url"),
-                            "dash_url": ctx.get("dash_url"),
-                        },
-                    )
+                await self.job_repo.enqueue_event(
+                    topic="content.packaged",
+                    event_key=str(job.id),
+                    payload={
+                        "job_id": str(job.id),
+                        "content_id": str(job.content_id),
+                        "hls_url": ctx.get("hls_url"),
+                        "dash_url": ctx.get("dash_url"),
+                    },
                 )
 
             job.status = PipelineJobStatus.COMPLETED  # type: ignore[assignment]
             job.current_stage = None  # type: ignore[assignment]
             job.error = None  # type: ignore[assignment]
             await self.job_repo.save(job)
-            await self.publisher.publish(
-                Event(
-                    topic="content.published",
-                    key=str(job.id),
-                    payload={
-                        "job_id": str(job.id),
-                        "content_id": str(job.content_id),
-                    },
-                )
+            await self.job_repo.enqueue_event(
+                topic="content.published",
+                event_key=str(job.id),
+                payload={
+                    "job_id": str(job.id),
+                    "content_id": str(job.content_id),
+                },
             )
             logger.info("pipeline job %s completed", job.id)
             # Cleanup on success.
@@ -764,18 +758,16 @@ class MediaPipelineService:
         job.error = message  # type: ignore[assignment]
         await self.job_repo.save(job)
         dlq_key = f"{job.id}:{stage_name}"
-        await self.publisher.publish(
-            Event(
-                topic="content.pipeline.failed",
-                key=str(job.id),
-                payload={
-                    "job_id": str(job.id),
-                    "content_id": str(job.content_id),
-                    "stage": stage_name,
-                    "error": message,
-                    "dlq_key": dlq_key,
-                },
-            )
+        await self.job_repo.enqueue_event(
+            topic="content.pipeline.failed",
+            event_key=str(job.id),
+            payload={
+                "job_id": str(job.id),
+                "content_id": str(job.content_id),
+                "stage": stage_name,
+                "error": message,
+                "dlq_key": dlq_key,
+            },
         )
         logger.error("pipeline job %s FAILED at stage %s: %s", job.id, stage_name, message)
         return job
@@ -821,6 +813,37 @@ class MediaPipelineService:
                 logger.info("recovered stale job %s (was leased by %s)", job.id, job.leased_by)
                 recovered += 1
         return recovered
+
+    # ------------------------------------------------------------------
+    # Outbox drain (background worker).
+    # ------------------------------------------------------------------
+
+    async def drain_outbox(self) -> int:
+        """Publish PENDING outbox rows to the bus; mark them dispatched.
+
+        A row whose publish fails stays PENDING and is retried on the next
+        drain (at-least-once; consumers dedupe on the event key). Returns the
+        number of rows processed.
+        """
+        rows = await self.job_repo.pending_events(limit=settings.OUTBOX_BATCH_SIZE)
+        for row in rows:
+            try:
+                await self.publisher.publish(
+                    Event(
+                        topic=row.topic,
+                        key=row.event_key or "",
+                        payload=row.payload,
+                    )
+                )
+            except Exception:  # noqa: BLE001 - keep row pending for retry
+                logger.exception(
+                    "outbox publish failed for event %s (topic=%s); will retry",
+                    row.id,
+                    row.topic,
+                )
+                continue
+            await self.job_repo.mark_dispatched(row.id)
+        return len(rows)
 
     # ------------------------------------------------------------------
     # Legacy compatibility (kept for the old /media/transcode route/tests).

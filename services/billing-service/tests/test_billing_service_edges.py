@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from app.models import MilestoneStatus, RevenueTier, TrancheStatus
+from app.models import MilestoneStatus, RevenueTier, SubscriptionStatus, TrancheStatus
 from app.services import (
     BillingError,
     BillingService,
@@ -28,6 +28,8 @@ def service():
         pool_repo=AsyncMock(),
         milestone_repo=AsyncMock(),
         payout_repo=AsyncMock(),
+        refund_repo=AsyncMock(),
+        webhook_events_repo=AsyncMock(),
     )
 
 
@@ -44,11 +46,15 @@ class TestSubscribe:
         service.sub_repo.create.assert_awaited_once()
 
     async def test_updates_when_existing(self, service):
-        service.sub_repo.get_by_user.return_value = MagicMock()
+        existing = MagicMock(status=SubscriptionStatus.ACTIVE)
+        service.sub_repo.get_by_user.return_value = existing
 
-        await service.subscribe(uuid4(), "svod")
+        result = await service.subscribe(uuid4(), "svod")
 
-        service.sub_repo.update_tier.assert_awaited_once()
+        assert result is existing
+        assert result.tier == RevenueTier.SVOD
+        assert result.status == SubscriptionStatus.ACTIVE
+        service.sub_repo.session.flush.assert_awaited_once()
 
     async def test_cancel_missing_returns_none(self, service):
         service.sub_repo.get_by_user.return_value = None
@@ -56,7 +62,7 @@ class TestSubscribe:
         assert await service.cancel_subscription(uuid4()) is None
 
     async def test_cancel_sets_avod_inactive(self, service):
-        sub = MagicMock()
+        sub = MagicMock(status=SubscriptionStatus.ACTIVE)
         service.sub_repo.get_by_user.return_value = sub
 
         result = await service.cancel_subscription(uuid4())
@@ -150,7 +156,7 @@ class TestMilestone:
         milestone = MagicMock(status=MilestoneStatus.PENDING)
         service.milestone_repo.get.return_value = milestone
         service.milestone_repo.get_tranches.return_value = [
-            MagicMock(tranche_number=1, status=TrancheStatus.RELEASED)
+            MagicMock(tranche_number=1, status=TrancheStatus.REVERTED)
         ]
 
         with pytest.raises(BillingError):

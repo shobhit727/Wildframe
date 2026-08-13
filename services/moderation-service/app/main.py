@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -9,6 +10,30 @@ from app.core.database import DatabaseManager
 from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
+
+
+async def _drain_outbox_worker() -> None:
+    """Publish PENDING transactional-outbox rows to the event bus."""
+    from app.repositories import (
+        ContentFlagRepository,
+        CreatorStrikeRepository,
+        ModerationDecisionRepository,
+    )
+    from app.services import ModerationService
+
+    while True:
+        try:
+            assert DatabaseManager.session_factory is not None
+            async with DatabaseManager.session_factory() as session:
+                service = ModerationService(
+                    flag_repo=ContentFlagRepository(session),
+                    decision_repo=ModerationDecisionRepository(session),
+                    strike_repo=CreatorStrikeRepository(session),
+                )
+                await service.drain_outbox()
+        except Exception:  # noqa: BLE001 - worker must survive transient errors
+            logger.exception("outbox drain iteration failed")
+        await asyncio.sleep(settings.OUTBOX_POLL_INTERVAL_SECONDS)
 
 
 @asynccontextmanager
@@ -26,9 +51,15 @@ async def lifespan(app: FastAPI):
 
     logger.info("All startup checks passed")
 
+    workers_task = asyncio.create_task(_drain_outbox_worker())
     yield
 
     # Shutdown
+    workers_task.cancel()
+    try:
+        await workers_task
+    except asyncio.CancelledError:
+        pass
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
     await DatabaseManager.close()
     logger.info("Shutdown complete")

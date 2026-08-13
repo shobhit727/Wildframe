@@ -9,6 +9,29 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
+DEV_ENVIRONMENTS = {"", "development", "test"}
+
+# Convenient local-development defaults. Never applied in production; those
+# settings must be provided explicitly via the environment.
+DEV_DEFAULTS = {
+    "DATABASE_URL": "postgresql+asyncpg://wildframe:password@localhost:5432/auth_db",
+    "REDIS_URL": "redis://localhost:6379/0",
+    "JWT_SECRET_KEY": "dev-secret-key-change-in-production-min-32-bytes",
+    "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
+}
+
+# Values that are never acceptable for a production deployment, even when
+# explicitly supplied through the environment.
+KNOWN_INSECURE_DB_CREDENTIALS = ("wildframe:password", "wildframe:wildframe_dev_password")
+KNOWN_INSECURE_JWT_SECRETS = (
+    "dev-secret-key",
+    "dev-secret-key-change-in-production-min-32-bytes",
+    "your-secret-key-change-in-production",
+    "secret",
+    "changeme",
+)
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
@@ -19,18 +42,18 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # Database Configuration
-    DATABASE_URL: str = "postgresql+asyncpg://wildframe:password@localhost:5432/auth_db"
+    DATABASE_URL: str | None = None
     DATABASE_POOL_SIZE: int = 20
     DATABASE_MAX_OVERFLOW: int = 10
     DATABASE_POOL_TIMEOUT: int = 30
     DATABASE_POOL_RECYCLE: int = 3600
 
     # Redis Configuration
-    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_URL: str | None = None
     REDIS_TIMEOUT: int = 5
 
     # JWT Configuration
-    JWT_SECRET_KEY: str = "dev-secret-key-change-in-production-min-32-bytes"
+    JWT_SECRET_KEY: str | None = None
     JWT_ALGORITHM: str = "HS256"
     JWT_ISSUER: str = "wildframe-auth"
     JWT_AUDIENCE: str = "wildframe-api"
@@ -43,7 +66,7 @@ class Settings(BaseSettings):
     ADMIN_EMAILS: str = ""
 
     # Kafka Configuration
-    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
+    KAFKA_BOOTSTRAP_SERVERS: str | None = None
     KAFKA_GROUP_ID: str = "auth-service"
     KAFKA_TOPIC_USER_CREATED: str = "user.registered"
     KAFKA_TOPIC_USER_LOGIN: str = "user.login"
@@ -85,17 +108,65 @@ class Settings(BaseSettings):
     MFA_BACKUP_CODES_COUNT: int = 10
     MFA_BACKUP_CODE_LENGTH: int = 8
 
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_development_defaults(cls, values: dict) -> dict:
+        """Inject convenient defaults for local development only.
+
+        Non-production environments keep zero-config local defaults. In
+        production (and any environment that does not explicitly opt into
+        development) the secrets remain unset so that validation can require
+        explicit values instead of comparing against known defaults.
+        """
+        environment = values.get("ENVIRONMENT") or ""
+        if environment in DEV_ENVIRONMENTS:
+            for key, value in DEV_DEFAULTS.items():
+                values.setdefault(key, value)
+        return values
+
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
-        """Fail fast if running in production with default insecure secrets."""
-        default_secrets = [
-            "your-secret-key-change-in-production",
-            "dev-secret-key",
-        ]
-        if self.ENVIRONMENT == "production" and self.JWT_SECRET_KEY in default_secrets:
+        """Fail closed in production: require explicit, non-default secrets."""
+        if self.ENVIRONMENT in DEV_ENVIRONMENTS:
+            return self
+
+        if self.DATABASE_URL is None:
             raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value in production. "
-                "Refusing to start with default insecure secret."
+                "DATABASE_URL must be set explicitly when ENVIRONMENT is not development."
+            )
+        if any(
+            credential in self.DATABASE_URL
+            for credential in KNOWN_INSECURE_DB_CREDENTIALS
+        ):
+            raise ValueError(
+                "DATABASE_URL must not use known default credentials."
+            )
+
+        if self.REDIS_URL is None:
+            raise ValueError(
+                "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
+            )
+
+        if self.JWT_SECRET_KEY is None:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value when "
+                "ENVIRONMENT is not development."
+            )
+        if self.JWT_SECRET_KEY in KNOWN_INSECURE_JWT_SECRETS:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value when "
+                "ENVIRONMENT is not development."
+            )
+        if len(self.JWT_SECRET_KEY) < 32:
+            raise ValueError(
+                "JWT_SECRET_KEY must be at least 32 characters long when "
+                "ENVIRONMENT is not development."
+            )
+
+        if self.KAFKA_BOOTSTRAP_SERVERS is None:
+            raise ValueError(
+                "KAFKA_BOOTSTRAP_SERVERS must be set explicitly when "
+                "ENVIRONMENT is not development."
             )
         return self
 

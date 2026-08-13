@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     EVENT_PUBLISHER: str = "memory"
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
 
+    # Transactional outbox
+    # Events are written to the DB in the same transaction as their business
+    # state; a background worker publishes PENDING rows in batches and marks
+    # them dispatched. At-least-once delivery, consumers dedupe on event_key.
+    OUTBOX_BATCH_SIZE: int = 100
+    OUTBOX_POLL_INTERVAL_SECONDS: int = 5
+
     # Pipeline retry / DLQ tuning.
     PIPELINE_MAX_STAGE_ATTEMPTS: int = 3
     PIPELINE_BACKOFF_BASE_SECONDS: float = 1.0

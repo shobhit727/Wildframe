@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -13,6 +14,16 @@ from app.repositories import (
 )
 from app.security import PasswordManager, TokenManager
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+
+@pytest.fixture(autouse=True)
+def _no_redis_rate_limit():
+    """Run auth tests deterministically without the Redis throttle (#54).
+
+    The one endpoint test that asserts throttling re-patches allow() itself.
+    """
+    with patch("app.api.routes.auth.allow", new=AsyncMock(return_value=True)):
+        yield
 
 
 @pytest.fixture(scope="session")

@@ -1,5 +1,6 @@
 """Main FastAPI application for the Media Pipeline Service."""
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -17,6 +18,25 @@ from app.core.settings import settings
 logger = logging.getLogger(__name__)
 
 
+async def _drain_outbox_worker() -> None:
+    """Publish PENDING transactional-outbox rows to the event bus."""
+    from app.repositories import PipelineJobRepository, PipelineStageLogRepository
+    from app.services import MediaPipelineService
+
+    while True:
+        try:
+            assert DatabaseManager.session_factory is not None
+            async with DatabaseManager.session_factory() as session:
+                service = MediaPipelineService(
+                    job_repo=PipelineJobRepository(session),
+                    log_repo=PipelineStageLogRepository(session),
+                )
+                await service.drain_outbox()
+        except Exception:  # noqa: BLE001 - worker must survive transient errors
+            logger.exception("outbox drain iteration failed")
+        await asyncio.sleep(settings.OUTBOX_POLL_INTERVAL_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Application lifespan management."""
@@ -32,9 +52,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     else:
         logger.info("Database connection established")
 
+    workers_task = asyncio.create_task(_drain_outbox_worker())
     yield
 
     # Shutdown
+    workers_task.cancel()
+    try:
+        await workers_task
+    except asyncio.CancelledError:
+        pass
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
     await DatabaseManager.close()
 

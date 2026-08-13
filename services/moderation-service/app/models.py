@@ -35,6 +35,7 @@ from sqlalchemy import (
 from sqlalchemy import (
     Enum as SQLEnum,
 )
+from sqlalchemy import JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -75,6 +76,49 @@ class StrikeReason(str, Enum):
     CONTENT_VIOLATION = "content_violation"
     COPYRIGHT = "copyright"
     REPEATED_FLAGS = "repeated_flags"
+
+
+class OutboxEventStatus(str, Enum):
+    """Delivery status of a transactional-outbox row."""
+
+    PENDING = "pending"
+    DISPATCHED = "dispatched"
+
+
+class OutboxEvent(Base):
+    """A domain event persisted in the same transaction as its business state.
+
+    The transactional outbox guarantees that the event becomes durable
+    exactly when the state it describes becomes durable: both rows share one
+    database transaction. A background worker publishes PENDING rows
+    (at-least-once; consumers dedupe on ``event_key``) and marks them
+    DISPATCHED, so a broker outage never loses an event and a successful
+    commit always implies a recoverable event trail.
+    """
+
+    __tablename__ = "outbox_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    topic: Mapped[str] = mapped_column(Text, nullable=False)
+    event_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    status: Mapped[OutboxEventStatus] = mapped_column(
+        SQLEnum(OutboxEventStatus),
+        default=OutboxEventStatus.PENDING,
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    dispatched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    __table_args__ = (Index("idx_outbox_status_created", "status", "created_at"),)
 
 
 class ContentFlag(Base):

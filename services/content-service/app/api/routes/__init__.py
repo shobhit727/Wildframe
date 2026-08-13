@@ -55,6 +55,31 @@ async def get_current_user(
     Identity is read from the verified JWT ``sub`` claim, never from a
     caller-supplied query parameter.
     """
+    return await _require_identity(authorization)
+
+
+async def get_admin_identity(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> str:
+    """Admin-only dependency for privileged catalog mutations (#51).
+
+    Catalog writes (genres, content, seasons, episodes, recommendations,
+    cast, publish) must never be reachable by unauthenticated or non-admin
+    callers, regardless of how the network boundary is configured.
+    """
+    user_id, role = await _require_identity(authorization, with_role=True)
+    if role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator privileges required",
+        )
+    return str(user_id)
+
+
+async def _require_identity(
+    authorization: str | None, *, with_role: bool = False
+) -> UUID | tuple[UUID, str]:
+    """Shared JWT verification returning the verified subject (and role)."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -78,13 +103,21 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token missing subject claim",
         )
-    return UUID(sub)
+    user_id = UUID(sub)
+    if with_role:
+        return user_id, str(payload.get("role") or "user")
+    return user_id
 
 
 # Genre endpoints
 
 
-@router.post("/genres", response_model=GenreResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/genres",
+    response_model=GenreResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(get_admin_identity)],
+)
 async def create_genre(
     request: GenreCreateRequest,
     service: Annotated[ContentService, Depends(get_content_service)],
@@ -119,7 +152,11 @@ async def get_genre(
     return genre
 
 
-@router.put("/genres/{genre_id}", response_model=GenreResponse)
+@router.put(
+    "/genres/{genre_id}",
+    response_model=GenreResponse,
+    dependencies=[Depends(get_admin_identity)],
+)
 async def update_genre(
     genre_id: UUID,
     request: GenreCreateRequest,
@@ -132,7 +169,11 @@ async def update_genre(
     return genre
 
 
-@router.delete("/genres/{genre_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/genres/{genre_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(get_admin_identity)],
+)
 async def delete_genre(
     genre_id: UUID,
     service: Annotated[ContentService, Depends(get_content_service)],
@@ -146,7 +187,12 @@ async def delete_genre(
 # Content endpoints
 
 
-@router.post("/content", response_model=ContentResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/content",
+    response_model=ContentResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(get_admin_identity)],
+)
 async def create_content(
     request: ContentCreateRequest,
     service: Annotated[ContentService, Depends(get_content_service)],
@@ -168,6 +214,20 @@ async def list_content(
     return await service.list_content(page, page_size, content_type, status, genre_id)
 
 
+@router.get("/content/trending", response_model=list[ContentListResponse])
+async def list_trending(
+    service: Annotated[ContentService, Depends(get_content_service)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+):
+    """List the most popular published content, ranked by audience score and votes.
+
+    Declared before /content/{content_id} so the popularity ranking is
+    available to downstream services (recommendations fallback) instead of
+    treating "first page of the catalog" as the global popularity order.
+    """
+    return await service.get_trending_content(limit)
+
+
 @router.get("/content/{content_id}", response_model=ContentResponse)
 async def get_content(
     content_id: UUID,
@@ -180,7 +240,11 @@ async def get_content(
     return content
 
 
-@router.put("/content/{content_id}", response_model=ContentResponse)
+@router.put(
+    "/content/{content_id}",
+    response_model=ContentResponse,
+    dependencies=[Depends(get_admin_identity)],
+)
 async def update_content(
     content_id: UUID,
     request: ContentUpdateRequest,
@@ -193,7 +257,11 @@ async def update_content(
     return content
 
 
-@router.delete("/content/{content_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/content/{content_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(get_admin_identity)],
+)
 async def delete_content(
     content_id: UUID,
     service: Annotated[ContentService, Depends(get_content_service)],
@@ -204,7 +272,11 @@ async def delete_content(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
 
 
-@router.post("/content/{content_id}/publish", response_model=ContentResponse)
+@router.post(
+    "/content/{content_id}/publish",
+    response_model=ContentResponse,
+    dependencies=[Depends(get_admin_identity)],
+)
 async def publish_content(
     content_id: UUID,
     request: ContentPublishRequest,
@@ -224,6 +296,7 @@ async def publish_content(
     "/content/{content_id}/seasons",
     response_model=SeasonResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(get_admin_identity)],
 )
 async def create_season(
     content_id: UUID,
@@ -256,7 +329,11 @@ async def get_season(
     return season
 
 
-@router.put("/content/{content_id}/seasons/{season_id}", response_model=SeasonResponse)
+@router.put(
+    "/content/{content_id}/seasons/{season_id}",
+    response_model=SeasonResponse,
+    dependencies=[Depends(get_admin_identity)],
+)
 async def update_season(
     content_id: UUID,
     season_id: UUID,
@@ -270,7 +347,11 @@ async def update_season(
     return season
 
 
-@router.delete("/content/{content_id}/seasons/{season_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/content/{content_id}/seasons/{season_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(get_admin_identity)],
+)
 async def delete_season(
     content_id: UUID,
     season_id: UUID,
@@ -289,6 +370,7 @@ async def delete_season(
     "/content/{content_id}/seasons/{season_id}/episodes",
     response_model=EpisodeResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(get_admin_identity)],
 )
 async def create_episode(
     content_id: UUID,
@@ -332,6 +414,7 @@ async def get_episode(
 @router.put(
     "/content/{content_id}/seasons/{season_id}/episodes/{episode_id}",
     response_model=EpisodeResponse,
+    dependencies=[Depends(get_admin_identity)],
 )
 async def update_episode(
     content_id: UUID,
@@ -350,6 +433,7 @@ async def update_episode(
 @router.delete(
     "/content/{content_id}/seasons/{season_id}/episodes/{episode_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(get_admin_identity)],
 )
 async def delete_episode(
     content_id: UUID,
@@ -397,6 +481,7 @@ async def list_ratings(
     "/content/{content_id}/recommendations",
     response_model=ContentRecommendationResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(get_admin_identity)],
 )
 async def add_recommendation(
     content_id: UUID,
@@ -425,6 +510,7 @@ async def list_recommendations(
     "/content/{content_id}/cast",
     response_model=CastMemberResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(get_admin_identity)],
 )
 async def add_cast_member(
     content_id: UUID,

@@ -87,17 +87,20 @@ class ModerationService:
         )
         await self.flag_repo.create(flag)
 
-        await self.publisher.publish(
-            Event(
-                topic="content.flagged",
-                key=str(flag.id),
-                payload={
-                    "flag_id": str(flag.id),
-                    "content_id": str(content_id),
-                    "flag_reason": flag_reason.value,
-                    "reporter_id": str(reporter_id),
-                },
-            )
+        # Transactional outbox: the event row is written in the same DB
+        # transaction as the flag. A background worker publishes PENDING
+        # rows (at-least-once; consumers dedupe on event_key), so the event
+        # cannot be lost to a broker outage and can never be visible before
+        # the flag itself is durably committed.
+        await self.flag_repo.enqueue_event(
+            topic="content.flagged",
+            event_key=str(flag.id),
+            payload={
+                "flag_id": str(flag.id),
+                "content_id": str(content_id),
+                "flag_reason": flag_reason.value,
+                "reporter_id": str(reporter_id),
+            },
         )
         logger.info(
             "content flagged: flag_id=%s content_id=%s reason=%s reporter=%s",
@@ -175,19 +178,18 @@ class ModerationService:
         if decision == DecisionType.REJECT:
             await self._issue_strike(flag, moderator_id)
 
-        # Emit decision event.
-        await self.publisher.publish(
-            Event(
-                topic="moderation.decision_made",
-                key=str(flag.id),
-                payload={
-                    "flag_id": str(flag.id),
-                    "content_id": str(flag.content_id),
-                    "decision": decision.value,
-                    "moderator_id": str(moderator_id),
-                    "notes": notes,
-                },
-            )
+        # Emit decision event via the transactional outbox (same DB
+        # transaction as the decision + flag-status change).
+        await self.flag_repo.enqueue_event(
+            topic="moderation.decision_made",
+            event_key=str(flag.id),
+            payload={
+                "flag_id": str(flag.id),
+                "content_id": str(flag.content_id),
+                "decision": decision.value,
+                "moderator_id": str(moderator_id),
+                "notes": notes,
+            },
         )
         logger.info(
             "moderation decision: flag_id=%s decision=%s moderator=%s",
@@ -247,17 +249,15 @@ class ModerationService:
         # Check suspension threshold.
         active_count = await self.strike_repo.count_active(creator_id)
         if active_count >= settings.STRIKES_BEFORE_SUSPENSION:
-            await self.publisher.publish(
-                Event(
-                    topic="creator.suspended",
-                    key=str(creator_id),
-                    payload={
-                        "creator_id": str(creator_id),
-                        "active_strikes": active_count,
-                        "reason": "auto-suspended after " f"{active_count} strikes",
-                        "triggering_flag_id": str(flag.id),
-                    },
-                )
+            await self.flag_repo.enqueue_event(
+                topic="creator.suspended",
+                event_key=str(creator_id),
+                payload={
+                    "creator_id": str(creator_id),
+                    "active_strikes": active_count,
+                    "reason": "auto-suspended after " f"{active_count} strikes",
+                    "triggering_flag_id": str(flag.id),
+                },
             )
             logger.warning(
                 "creator auto-suspended: creator_id=%s active_strikes=%d",
@@ -273,3 +273,34 @@ class ModerationService:
     async def get_strikes(self, creator_id: UUID) -> list[CreatorStrike]:
         """List all strikes (active + expired) for a creator."""
         return await self.strike_repo.list_all(creator_id)
+
+    # ------------------------------------------------------------------
+    # Outbox drain (background worker).
+    # ------------------------------------------------------------------
+
+    async def drain_outbox(self) -> int:
+        """Publish PENDING outbox rows to the bus; mark them dispatched.
+
+        A row whose publish fails stays PENDING and is retried on the next
+        drain (at-least-once; consumers dedupe on the event key). Returns the
+        number of rows processed.
+        """
+        rows = await self.flag_repo.pending_events(limit=settings.OUTBOX_BATCH_SIZE)
+        for row in rows:
+            try:
+                await self.publisher.publish(
+                    Event(
+                        topic=row.topic,
+                        key=row.event_key or "",
+                        payload=row.payload,
+                    )
+                )
+            except Exception:  # noqa: BLE001 - keep row pending for retry
+                logger.exception(
+                    "outbox publish failed for event %s (topic=%s); will retry",
+                    row.id,
+                    row.topic,
+                )
+                continue
+            await self.flag_repo.mark_dispatched(row.id)
+        return len(rows)

@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import Request
+from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 
 from app.api.routes import (
@@ -52,10 +52,10 @@ def client():
         yield c
 
 
-def make_playback_session(id_value=None):
+def make_playback_session(id_value=None, user_id=None):
     s = MagicMock()
     s.id = id_value or uuid4()
-    s.user_id = uuid4()
+    s.user_id = user_id or uuid4()
     s.content_id = uuid4()
     s.episode_id = None
     s.device_id = "device-1"
@@ -136,10 +136,10 @@ def make_cdn_region(id_value=None):
     return r
 
 
-def make_download(id_value=None):
+def make_download(id_value=None, user_id=None):
     d = MagicMock()
     d.id = id_value or uuid4()
-    d.user_id = uuid4()
+    d.user_id = user_id or uuid4()
     d.episode_id = uuid4()
     d.device_id = "device-1"
     d.status = "downloading"
@@ -184,14 +184,37 @@ class TestPlaybackRoutes:
 
         assert response.status_code == 422
 
-    def test_get_playback_session(self, client, fake_service):
-        session = make_playback_session()
+    def test_get_playback_session(self, client, fake_service, auth_user_id):
+        session = make_playback_session(user_id=auth_user_id)
         fake_service.get_playback_session = AsyncMock(return_value=session)
 
         response = client.get(f"/api/v1/playback-sessions/{session.id}")
 
         assert response.status_code == 200
         assert response.json()["status"] == "active"
+
+    def test_get_playback_session_requires_auth(self, client, fake_service):
+        async def _deny() -> UUID:
+            raise HTTPException(
+                status_code=401, detail="Missing or invalid authorization header"
+            )
+
+        app.dependency_overrides[streaming_user_di] = _deny
+        fake_service.get_playback_session = AsyncMock(
+            return_value=make_playback_session()
+        )
+
+        response = client.get(f"/api/v1/playback-sessions/{uuid4()}")
+
+        assert response.status_code == 401
+
+    def test_get_playback_session_other_user_returns_403(self, client, fake_service):
+        session = make_playback_session()  # owned by someone else
+        fake_service.get_playback_session = AsyncMock(return_value=session)
+
+        response = client.get(f"/api/v1/playback-sessions/{session.id}")
+
+        assert response.status_code == 403
 
     def test_get_playback_session_missing_returns_404(self, client, fake_service):
         fake_service.get_playback_session = AsyncMock(return_value=None)
@@ -210,8 +233,9 @@ class TestPlaybackRoutes:
         assert len(response.json()) == 1
         fake_service.get_active_sessions.assert_awaited_once_with(user_id)
 
-    def test_update_playback_session(self, client, fake_service):
-        session = make_playback_session()
+    def test_update_playback_session(self, client, fake_service, auth_user_id):
+        session = make_playback_session(user_id=auth_user_id)
+        fake_service.get_playback_session = AsyncMock(return_value=session)
         fake_service.update_playback_session = AsyncMock(return_value=session)
 
         response = client.patch(
@@ -221,15 +245,39 @@ class TestPlaybackRoutes:
         assert response.status_code == 200
         assert response.json()["current_position_seconds"] == 0
 
-    def test_end_playback_session_returns_204(self, client, fake_service):
-        session = make_playback_session()
+    def test_update_playback_session_other_user_returns_403(
+        self, client, fake_service
+    ):
+        session = make_playback_session()  # owned by someone else
+        fake_service.get_playback_session = AsyncMock(return_value=session)
+
+        response = client.patch(
+            f"/api/v1/playback-sessions/{session.id}", json={"current_position_seconds": 120}
+        )
+
+        assert response.status_code == 403
+
+    def test_end_playback_session_returns_204(self, client, fake_service, auth_user_id):
+        session = make_playback_session(user_id=auth_user_id)
+        fake_service.get_playback_session = AsyncMock(return_value=session)
         fake_service.end_playback_session = AsyncMock(return_value=session)
 
         response = client.post(f"/api/v1/playback-sessions/{session.id}/end")
 
         assert response.status_code == 204
 
+    def test_end_playback_session_other_user_returns_403(
+        self, client, fake_service
+    ):
+        session = make_playback_session()  # owned by someone else
+        fake_service.get_playback_session = AsyncMock(return_value=session)
+
+        response = client.post(f"/api/v1/playback-sessions/{session.id}/end")
+
+        assert response.status_code == 403
+
     def test_end_playback_session_missing_returns_404(self, client, fake_service):
+        fake_service.get_playback_session = AsyncMock(return_value=None)
         fake_service.end_playback_session = AsyncMock(return_value=None)
 
         response = client.post(f"/api/v1/playback-sessions/{uuid4()}/end")
@@ -454,13 +502,21 @@ class TestDownloadRoutes:
         assert response.status_code == 201
         assert response.json()["id"] == str(download.id)
 
-    def test_get_download(self, client, fake_service):
-        download = make_download()
+    def test_get_download(self, client, fake_service, auth_user_id):
+        download = make_download(user_id=auth_user_id)
         fake_service.get_download_session = AsyncMock(return_value=download)
 
         response = client.get(f"/api/v1/download-sessions/{download.id}")
 
         assert response.status_code == 200
+
+    def test_get_download_other_user_returns_403(self, client, fake_service):
+        download = make_download()  # owned by someone else
+        fake_service.get_download_session = AsyncMock(return_value=download)
+
+        response = client.get(f"/api/v1/download-sessions/{download.id}")
+
+        assert response.status_code == 403
 
     def test_get_download_missing_returns_404(self, client, fake_service):
         fake_service.get_download_session = AsyncMock(return_value=None)
@@ -478,9 +534,10 @@ class TestDownloadRoutes:
         assert response.status_code == 200
         fake_service.get_user_downloads.assert_awaited_once_with(user_id)
 
-    def test_update_download_progress(self, client, fake_service):
-        download = make_download()
+    def test_update_download_progress(self, client, fake_service, auth_user_id):
+        download = make_download(user_id=auth_user_id)
         download.bytes_downloaded = 500
+        fake_service.get_download_session = AsyncMock(return_value=download)
         fake_service.update_download_progress = AsyncMock(return_value=download)
 
         response = client.patch(
@@ -489,6 +546,18 @@ class TestDownloadRoutes:
 
         assert response.status_code == 200
         fake_service.update_download_progress.assert_awaited_once_with(download.id, 500)
+
+    def test_update_download_progress_other_user_returns_403(
+        self, client, fake_service
+    ):
+        download = make_download()  # owned by someone else
+        fake_service.get_download_session = AsyncMock(return_value=download)
+
+        response = client.patch(
+            f"/api/v1/download-sessions/{download.id}/progress?bytes_downloaded=500"
+        )
+
+        assert response.status_code == 403
 
 
 class TestIdorProtection:
@@ -505,6 +574,30 @@ class TestIdorProtection:
         app.dependency_overrides.clear()
         response = client.get(f"/api/v1/users/{uuid4()}/playback-sessions")
         assert response.status_code == 401
+
+    def test_single_session_endpoints_require_auth(self, client, fake_service):
+        app.dependency_overrides.clear()
+        fake_service.get_playback_session = AsyncMock(
+            return_value=make_playback_session()
+        )
+        session_id = str(uuid4())
+        assert (
+            client.get(f"/api/v1/playback-sessions/{session_id}").status_code == 401
+        )
+        assert (
+            client.patch(
+                f"/api/v1/playback-sessions/{session_id}",
+                json={"current_position_seconds": 1},
+            ).status_code
+            == 401
+        )
+        assert (
+            client.post(f"/api/v1/playback-sessions/{session_id}/end").status_code
+            == 401
+        )
+        assert (
+            client.get(f"/api/v1/download-sessions/{session_id}").status_code == 401
+        )
 
     def test_start_playback_other_user_403(self, client):
         response = client.post(

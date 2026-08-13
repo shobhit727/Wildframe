@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from jose import JWTError, jwt  # type: ignore[import-untyped]
+from jose import JWTError, jwt
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
@@ -55,7 +55,9 @@ async def current_user(
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
     except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        )
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
         raise HTTPException(
@@ -67,7 +69,6 @@ async def current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
         )
-
 
 def get_service(db: Annotated[AsyncSession, Depends(get_db)]) -> CreatorService:
     return CreatorService(

@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     # Kafka bootstrap (only used when EVENT_PUBLISHER=kafka).
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
 
+    # Transactional outbox
+    # Events are written to the DB in the same transaction as their business
+    # state; a background worker publishes PENDING rows in batches and marks
+    # them dispatched. At-least-once delivery, consumers dedupe on event_key.
+    OUTBOX_BATCH_SIZE: int = 100
+    OUTBOX_POLL_INTERVAL_SECONDS: int = 5
+
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if running in production with default insecure secrets."""
