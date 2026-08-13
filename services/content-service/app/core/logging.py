@@ -25,6 +25,27 @@ class ContextFilter(logging.Filter):
 
 def setup_logging():
     """Configure JSON logging with correlation IDs."""
+    import os
+
+    # Skip file handler in test environments to avoid permission issues
+    in_test = os.getenv("PYTEST_CURRENT_TEST") is not None
+
+    handlers = {
+        "console": {
+            "class": "logging.StreamHandler",
+            "level": "DEBUG",
+            "formatter": "json",
+            "filters": ["context_filter"],
+        },
+    }
+    if not in_test:
+        handlers["file"] = {
+            "class": "logging.FileHandler",
+            "level": "INFO",
+            "formatter": "json",
+            "filename": "content_service.log",
+            "filters": ["context_filter"],
+        }
 
     logging.config.dictConfig(
         {
@@ -38,23 +59,9 @@ def setup_logging():
                 "standard": {"format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s"},
             },
             "filters": {"context_filter": {"()": ContextFilter}},
-            "handlers": {
-                "console": {
-                    "class": "logging.StreamHandler",
-                    "level": "DEBUG",
-                    "formatter": "json",
-                    "filters": ["context_filter"],
-                },
-                "file": {
-                    "class": "logging.FileHandler",
-                    "level": "INFO",
-                    "formatter": "json",
-                    "filename": "content_service.log",
-                    "filters": ["context_filter"],
-                },
-            },
+            "handlers": handlers,
             "loggers": {
-                "": {"handlers": ["console", "file"], "level": "DEBUG", "propagate": True},
+                "": {"handlers": list(handlers.keys()), "level": "DEBUG", "propagate": True},
                 "sqlalchemy.engine": {"level": "WARNING"},
                 "sqlalchemy.pool": {"level": "WARNING"},
             },

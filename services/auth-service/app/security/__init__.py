@@ -231,6 +231,7 @@ class TokenManager:
                 algorithms=[settings.JWT_ALGORITHM],
                 issuer=settings.JWT_ISSUER,
                 audience=settings.JWT_AUDIENCE,
+                options={"leeway": settings.JWT_LEEWAY_SECONDS},
             )
 
             if payload.get("type") != token_type:
@@ -259,13 +260,18 @@ class TokenManager:
             UUID | None: User ID if extractable, None otherwise
         """
         try:
-            # No verification by design: this helper only reads the payload.
-            # python-jose's decode always applies claim checks even with
-            # options, so decode the unsigned payload segment directly.
-            segment = token.split(".")[1]
-            padded = segment + "=" * (-len(segment) % 4)
-            payload = json.loads(base64.urlsafe_b64decode(padded))
-            user_id_str = payload.get("user_id") or payload.get("sub")
+            payload = jwt.decode(
+                token,
+                settings.JWT_SECRET_KEY,
+                algorithms=[settings.JWT_ALGORITHM],
+                options={
+                    "verify_signature": False,
+                    "verify_aud": False,
+                    "verify_iss": False,
+                    "verify_exp": False,
+                },
+            )
+            user_id_str = payload.get("user_id")
             if user_id_str:
                 return UUID(user_id_str)
         except (JWTError, ValueError, IndexError, UnicodeDecodeError, json.JSONDecodeError):

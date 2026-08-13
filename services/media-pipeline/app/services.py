@@ -577,6 +577,11 @@ class MediaPipelineService:
                     await self._fail_job(job, stage.name, str(exc))
                     self._cleanup_job_dirs(job)
                     return job
+                except PipelineError:
+                    # Critical stage exhausted retries; _run_stage_with_retries
+                    # already failed the job and emitted DLQ event.
+                    self._cleanup_job_dirs(job)
+                    return job
 
                 # _run_stage_with_retries returns an updated ctx on success or after
                 # skipping a non-critical stage. If a critical stage exhausted
