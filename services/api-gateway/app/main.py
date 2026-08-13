@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
     """Manage FastAPI application lifespan."""
     global auth_middleware, rate_limiter
     # Startup
+    app.state.shutting_down = False
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
 

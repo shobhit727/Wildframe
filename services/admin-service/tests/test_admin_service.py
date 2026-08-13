@@ -535,28 +535,34 @@ class TestConcurrencyLocks:
 
     @pytest.mark.asyncio
     async def test_resolve_content_flag_uses_for_update(self, admin_service):
+        # Mock get_by_content_id to return a flagged content on first call
+        # (the pre-check in resolve_content_flag), then return the same
+        # object on the second call (inside update_status with for_update=True).
+        mock_content = MagicMock(
+            id=1, content_id="movie1", status="flagged", is_active=True
+        )
         admin_service.content_repo.get_by_content_id = AsyncMock(
-            return_value=MagicMock(id=1, content_id="movie1", status="flagged")
+            side_effect=[mock_content, mock_content]
         )
-        admin_service.content_repo.update_status = AsyncMock(
-            return_value=MagicMock(
-                id=1, content_id="movie1", status="removed", resolved_at="2026-05-20"
-            )
-        )
+        # Don't mock update_status - let the real method run so it calls
+        # get_by_content_id with for_update=True.
         admin_service.audit_repo.create = AsyncMock(return_value=None)
+        # Mock db commit/refresh since we're using a mocked DB
+        admin_service.db.commit = AsyncMock()
+        admin_service.db.refresh = AsyncMock()
 
         await admin_service.resolve_content_flag("movie1", "removed", "admin1", "10.0.0.1")
 
-        # update_status internally uses for_update=True
-        update_calls = admin_service.content_repo.update_status.call_args_list
-        assert len(update_calls) == 1
-        admin_service.audit_repo.create = AsyncMock(return_value=None)
-
-        result = await admin_service.set_config(
-            "max_users", "20000", "integer", None, "admin1", "192.168.1.1"
-        )
-
-        assert result["value"] == "20000"
+        # Verify get_by_content_id was called twice: once without for_update
+        # (pre-check), once with for_update=True (inside update_status).
+        get_calls = admin_service.content_repo.get_by_content_id.call_args_list
+        assert len(get_calls) == 2
+        # First call: pre-check, no for_update
+        assert get_calls[0].args[0] == "movie1"
+        assert "for_update" not in get_calls[0].kwargs
+        # Second call: inside update_status, with for_update=True
+        assert get_calls[1].args[0] == "movie1"
+        assert get_calls[1].kwargs.get("for_update") is True
 
     @pytest.mark.asyncio
     async def test_get_config(self, admin_service):

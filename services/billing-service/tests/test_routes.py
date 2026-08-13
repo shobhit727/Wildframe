@@ -32,6 +32,17 @@ def fake_service():
     service.pool_repo = AsyncMock()
     service.milestone_repo = AsyncMock()
     service.payout_repo = AsyncMock()
+    service.refund_repo = AsyncMock()
+    service.webhook_events_repo = AsyncMock()
+    # Configure webhook_events_repo methods for webhook tests
+    service.webhook_events_repo.claim = AsyncMock(return_value=True)
+    service.webhook_events_repo.commit = AsyncMock()
+    service.webhook_events_repo.complete = AsyncMock()
+    service.webhook_events_repo.fail = AsyncMock()
+    # Service methods called by webhook handlers
+    service.subscribe = AsyncMock()
+    service.purchase_title = AsyncMock()
+    service.sync_subscription_from_stripe = AsyncMock()
     return service
 
 
@@ -386,6 +397,8 @@ class TestWebhookRoutes:
                 }
             },
         }
+        # First call returns True (claimed), second returns False (already processed)
+        fake_service.webhook_events_repo.claim = AsyncMock(side_effect=[True, False])
         with patch("app.api.webhook_routes.StripeClient.handle_webhook", return_value=event):
             first = client.post(
                 "/api/v1/billing/webhooks/stripe", json=event, headers={"Stripe-Signature": "x"}
@@ -401,7 +414,7 @@ class TestWebhookRoutes:
     def test_webhook_unhandled_event_type(self, client, fake_service):
         event = {
             "id": "evt_unknown_1",
-            "type": "charge.refunded",
+            "type": "some.unknown.event",
             "data": {"object": {}},
         }
         with patch("app.api.webhook_routes.StripeClient.handle_webhook", return_value=event):

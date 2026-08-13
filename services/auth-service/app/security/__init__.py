@@ -230,7 +230,7 @@ class TokenManager:
                 algorithms=[settings.JWT_ALGORITHM],
                 issuer=settings.JWT_ISSUER,
                 audience=settings.JWT_AUDIENCE,
-                leeway=settings.JWT_LEEWAY_SECONDS,
+                options={"leeway": settings.JWT_LEEWAY_SECONDS},
             )
 
             if payload.get("type") != token_type:
@@ -263,6 +263,12 @@ class TokenManager:
                 token,
                 settings.JWT_SECRET_KEY,
                 algorithms=[settings.JWT_ALGORITHM],
+                options={
+                    "verify_signature": False,
+                    "verify_aud": False,
+                    "verify_iss": False,
+                    "verify_exp": False,
+                },
             )
             user_id_str = payload.get("user_id")
             if user_id_str:
