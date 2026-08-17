@@ -2,15 +2,19 @@
 
 **Version**: 1.0.0  
 **Last Updated**: May 28, 2026  
-**Stability**: Production-Ready
+**Stability**: Active development — not production-ready (see `STATUS.md`)
+
+> Some sections below are aspirational design notes retained for history.
+> For how the repo is actually built today, `AGENTS.md` and `README.md` are
+> authoritative.
 
 ## Overview
 
 Wildframe is a production-grade OTT (Over-The-Top) streaming platform built on a distributed microservices architecture. It handles video streaming, user authentication, content management, recommendations, billing, and analytics at scale.
 
 **Key Stats**:
-- 12 microservices
-- 12 databases (database-per-service pattern)
+- 15 microservices
+- 16 databases (database-per-service pattern)
 - 5 infrastructure services (caching, messaging, search)
 - 4 observability services (metrics, logs, tracing, profiling)
 
@@ -500,6 +504,12 @@ Services communicate via:
 
 ### Schema Evolution
 
+> ⚠️ Historical note: the services do **not** use Alembic despite the
+> instructions below. There is no migration framework; schema changes are
+> applied by hand to the live dev DB and drift has been repaired manually
+> (e.g. billing `invoices`, Aug 2026). Keep model columns in sync with the
+> running stack.
+
 Use Alembic for database migrations:
 
 ```bash
@@ -545,15 +555,22 @@ Stateless token containing claims (user ID, email, roles), signed by server.
 **Access Token**: Short-lived (15 min), included in every request
 **Refresh Token**: Long-lived (7 days), used to obtain new access token
 
+Access tokens carry `aud: "wildframe-api"`; every verifying service decodes
+with that audience (`settings.JWT_AUDIENCE`) or python-jose raises
+`JWTClaimsError: Invalid audience`. The api-gateway is a transparent proxy —
+it rate-limits proxied requests (keyed by user `sub` or IP) but does not
+reject them itself; each backend service enforces auth at its own boundary.
+
 ### Rate Limiting
-Sliding window algorithm preventing abuse:
-- **Per-user**: 100 login attempts per hour
-- **Per-IP**: 1000 requests per minute
-- **Per-endpoint**: Custom limits
+Sliding window algorithm preventing abuse (enforced in the gateway's
+`proxy_request`):
+- **Key**: authenticated user `sub` (JWT) when present, otherwise client IP.
+- **Limits**: auth routes 5/min, search 100/min, default 1000/min.
+- **Response**: `429 Too Many Requests` with `Retry-After`.
 
 ### Correlation ID
 Unique identifier tracking a request through all services and all logs, enabling distributed tracing.
 
 ---
 
-Last Updated: May 26, 2026
+Last Updated: August 17, 2026

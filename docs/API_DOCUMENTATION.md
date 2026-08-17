@@ -64,6 +64,13 @@ Token lifetime (auth-service defaults):
 > through the gateway at `/{service}/api/v1/...` (e.g.
 > `https://localhost:8000/auth/api/v1/auth/login`).
 
+> Note: auth-issued access tokens carry the audience claim
+> `aud: "wildframe-api"`. Every backend service that verifies them decodes
+> with `audience="wildframe-api"` (from `settings.JWT_AUDIENCE`); a decode
+> that omits the audience raises `JWTClaimsError: Invalid audience`. The
+> api-gateway is a transparent proxy — it rate-limits proxied requests but
+> does not reject them itself; each service enforces its own auth boundary.
+
 ---
 
 ## Rate Limiting

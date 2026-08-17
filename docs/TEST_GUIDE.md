@@ -2,7 +2,7 @@
 
 Comprehensive reference for writing, running, and debugging tests across the Wildframe platform.
 
-**Last Updated**: June 4, 2026
+**Last Updated**: August 17, 2026
 
 ---
 
@@ -199,10 +199,41 @@ are aspirational; add `--cov-fail-under` once suites stabilize.
 
 ## Integration & E2E
 
-### Service-level integration
+### Live-stack integration suite (`tests/integration/`, repo root)
 
-Not yet written. Planned suites (`tests/test_*_integration.py`) will boot the
-FastAPI app + a real database (testcontainers: PostgreSQL/Redis/Kafka/ES).
+Since Aug 2026 the repo ships a cross-service integration suite that runs
+against the **real dockerized stack** through the Caddy proxy (HTTPS). 87
+tests across 7 modules + `conftest.py`:
+
+- `test_gateway_auth.py` — edge auth matrix through the gateway (expired /
+  wrong-audience / malformed tokens, public vs. protected routes) and the
+  gateway rate limiter (429 flood test, run last with drain sleeps).
+- `test_auth_token_lifecycle.py` — register → login → refresh → logout /
+  token revocation.
+- `test_authorization_cross_service.py` — per-service authorization and
+  audience verification (auth, content, analytics, billing, creators,
+  notification, search, streaming, admin, media-pipeline).
+- `test_billing_webhook_idempotency.py` — Stripe webhook: signature
+  verification (unsigned → 400), first delivery `handled:true`, replay
+  `idempotent:true`, exactly one PAID invoice row.
+- `test_contract_schemas.py` — shared response shapes across services.
+- `test_health_readiness.py` — `/health` and `/ready` for every service
+  (search `/ready` regression).
+- `test_pipeline_idempotency.py` — media-pipeline job start/get now require
+  a verified JWT; repeated `start` calls are idempotent.
+
+```bash
+# From repo root — stack must be up; skips itself if the stack is down
+poetry run pytest tests/integration -q    # ~12 min
+```
+
+> ⚠️ The integration suite is deliberately **excluded** from the per-service
+> loop (root `pyproject.toml` `testpaths` only cover `services/*/tests` and
+> `packages/*/tests`), so CI's unit matrix does not run it. It is not
+> testcontainers-based; it treats the compose stack as the test target.
+> HTTP requests use `verify=False` (self-signed dev certs), and IP-keyed
+> requests are paced (≤3 per 60 s window) so the gateway rate limiter does
+> not flake the suite.
 
 ### Full platform E2E
 
@@ -245,10 +276,12 @@ curl -X POST https://localhost:8000/auth/api/v1/auth/login \
 
 **`ModuleNotFoundError: No module named 'app'` / wrong `app.models` imported** — you ran pytest from outside the service dir (or a combined `pytest services/` sweep). `cd services/<svc>` first.
 
-**`asyncpg.exceptions.UndefinedTableError`** — Migrations not applied. Run:
+**`asyncpg.exceptions.UndefinedTableError`** — the live dev DB is missing a column/table the models expect (no migration framework; drift is repaired by hand). Verify against the running stack, e.g.:
 ```bash
-docker compose -f deployments/docker-compose.dev.yml exec auth-service alembic upgrade head
+docker compose -f deployments/docker-compose.dev.yml exec postgres \
+  psql -U wildframe -d <db_name> -c "\d <table>"
 ```
+then `ALTER TABLE` as needed (see docs/OPERATIONS.md "Database Migrations").
 
 **Coverage missing lines even though they ran** — The file is loaded via a different path. Check `pyproject.toml`'s `[tool.coverage.run] source` list.
 

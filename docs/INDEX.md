@@ -9,6 +9,7 @@ This index points to the documentation that should be used for current engineeri
 - [`README.md`](../README.md) — current architecture, CI/CD, deployment requirements, and production gaps.
 - [`STATUS.md`](../STATUS.md) — current implementation and deployment status.
 - [`SECURITY.md`](../SECURITY.md) — vulnerability reporting policy.
+- [`DOCS_INDEX.md`](../DOCS_INDEX.md) — index of **every** `.md` file in the repo (current and historical) with summaries.
 
 ## Development
 

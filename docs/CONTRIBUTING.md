@@ -112,7 +112,7 @@ services/auth-service/
 ├── tests/
 │   ├── __init__.py
 │   └── test_auth_service.py
-├── migrations/                    # Alembic migrations
+├── migrations/                    # planned Alembic migrations (not yet implemented)
 ├── Dockerfile
 ├── pyproject.toml
 └── README.md

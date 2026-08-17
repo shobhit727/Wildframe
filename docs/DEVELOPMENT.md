@@ -38,8 +38,10 @@ npm install
 # Start development environment
 docker-compose -f deployments/docker-compose.dev.yml up -d
 
-# Run migrations
-docker-compose exec auth-service alembic upgrade head
+# Note: no Alembic in this repo — schema changes are applied by hand to the
+# dev DBs (see docs/OPERATIONS.md "Database Migrations"). This command is
+# historical and does not exist in the services.
+# docker-compose exec auth-service alembic upgrade head
 
 # Start frontend
 npm run dev --workspace=apps/web
@@ -537,7 +539,7 @@ docker-compose up --build
 
 **Connection Pool**: Reused database connections reducing overhead.
 
-**Migration**: Schema change applied incrementally using Alembic.
+**Migration**: Schema change applied incrementally (planned via Alembic; not yet implemented in this repo — see docs/OPERATIONS.md).
 
 ### Monitoring & Observability Terms
 

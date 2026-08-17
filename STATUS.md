@@ -92,3 +92,42 @@ The EKS clusters and their supporting infrastructure must already exist. This re
 Historical files such as completion summaries and old quick-start variants are retained as project history. They are not release declarations.
 
 Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/OPERATIONS.md`, and `SECURITY.md` as the current operational documentation.
+
+## Security and QA hardening (Aug 2026)
+
+GitHub security-audit issues are being closed oldest-first with code, unit
+tests, and live verification against the running HTTPS stack. Closed so far
+include #42, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61, #62, #63,
+and #41 (open items: #43 authorization test sweep, #44 contract tests; #45 DRM
+held as backlog).
+
+Highlights:
+
+- **Cross-service JWT audience verification** — auth-service tokens carry
+  `aud: "wildframe-api"`; every service that verifies them now decodes with
+  `audience=settings.JWT_AUDIENCE` (gateway decode is the one exception). This
+  fixed a live bug where every authenticated call to streaming, content,
+  admin, billing, creators, notification, search, and media-pipeline returned
+  401.
+- **Media-pipeline auth** — `POST /api/v1/pipeline/jobs/{upload_session_id}/start`
+  and `GET /api/v1/pipeline/jobs/{job_id}` previously accepted unauthenticated
+  calls; both now require a verified JWT.
+- **Analytics authorization** — analytics routes enforce creator/content
+  ownership via the admin role or server-side owner resolution against the
+  content-service.
+- **Live-stack integration suite** — `tests/integration/` (87 tests, ~12 min):
+  gateway auth matrix + 429 flood, token lifecycle, cross-service
+  authorization, billing webhook idempotency (Stripe signature verification,
+  exactly one PAID invoice row on replay), contract schemas, health/readiness,
+  pipeline idempotency. Skips itself when the stack is down; excluded from the
+  CI unit matrix by design.
+- **search-service `/ready`** — returned a raw tuple and 500'd; now a proper
+  JSONResponse (live 200).
+- **Billing schema drift** — webhook `invoice.paid` 500'd because the live
+  `invoices` table lacked `stripe_invoice_id`, `currency`, and
+  `refunded_amount`; repaired by hand (no migration framework) and the webhook
+  flow is now idempotent.
+
+Test totals (Aug 17, 2026): 775 backend unit/route tests + 87 integration
+tests + 43 frontend vitest tests. One known pre-existing failure, billing
+`test_release_tranche_not_locked`, is unrelated to the hardening work.

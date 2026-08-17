@@ -22,6 +22,10 @@ for svc in services/*/; do
   (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
 done
 
+# Run the live-stack integration suite (needs the compose stack up; skips
+# itself when the stack is down). ~12 min, 87 tests.
+poetry run pytest tests/integration -q
+
 # Frontend (Next.js 15)
 cd apps/web && npm install && npm run dev   # https://localhost:3000
 ```
@@ -70,7 +74,15 @@ wildframe/
   (`redis.asyncio`) are all async. Do **not** use the unmaintained `aioredis`
   fork — the project depends on the official `redis` package.
 - **JWT auth**: 15-min access + 7-day refresh tokens (`python-jose` /
-  `pyjwt`). The api-gateway validates tokens and rate-limits per client.
+  `pyjwt`). The api-gateway is a **transparent proxy**: it rate-limits per
+  client in `proxy_request` (key: user `sub` or IP) but does not itself reject
+  proxied requests — every backend service must verify tokens at its own
+  boundary.
+- **JWT audience**: auth-service tokens carry `aud: "wildframe-api"`. Every
+  service that verifies auth-issued tokens must decode with
+  `audience=settings.JWT_AUDIENCE` (`"wildframe-api"`), or python-jose raises
+  `JWTClaimsError: Invalid audience` on aud-bearing tokens. The gateway's own
+  decode is the one exception (no audience check).
 - **Event-driven**: Kafka for inter-service events (user.registered, user.login,
   token.revoked, ...).
 - **Observability**: OpenTelemetry tracing, Prometheus metrics, Grafana, Loki,
@@ -185,9 +197,17 @@ actually binds (8000 for most; 8003 for content, 8004 for streaming).
 - **Don't forget the gateway rate limiter** — the api-gateway enforces 429s in
   `proxy_request` (key: user `sub` or IP). Gateway tests stub it; don't remove
   the call.
+- **Don't decode auth-issued JWTs without an audience** — see the JWT
+  audience rule above. A decode that omits `audience=` silently passes for
+  aud-less tokens but throws for real auth-service tokens; the integration
+  suite catches this.
 - **Don't forget the API prefix** — routes are mounted under `/api/v1`, so a
   handler at `/auth/login` is reached at `/api/v1/auth/login` (via the gateway:
   `/{service}/api/v1/...`).
+- **No migration framework** — services do not use Alembic despite older docs.
+  Schema changes are applied by hand to the live dev DB (e.g. the billing
+  `invoices` drift repaired in Aug 2026). Verify column lists against the
+  running stack before assuming a table matches the models.
 
 ## Documentation
 

@@ -124,6 +124,9 @@ done
 cd services/auth-service
 pytest tests --asyncio-mode=auto
 
+# Live-stack integration suite (needs the compose stack up; ~12 min, 87 tests)
+poetry run pytest tests/integration -q
+
 # Frontend
 cd apps/web
 npx vitest run

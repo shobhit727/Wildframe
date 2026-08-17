@@ -94,6 +94,26 @@ The CI workflow is the primary reproducible validation environment. For local te
 - `TESTING_GUIDE.md`
 - `HOW_TO_RUN_TESTS.md`
 
+Backend unit/route tests run per service (a combined `pytest services/` sweep
+from the repo root breaks on shadowed `app.*` imports):
+
+```bash
+for svc in services/*/; do
+  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+done
+```
+
+The repo also ships a live-stack integration suite (`tests/integration/`, 87
+tests) that exercises the full HTTPS stack — auth token lifecycle, gateway
+rate limiting, cross-service authorization/audience verification, billing
+webhook idempotency, health/readiness, and pipeline idempotency. It needs the
+compose stack up (skips itself when down) and is intentionally excluded from
+the CI unit matrix:
+
+```bash
+poetry run pytest tests/integration -q    # ~12 min
+```
+
 Avoid treating old completion reports as current test evidence. CI results from the current commit are authoritative.
 
 ## Documentation source of truth
@@ -104,6 +124,7 @@ For current information, start with:
 
 - `README.md` — current project status and architecture.
 - `STATUS.md` — current implementation status.
+- `DOCS_INDEX.md` — index of every `.md` file in the repo with summaries.
 - `docs/INDEX.md` — documentation index.
 - `docs/DEPLOYMENT_GUIDE.md` — deployment architecture and requirements.
 - `docs/OPERATIONS.md` — operational procedures.

@@ -62,7 +62,23 @@ bandit -r app/  # Python code security
 
 ## Database Migrations
 
+> ⚠️ Current reality: the services do **not** use Alembic — no migration
+> framework exists in this repo. Schema changes are applied by hand to the
+> live dev database (database-per-service, one DB per service). Verify the
+> running stack's column lists before assuming a table matches the models
+> (the billing `invoices` drift was repaired this way in Aug 2026).
+
 ### PostgreSQL Migrations
+
+```bash
+# Apply a schema change by hand to the dev stack (16 DBs, see
+# infrastructure/database/init-databases.sql)
+docker compose -f deployments/docker-compose.dev.yml exec postgres \
+  psql -U wildframe -d <db_name> -c "ALTER TABLE ..."
+```
+
+The commands below are historical instructions from when Alembic was planned;
+they do not apply to the current codebase:
 
 ```bash
 # Create migration

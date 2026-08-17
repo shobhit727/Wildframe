@@ -1,5 +1,13 @@
 # Testing Guide - Wildframe Netflix Backend
 
+> ⚠️ Historical document retained for project history (per `STATUS.md`).
+> It predates the current repo layout and is **not** authoritative. Today:
+> tests live in each service's `tests/` dir and must run per-service (see
+> `AGENTS.md` / `docs/TEST_GUIDE.md`); a live-stack integration suite lives
+> in `tests/integration/`; and host-facing traffic only reaches services via
+> the Caddy proxy at `https://localhost:8000/<service>/api/v1/...` — direct
+> host ports like 8001/8002/8003 in the curl examples below are not bound.
+
 ## Quick Start
 
 ### 1. Unit & Integration Tests
