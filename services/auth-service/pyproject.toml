@@ -18,7 +18,7 @@ packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.16"
-fastapi = "^0.111.0"
+fastapi = "^0.141.0"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}
 pydantic = "^2.4.0"
 pydantic-settings = "^2.0.0"
@@ -42,7 +42,7 @@ opentelemetry-instrumentation-sqlalchemy = "^0.41b0"
 opentelemetry-instrumentation-redis = "^0.41b0"
 prometheus-client = "^0.18.0"
 pyotp = "^2.9.0"
-setuptools = ">=69,<81"
+setuptools = ">=84,<86"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
 
 [tool.poetry.group.dev.dependencies]
