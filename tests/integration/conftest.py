@@ -58,6 +58,7 @@ CONTENT_SERVICE = f"{GATEWAY_URL}/content/api/v1"
 STREAMING_SERVICE = f"{GATEWAY_URL}/streaming/api/v1"
 ANALYTICS_SERVICE = f"{GATEWAY_URL}/analytics/api/v1"
 MEDIA_SERVICE = f"{GATEWAY_URL}/media/api/v1"
+CREATORS_SERVICE = f"{GATEWAY_URL}/creators/api/v1"
 BILLING_SERVICE = f"https://localhost:{SERVICE_PORTS['billing']}/api/v1"
 
 REGISTER_PASSWORD = "SecurePass123!"

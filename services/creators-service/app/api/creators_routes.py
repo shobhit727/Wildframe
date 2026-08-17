@@ -75,6 +75,51 @@ async def current_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
         )
 
+
+async def current_admin(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> UUID:
+    """Admin-only guard for the /admin/creators routes.
+
+    The api-gateway is a transparent proxy that does not enforce roles, so
+    this dependency must re-verify the token signature, the JWT audience, and
+    the admin role claim at the service boundary. Plain user tokens and
+    unauthenticated callers are rejected (403 / 401) — UI hiding is not a
+    security boundary.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+    token = authorization.removeprefix("Bearer ")
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            audience=settings.JWT_AUDIENCE,
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        )
+    if payload.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
+        )
+    sub = payload.get("sub") or payload.get("user_id")
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
+        )
+    try:
+        return UUID(str(sub))
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
+        )
+
 def get_service(db: Annotated[AsyncSession, Depends(get_db)]) -> CreatorService:
     return CreatorService(
         CreatorAccountRepository(db),
@@ -315,14 +360,16 @@ async def accrue_my_payout(
 
 
 # -------------------------------------------------------------------- admin
-# Admin routes operate on a creator by id. require creator-owns-or-admin is
-# enforced by the gateway; here we validate the target creator exists.
+# Admin routes operate on a creator by id. current_admin re-verifies the
+# token signature, JWT audience, and admin role claim at this boundary (the
+# gateway is a transparent proxy and does not enforce roles).
 
 
 @admin_router.post("/{creator_id}/milestones", response_model=MilestoneResponse)
 async def admin_create_milestone(
     creator_id: UUID,
     payload: MilestoneCreate,
+    admin_id: Annotated[UUID, Depends(current_admin)],
     service: Annotated[CreatorService, Depends(get_service)],
 ):
     acct = await service.acct_repo.get(creator_id)
@@ -345,6 +392,7 @@ async def admin_add_tranche(
     creator_id: UUID,
     mid: UUID,
     payload: TrancheCreate,
+    admin_id: Annotated[UUID, Depends(current_admin)],
     service: Annotated[CreatorService, Depends(get_service)],
 ):
     ms = await service.milestone_repo.get(mid)
@@ -362,6 +410,7 @@ async def admin_add_tranche(
 async def admin_release_tranche(
     creator_id: UUID,
     mid: UUID,
+    admin_id: Annotated[UUID, Depends(current_admin)],
     threshold: int = Body(...),
     service: CreatorService = Depends(get_service),  # noqa: B008
 ):
@@ -378,6 +427,7 @@ async def admin_release_tranche(
 async def admin_kill_milestone(
     creator_id: UUID,
     mid: UUID,
+    admin_id: Annotated[UUID, Depends(current_admin)],
     reason: str | None = Body(None),
     service: CreatorService = Depends(get_service),  # noqa: B008
 ):

@@ -102,6 +102,9 @@ class TestServiceRegistry:
         assert "streaming" in ServiceRegistry.SERVICES
         assert "users" in ServiceRegistry.SERVICES
         assert "billing" in ServiceRegistry.SERVICES
+        assert "creators" in ServiceRegistry.SERVICES
+        assert "moderation" in ServiceRegistry.SERVICES
+        assert "uploads" in ServiceRegistry.SERVICES
 
 
 class TestGatewayEndpoints:

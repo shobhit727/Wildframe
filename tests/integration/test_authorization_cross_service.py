@@ -18,10 +18,12 @@ from conftest import (
     ANALYTICS_SERVICE,
     AUTH_SERVICE,
     CONTENT_SERVICE,
+    CREATORS_SERVICE,
     STREAMING_SERVICE,
     auth_headers,
     fetch_content_id,
     ip_keyed,
+    mint_access_token,
     register_user,
 )
 
@@ -232,6 +234,80 @@ class TestAnalyticsOwnership:
     def test_analytics_requires_token(self, client: httpx.Client) -> None:
         response = ip_keyed(client, "get", f"{ANALYTICS_SERVICE}/analytics/creators/{uuidlib.uuid4()}")
         assert response.status_code == 401
+
+
+class TestCreatorsAdminAuthorization:
+    """[#43] Creators admin routes are served through the gateway and must
+    enforce admin role at the service boundary (the gateway is a transparent
+    proxy). Covers the unauthenticated gap found in the audit: the admin
+    router was previously unmounted and unguarded, and the gateway refused
+    to route /creators entirely.
+    """
+
+    @pytest.fixture(scope="module")
+    def creator_id(self, client: httpx.Client, user_a: dict) -> str:
+        response = client.post(
+            f"{CREATORS_SERVICE}/creators/onboard",
+            headers=auth_headers(user_a["access_token"]),
+            json={"display_name": f"IT Creator {uuidlib.uuid4().hex[:8]}"},
+        )
+        assert response.status_code == 200, response.text
+        return response.json()["id"]
+
+    def test_onboard_routed_through_gateway(self, creator_id: str) -> None:
+        assert creator_id  # routing + onboard succeeded via /creators prefix
+
+    def test_admin_milestone_requires_token(self, client: httpx.Client, creator_id: str) -> None:
+        response = ip_keyed(
+            client,
+            "post",
+            f"{CREATORS_SERVICE}/admin/creators/{creator_id}/milestones",
+            json={"title": "x", "total_cents": 100, "currency": "USD"},
+        )
+        assert response.status_code == 401
+
+    def test_admin_milestone_denied_for_regular_user(
+        self, client: httpx.Client, user_a: dict, creator_id: str
+    ) -> None:
+        response = client.post(
+            f"{CREATORS_SERVICE}/admin/creators/{creator_id}/milestones",
+            headers=auth_headers(user_a["access_token"]),
+            json={"title": "x", "total_cents": 100, "currency": "USD"},
+        )
+        assert response.status_code == 403
+
+    def test_admin_milestone_denied_for_forged_garbage_token(
+        self, client: httpx.Client, creator_id: str
+    ) -> None:
+        response = client.post(
+            f"{CREATORS_SERVICE}/admin/creators/{creator_id}/milestones",
+            headers=auth_headers("garbage.token.value"),
+            json={"title": "x", "total_cents": 100, "currency": "USD"},
+        )
+        assert response.status_code == 401
+
+    def test_admin_milestone_accepted_for_admin_role_token(
+        self, client: httpx.Client, creator_id: str
+    ) -> None:
+        admin_token = mint_access_token(uuidlib.uuid4(), role="admin")
+        response = client.post(
+            f"{CREATORS_SERVICE}/admin/creators/{creator_id}/milestones",
+            headers=auth_headers(admin_token),
+            json={"title": "IT Milestone", "total_cents": 100, "currency": "USD"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["creator_id"] == creator_id
+
+    def test_admin_release_denied_for_regular_user(
+        self, client: httpx.Client, user_a: dict, creator_id: str
+    ) -> None:
+        response = client.post(
+            f"{CREATORS_SERVICE}/admin/creators/{creator_id}/milestones/"
+            f"{uuidlib.uuid4()}/release",
+            headers=auth_headers(user_a["access_token"]),
+            json={"threshold": 100},
+        )
+        assert response.status_code == 403
 
 
 @pytest.fixture(scope="module")

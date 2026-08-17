@@ -3,8 +3,8 @@
 Creators routes override the DB session via ``get_db`` and construct the
 service inline with real repositories; tests therefore patch the
 ``CreatorService`` class used by the routes to return in-memory stand-ins.
-The admin routes in ``creators_routes.py`` are not mounted by ``main.py``
-and are not exercised here.
+The admin routes in ``creators_routes.py`` are mounted by ``main.py`` and
+covered by ``TestAdminCreatorAuth`` ([#43]).
 """
 
 from datetime import UTC, datetime
@@ -249,3 +249,88 @@ class TestCurrentUserAuth:
             },
         )
         assert response.status_code == 401
+
+
+class TestAdminCreatorAuth:
+    """[#43] Admin /admin/creators routes must reject unauthenticated callers
+    and non-admin tokens (401/403) and accept admin-role tokens. The admin
+    router is now mounted in main.py; the gateway is a transparent proxy so
+    this service is the enforcement boundary.
+    """
+
+    MILESTONE_URL = "/api/v1/admin/creators/11111111-1111-1111-1111-111111111111/milestones"
+
+    def _mint(self, role: str) -> str:
+        from datetime import timedelta
+
+        from jose import jwt
+
+        from app.core.settings import settings
+
+        payload = {
+            "sub": str(uuid4()),
+            "role": role,
+            "aud": settings.JWT_AUDIENCE,
+            "iat": datetime.now(UTC),
+            "exp": datetime.now(UTC) + timedelta(minutes=15),
+        }
+        return jwt.encode(
+            payload,
+            settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+
+    def _make_milestone(self):
+        ms = MagicMock()
+        ms.id = uuid4()
+        ms.creator_id = uuid4()
+        ms.title = "Milestone"
+        ms.total_cents = 100_00
+        ms.currency = "USD"
+        ms.goal = "release"
+        ms.kill_reason = None
+        ms.status = "draft"
+        ms.created_at = datetime.now(UTC).replace(tzinfo=None)
+        ms.updated_at = datetime.now(UTC).replace(tzinfo=None)
+        return ms
+
+    def test_no_token_rejected_401(self, client, service):
+        response = client.post(self.MILESTONE_URL, json={"title": "x", "total_cents": 100, "currency": "USD"})
+        assert response.status_code == 401
+
+    def test_garbage_token_rejected_401(self, client, service):
+        response = client.post(
+            self.MILESTONE_URL,
+            json={"title": "x", "total_cents": 100, "currency": "USD"},
+            headers={"Authorization": "Bearer garbage"},
+        )
+        assert response.status_code == 401
+
+    def test_regular_user_rejected_403(self, client, service):
+        token = self._mint("user")
+        response = client.post(
+            self.MILESTONE_URL,
+            json={"title": "x", "total_cents": 100, "currency": "USD"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 403
+
+    def test_admin_token_accepted_200(self, client, service):
+        token = self._mint("admin")
+        service.acct_repo.get = AsyncMock(return_value=make_acct())
+        service.create_milestone = AsyncMock(return_value=self._make_milestone())
+        response = client.post(
+            self.MILESTONE_URL,
+            json={"title": "x", "total_cents": 100, "currency": "USD"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+
+    def test_admin_release_tranche_requires_admin(self, client, service):
+        token = self._mint("user")
+        response = client.post(
+            "/api/v1/admin/creators/11111111-1111-1111-1111-111111111111/milestones/22222222-2222-2222-2222-222222222222/release",
+            json={"threshold": 100},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 403

@@ -77,6 +77,9 @@ class ServiceRegistry:
             "notifications": "http://notification-service:8000",
             "media": "http://media-pipeline:8000",
             "admin": "http://admin-service:8000",
+            "creators": "http://creators-service:8000",
+            "moderation": "http://moderation-service:8000",
+            "uploads": "http://uploads-service:8000",
         }
     )
 

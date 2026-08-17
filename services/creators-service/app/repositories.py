@@ -52,6 +52,7 @@ class CreatorAccountRepository:
         )
         self.session.add(acct)
         await self.session.flush()
+        await self.session.commit()
         return acct
 
     async def update(self, acct: CreatorAccount, **fields) -> CreatorAccount:
@@ -59,6 +60,7 @@ class CreatorAccountRepository:
             if v is not None:
                 setattr(acct, k, v)
         await self.session.flush()
+        await self.session.commit()
         return acct
 
 
@@ -83,7 +85,7 @@ class EffectiveFloorRepository:
         currency: str = "USD",
         reason: str | None = None,
     ) -> EffectiveFloor:
-        now = datetime.now(UTC)
+        now = datetime.now(UTC).replace(tzinfo=None)
         floor = EffectiveFloor(
             creator_id=creator_id,
             per_minute_amount=per_minute_amount,
@@ -94,6 +96,7 @@ class EffectiveFloorRepository:
         )
         self.session.add(floor)
         await self.session.flush()
+        await self.session.commit()
         return floor
 
 
@@ -118,12 +121,14 @@ class CreatorPoolBalanceRepository:
         bal = await self.get_or_create(creator_id)
         bal.contributed_cents += cents
         await self.session.flush()
+        await self.session.commit()
         return bal
 
     async def accrue(self, creator_id: UUID, cents: int) -> CreatorPoolBalance:
         bal = await self.get_or_create(creator_id)
         bal.accrued_cents += cents
         await self.session.flush()
+        await self.session.commit()
         return bal
 
 
@@ -154,6 +159,7 @@ class MilestoneRepository:
         )
         self.session.add(ms)
         await self.session.flush()
+        await self.session.commit()
         return ms
 
     async def add_tranche(
@@ -172,6 +178,7 @@ class MilestoneRepository:
         )
         self.session.add(tranche)
         await self.session.flush()
+        await self.session.commit()
         return tranche
 
     async def release_tranche(self, milestone_id: UUID, threshold: int) -> MilestoneTranche | None:
@@ -185,8 +192,9 @@ class MilestoneRepository:
         if tranche is None:
             return None
         tranche.status = TrancheStatus.RELEASED
-        tranche.released_at = datetime.now(UTC)
+        tranche.released_at = datetime.now(UTC).replace(tzinfo=None)
         await self.session.flush()
+        await self.session.commit()
         return tranche
 
     async def kill_milestone(
@@ -214,6 +222,7 @@ class MilestoneRepository:
             t.status = TrancheStatus.ROLLED_BACK
 
         await self.session.flush()
+        await self.session.commit()
         return ms
 
 
@@ -271,4 +280,5 @@ class PayoutLedgerRepository:
         )
         self.session.add(row)
         await self.session.flush()
+        await self.session.commit()
         return row

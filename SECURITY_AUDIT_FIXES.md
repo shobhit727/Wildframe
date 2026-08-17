@@ -27,8 +27,40 @@ Each item closed with unit tests plus live verification against the running HTTP
 - **search-service `/ready`** (#41): returned a raw tuple and 500'd; fixed to a proper JSONResponse.
 - **Billing webhook + schema drift** (#41): `POST /api/v1/billing/webhooks/stripe` verifies the Stripe signature, is idempotent (replay returns `idempotent:true`, exactly one PAID invoice row), and the live `invoices` table was repaired by hand (no migration framework) with `stripe_invoice_id`, `currency`, `refunded_amount`.
 - **Live-stack integration suite** (#41): `tests/integration/` — 87 tests covering the gateway auth matrix + 429 flood, token lifecycle, cross-service authorization, billing webhook idempotency, contract schemas, health/readiness, and pipeline idempotency. Skips itself when the stack is down; excluded from the CI unit matrix.
+- **Creators-service authorization sweep** (#43): the admin router
+  (`/api/v1/admin/creators/{id}/milestones`, `.../tranches`, `.../release`,
+  `.../kill`) was defined but **never mounted and had no auth dependency** —
+  money-moving operations (tranche release) were unguarded by design, with a
+  comment claiming "enforced by the gateway" (the gateway is a transparent
+  proxy and enforces nothing). Additionally the gateway's `ServiceRegistry`
+  was missing creators, moderation, and uploads, so `/creators`,
+  `/moderation`, `/uploads` requests returned "Service not found" (live
+  verified). Fixes:
+  - `admin_router` is now mounted in `main.py` behind a new `current_admin`
+    dependency (JWT signature + `aud: wildframe-api` audience + `role ==
+    "admin"` claim; 401 missing/garbage, 403 non-admin). Live matrix: no
+    token → 401, regular user → 403 "Admin privileges required", admin →
+    200 with persisted milestone row.
+  - Gateway `ServiceRegistry` now routes creators, moderation, and uploads
+    (verified live: `POST /creators/api/v1/creators/onboard` returns 200
+    where it previously returned "Service not found").
+  - **Silent data loss**: `get_db` never committed and every repository only
+    flushed, so all writes (onboard, milestones, tranches, floors, payouts)
+    rolled back on session close — the service returned 200 for writes that
+    never persisted (DB stayed empty; admin milestone on a fresh creator
+    404'd because the onboard row was gone). All 10 mutating repository
+    methods now `await self.session.commit()`.
+  - **tz-aware datetimes into naive columns**: model defaults and repository
+    writes used `datetime.now(UTC)` against `TIMESTAMP WITHOUT TIME ZONE`
+    columns → asyncpg `DataError` → 500 on `POST /onboard`; now
+    `datetime.now(UTC).replace(tzinfo=None)`.
+  - Tests: +5 creators-service unit tests (`TestAdminCreatorAuth`: 401/401
+    garbage/403/200 admin happy path/403 release), +6 integration tests
+    (gateway routing, 401/403/401-garbage/admin-200/release-403). Suite grew
+    to 93 tests; all 15 service suites (780) and the full integration suite
+    pass.
 
-Open/backlog: #43 (authorization test sweep), #44 (contract tests), #45 (DRM scope — backlog by decision).
+Open/backlog: #44 (contract tests), #45 (DRM scope — backlog by decision).
 
 ## Review requirements
 

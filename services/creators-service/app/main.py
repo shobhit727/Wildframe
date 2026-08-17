@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from wildframe_observability.wire import wire_observability
 
+from app.api.creators_routes import admin_router as creators_admin_router
 from app.api.creators_routes import router as creators_router
 from app.core.database import DatabaseManager
 from app.core.settings import settings
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
         }
 
     app.include_router(creators_router)
+    app.include_router(creators_admin_router)
 
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
     wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
