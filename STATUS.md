@@ -98,7 +98,7 @@ Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/O
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
-#62, #63, and #41 (open items: #45 DRM held as backlog).
+#62, #63, #536, and #41 (open items: #45 DRM held as backlog).
 
 Highlights:
 
@@ -140,6 +140,11 @@ Highlights:
   stays POST-only. The sweep surfaced a live bug: **user-service JWT decode
   had no audience** — `GET /users/api/v1/profiles/{id}` 401'd with a valid
   token; fixed (plus a `JWT_AUDIENCE` setting).
+- **No archive extraction anywhere (#536)** — the platform has zero
+  archive-unpacking code (no tarfile/zipfile/unpack_archive in any service);
+  the audit's symlink-escape surface does not exist. A CI test
+  (`tests/contract/test_archive_sandbox.py`) pins that invariant and
+  documents the required sandboxed design for any future archive support.
 - **Live-stack integration suite** — `tests/integration/` (94 tests, ~12 min):
   gateway auth matrix + 429 flood, token lifecycle, cross-service
   authorization, billing webhook idempotency (Stripe signature verification,
@@ -154,5 +159,6 @@ Highlights:
   flow is now idempotent.
 
 Test totals (Aug 17, 2026): 780 backend unit/route tests + 94 integration
-tests + 43 frontend vitest tests. One known pre-existing failure, billing
+tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
+tests. One known pre-existing failure, billing
 `test_release_tranche_not_locked`, is unrelated to the hardening work.

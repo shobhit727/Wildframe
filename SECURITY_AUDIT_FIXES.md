@@ -72,6 +72,14 @@ Each item closed with unit tests plus live verification against the running HTTP
   catalog 200, search 200); analytics events stays POST-only (405 on GET).
   The sweep surfaced a live bug — user-service JWT decode without audience —
   now fixed (see audience bullet).
+- **Archive extraction symlink handling** (#536): verified the platform has
+  no archive-unpacking code path in any service, worker, or infra script
+  (media-pipeline's "extract" stages are ffmpeg metadata/audio/subtitle
+  extraction, not archives). `tests/contract/test_archive_sandbox.py` pins
+  the absence of tarfile/zipfile/unpack_archive APIs across services and
+  apps and documents the required sandboxed design (reject symlinks/
+  hardlinks/absolute members; extract strictly under the worker sandbox
+  root) for any future archive support.
 
 Open/backlog: #45 (DRM scope — backlog by decision).
 
