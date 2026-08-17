@@ -1,6 +1,6 @@
 # How to Run Tests
 
-**Current State**: Unit/route tests for all 15 microservices + the shared SDK + the frontend (vitest) + a live-stack integration suite (`tests/integration/`, 94 tests). Backend suites green (780 unit/route tests, Aug 17, 2026) with one known pre-existing failure (billing `test_release_tranche_not_locked`, unrelated to recent work). The integration suite needs the dockerized stack running and skips itself otherwise.
+**Current State**: Unit/route tests for all 15 microservices + the shared SDK + the frontend (vitest) + a live-stack integration suite (`tests/integration/`, 94 tests). Backend suites green (788 unit/route tests, Aug 17, 2026) with one known pre-existing failure (billing `test_release_tranche_not_locked`, unrelated to recent work). The integration suite needs the dockerized stack running and skips itself otherwise.
 
 ---
 
@@ -110,7 +110,7 @@ npm run build           # production build
 | creators-service | 18 |
 | uploads-service | 13 |
 | packages/sdk | 98 |
-| **Backend unit total** | **780** |
+| **Backend unit total** | **788** |
 | **tests/integration (live stack)** | **87** |
 | apps/web (vitest) | 43 |
 

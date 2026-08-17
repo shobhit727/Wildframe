@@ -160,11 +160,41 @@ class TestSystemAlerts:
                 created_at="2026-05-20",
             )
         )
+        admin_service.audit_repo.create = AsyncMock(return_value=None)
 
-        result = await admin_service.create_alert("database", "critical", "DB offline", "streaming")
+        result = await admin_service.create_alert(
+            "database", "critical", "DB offline", "streaming", "admin1", "10.0.0.1"
+        )
 
         assert result["alert_type"] == "database"
         assert result["severity"] == "critical"
+        admin_service.audit_repo.create.assert_awaited_once_with(
+            admin_id="admin1",
+            action="alert_created",
+            resource_type="alert",
+            resource_id="1",
+            changes="severity=critical",
+            ip_address="10.0.0.1",
+        )
+
+    @pytest.mark.asyncio
+    async def test_create_alert_without_admin_not_audited(self, admin_service):
+        """Backward-compatible call shape (no admin context) skips auditing."""
+        admin_service.alert_repo.create = AsyncMock(
+            return_value=MagicMock(
+                id=1,
+                alert_type="database",
+                severity="critical",
+                message="DB offline",
+                service="streaming",
+                created_at="2026-05-20",
+            )
+        )
+        admin_service.audit_repo.create = AsyncMock()
+
+        await admin_service.create_alert("database", "critical", "DB offline", "streaming")
+
+        admin_service.audit_repo.create.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_get_system_alerts(self, admin_service):
@@ -206,11 +236,30 @@ class TestSystemAlerts:
                 acknowledged_at="2026-05-20",
             )
         )
+        admin_service.audit_repo.create = AsyncMock(return_value=None)
 
         result = await admin_service.acknowledge_alert(1, "admin1")
 
         assert result["acknowledged"] is True
         assert result["acknowledged_by"] == "admin1"
+        admin_service.audit_repo.create.assert_awaited_once_with(
+            admin_id="admin1",
+            action="alert_acknowledged",
+            resource_type="alert",
+            resource_id="1",
+            changes=None,
+            ip_address="0.0.0.0",
+        )
+
+    @pytest.mark.asyncio
+    async def test_acknowledge_alert_missing_not_audited(self, admin_service):
+        admin_service.alert_repo.acknowledge = AsyncMock(return_value=None)
+        admin_service.audit_repo.create = AsyncMock()
+
+        result = await admin_service.acknowledge_alert(999, "admin1")
+
+        assert result is None
+        admin_service.audit_repo.create.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_get_critical_alerts(self, admin_service):
@@ -472,6 +521,92 @@ class TestAppendOnlyAudit:
 
         with pytest.raises(AuditLogAppendOnlyError):
             await admin_service.audit_repo.delete()
+
+    @pytest.mark.asyncio
+    async def test_orm_update_listener_blocks_real_session_update(self):
+        """[#168] End-to-end: a direct session UPDATE of an audit row
+        (bypassing the repository) is rejected by the ORM listener."""
+        from sqlalchemy.ext.asyncio import (
+            async_sessionmaker,
+            create_async_engine,
+        )
+
+        from app.models.admin import AdminAuditLog, AuditLogAppendOnlyError
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(AdminAuditLog.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            log = AdminAuditLog(
+                admin_id="admin-1",
+                action="moderate",
+                resource_type="user",
+                resource_id="user-1",
+                ip_address="127.0.0.1",
+            )
+            session.add(log)
+            await session.commit()
+            log.action = "tampered"
+            with pytest.raises(AuditLogAppendOnlyError):
+                await session.commit()
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_orm_delete_listener_blocks_real_session_delete(self):
+        """[#168] End-to-end: a direct session DELETE of an audit row
+        (bypassing the repository) is rejected by the ORM listener."""
+        from sqlalchemy.ext.asyncio import (
+            async_sessionmaker,
+            create_async_engine,
+        )
+
+        from app.models.admin import AdminAuditLog, AuditLogAppendOnlyError
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(AdminAuditLog.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            log = AdminAuditLog(
+                admin_id="admin-1",
+                action="moderate",
+                resource_type="user",
+                resource_id="user-1",
+                ip_address="127.0.0.1",
+            )
+            session.add(log)
+            await session.commit()
+            await session.delete(log)
+            with pytest.raises(AuditLogAppendOnlyError):
+                await session.commit()
+        await engine.dispose()
+
+    def test_orm_delete_listener_blocks_direct_deletion(self):
+        """[#168] ORM-level before_delete guard: direct session deletion of
+        an audit row is rejected."""
+        from app.models.admin import AuditLogAppendOnlyError, _block_audit_log_delete
+
+        log = MagicMock()
+        with pytest.raises(AuditLogAppendOnlyError):
+            _block_audit_log_delete(None, None, log)
+
+    def test_audit_listeners_registered_on_model(self):
+        """The guards must be wired via SQLAlchemy event listeners, not just
+        called from the repository."""
+        from sqlalchemy import event
+
+        from app.models.admin import AdminAuditLog
+
+        listeners = event.registry._key_to_collection
+        assert any(
+            k[0] == id(AdminAuditLog) and k[1] == "before_update"
+            for k in listeners
+        ), "before_update listener not registered"
+        assert any(
+            k[0] == id(AdminAuditLog) and k[1] == "before_delete"
+            for k in listeners
+        ), "before_delete listener not registered"
 
 
 class TestBatchLimits:

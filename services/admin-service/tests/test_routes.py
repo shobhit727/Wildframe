@@ -423,6 +423,28 @@ class TestAuditRoutes:
         assert response.status_code == 200
         fake_service.get_audit_logs_by_resource.assert_awaited_once()
 
+    def test_no_audit_write_routes_exist(self):
+        """[#168] The audit trail has no HTTP write surface: an admin can
+        read, but there is no endpoint that creates, alters, or deletes
+        audit rows. If one is ever added it must be guarded and reviewed."""
+        from fastapi.routing import APIRoute
+
+        audit_write_routes = [
+            route.path
+            for route in app.routes
+            if isinstance(route, APIRoute)
+            and "audit" in route.path
+            and route.methods - {"GET", "HEAD"}
+        ]
+        assert not audit_write_routes, f"audit write routes found: {audit_write_routes}"
+
+    def test_audit_reads_are_admin_only(self, client):
+        from app.api.routes.admin import get_current_admin_id
+
+        app.dependency_overrides.pop(get_current_admin_id, None)
+        response = client.get("/api/v1/admin/audit/admin/admin-1")
+        assert response.status_code == 401
+
 
 class TestStatsRoutes:
     def test_get_system_stats(self, client, fake_service):

@@ -98,7 +98,7 @@ Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/O
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
-#62, #63, #536, and #41 (open items: #45 DRM held as backlog).
+#62, #63, #168, #536, and #41 (open items: #45 DRM held as backlog).
 
 Highlights:
 
@@ -140,6 +140,16 @@ Highlights:
   stays POST-only. The sweep surfaced a live bug: **user-service JWT decode
   had no audience** — `GET /users/api/v1/profiles/{id}` 401'd with a valid
   token; fixed (plus a `JWT_AUDIENCE` setting).
+- **Tamper-resistant admin audit logs (#168)** — the audit trail
+  (`admin_audit_logs`) is append-only at three layers: no HTTP write routes
+  (GET-only reads; a route-surface test pins it), repository update/delete
+  raise, and SQLAlchemy `before_update`/`before_delete` listeners reject
+  direct session writes — live-verified in the running container (update and
+  delete both raise `AuditLogAppendOnlyError`). Admins read only their own
+  logs (cross-admin 404 live-verified). Also fixed a completeness gap: alert
+  creation/acknowledgement were privileged actions that wrote no audit row;
+  both now record `alert_created`/`alert_acknowledged` with the acting
+  admin id and client IP.
 - **No archive extraction anywhere (#536)** — the platform has zero
   archive-unpacking code (no tarfile/zipfile/unpack_archive in any service);
   the audit's symlink-escape surface does not exist. A CI test
@@ -158,7 +168,7 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (Aug 17, 2026): 780 backend unit/route tests + 94 integration
+Test totals (Aug 17, 2026): 788 backend unit/route tests + 94 integration
 tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
 tests. One known pre-existing failure, billing
 `test_release_tranche_not_locked`, is unrelated to the hardening work.

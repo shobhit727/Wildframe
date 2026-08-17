@@ -72,6 +72,20 @@ Each item closed with unit tests plus live verification against the running HTTP
   catalog 200, search 200); analytics events stays POST-only (405 on GET).
   The sweep surfaced a live bug — user-service JWT decode without audience —
   now fixed (see audience bullet).
+- **Admin audit log tamper resistance** (#168): the audit trail
+  (`admin_audit_logs`) is append-only and durably DB-backed. Verified at
+  three layers with tests + live checks against the running stack: (1) no
+  HTTP write routes exist for audit rows (route-surface test); (2)
+  `AdminAuditLogRepository.update/delete` raise
+  `AuditLogAppendOnlyError`; (3) SQLAlchemy `before_update` /
+  `before_delete` event listeners reject even direct session writes —
+  live-proven in the admin-service container (both raise). Read authz:
+  admins see only their own logs (cross-admin GET → 404, live). Gap found
+  and fixed: alert creation and acknowledgement were privileged actions
+  that produced no audit record; both now write `alert_created` /
+  `alert_acknowledged` entries with the acting admin id and client IP
+  (live: row persisted with real IP). +8 admin-service unit tests (69
+  total).
 - **Archive extraction symlink handling** (#536): verified the platform has
   no archive-unpacking code path in any service, worker, or infra script
   (media-pipeline's "extract" stages are ffmpeg metadata/audio/subtitle

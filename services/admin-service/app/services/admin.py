@@ -132,9 +132,24 @@ class AdminService:
 
     # System Alerts
     async def create_alert(
-        self, alert_type: str, severity: str, message: str, service: str
+        self,
+        alert_type: str,
+        severity: str,
+        message: str,
+        service: str,
+        admin_id: str | None = None,
+        ip_address: str = "0.0.0.0",
     ) -> dict:
         alert = await self.alert_repo.create(alert_type, severity, message, service)
+        if admin_id:
+            await self.audit_repo.create(
+                admin_id=admin_id,
+                action="alert_created",
+                resource_type="alert",
+                resource_id=str(alert.id),
+                changes=f"severity={severity}",
+                ip_address=ip_address,
+            )
         return {
             "id": alert.id,
             "alert_type": alert.alert_type,
@@ -165,6 +180,14 @@ class AdminService:
     async def acknowledge_alert(self, alert_id: int, admin_id: str) -> dict | None:
         alert = await self.alert_repo.acknowledge(alert_id, admin_id)
         if alert:
+            await self.audit_repo.create(
+                admin_id=admin_id,
+                action="alert_acknowledged",
+                resource_type="alert",
+                resource_id=str(alert.id),
+                changes=None,
+                ip_address="0.0.0.0",
+            )
             return {
                 "id": alert.id,
                 "alert_type": alert.alert_type,

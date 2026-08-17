@@ -169,13 +169,19 @@ async def list_flagged_content(
 @router.post("/alerts", response_model=SystemAlertResponse)
 async def create_alert(
     request: SystemAlertRequest,
+    request_meta: Request,
     admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Create system alert"""
     service = AdminService(db)
     return await service.create_alert(
-        request.alert_type, request.severity, request.message, request.service
+        request.alert_type,
+        request.severity,
+        request.message,
+        request.service,
+        admin_id,
+        _client_ip(request_meta),
     )
 
 
