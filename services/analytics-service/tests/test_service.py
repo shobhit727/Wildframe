@@ -493,6 +493,35 @@ class TestEventDeduplication:
         assert len(service.event_repo.events) == 1
 
     @pytest.mark.asyncio
+    async def test_dedup_store_down_fails_open(self, service):
+        """[#214] Redis outage must never drop events (fail-open)."""
+        from unittest.mock import AsyncMock
+
+        store = AsyncMock()
+        store.set = AsyncMock(side_effect=Exception("connection refused"))
+        service.dedup_store = store
+        uid = uuid4()
+        await service.log_event(uid, "e1", client_event_id="cid-1")
+        await service.log_event(uid, "e1", client_event_id="cid-1")
+        assert len(service.event_repo.events) == 2
+
+    @pytest.mark.asyncio
+    async def test_dedup_keys_namespaced_with_ttl(self, service):
+        """[#214] Dedup keys carry the wf:analytics namespace and a TTL."""
+        from unittest.mock import AsyncMock
+
+        store = AsyncMock()
+        store.set = AsyncMock(return_value=True)
+        service.dedup_store = store
+        uid = uuid4()
+        await service.log_event(uid, "e1", client_event_id="cid-1")
+
+        key = store.set.call_args.args[0]
+        assert key.startswith("wf:analytics:dedup:")
+        assert str(uid) in key
+        assert store.set.call_args.kwargs["ex"] == 86_400
+
+    @pytest.mark.asyncio
     async def test_log_event_dedup_different_users(self, service, dedup_store):
         """Same client_event_id for different users is allowed."""
         cid = "client-123"

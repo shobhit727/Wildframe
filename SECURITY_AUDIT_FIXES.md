@@ -72,6 +72,21 @@ Each item closed with unit tests plus live verification against the running HTTP
   catalog 200, search 200); analytics events stays POST-only (405 on GET).
   The sweep surfaced a live bug — user-service JWT decode without audience —
   now fixed (see audience bullet).
+- **Redis correctness** (#214, 5 findings): (1) no DB-backed cache exists
+  in Redis — only ephemeral rate-limit counters and analytics event dedup,
+  so no cache can outlive the DB state it mirrors; (2) every key carries a
+  TTL (gateway 60s windows, auth token/cooldown windows, analytics 86_400s
+  dedup TTL) — pinned by tests; (3) namespaces are disjoint per consumer
+  (`rate_limit:` / `rl:` / `wf:analytics:dedup:`) with PII hashed in auth
+  keys, and services use separate logical Redis DBs in compose; (4)
+  corrupt/unparseable cache values fail safe: gateway's `int()` on a corrupt
+  counter now fails open with a warning (was: 500 on every request),
+  analytics dedup fails open, auth is fail-open by design — all
+  fault-injection tested; (5) no security decision depends on Redis:
+  revocation lives in Postgres `token_blacklist`, and a restart merely
+  resets rate windows — live fault-injected (Redis stopped: catalog/login/
+  search all 200; Redis restarted: 6th rapid login 429). +4 gateway, +5
+  auth, +2 analytics tests.
 - **Admin audit log tamper resistance** (#168): the audit trail
   (`admin_audit_logs`) is append-only and durably DB-backed. Verified at
   three layers with tests + live checks against the running stack: (1) no

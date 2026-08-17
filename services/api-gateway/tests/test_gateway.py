@@ -452,3 +452,58 @@ class TestRateLimiter:
         await limiter.check_rate_limit("user-1", "auth")
 
         redis_mock.expire.assert_awaited_once_with("rate_limit:user-1:auth", 60)
+
+
+class TestRateLimiterFaultInjection:
+    """[#214] Redis outages or corrupt counters must not take the gateway
+    down: the limiter is anti-abuse protection, not an authorization
+    decision, and fails open (matching auth-service's documented behavior).
+    """
+
+    @pytest.mark.asyncio
+    async def test_redis_down_fails_open(self):
+        from app.middleware import RateLimiter
+
+        redis_mock = AsyncMock()
+        redis_mock.incr = AsyncMock(side_effect=Exception("connection refused"))
+        limiter = RateLimiter(redis_mock)
+
+        assert await limiter.check_rate_limit("user-1", "content") is True
+
+    @pytest.mark.asyncio
+    async def test_corrupt_counter_fails_open(self):
+        from app.middleware import RateLimiter
+
+        redis_mock = AsyncMock()
+        redis_mock.incr = AsyncMock(side_effect=Exception("value is not an integer"))
+        limiter = RateLimiter(redis_mock)
+
+        assert await limiter.check_rate_limit("user-1", "content") is True
+
+    @pytest.mark.asyncio
+    async def test_expire_failure_fails_open(self):
+        from app.middleware import RateLimiter
+
+        redis_mock = AsyncMock()
+        redis_mock.incr = AsyncMock(return_value=1)
+        redis_mock.expire = AsyncMock(side_effect=Exception("connection lost"))
+        limiter = RateLimiter(redis_mock)
+
+        assert await limiter.check_rate_limit("user-1", "content") is True
+
+    @pytest.mark.asyncio
+    async def test_namespace_and_ttl_contract(self):
+        """[#214] Key namespace is per-service and every key gets a TTL."""
+        from app.middleware import RateLimiter
+
+        redis_mock = AsyncMock()
+        redis_mock.incr = AsyncMock(side_effect=[1, 1])
+        limiter = RateLimiter(redis_mock)
+
+        await limiter.check_rate_limit("user-1", "auth")
+        await limiter.check_rate_limit("user-2", "search")
+
+        keys = [call.args[0] for call in redis_mock.incr.await_args_list]
+        assert keys == ["rate_limit:user-1:auth", "rate_limit:user-2:search"]
+        assert all(k.startswith("rate_limit:") for k in keys)
+        assert redis_mock.expire.await_count == 2

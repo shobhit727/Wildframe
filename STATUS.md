@@ -98,7 +98,7 @@ Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/O
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
-#62, #63, #168, #536, and #41 (open items: #45 DRM held as backlog).
+#62, #63, #168, #214, #536, and #41 (open items: #45 DRM held as backlog).
 
 Highlights:
 
@@ -140,6 +140,18 @@ Highlights:
   stays POST-only. The sweep surfaced a live bug: **user-service JWT decode
   had no audience** — `GET /users/api/v1/profiles/{id}` 401'd with a valid
   token; fixed (plus a `JWT_AUDIENCE` setting).
+- **Redis correctness (#214)** — Redis is used only for ephemeral rate
+  limiting (gateway `rate_limit:` keys, auth `rl:` hashed keys) and analytics
+  event dedup (`wf:analytics:dedup:`) — no DB state is cached in Redis, and
+  token revocation lives in Postgres (`token_blacklist`), so eviction or
+  restart cannot produce stale authorization state. All keys carry TTLs and
+  are namespaced (separate logical DBs per service in compose). The gateway
+  rate limiter previously 500'd every request when Redis was down or held a
+  corrupt counter; it now fails open with a logged warning (matching
+  auth-service's documented behavior) — live fault-injected: with Redis
+  stopped, catalog/login/search all returned 200; after restart the 429
+  window resumed (6th login 429). Fault-injection + namespace/TTL tests
+  added for all three consumers (gateway 39, auth 136, analytics 67).
 - **Tamper-resistant admin audit logs (#168)** — the audit trail
   (`admin_audit_logs`) is append-only at three layers: no HTTP write routes
   (GET-only reads; a route-surface test pins it), repository update/delete
@@ -155,7 +167,7 @@ Highlights:
   the audit's symlink-escape surface does not exist. A CI test
   (`tests/contract/test_archive_sandbox.py`) pins that invariant and
   documents the required sandboxed design for any future archive support.
-- **Live-stack integration suite** — `tests/integration/` (94 tests, ~12 min):
+- **Live-stack integration suite** — `tests/integration/` (105 tests, ~16 min):
   gateway auth matrix + 429 flood, token lifecycle, cross-service
   authorization, billing webhook idempotency (Stripe signature verification,
   exactly one PAID invoice row on replay), contract schemas, health/readiness,
@@ -168,7 +180,7 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (Aug 17, 2026): 788 backend unit/route tests + 94 integration
+Test totals (Aug 17, 2026): 800 backend unit/route tests + 105 integration
 tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
 tests. One known pre-existing failure, billing
 `test_release_tranche_not_locked`, is unrelated to the hardening work.

@@ -180,13 +180,23 @@ class RateLimiter:
         }
 
     async def check_rate_limit(self, user_id: str, service: str) -> bool:
-        """Check if user has exceeded rate limit for service."""
+        """Check if user has exceeded rate limit for service.
+
+        Fail-open on Redis errors (unavailable, corrupt counter value): the
+        rate limiter is anti-abuse protection, not an authorization
+        decision, and a Redis outage or restart must not take the whole
+        gateway down (#214). Windows are ephemeral by design.
+        """
         key = f"rate_limit:{user_id}:{service}"
         limit = self.limits.get(service, self.limits["default"])
 
-        count = int(await self.redis.incr(key))
-        if count == 1:
-            await self.redis.expire(key, 60)  # 1 minute window
+        try:
+            count = int(await self.redis.incr(key))
+            if count == 1:
+                await self.redis.expire(key, 60)  # 1 minute window
+        except Exception:  # noqa: BLE001 - fail open on Redis errors
+            logger.warning("Rate limiter Redis error for %s; allowing request", service)
+            return True
 
         return count <= limit
 
