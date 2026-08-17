@@ -109,6 +109,8 @@ class ModerationService:
             flag_reason.value,
             reporter_id,
         )
+        # The flag and its outbox event commit atomically in one transaction.
+        await self.flag_repo.session.commit()
         return flag
 
     # ------------------------------------------------------------------
@@ -197,6 +199,8 @@ class ModerationService:
             decision.value,
             moderator_id,
         )
+        # Decision, flag-status change and outbox events commit atomically.
+        await self.flag_repo.session.commit()
         return mod_decision
 
     # ------------------------------------------------------------------
@@ -303,4 +307,6 @@ class ModerationService:
                 )
                 continue
             await self.flag_repo.mark_dispatched(row.id)
+        # Persist the dispatch state changes before the next drain cycle.
+        await self.flag_repo.session.commit()
         return len(rows)

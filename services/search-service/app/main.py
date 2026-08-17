@@ -1,8 +1,9 @@
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from wildframe_observability.wire import wire_observability
 
 from app.api.search_routes import close_es_client, es_client, router as search_router
@@ -90,13 +91,18 @@ def create_app() -> FastAPI:
             es_ok = False
 
         status_code = 200 if (db_ok and es_ok) else 503
-        return {  # type: ignore[return-value]
+        payload = {
             "status": "ready" if (db_ok and es_ok) else "not_ready",
             "service": "search",
             "version": settings.SERVICE_VERSION,
             "database": "ok" if db_ok else "unavailable",
             "elasticsearch": "ok" if es_ok else "unavailable",
-        }, status_code
+        }
+        return Response(
+            content=json.dumps(payload),
+            status_code=status_code,
+            media_type="application/json",
+        )
 
     app.include_router(search_router)
 

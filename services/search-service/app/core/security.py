@@ -38,6 +38,7 @@ def verify_token(request: Request) -> Identity | None:
             token,
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
+            audience=settings.JWT_AUDIENCE,
             options={"require": ["exp"]},
         )
         raw_user_id = payload.get("user_id") or payload.get("sub")

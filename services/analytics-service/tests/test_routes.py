@@ -10,10 +10,13 @@ from fastapi.testclient import TestClient
 
 from app.api.analytics_routes import (
     get_analytics_service,
+    get_current_user_claims as analytics_claims_di,
     get_current_user_id as analytics_user_di,
     require_self as analytics_require_self,
 )
+from app.core.content_client import ContentServiceUnavailableError
 from app.main import app
+import app.api.analytics_routes as analytics_routes_module
 
 
 @pytest.fixture
@@ -30,6 +33,10 @@ def client(auth_user_id):
     app.dependency_overrides.clear()
     app.dependency_overrides[analytics_require_self] = _echo_path_self
     app.dependency_overrides[analytics_user_di] = lambda: auth_user_id
+    app.dependency_overrides[analytics_claims_di] = lambda: {
+        "user_id": auth_user_id,
+        "role": "user",
+    }
     # NOTE: not used as a context manager — the lifespan raises when there is
     # no healthy database, and tests run without postgres.
     yield TestClient(app, base_url="http://localhost")
@@ -151,10 +158,17 @@ class TestRecordViewEvent:
         assert response.status_code == 422
 
 
+def set_claims(user_id: UUID, role: str = "user"):
+    app.dependency_overrides[analytics_claims_di] = lambda: {
+        "user_id": user_id,
+        "role": role,
+    }
+
+
 class TestCreatorAnalytics:
-    def test_get_creator_analytics_success(self, client, service):
+    def test_get_creator_analytics_self_success(self, client, service, auth_user_id):
         app.dependency_overrides[get_analytics_service] = override(service)
-        creator_id = uuid4()
+        creator_id = auth_user_id
         service.get_creator_analytics = AsyncMock(
             return_value={
                 "creator_id": str(creator_id),
@@ -173,20 +187,43 @@ class TestCreatorAnalytics:
         assert response.status_code == 200
         assert response.json()["total_views"] == 10
 
-    def test_get_creator_analytics_none(self, client, service):
+    def test_get_creator_analytics_self_none(self, client, service, auth_user_id):
         app.dependency_overrides[get_analytics_service] = override(service)
         service.get_creator_analytics = AsyncMock(return_value=None)
 
-        response = client.get(f"/api/v1/analytics/creators/{uuid4()}")
+        response = client.get(f"/api/v1/analytics/creators/{auth_user_id}")
 
         assert response.status_code == 200
         assert response.json()["analytics"] is None
 
+    def test_other_creator_forbidden_403(self, client, service, auth_user_id):
+        app.dependency_overrides[get_analytics_service] = override(service)
+        service.get_creator_analytics = AsyncMock()
+
+        response = client.get(f"/api/v1/analytics/creators/{uuid4()}")
+
+        assert response.status_code == 403
+        service.get_creator_analytics.assert_not_awaited()
+
+    def test_admin_can_read_any_creator(self, client, service, auth_user_id):
+        set_claims(auth_user_id, role="admin")
+        app.dependency_overrides[get_analytics_service] = override(service)
+        other_creator = uuid4()
+        service.get_creator_analytics = AsyncMock(return_value=None)
+
+        response = client.get(f"/api/v1/analytics/creators/{other_creator}")
+
+        assert response.status_code == 200
+        service.get_creator_analytics.assert_awaited_once_with(other_creator)
+
 
 class TestContentPerformance:
-    def test_get_content_performance_success(self, client, service):
+    def test_owner_success(self, client, service, auth_user_id, monkeypatch):
         app.dependency_overrides[get_analytics_service] = override(service)
         content_id = uuid4()
+        monkeypatch.setattr(
+            analytics_routes_module, "resolve_content_owner", AsyncMock(return_value=auth_user_id)
+        )
         service.get_content_performance = AsyncMock(
             return_value={
                 "content_id": str(content_id),
@@ -204,14 +241,76 @@ class TestContentPerformance:
         assert response.status_code == 200
         assert response.json()["views_30d"] == 130
 
-    def test_get_content_performance_none(self, client, service):
+    def test_owner_none(self, client, service, auth_user_id, monkeypatch):
         app.dependency_overrides[get_analytics_service] = override(service)
+        monkeypatch.setattr(
+            analytics_routes_module, "resolve_content_owner", AsyncMock(return_value=auth_user_id)
+        )
         service.get_content_performance = AsyncMock(return_value=None)
 
         response = client.get(f"/api/v1/analytics/content/{uuid4()}")
 
         assert response.status_code == 200
         assert response.json()["metrics"] is None
+
+    def test_non_owner_forbidden_403(self, client, service, auth_user_id, monkeypatch):
+        app.dependency_overrides[get_analytics_service] = override(service)
+        monkeypatch.setattr(
+            analytics_routes_module, "resolve_content_owner", AsyncMock(return_value=uuid4())
+        )
+        service.get_content_performance = AsyncMock()
+
+        response = client.get(f"/api/v1/analytics/content/{uuid4()}")
+
+        assert response.status_code == 403
+        service.get_content_performance.assert_not_awaited()
+
+    def test_unknown_content_404(self, client, service, monkeypatch):
+        app.dependency_overrides[get_analytics_service] = override(service)
+        monkeypatch.setattr(
+            analytics_routes_module, "resolve_content_owner", AsyncMock(return_value=None)
+        )
+        service.get_content_performance = AsyncMock()
+
+        response = client.get(f"/api/v1/analytics/content/{uuid4()}")
+
+        assert response.status_code == 404
+
+    def test_resolution_failure_fails_closed_503(self, client, service, monkeypatch):
+        app.dependency_overrides[get_analytics_service] = override(service)
+
+        async def _boom(content_id):
+            raise ContentServiceUnavailableError("down")
+
+        monkeypatch.setattr(analytics_routes_module, "resolve_content_owner", _boom)
+        service.get_content_performance = AsyncMock()
+
+        response = client.get(f"/api/v1/analytics/content/{uuid4()}")
+
+        assert response.status_code == 503
+        service.get_content_performance.assert_not_awaited()
+
+    def test_admin_can_read_any_content(self, client, service, auth_user_id, monkeypatch):
+        set_claims(auth_user_id, role="admin")
+        app.dependency_overrides[get_analytics_service] = override(service)
+        # Admin path must NOT need an ownership resolution call.
+        async def _never(content_id):
+            raise AssertionError("admin path must not resolve ownership")
+
+        monkeypatch.setattr(analytics_routes_module, "resolve_content_owner", _never)
+        service.get_content_performance = AsyncMock(return_value=None)
+
+        response = client.get(f"/api/v1/analytics/content/{uuid4()}")
+
+        assert response.status_code == 200
+        assert response.json()["metrics"] is None
+
+    def test_malformed_content_id_422(self, client, service):
+        app.dependency_overrides[get_analytics_service] = override(service)
+
+        response = client.get("/api/v1/analytics/content/not-a-uuid")
+
+        assert response.status_code == 422
 
 
 class TestIdorProtection:

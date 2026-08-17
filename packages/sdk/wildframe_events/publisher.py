@@ -156,22 +156,33 @@ class KafkaEventPublisher(EventPublisher):
         if self._producer is None:
             from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
 
-            self._producer = AIOKafkaProducer(
-                bootstrap_servers=self.bootstrap_servers,
-                client_id=self.client_id,
-                acks=self.acks,
+            kwargs = {
+                "bootstrap_servers": self.bootstrap_servers,
+                "client_id": self.client_id,
+                "acks": self.acks,
                 # Idempotent producer: producer-side retries cannot create
                 # duplicate broker records (Kafka dedups by producer-id +
                 # sequence number). Requires acks=all; honoured only then.
-                enable_idempotence=self.acks == "all",
-                retries=self.max_retries,
-                retry_backoff_ms=self.retry_backoff_ms,
+                "enable_idempotence": self.acks == "all",
                 # Broker-side cap: the producer refuses records larger
                 # than this instead of failing later at the broker.
-                max_request_size=self.max_payload_bytes + 4096,
-                value_serializer=lambda v: v.to_json().encode("utf-8"),
-                key_serializer=lambda k: k.encode("utf-8") if k else None,
-            )
+                "max_request_size": self.max_payload_bytes + 4096,
+                "value_serializer": lambda v: v.to_json().encode("utf-8"),
+                "key_serializer": lambda k: k.encode("utf-8") if k else None,
+            }
+            # ``retries``/``retry_backoff_ms`` existed in aiokafka < 0.11;
+            # newer releases rely on the idempotent producer's built-in
+            # bounded retries. Introspect so the SDK works on both.
+            import inspect
+
+            try:
+                param_names = inspect.signature(AIOKafkaProducer.__init__).parameters
+            except (TypeError, ValueError):
+                param_names = {}
+            if "retries" in param_names:
+                kwargs["retries"] = self.max_retries
+                kwargs["retry_backoff_ms"] = self.retry_backoff_ms
+            self._producer = AIOKafkaProducer(**kwargs)
             await self._producer.start()  # type: ignore[attr-defined]
         return self._producer
 

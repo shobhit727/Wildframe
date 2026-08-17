@@ -29,12 +29,18 @@ from app.services import ModerationError, ModerationService
 # ---------------------------------------------------------------------------
 
 
+class _NoopSession:
+    async def commit(self) -> None:
+        return None
+
+
 class FakeFlagRepo:
     """In-memory ContentFlagRepository stand-in (includes the outbox)."""
 
     def __init__(self) -> None:
         self.flags: dict[UUID, ContentFlag] = {}
         self.events: list[FakeOutboxRow] = []
+        self.session = _NoopSession()
 
     async def create(self, flag: ContentFlag) -> ContentFlag:
         if flag.id is None:

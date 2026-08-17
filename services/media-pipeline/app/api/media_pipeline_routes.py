@@ -12,11 +12,14 @@ Endpoints:
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
+from jose import jwt
+from jose.exceptions import JWTError
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.settings import settings
 from app.repositories import (
     PipelineJobRepository,
     PipelineStageLogRepository,
@@ -24,6 +27,36 @@ from app.repositories import (
 from app.services import MediaPipelineService, PipelineError
 
 router = APIRouter(prefix="/api/v1/pipeline", tags=["pipeline"])
+
+
+async def get_current_user_id(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> UUID:
+    """Resolve the authenticated user id from the verified JWT sub claim.
+
+    Pipeline job creation is an authenticated, authenticated-user operation:
+    an unauthenticated caller must never be able to kick off (or enumerate)
+    transcoding work through the gateway.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+    token = authorization.removeprefix("Bearer ")
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            audience=settings.JWT_AUDIENCE,
+        )
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    sub = payload.get("sub") or payload.get("user_id")
+    if sub is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    return UUID(str(sub))
 
 
 async def get_pipeline_service(
@@ -81,6 +114,7 @@ async def start_job(
     upload_session_id: UUID,
     request: StartJobRequest,
     service: Annotated[MediaPipelineService, Depends(get_pipeline_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
     """Start (or idempotently fetch) the pipeline for an uploaded file.
 
@@ -104,6 +138,7 @@ async def start_job(
 async def get_job(
     job_id: UUID,
     service: Annotated[MediaPipelineService, Depends(get_pipeline_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
     """Get a pipeline job's status plus its full stage-log audit trail."""
     job = await service.job_repo.get(job_id)

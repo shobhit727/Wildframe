@@ -18,9 +18,19 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 15
+    JWT_AUDIENCE: str = "wildframe-api"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
+
+    # Content ownership resolution (creator dashboard / content performance).
+    # Set to http://content-service:8000 inside the docker network.
+    CONTENT_SERVICE_URL: str = "http://localhost:8003"
+    CONTENT_SERVICE_TIMEOUT_SECONDS: float = 3.0
+    CONTENT_SERVICE_MAX_CONNECTIONS: int = 10
+
+    # Role claims: only this role may access another user's analytics.
+    PRIVILEGED_ROLE: str = "admin"
 
     # Logging
     LOG_LEVEL: str = "INFO"

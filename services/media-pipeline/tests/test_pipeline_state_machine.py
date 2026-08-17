@@ -31,6 +31,11 @@ from app.services import MediaPipelineService, PipelineNonRetryable
 # ---------------------------------------------------------------------------
 
 
+class _NoopSession:
+    async def commit(self) -> None:
+        return None
+
+
 class FakeOutboxRow:
     """In-memory stand-in for the outbox_events row."""
 
@@ -51,6 +56,7 @@ class FakeJobRepo:
     def __init__(self) -> None:
         self.jobs: dict[UUID, PipelineJob] = {}
         self.events: list[FakeOutboxRow] = []
+        self.session = _NoopSession()
 
     async def create(self, job: PipelineJob) -> PipelineJob:
         if job.id is None:
@@ -326,3 +332,84 @@ async def test_start_job_is_idempotent_per_upload_session():
 
 
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Transactional outbox drain (at-least-once delivery).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_drain_publishes_pending_rows_and_marks_dispatched():
+    reg = _fresh_registry()
+    reg.register(CountingStage("a", success_event="content.a_done"))
+    service = make_service(reg)
+
+    job = await service.start_job(
+        content_id=uuid4(), upload_session_id=uuid4(), storage_key="uploads/x/clip.mp4"
+    )
+    job = await service.advance(job.id)
+    assert job.status == PipelineJobStatus.COMPLETED
+    pending = await service.job_repo.pending_events()
+    assert len(pending) == 2  # content.a_done + content.published
+
+    processed = await service.drain_outbox()
+
+    assert processed == 2
+    assert len(service.publisher.sent) == 2
+    assert all(
+        row.status == OutboxEventStatus.DISPATCHED and row.dispatched_at is not None
+        for row in pending
+    )
+    # Already-dispatched rows are not re-published.
+    assert await service.drain_outbox() == 0
+    assert len(service.publisher.sent) == 2
+
+
+@pytest.mark.asyncio
+async def test_drain_keeps_row_pending_on_publish_failure():
+    """Broker failure leaves the row PENDING so the next drain retries it."""
+    reg = _fresh_registry()
+    reg.register(CountingStage("a", success_event="content.a_done"))
+    service = make_service(reg)
+
+    job = await service.start_job(
+        content_id=uuid4(), upload_session_id=uuid4(), storage_key="uploads/x/clip.mp4"
+    )
+    job = await service.advance(job.id)
+    rows = await service.job_repo.pending_events()
+    row = rows[0]
+
+    class FailingPublisher:
+        async def publish(self, event):
+            raise OSError("broker unreachable")
+
+    service.publisher = FailingPublisher()
+    processed = await service.drain_outbox()
+
+    assert processed == len(rows)
+    assert all(
+        r.status == OutboxEventStatus.PENDING and r.dispatched_at is None for r in rows
+    )
+
+    # Broker recovers: the same row now goes out.
+    service.publisher = InMemoryEventPublisher()
+    await service.drain_outbox()
+    assert row.status == OutboxEventStatus.DISPATCHED
+    assert service.publisher.sent[0].topic == "content.a_done"
+
+
+@pytest.mark.asyncio
+async def test_drain_publishes_in_fifo_order():
+    """PENDING rows are drained oldest-first (out-of-order prevention)."""
+    reg = _fresh_registry()
+    reg.register(CountingStage("a", success_event="content.a_done"))
+    service = make_service(reg)
+
+    job = await service.start_job(
+        content_id=uuid4(), upload_session_id=uuid4(), storage_key="uploads/x/clip.mp4"
+    )
+    await service.advance(job.id)
+
+    rows = await service.job_repo.pending_events()
+    assert rows[0].created_at <= rows[1].created_at

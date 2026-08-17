@@ -472,6 +472,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/analytics_db
       REDIS_URL: redis://redis:6379/8
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      CONTENT_SERVICE_URL: http://content-service:8000
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key

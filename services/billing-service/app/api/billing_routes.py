@@ -50,7 +50,12 @@ async def get_current_user_id(
         )
     token = authorization.removeprefix("Bearer ")
     try:
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            audience=settings.JWT_AUDIENCE,
+        )
     except JWTError:
         raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token")
     sub = str(payload.get("sub") or payload.get("user_id"))

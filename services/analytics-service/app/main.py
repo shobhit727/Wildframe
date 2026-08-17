@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from wildframe_observability.wire import wire_observability
 
 from app.api.analytics_routes import router as analytics_router
+from app.core.content_client import close_content_client
 from app.core.database import DatabaseManager
 from app.core.settings import settings
 
@@ -30,6 +31,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
+    await close_content_client()
     await DatabaseManager.close()
     logger.info("Shutdown complete")
 

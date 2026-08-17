@@ -93,6 +93,7 @@ def make_genre(id_value=None):
 def make_content(id_value=None):
     c = MagicMock()
     c.id = id_value or uuid4()
+    c.creator_id = None
     c.title = "Test Movie"
     c.slug = "test-movie"
     c.description = "A test movie"
@@ -224,10 +225,20 @@ class TestWriteAuthz:
     ]
 
     def _token(self, role: str | None) -> str:
+        import time
+
         import jwt
         from app.core.settings import settings
 
-        payload = {"sub": str(uuid4()), "role": role} if role else {"sub": str(uuid4())}
+        now = int(time.time())
+        payload = {
+            "sub": str(uuid4()),
+            "aud": settings.JWT_AUDIENCE,
+            "iat": now,
+            "exp": now + 900,
+        }
+        if role is not None:
+            payload["role"] = role
         return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
     def test_write_without_token_is_401(self, client, content_id, season_id):

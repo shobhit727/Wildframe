@@ -445,7 +445,9 @@ class MediaPipelineService:
         ctx = self._build_context(job, storage_key=storage_key)
         if context:
             ctx.update(context)
-        job.context = ctx  # type: ignore[assignment]
+        # Persist ctx without the injected ports (they are re-injected on
+        # advance()); port objects are not JSON-serializable.
+        job.context = {k: v for k, v in ctx.items() if not _is_port(v)}  # type: ignore[assignment]
         await self.job_repo.save(job)
 
         logger.info(
@@ -455,6 +457,9 @@ class MediaPipelineService:
             upload_session_id,
             idempotency_key,
         )
+        # The job row commits here; outbox events enqueued later in the
+        # lifecycle commit with the stage that produced them.
+        await self.job_repo.session.commit()
         return job
 
     def _build_context(self, job: PipelineJob, *, storage_key: str) -> dict[str, Any]:
@@ -644,6 +649,8 @@ class MediaPipelineService:
                 },
             )
             logger.info("pipeline job %s completed", job.id)
+            # Job state + all outbox events enqueued above commit atomically.
+            await self.job_repo.session.commit()
             # Cleanup on success.
             self._cleanup_job_dirs(job)
             return job
@@ -651,6 +658,8 @@ class MediaPipelineService:
             # Always decrement concurrency and release lease.
             self._decrement_concurrency(job.content_id)
             await self._release_lease(job)
+            # Persist the lease release so the job is immediately resumable.
+            await self.job_repo.session.commit()
 
     async def _run_stage_with_retries(
         self,
@@ -775,6 +784,8 @@ class MediaPipelineService:
             },
         )
         logger.error("pipeline job %s FAILED at stage %s: %s", job.id, stage_name, message)
+        # FAILED status + DLQ outbox event commit atomically.
+        await self.job_repo.session.commit()
         return job
 
     async def _record_stage(
@@ -817,6 +828,8 @@ class MediaPipelineService:
                 await self.job_repo.save(job)
                 logger.info("recovered stale job %s (was leased by %s)", job.id, job.leased_by)
                 recovered += 1
+        if recovered:
+            await self.job_repo.session.commit()
         return recovered
 
     # ------------------------------------------------------------------
@@ -848,6 +861,8 @@ class MediaPipelineService:
                 )
                 continue
             await self.job_repo.mark_dispatched(row.id)
+        # Persist dispatch state before the next drain cycle.
+        await self.job_repo.session.commit()
         return len(rows)
 
     # ------------------------------------------------------------------

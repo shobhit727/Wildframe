@@ -1,13 +1,16 @@
 """Route coverage for the media pipeline API — start, status, legacy endpoints."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
+
+from jose import jwt as jose_jwt
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.media_pipeline_routes import get_pipeline_service
+from app.api.media_pipeline_routes import get_current_user_id, get_pipeline_service
+from app.core.settings import settings
 from app.main import app
 from app.services import PipelineError
 
@@ -43,6 +46,7 @@ def make_log():
 @pytest.fixture
 def client():
     app.dependency_overrides.clear()
+    app.dependency_overrides[get_current_user_id] = lambda: uuid4()
     yield TestClient(app, base_url="http://localhost")
     app.dependency_overrides.clear()
 
@@ -64,6 +68,56 @@ def override(service_mock):
         return service_mock
 
     return _dep
+
+
+class TestPipelineAuth:
+    """Pipeline job creation/reads must require a verified JWT."""
+
+    def _start_payload(self):
+        return {
+            "content_id": str(uuid4()),
+            "upload_session_id": str(uuid4()),
+            "storage_key": "uploads/x/v.mp4",
+            "idempotency_key": f"test-{uuid4()}",
+        }
+
+    def test_start_requires_token(self, client):
+        app.dependency_overrides.pop(get_current_user_id, None)
+        response = client.post(
+            f"/api/v1/pipeline/jobs/{uuid4()}/start", json=self._start_payload()
+        )
+        assert response.status_code == 401
+
+    def test_start_rejects_garbage_token(self, client):
+        app.dependency_overrides.pop(get_current_user_id, None)
+        response = client.post(
+            f"/api/v1/pipeline/jobs/{uuid4()}/start",
+            json=self._start_payload(),
+            headers={"Authorization": "Bearer garbage"},
+        )
+        assert response.status_code == 401
+
+    def test_start_rejects_expired_token(self, client):
+        app.dependency_overrides.pop(get_current_user_id, None)
+        token = jose_jwt.encode(
+            {
+                "sub": str(uuid4()),
+                "exp": datetime.now(timezone.utc) - timedelta(minutes=1),
+            },
+            settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+        response = client.post(
+            f"/api/v1/pipeline/jobs/{uuid4()}/start",
+            json=self._start_payload(),
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+
+    def test_get_job_requires_token(self, client):
+        app.dependency_overrides.pop(get_current_user_id, None)
+        response = client.get(f"/api/v1/pipeline/jobs/{uuid4()}")
+        assert response.status_code == 401
 
 
 class TestStartJob:

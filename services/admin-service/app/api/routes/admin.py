@@ -30,7 +30,12 @@ async def get_current_admin_id(
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization.replace("Bearer ", "")
     try:
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            audience=settings.JWT_AUDIENCE,
+        )
         if payload.get("role") != "admin":
             # Least privilege: a token without the admin role claim (plain user
             # or API-key-scoped identity) must never inherit admin privileges.

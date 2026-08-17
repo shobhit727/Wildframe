@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/1"
     JWT_SECRET_KEY: str = "dev-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
+    JWT_AUDIENCE: str = "wildframe-api"
     CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8004

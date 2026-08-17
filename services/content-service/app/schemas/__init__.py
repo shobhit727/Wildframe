@@ -99,6 +99,7 @@ class ContentResponse(BaseModel):
     description: str
     content_type: str
     status: str
+    creator_id: UUID | None = None
     release_date: datetime | None = None
     duration_minutes: int | None = None
     original_language: str

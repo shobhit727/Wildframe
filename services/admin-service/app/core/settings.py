@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://wildframe:password@localhost:5432/admin_db"
     JWT_SECRET_KEY: str = "dev-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
+    JWT_AUDIENCE: str = "wildframe-api"
     LOG_LEVEL: str = "INFO"
     # When True, the first X-Forwarded-For hop is trusted for audit IPs.
     # Keep False unless this service only sits behind a trusted proxy.
