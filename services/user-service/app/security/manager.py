@@ -70,7 +70,10 @@ class TokenManager:
         """Verify and decode a JWT token."""
         try:
             payload = jwt.decode(
-                token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+                token,
+                settings.JWT_SECRET_KEY,
+                algorithms=[settings.JWT_ALGORITHM],
+                audience=settings.JWT_AUDIENCE,
             )
 
             if payload.get("type") != token_type:

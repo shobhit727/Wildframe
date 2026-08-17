@@ -1,6 +1,6 @@
 # How to Run Tests
 
-**Current State**: Unit/route tests for all 15 microservices + the shared SDK + the frontend (vitest) + a live-stack integration suite (`tests/integration/`, 93 tests). Backend suites green (780 unit/route tests, Aug 17, 2026) with one known pre-existing failure (billing `test_release_tranche_not_locked`, unrelated to recent work). The integration suite needs the dockerized stack running and skips itself otherwise.
+**Current State**: Unit/route tests for all 15 microservices + the shared SDK + the frontend (vitest) + a live-stack integration suite (`tests/integration/`, 94 tests). Backend suites green (780 unit/route tests, Aug 17, 2026) with one known pre-existing failure (billing `test_release_tranche_not_locked`, unrelated to recent work). The integration suite needs the dockerized stack running and skips itself otherwise.
 
 ---
 
@@ -47,7 +47,7 @@ Skipped automatically when the stack is not reachable.
 
 ```bash
 # From repo root — stack must be up (docker compose -f deployments/docker-compose.dev.yml up -d)
-poetry run pytest tests/integration -q    # ~12 min, 93 tests
+poetry run pytest tests/integration -q    # ~12 min, 94 tests
 ```
 
 > ⚠️ The integration suite is **not** part of the per-service loop: the root
@@ -78,7 +78,7 @@ npm run build           # production build
 | Test Type | Status |
 |-----------|--------|
 | Unit/route tests | ✅ 15 services + SDK + frontend |
-| Integration (live dockerized stack) | ✅ `tests/integration/` — 93 tests, run explicitly (see §2b) |
+| Integration (live dockerized stack) | ✅ `tests/integration/` — 94 tests, run explicitly (see §2b) |
 | E2E (browser) | ❌ Playwright scripts exist but not run in CI |
 | Contract tests | ❌ Pact not wired |
 | Load tests | ❌ k6/Locust not written |

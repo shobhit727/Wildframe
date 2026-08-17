@@ -17,7 +17,7 @@ This PR starts a new remediation branch from `main`. Only fixes that can be impl
 
 Each item closed with unit tests plus live verification against the running HTTPS stack (see `STATUS.md`):
 
-- **JWT audience verification across services** (#41, #57, #58): auth-issued tokens carry `aud: "wildframe-api"`. Every service that verifies auth tokens now decodes with `audience=settings.JWT_AUDIENCE` (`"wildframe-api"`). The api-gateway remains the single exception (it is a transparent proxy that rate-limits but does not reject proxied requests). Previously, all authenticated calls to streaming/content/admin/billing/creators/notification/search/media-pipeline failed with 401.
+- **JWT audience verification across services** (#41, #57, #58): auth-issued tokens carry `aud: "wildframe-api"`. Every service that verifies auth tokens now decodes with `audience=settings.JWT_AUDIENCE` (`"wildframe-api"`). The api-gateway remains the single exception (it is a transparent proxy that rate-limits but does not reject proxied requests). Previously, all authenticated calls to streaming/content/admin/billing/creators/notification/search/media-pipeline failed with 401. During the #44 contract sweep the same bug was found and fixed in **user-service** (its `verify_token` decoded without an audience, so `GET /users/api/v1/profiles/{id}` 401'd even with a valid token).
 - **Media-pipeline endpoint auth** (#41): `POST /api/v1/pipeline/jobs/{upload_session_id}/start` and `GET /api/v1/pipeline/jobs/{job_id}` were callable without a token; both now require a verified JWT.
 - **Analytics authorization** (#63): analytics routes enforce creator/content ownership (`require_creator_access`, `require_content_access`) with fail-closed behavior on unknown content.
 - **Auth fail-closed behavior** (#57): auth-service rejects invalid/expired/malformed tokens deterministically.
@@ -59,8 +59,21 @@ Each item closed with unit tests plus live verification against the running HTTP
     (gateway routing, 401/403/401-garbage/admin-200/release-403). Suite grew
     to 93 tests; all 15 service suites (780) and the full integration suite
     pass.
+- **Frontend/backend contract + route drift detection** (#44): the frontend
+  call surface (48 URL literals in `apps/web/src`) is now statically checked
+  against the backend route catalog derived from the gateway ServiceRegistry
+  and each service's mounted routers (`tests/contract/test_route_drift.py`,
+  pure stdlib, runs in CI as the `backend-route-contract` job — no docker
+  needed). Any frontend path that stops resolving to a registered backend
+  route fails the build. The live integration suite also gained
+  `TestCriticalFrontendContract` (12 cases): tokenless failure modes (401) on
+  auth/me, users profiles, streaming sessions, recommendations, billing,
+  admin, creators, media; deliberately public endpoints stay open (content
+  catalog 200, search 200); analytics events stays POST-only (405 on GET).
+  The sweep surfaced a live bug — user-service JWT decode without audience —
+  now fixed (see audience bullet).
 
-Open/backlog: #44 (contract tests), #45 (DRM scope — backlog by decision).
+Open/backlog: #45 (DRM scope — backlog by decision).
 
 ## Review requirements
 

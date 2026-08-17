@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     # Security
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
+    JWT_AUDIENCE: str = "wildframe-api"
     JWT_EXPIRATION_MINUTES: int = 15
     PASSWORD_BCRYPT_ROUNDS: int = 12
 

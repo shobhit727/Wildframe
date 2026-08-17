@@ -14,6 +14,7 @@ import pytest
 
 from conftest import (
     ANALYTICS_SERVICE,
+    GATEWAY_URL,
     AUTH_SERVICE,
     CONTENT_SERVICE,
     STREAMING_SERVICE,
@@ -152,6 +153,55 @@ class TestPlaybackContract:
         assert response.status_code == 200
         for item in response.json():
             assert PLAYBACK_SESSION_FIELDS <= set(item)
+
+
+class TestCriticalFrontendContract:
+    """[#44] Success and failure contracts for every critical frontend call
+    surface, as consumed by apps/web/src/api/*.ts through the gateway.
+    Failure mode (tokenless): 401 on protected routes, 200 only on the
+    deliberately public ones (catalog, search). Guards against drift where
+    the UI keeps compiling but the wire behavior changes.
+    """
+
+    TOKENLESS_CASES = [
+        (f"{GATEWAY_URL}/auth/api/v1/auth/me", 401),
+        (f"{GATEWAY_URL}/users/api/v1/profiles/11111111-1111-1111-1111-111111111111", 401),
+        (f"{GATEWAY_URL}/streaming/api/v1/playback-sessions/11111111-1111-1111-1111-111111111111", 401),
+        (f"{GATEWAY_URL}/recommendations/api/v1/recommendations/for-user/11111111-1111-1111-1111-111111111111", 401),
+        (f"{GATEWAY_URL}/billing/api/v1/billing/subscription/11111111-1111-1111-1111-111111111111", 401),
+        (f"{GATEWAY_URL}/admin/api/v1/admin/stats", 401),
+        (f"{GATEWAY_URL}/creators/api/v1/creators/me", 401),
+        (f"{GATEWAY_URL}/media/api/v1/pipeline/jobs/11111111-1111-1111-1111-111111111111", 401),
+    ]
+    PUBLIC_CASES = [
+        (f"{GATEWAY_URL}/content/api/v1/content", 200),
+        (f"{GATEWAY_URL}/search/api/v1/search/query?q=contract", 200),
+    ]
+
+    @pytest.mark.parametrize("path,expected", TOKENLESS_CASES)
+    def test_protected_frontend_calls_reject_anonymous(
+        self, client: httpx.Client, path: str, expected: int
+    ) -> None:
+        response = ip_keyed(client, "get", path)
+        assert response.status_code == expected
+
+    @pytest.mark.parametrize("path,expected", PUBLIC_CASES)
+    def test_public_frontend_calls_remain_open(
+        self, client: httpx.Client, path: str, expected: int
+    ) -> None:
+        response = ip_keyed(client, "get", path)
+        assert response.status_code == expected
+
+    def test_analytics_events_route_is_post_only(self, client: httpx.Client) -> None:
+        response = ip_keyed(client, "get", f"{GATEWAY_URL}/analytics/api/v1/analytics/events")
+        assert response.status_code == 405
+
+    def test_authed_frontend_call_succeeds(self, client: httpx.Client, user_a: dict) -> None:
+        response = client.get(
+            f"{GATEWAY_URL}/users/api/v1/profiles/{user_a['user_id']}",
+            headers=auth_headers(user_a["access_token"]),
+        )
+        assert response.status_code in (200, 404)
 
 
 @pytest.fixture(scope="module")

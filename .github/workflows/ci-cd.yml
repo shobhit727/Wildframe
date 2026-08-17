@@ -205,6 +205,26 @@ jobs:
         if: always()
         run: PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest packages/sdk/tests --asyncio-mode=auto --durations=20 -q
 
+  backend-route-contract:
+    name: Frontend/backend route contract (#44)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install pytest
+        run: python -m pip install --quiet "pytest<8"
+
+      - name: Detect frontend/backend route drift
+        run: python -m pytest tests/contract -q
+
   frontend-ci:
     name: Frontend CI
     runs-on: ubuntu-latest

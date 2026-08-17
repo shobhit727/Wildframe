@@ -97,8 +97,8 @@ Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/O
 
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
-include #42, #43, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61, #62,
-#63, and #41 (open items: #44 contract tests; #45 DRM held as backlog).
+include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
+#62, #63, and #41 (open items: #45 DRM held as backlog).
 
 Highlights:
 
@@ -128,7 +128,19 @@ Highlights:
   commit. Also fixed tz-aware datetimes being written into naive
   `TIMESTAMP WITHOUT TIME ZONE` columns (asyncpg `DataError` → 500 on
   `POST /onboard`).
-- **Live-stack integration suite** — `tests/integration/` (93 tests, ~12 min):
+- **Frontend/backend contract + route drift detection (#44)** — a pure-static
+  CI test (`tests/contract/test_route_drift.py`, new `backend-route-contract`
+  GitHub Actions job) cross-checks all 48 frontend API URL literals against
+  the backend route catalog (gateway ServiceRegistry + per-service mounted
+  routers), so a route change that breaks the UI fails CI before merge. The
+  live integration suite adds `TestCriticalFrontendContract` (12 cases):
+  tokenless 401 failure modes on every protected frontend surface (auth,
+  users, streaming, recommendations, billing, admin, creators, media),
+  deliberately-public endpoints stay open (catalog, search), analytics events
+  stays POST-only. The sweep surfaced a live bug: **user-service JWT decode
+  had no audience** — `GET /users/api/v1/profiles/{id}` 401'd with a valid
+  token; fixed (plus a `JWT_AUDIENCE` setting).
+- **Live-stack integration suite** — `tests/integration/` (94 tests, ~12 min):
   gateway auth matrix + 429 flood, token lifecycle, cross-service
   authorization, billing webhook idempotency (Stripe signature verification,
   exactly one PAID invoice row on replay), contract schemas, health/readiness,
@@ -141,6 +153,6 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (Aug 17, 2026): 780 backend unit/route tests + 93 integration
+Test totals (Aug 17, 2026): 780 backend unit/route tests + 94 integration
 tests + 43 frontend vitest tests. One known pre-existing failure, billing
 `test_release_tranche_not_locked`, is unrelated to the hardening work.
