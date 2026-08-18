@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
 
+    # Event bus adapter (memory for dev/test, kafka for production).
+    # content-service produces content.published / content.deleted /
+    # content.unpublished (#227): consumers rely on those events to keep
+    # their indexes in sync, so production MUST use kafka.
+    EVENT_PUBLISHER: str = "memory"
+    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
+
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if running in production with default insecure secrets."""

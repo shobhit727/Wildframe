@@ -171,6 +171,85 @@ class TestContentLifecycle:
         assert await service.delete_content(uuid4()) is True
         service.content_repo.commit.assert_awaited_once()
 
+    async def test_delete_content_emits_deleted_event(self, service, monkeypatch):
+        """#227: deleting content must publish content.deleted after commit."""
+        from app.core.events import get_event_publisher
+
+        published = []
+        real = get_event_publisher()
+        assert real is not None  # sanity: publisher exists before spying
+        async def _spy_publish(self, event):
+            published.append(event)
+
+        monkeypatch.setattr(
+            "app.core.events.get_event_publisher",
+            lambda: type("Spy", (), {"publish": _spy_publish})(),
+        )
+        service.content_repo.delete.return_value = True
+
+        await service.delete_content(uuid4())
+
+        assert len(published) == 1
+        assert published[0].topic == "content.deleted"
+        assert published[0].key.startswith("deleted:")
+
+    async def test_delete_content_missing_emits_nothing(self, service, monkeypatch):
+
+        published = []
+        async def _spy_publish(self, event):
+            published.append(event)
+
+        monkeypatch.setattr(
+            "app.core.events.get_event_publisher",
+            lambda: type("Spy", (), {"publish": _spy_publish})(),
+        )
+        service.content_repo.delete.return_value = False
+
+        await service.delete_content(uuid4())
+
+        assert published == []
+
+    async def test_archive_emits_unpublished_event(self, service, monkeypatch):
+        """#227: archiving published content must publish content.unpublished."""
+        from app.schemas import ContentPublishRequest
+
+        published = []
+        async def _spy_publish(self, event):
+            published.append(event)
+
+        monkeypatch.setattr(
+            "app.core.events.get_event_publisher",
+            lambda: type("Spy", (), {"publish": _spy_publish})(),
+        )
+        archived = MagicMock()
+        archived.status = "archived"
+        service.content_repo.update.return_value = archived
+
+        await service.publish_content(uuid4(), ContentPublishRequest(status="archived"))
+
+        assert len(published) == 1
+        assert published[0].topic == "content.unpublished"
+        assert published[0].key.startswith("unpublished:")
+
+    async def test_publish_does_not_emit_unpublished_event(self, service, monkeypatch):
+        from app.schemas import ContentPublishRequest
+
+        published = []
+        async def _spy_publish(self, event):
+            published.append(event)
+
+        monkeypatch.setattr(
+            "app.core.events.get_event_publisher",
+            lambda: type("Spy", (), {"publish": _spy_publish})(),
+        )
+        published_content = MagicMock()
+        published_content.status = "published"
+        service.content_repo.update.return_value = published_content
+
+        await service.publish_content(uuid4(), ContentPublishRequest(status="published"))
+
+        assert published == []
+
     async def test_update_content_not_found_returns_none(self, service):
         from app.schemas import ContentUpdateRequest
 

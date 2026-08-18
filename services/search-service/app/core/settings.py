@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
 
+    # Event bus adapter (memory for dev/test, kafka for production).
+    # search-service consumes content.deleted / content.unpublished (#227)
+    # to drop documents without waiting for a reindex; production MUST use
+    # kafka or stale documents stay searchable.
+    EVENT_PUBLISHER: str = "memory"
+    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
+
     # Elasticsearch
     ELASTICSEARCH_URL: str = "http://elasticsearch:9200"
 

@@ -213,8 +213,19 @@ class SearchService:
             logger.exception("Legacy index migration failed; creating new versioned index")
 
         # Fresh install: create first versioned index and point the alias at it.
+        # Sorting by _id (cursor tie-break) requires fielddata on _id (ES 8+);
+        # apply it out-of-band so search works on a fresh cluster.
+        try:
+            await self.es.cluster.put_settings(
+                body={"persistent": {"indices.id_field_data.enabled": True}}
+            )
+        except Exception:
+            logger.warning("Could not enable indices.id_field_data; _id sort may fail")
         name = f"{CONTENT_INDEX_PREFIX}1"
-        await self.es.indices.create(index=name, body=CONTENT_INDEX_MAPPING)
+        if not await self.es.indices.exists(index=name):
+            # An orphaned content_v<N> (left behind by an interrupted reindex)
+            # must not 500 startup/reindex: adopt it.
+            await self.es.indices.create(index=name, body=CONTENT_INDEX_MAPPING)
         await self.es.indices.put_alias(index=name, name=CONTENT_INDEX)
         logger.info("Created and aliased initial index %s -> %s", name, CONTENT_INDEX)
         return name
@@ -422,7 +433,7 @@ class SearchService:
         if old_target and self._is_versioned_index(old_target):
             actions.append({"remove": {"index": old_target, "alias": CONTENT_INDEX}})
         try:
-            await self.es.indices.update_aliases({"actions": actions})  # type: ignore[misc,arg-type]
+            await self.es.indices.update_aliases(body={"actions": actions})
         except Exception:
             await self._cleanup_index(new_index)
             logger.exception("Alias switch failed; new index %s left for inspection", new_index)

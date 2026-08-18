@@ -127,6 +127,34 @@ Each item closed with unit tests plus live verification against the running HTTP
   (69 → 73) and +4 moderation-service tests. Live-verified through the
   gateway: queue 401/403/200, decisions 403 user, flags 401/201, strikes
   200 admin, admin alerts + refresh token 401.
+- **Search integrity** (#227, 5 findings): (1) deletes/unpublishes now
+  propagate to the search index via Kafka events. content-service emits
+  `content.deleted` after a successful delete and `content.unpublished`
+  when a title leaves the published set (only on success/after commit);
+  search-service consumes both topics (SDK `KafkaEventSubscriber` with
+  dedup, retries, DLQ) and removes the document by `_id` (idempotent —
+  redelivery is harmless). Dev stack runs the first real Kafka traffic:
+  `EVENT_PUBLISHER=kafka` for content + search. Live-verified: publish →
+  reindex (200, alias-switched) → search finds → DELETE → gone without
+  reindex; archive/unpublish → gone; startup warm-up backfills the catalog
+  automatically. (2) `_id`-sort fielddata: the cursor tie-break sorts by
+  `_id`, which ES 8 disables by default (`indices.id_field_data.enabled`);
+  search was silently returning empty results — `ensure_index` now applies
+  the cluster setting at index creation. (3) bounds pinned: `limit ≤ 100`,
+  trending `≤ 50`, query `≤ 200` chars enforced at the route layer,
+  cursor-only pagination with HMAC-integrity-protected cursors. (4) no
+  user-specific cache keys in search-service (verified: no Redis/ES keys
+  keyed on user identity — searches are public content-keyed by design),
+  pinned with guard tests. (5) redelivery/idempotency: delete-by-`_id` +
+  SDK event dedup (Redis `dedup:{topic}:{event_id}`) — pinned.
+  Additionally fixed while live-verifying: `ensure_index` 500s on orphaned
+  `content_v<N>` indices (interrupted reindex) — orphans are adopted;
+  ES-8 `update_aliases` called positionally (TypeError 500 on every alias
+  switch) — now `body=`; search-query logging wrote tz-aware datetimes
+  into naive `TIMESTAMP` columns (asyncpg DataError 500 on every `/query`)
+  — now naive-UTC; startup warm-up used `async for` on an
+  `async_sessionmaker` and never backfilled — now `async with`. +4
+  content-service tests (88 → 92), +10 search-service tests (46 → 56).
 - **OAuth security** (#223, 5 findings): vacuous — no OAuth implementation
   exists anywhere (routes, settings, schemas, DB tables, frontend flows).
   Four guard tests in auth-service pin the absence (no `/oauth` endpoints,

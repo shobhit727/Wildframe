@@ -81,6 +81,18 @@ class Topic:
     #: Idempotency key: ``published:{content_id}``
     CONTENT_PUBLISHED = "content.published"
 
+    #: Content was removed (admin delete). Consumers must drop the document
+    #: from their indexes/stores. A re-delivery must be a no-op.
+    #: Producer: content-service. Consumers: search-service.
+    #: Idempotency key: ``deleted:{content_id}``
+    CONTENT_DELETED = "content.deleted"
+
+    #: Published content was unpublished/archived and must no longer be
+    #: discoverable or searchable.
+    #: Producer: content-service. Consumers: search-service.
+    #: Idempotency key: ``unpublished:{content_id}``
+    CONTENT_UNPUBLISHED = "content.unpublished"
+
     #: Pipeline failed irrecoverably (virus detected, encoding error, etc.).
     #: Producer: media-pipeline. Consumers: notification-service, content-service.
     #: Idempotency key: ``failed:{pipeline_job_id}``
@@ -225,6 +237,18 @@ TOPIC_METADATA = {
         "idempotency_key_pattern": "published:{content_id}",
         "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
+    Topic.CONTENT_DELETED: {
+        "producer": "content-service",
+        "consumers": ["search-service"],
+        "idempotency_key_pattern": "deleted:{content_id}",
+        "retry_strategy": "exponential_backoff(max_attempts=3)",
+    },
+    Topic.CONTENT_UNPUBLISHED: {
+        "producer": "content-service",
+        "consumers": ["search-service"],
+        "idempotency_key_pattern": "unpublished:{content_id}",
+        "retry_strategy": "exponential_backoff(max_attempts=3)",
+    },
     Topic.CONTENT_PIPELINE_FAILED: {
         "producer": "media-pipeline",
         "consumers": ["notification-service", "content-service"],
@@ -351,6 +375,8 @@ _SERVICE_ACL: Dict[str, Dict[str, List[str]]] = {
     "content-service": {
         "produce": [
             Topic.CONTENT_PUBLISHED,
+            Topic.CONTENT_DELETED,
+            Topic.CONTENT_UNPUBLISHED,
         ],
         "consume": [
             Topic.CONTENT_UPLOADED,
@@ -376,6 +402,8 @@ _SERVICE_ACL: Dict[str, Dict[str, List[str]]] = {
         "consume": [
             Topic.CONTENT_METADATA_EXTRACTED,
             Topic.CONTENT_PUBLISHED,
+            Topic.CONTENT_DELETED,
+            Topic.CONTENT_UNPUBLISHED,
         ],
     },
     "recommendation-service": {

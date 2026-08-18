@@ -4,7 +4,6 @@ subscriber DLQ/quarantine/retry/dedup, topic ACL, and log sanitization."""
 import asyncio
 import json
 import logging
-import math
 from io import StringIO
 
 import pytest
@@ -27,7 +26,6 @@ from wildframe_events.subscriber import (
     PermanentFailure,
 )
 from wildframe_events.topics import (
-    Topic,
     topic_acl,
     validate_topic_metadata,
 )
@@ -211,7 +209,7 @@ class TestKafkaEventSubscriberLogic:
 
     @pytest.mark.asyncio
     async def test_permanent_failure_skips_retries_and_dlqs(self):
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import AsyncMock, MagicMock
 
         sub = MagicMock()
         sub.bootstrap_servers = "localhost:9092"
@@ -253,7 +251,7 @@ class TestKafkaEventSubscriberLogic:
     @pytest.mark.asyncio
     async def test_transient_failure_retries_then_dlqs(self):
         from unittest.mock import AsyncMock
-        from wildframe_events.subscriber import KafkaEventSubscriber, InMemoryDeduplicationStore
+        from wildframe_events.subscriber import KafkaEventSubscriber
 
         subscriber = KafkaEventSubscriber(
             bootstrap_servers="localhost:9092",
@@ -305,8 +303,8 @@ class TestTopicACL:
         from wildframe_events.topics import all_topics, all_dlq_topics
         topics = all_topics()
         dlqs = all_dlq_topics()
-        assert len(topics) == 20
-        assert len(dlqs) == 20
+        assert len(topics) == 22
+        assert len(dlqs) == 22
         for t in topics:
             assert t + ".dlq" in dlqs
 

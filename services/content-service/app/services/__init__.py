@@ -234,7 +234,12 @@ class ContentService:
             raise
 
     async def publish_content(self, content_id: UUID, request: ContentPublishRequest):
-        """Publish or archive content."""
+        """Publish or archive content.
+
+        Publishing to a non-published status emits ``content.unpublished``
+        so downstream consumers (search-service) drop the document without
+        waiting for a reindex (#227).
+        """
         try:
             from datetime import datetime
 
@@ -244,6 +249,10 @@ class ContentService:
 
             content = await self.content_repo.update(content_id, **update_data)
             await self.content_repo.commit()
+            if content is not None and content.status != ContentStatus.PUBLISHED:
+                from app.core.events import content_unpublished_event, get_event_publisher
+
+                await get_event_publisher().publish(content_unpublished_event(str(content_id)))
             return content
         except Exception as e:
             await self.content_repo.rollback()
@@ -251,10 +260,18 @@ class ContentService:
             raise
 
     async def delete_content(self, content_id: UUID):
-        """Delete content."""
+        """Delete content.
+
+        Emits ``content.deleted`` after commit so downstream consumers
+        (search-service) remove the document (#227).
+        """
         try:
             success = await self.content_repo.delete(content_id)
             await self.content_repo.commit()
+            if success:
+                from app.core.events import content_deleted_event, get_event_publisher
+
+                await get_event_publisher().publish(content_deleted_event(str(content_id)))
             return success
         except Exception as e:
             await self.content_repo.rollback()

@@ -318,6 +318,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/content_db
       REDIS_URL: redis://redis:6379/2
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EVENT_PUBLISHER: kafka
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key
@@ -399,6 +400,8 @@ services:
       ELASTICSEARCH_URL: http://elasticsearch:9200
       REDIS_URL: redis://redis:6379/5
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/search_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EVENT_PUBLISHER: kafka
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key

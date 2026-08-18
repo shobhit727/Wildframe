@@ -25,6 +25,8 @@ def es_mock():
     mock.indices.put_alias = AsyncMock()
     mock.indices.get_alias = AsyncMock()
     mock.indices.get = AsyncMock()
+    mock.cluster = MagicMock()
+    mock.cluster.put_settings = AsyncMock()
     mock.indices.update_aliases = AsyncMock()
     mock.indices.delete = AsyncMock()
     return mock
@@ -226,6 +228,25 @@ class TestSearchService:
 
         with pytest.raises(CatalogFetchError):
             await service.reindex_catalog(catalog)
+
+    @pytest.mark.asyncio
+    async def test_ensure_index_adopts_orphaned_versioned_index(self, es_mock, service):
+        """An orphaned content_v<N> (interrupted reindex) must not 500 startup.
+
+        ensure_index creates the alias instead of failing on create (#227 F1).
+        """
+        es_mock.indices.get_alias = AsyncMock(side_effect=Exception("NotFound"))
+        es_mock.indices.exists = AsyncMock(
+            side_effect=lambda index: index == "content_v1"
+        )
+        es_mock.indices.create = AsyncMock()
+
+        target = await service.ensure_index()
+
+        assert target == "content_v1"
+        es_mock.indices.create.assert_not_awaited()
+        es_mock.indices.put_alias.assert_awaited_once_with(index="content_v1", name="content")
+        es_mock.cluster.put_settings.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_reindex_catalog_empty_returns_no_switch(self, es_mock, service):

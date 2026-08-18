@@ -8,6 +8,7 @@ from wildframe_observability.wire import wire_observability
 
 from app.api.search_routes import close_es_client, es_client, router as search_router
 from app.core.database import DatabaseManager
+from app.core.events import start_event_subscriber, stop_event_subscriber
 from app.core.settings import settings
 from app.repositories import SearchIndexRepository, SearchQueryRepository
 from app.services import SearchService
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 async def _warm_search_index() -> None:
     """Create the ES index and backfill from content-service, tolerantly."""
     try:
-        async for session in DatabaseManager.session_factory():  # type: ignore[misc,union-attr]
+        async with DatabaseManager.session_factory() as session:  # type: ignore[union-attr]
             service = SearchService(
                 es_client(), SearchQueryRepository(session), SearchIndexRepository(session)
             )
@@ -44,12 +45,17 @@ async def lifespan(app: FastAPI):
     # Warm the Elasticsearch index with the published catalog (tolerant).
     await _warm_search_index()
 
+    # Consume content.deleted / content.unpublished so removed content
+    # disappears from search without a manual reindex (#227).
+    await start_event_subscriber()
+
     logger.info("All startup checks passed")
 
     yield
 
     # Shutdown
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
+    await stop_event_subscriber()
     await DatabaseManager.close()
     await close_es_client()
     logger.info("Shutdown complete")

@@ -1,6 +1,6 @@
 # How to Run Tests
 
-**Current State**: Unit/route tests for all 15 microservices + the shared SDK + the frontend (vitest) + a live-stack integration suite (`tests/integration/`, 110 tests). Backend suites green (861 unit/route tests, Aug 18, 2026) with one known pre-existing failure (billing `test_release_tranche_not_locked`, unrelated to recent work). The integration suite needs the dockerized stack running and skips itself otherwise.
+**Current State**: Unit/route tests for all 15 microservices + the shared SDK + the frontend (vitest) + a live-stack integration suite (`tests/integration/`, 110 tests). Backend suites green (878 unit/route tests, Aug 18, 2026). The integration suite needs the dockerized stack running and skips itself otherwise.
 
 ---
 
@@ -90,30 +90,30 @@ npm run build           # production build
 - **`app.main` / `app.models` resolves to the wrong service** — running a combined sweep from the repo root; use the per-service loop above.
 - **Tests pass locally, fail in CI** — CI installs into a fresh service venv (`poetry install --with dev`); mirror with `poetry install` inside the service dir.
 
-## 📊 Test Stats (Aug 17, 2026)
+## 📊 Test Stats (Aug 18, 2026)
 
 | Suite | Tests |
 |-------|-------|
-| auth-service | 131 |
-| content-service | 88 |
+| auth-service | 161 |
+| content-service | 92 |
 | streaming-service | 80 |
-| analytics-service | 65 |
-| billing-service | 61 (1 known pre-existing failure) |
-| admin-service | 61 |
+| analytics-service | 67 |
+| billing-service | 62 |
+| media-pipeline | 62 |
+| admin-service | 73 |
+| search-service | 56 |
 | user-service | 51 |
-| media-pipeline | 46 |
-| search-service | 46 |
-| api-gateway | 35 |
-| moderation-service | 30 |
+| api-gateway | 39 |
+| moderation-service | 36 |
 | recommendation-service | 26 |
+| uploads-service | 26 |
+| creators-service | 23 |
 | notification-service | 24 |
-| creators-service | 18 |
-| uploads-service | 13 |
 | packages/sdk | 98 |
-| **Backend unit total** | **800** |
-| **tests/integration (live stack)** | **87** |
+| **Backend unit total** | **878** |
+| **tests/integration (live stack)** | **110** |
 | apps/web (vitest) | 43 |
 
 ---
 
-**Last updated**: August 17, 2026
+**Last updated**: August 18, 2026

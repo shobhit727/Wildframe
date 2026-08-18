@@ -98,7 +98,7 @@ Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/O
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
-#62, #63, #168, #214, #217, #218, #221, #222, #223, #225, #536, and #41 (open items: #45 DRM held as backlog).
+#62, #63, #168, #214, #217, #218, #221, #222, #223, #225, #227, #536, and #41 (open items: #45 DRM held as backlog).
 
 Highlights:
 
@@ -171,6 +171,31 @@ Highlights:
   guard tests (single-item schemas, no bulk routes). Live-verified: queue
   401 no token / 403 user / 200 admin, decisions 403 user, flags 401 no
   token / 201 user, strikes 200 admin, admin alerts + refresh token 401.
+- **Search integrity (#227)** — all five findings verified and pinned (55
+  tests): (1) deletes/unpublishes propagate to the index via Kafka —
+  content-service now publishes `content.deleted` / `content.unpublished`
+  after commit (SDK `KafkaEventPublisher`, `EVENT_PUBLISHER=kafka` in the
+  dev stack; in-memory publisher in tests), and search-service subscribes
+  and removes the document by `_id` (idempotent; malformed payloads
+  dropped; SDK dedup + DLQ). Live-verified end-to-end: publish → reindex →
+  search finds → DELETE → gone with **no** reindex; same for
+  archive/unpublish; startup warm-up backfills the catalog automatically.
+  Live verification also surfaced and fixed three pre-existing robustness
+  bugs: `ensure_index` 500s on an orphaned `content_v<N>` index (interrupted
+  reindex) and on the ES-8 positional `update_aliases` call — both now
+  handled (orphans adopted, `body=` kwarg); search-query logging wrote
+  tz-aware datetimes into naive `TIMESTAMP` columns (asyncpg DataError →
+  500 on every `/query`); warm-up used `async for` on an `async_sessionmaker`
+  and silently never backfilled. (2) the app applies the ES-8
+  `indices.id_field_data` cluster setting at index creation because the
+  cursor tie-break sorts by `_id` (was failing with empty results on a
+  fresh cluster); (3) bounds are capped at the route layer (limit ≤ 100,
+  trending ≤ 50, query ≤ 200 chars) with cursor-only pagination and
+  integrity-protected cursors — pinned with guard tests; (4) no
+  user-specific cache keys in search-service — searches are content-keyed
+  and public by design, pinned; (5) delete-by-`_id` + SDK event dedup makes
+  redelivery harmless — pinned. 13 new tests (content-service 88 → 92,
+  search-service 46 → 56).
 - **OAuth security (#223)** — all five findings are vacuous: the platform
   ships no OAuth at all (no routes, settings, schemas, DB tables, or
   frontend flows; verified across all services + gateway + frontend). Four
@@ -275,7 +300,7 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (Aug 18, 2026): 861 backend unit/route tests + 110 integration
+Test totals (Aug 18, 2026): 878 backend unit/route tests + 110 integration
 tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
 tests. One known pre-existing failure, billing
 `test_release_tranche_not_locked`, is unrelated to the hardening work.
