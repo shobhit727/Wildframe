@@ -6,6 +6,7 @@ from wildframe_observability.wire import wire_observability
 
 from app.api.recommendation_routes import router as recommendation_router
 from app.core.database import DatabaseManager
+from app.core.events import start_event_subscriber, stop_event_subscriber
 from app.core.settings import settings
 from app.services import close_catalog_client
 
@@ -27,10 +28,15 @@ async def lifespan(app: FastAPI):
 
     logger.info("All startup checks passed")
 
+    # Consume content.deleted / content.unpublished so stored
+    # recommendations never reference removed or unpublished titles (#228).
+    await start_event_subscriber()
+
     yield
 
     # Shutdown
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
+    await stop_event_subscriber()
     await close_catalog_client()
     await DatabaseManager.close()
     logger.info("Shutdown complete")

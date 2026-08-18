@@ -50,3 +50,24 @@ class RecommendationRepository:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def latest_created_at(self, user_id: UUID):
+        """Most recent generation timestamp for a user's stored rows (None if none)."""
+        stmt = (
+            select(Recommendation.created_at)
+            .where(Recommendation.user_id == user_id)
+            .order_by(desc(Recommendation.created_at))
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def delete_for_content(self, content_id: UUID) -> int:
+        """Evict every stored recommendation for a title (all users).
+
+        Called from the content.deleted / content.unpublished event
+        handlers; idempotent (deleting absent rows is a no-op) (#228 F3).
+        """
+        stmt = delete(Recommendation).where(Recommendation.content_id == content_id)
+        result = await self.session.execute(stmt)
+        return result.rowcount

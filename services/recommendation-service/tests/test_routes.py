@@ -128,6 +128,46 @@ class TestUpdatePreferences:
 
         assert response.status_code == 422
 
+    def test_get_limit_above_max_returns_422(self, client, service):
+        """Unbounded limits are rejected at the route layer (#228 F4)."""
+        app.dependency_overrides[get_rec_service] = override(service)
+
+        response = client.get(f"/api/v1/recommendations/for-user/{uuid4()}?limit=10000")
+
+        assert response.status_code == 422
+        service.get_recommendations.assert_not_awaited()
+
+    def test_update_too_many_liked_genres_returns_422(self, client, service):
+        """Unbounded preference lists are rejected at the route layer (#228 F4)."""
+        app.dependency_overrides[get_rec_service] = override(service)
+
+        response = client.put(
+            f"/api/v1/recommendations/preferences/{uuid4()}",
+            json={"liked_genres": ["action"] * 51, "disliked_genres": []},
+        )
+
+        assert response.status_code == 422
+        service.update_preferences.assert_not_awaited()
+
+    def test_update_too_many_disliked_genres_returns_422(self, client, service):
+        app.dependency_overrides[get_rec_service] = override(service)
+
+        response = client.put(
+            f"/api/v1/recommendations/preferences/{uuid4()}",
+            json={"liked_genres": [], "disliked_genres": ["horror"] * 51},
+        )
+
+        assert response.status_code == 422
+
+    def test_update_legacy_list_too_many_returns_422(self, client, service):
+        app.dependency_overrides[get_rec_service] = override(service)
+
+        response = client.put(
+            f"/api/v1/recommendations/preferences/{uuid4()}", json=["action"] * 51
+        )
+
+        assert response.status_code == 422
+
 
 class TestIdorProtection:
     def test_other_user_recommendations_403(self, client):

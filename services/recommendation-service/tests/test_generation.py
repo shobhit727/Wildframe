@@ -1,5 +1,7 @@
 """Tests for the recommendation generation logic."""
 
+from datetime import UTC, datetime, timedelta
+
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -17,7 +19,7 @@ def fake_genres():
     ]
 
 
-def fake_items(genre_id):
+def fake_items(genre_id, **kwargs):
     return [
         {
             "id": str(uuid4()),
@@ -177,13 +179,130 @@ async def test_get_recommendations_generates_when_storage_empty(service):
     service.rec_repo.get_for_user = AsyncMock(side_effect=[[], [row]])
     client = make_client(
         fetch_genres=AsyncMock(return_value=fake_genres()),
-        fetch_by_genre=AsyncMock(side_effect=lambda gid: [fake_items(gid)[0]]),
+        fetch_by_genre=AsyncMock(side_effect=lambda gid, **kwargs: [fake_items(gid)[0]]),
     )
     with patch("app.services.ContentCatalogClient", return_value=client):
         recs = await service.get_recommendations(uuid4())
 
     assert len(recs) == 1
     assert "reason" in recs[0]
+
+
+@pytest.mark.asyncio
+async def test_get_recommendations_serves_fresh_rows_without_regeneration(service):
+    """Fresh stored rows (newer than the preferences) are served as-is (#228 F1)."""
+    now = datetime.now(UTC)
+    service.pref_repo.get_or_create = AsyncMock(
+        return_value=MagicMock(liked_genres=["action"], disliked_genres=[], updated_at=now - timedelta(minutes=5))
+    )
+    row = MagicMock(content_id=uuid4(), score=0.9, reason="Because you like Action")
+    service.rec_repo.get_for_user = AsyncMock(return_value=[row])
+    service.rec_repo.latest_created_at = AsyncMock(return_value=now)
+
+    recs = await service.get_recommendations(uuid4())
+
+    assert len(recs) == 1
+    service.rec_repo.clear_for_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_recommendations_regenerates_when_preferences_are_newer(service):
+    """A preference change must invalidate stored rows before serving (#228 F1)."""
+    now = datetime.now(UTC)
+    service.pref_repo.get_or_create = AsyncMock(
+        return_value=MagicMock(liked_genres=["action"], disliked_genres=[], updated_at=now)
+    )
+    stale_row = MagicMock(content_id=uuid4(), score=0.9, reason="stale")
+    fresh_row = MagicMock(content_id=uuid4(), score=0.8, reason="Because you like Action")
+    service.rec_repo.get_for_user = AsyncMock(side_effect=[[stale_row], [fresh_row]])
+    service.rec_repo.latest_created_at = AsyncMock(return_value=now - timedelta(minutes=5))
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=fake_genres()),
+        fetch_by_genre=AsyncMock(side_effect=lambda gid, **kwargs: [fake_items(gid)[0]]),
+    )
+    with patch("app.services.ContentCatalogClient", return_value=client):
+        recs = await service.get_recommendations(uuid4())
+
+    assert len(recs) == 1
+    assert recs[0]["reason"] == "Because you like Action"
+    service.rec_repo.clear_for_user.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_recommendations_clamps_excessive_limit(service):
+    """A hostile limit is clamped before hitting the repository (#228 F4)."""
+    now = datetime.now(UTC)
+    service.pref_repo.get_or_create = AsyncMock(
+        return_value=MagicMock(liked_genres=["action"], disliked_genres=[], updated_at=now)
+    )
+    row = MagicMock(content_id=uuid4(), score=0.9, reason="r")
+    service.rec_repo.get_for_user = AsyncMock(return_value=[row])
+    service.rec_repo.latest_created_at = AsyncMock(return_value=now)
+
+    await service.get_recommendations(uuid4(), limit=10_000)
+
+    called_limit = service.rec_repo.get_for_user.await_args.args[1]
+    assert called_limit == 100  # settings.MAX_RECOMMENDATION_LIMIT
+
+
+@pytest.mark.asyncio
+async def test_generate_clamps_genre_lists_and_limit(service):
+    """Generation bounds: genre lists and limit are clamped (#228 F4)."""
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=fake_genres()),
+        fetch_by_genre=AsyncMock(
+            side_effect=lambda gid, **kwargs: [fake_items(gid)[0], fake_items(gid)[1]]
+        ),
+    )
+    with patch("app.services.ContentCatalogClient", return_value=client):
+        count = await service.generate(
+            uuid4(),
+            ["action"] * 500,
+            ["horror"] * 500,
+            limit=10_000,
+        )
+
+    assert count <= 100  # clamped limit
+    assert client.fetch_by_genre.await_count <= 50  # clamped genre list
+
+
+@pytest.mark.asyncio
+async def test_generate_caps_candidate_set(service):
+    """Generation bounds: the scored candidate set is capped (#228 F4)."""
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=fake_genres()),
+        fetch_by_genre=AsyncMock(
+            side_effect=lambda gid, **kwargs: [fake_items(gid)[0]] * 600
+        ),
+    )
+    with patch("app.services.ContentCatalogClient", return_value=client):
+        count = await service.generate(uuid4(), ["action"], [], limit=100)
+
+    assert count <= 500  # settings.MAX_CANDIDATES
+
+
+@pytest.mark.asyncio
+async def test_user_rows_are_never_shared(service):
+    """F5: one user's stored rows must never appear in another user's output."""
+    user_a, user_b = uuid4(), uuid4()
+    row_a = MagicMock(content_id=uuid4(), score=1.0, reason="a")
+    service.pref_repo.get_or_create = AsyncMock(
+        return_value=MagicMock(liked_genres=[], disliked_genres=[], updated_at=datetime.now(UTC))
+    )
+    service.rec_repo.get_for_user = AsyncMock(side_effect=[[row_a], []])
+    service.rec_repo.latest_created_at = AsyncMock(return_value=datetime.now(UTC))
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=fake_genres()),
+        fetch_global=AsyncMock(return_value=[]),
+    )
+    with patch("app.services.ContentCatalogClient", return_value=client):
+        recs_a = await service.get_recommendations(user_a)
+        recs_b = await service.get_recommendations(user_b)
+
+    assert [r["content_id"] for r in recs_a] == [str(row_a.content_id)]
+    assert recs_b == []
+    assert service.rec_repo.get_for_user.await_args_list[0].args[0] == user_a
+    assert service.rec_repo.get_for_user.await_args_list[1].args[0] == user_b
 
 
 @pytest.mark.asyncio

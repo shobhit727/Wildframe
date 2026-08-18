@@ -98,7 +98,7 @@ Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/O
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
-#62, #63, #168, #214, #217, #218, #221, #222, #223, #225, #227, #536, and #41 (open items: #45 DRM held as backlog).
+#62, #63, #168, #214, #217, #218, #221, #222, #223, #225, #227, #228, #536, and #41 (open items: #45 DRM held as backlog).
 
 Highlights:
 
@@ -196,6 +196,31 @@ Highlights:
   and public by design, pinned; (5) delete-by-`_id` + SDK event dedup makes
   redelivery harmless — pinned. 13 new tests (content-service 88 → 92,
   search-service 46 → 56).
+- **Recommendation isolation (#228)** — all five findings verified and
+  pinned (17 new tests, recommendation-service 26 → 43): (1) the stored
+  recommendation rows are a per-user cache of generation output, so every
+  input that affects personalization must invalidate them — `get_recommendations`
+  now regenerates whenever the preferences row (`prefs.updated_at`) is
+  newer than the newest stored row, so liked/disliked genres, preferred
+  languages, and watch frequency can never be silently ignored by a stale
+  cache; (2) disliked-genre content is excluded at generation in both the
+  genre-scored and the trending-fallback paths, and the freshness rule
+  above guarantees served rows always reflect current dislikes (no blocked-
+  or private-content concepts exist anywhere in the platform — verified —
+  so those sub-findings are vacuous); (3) deleted/unpublished content can
+  no longer survive in stored rows — recommendation-service now consumes
+  `content.deleted` / `content.unpublished` (SDK Kafka subscriber,
+  `EVENT_PUBLISHER=kafka` in the dev stack) and evicts the rows for that
+  title across all users; live-verified end-to-end: content in recs →
+  DELETE/unpublish → consumed (`removed=1`) → gone with no regeneration;
+  (4) generation is bounded — route layer rejects `limit > 100` (422) and
+  preference lists over 50 genres (422), the service clamps internally
+  (limit, genre lists) and caps the scored candidate set at 500;
+  (5) per-user cache-key isolation — rows are keyed by `user_id` with
+  user-scoped queries and `require_self` IDOR protection; pinned with
+  two-user isolation tests (no cross-user row mixing, eviction is
+  cross-user by content id, not by cache key). Guard tests cover every
+  finding.
 - **OAuth security (#223)** — all five findings are vacuous: the platform
   ships no OAuth at all (no routes, settings, schemas, DB tables, or
   frontend flows; verified across all services + gateway + frontend). Four
@@ -300,7 +325,7 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (Aug 18, 2026): 878 backend unit/route tests + 110 integration
+Test totals (Aug 18, 2026): 895 backend unit/route tests + 110 integration
 tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
 tests. One known pre-existing failure, billing
 `test_release_tranche_not_locked`, is unrelated to the hardening work.

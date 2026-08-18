@@ -100,17 +100,36 @@ class RecommendationService:
         Returns stored rows; if none exist yet, generates them from the
         user's genre preferences (plus popular catalog content as filler)
         so the endpoint is useful out of the box.
+
+        Stored rows are a per-user cache of the generation output, so every
+        input that affects personalization (liked/disliked genres, preferred
+        languages, watch frequency — anything that bumps
+        ``prefs.updated_at``) must invalidate it: when the preferences are
+        newer than the newest stored row, the rows are regenerated before
+        serving (#228 F1/F2). Limit is clamped so a hostile caller can
+        never request an unbounded result set (#228 F4).
         """
+        limit = max(1, min(limit, settings.MAX_RECOMMENDATION_LIMIT))
         prefs = await self.pref_repo.get_or_create(user_id)
         recommendations = await self.rec_repo.get_for_user(user_id, limit)
-        if not recommendations:
-            try:
-                await self.generate(
-                    user_id, prefs.liked_genres or [], prefs.disliked_genres or [], limit
-                )
-                recommendations = await self.rec_repo.get_for_user(user_id, limit)
-            except Exception:
-                logger.exception("Recommendation generation failed; returning stored rows")
+        if recommendations:
+            latest_generated = await self.rec_repo.latest_created_at(user_id)
+            if latest_generated is not None and latest_generated >= prefs.updated_at:
+                return [
+                    {
+                        "content_id": str(r.content_id),
+                        "score": r.score,
+                        "reason": r.reason,
+                    }
+                    for r in recommendations
+                ]
+        try:
+            await self.generate(
+                user_id, prefs.liked_genres or [], prefs.disliked_genres or [], limit
+            )
+            recommendations = await self.rec_repo.get_for_user(user_id, limit)
+        except Exception:
+            logger.exception("Recommendation generation failed; returning stored rows")
         return [
             {"content_id": str(r.content_id), "score": r.score, "reason": r.reason}
             for r in recommendations
@@ -131,6 +150,11 @@ class RecommendationService:
         """
         catalog = get_catalog_client()
         try:
+            # Bounded inputs (#228 F4): a caller-supplied preference list or
+            # limit can never fan out unbounded work or unbounded rows.
+            liked_genres = liked_genres[: settings.MAX_PREFERENCE_GENRES]
+            disliked_genres = disliked_genres[: settings.MAX_PREFERENCE_GENRES]
+            limit = max(1, min(limit, settings.MAX_RECOMMENDATION_LIMIT))
             genres = await catalog.fetch_genres()
             by_slug = {str(g.get("slug", "")).lower(): g for g in genres}
             by_name = {str(g.get("name", "")).lower(): g for g in genres}
@@ -158,11 +182,15 @@ class RecommendationService:
 
             async def score_genre(genre) -> None:
                 try:
-                    items = await catalog.fetch_by_genre(str(genre["id"]))
+                    items = await catalog.fetch_by_genre(
+                        str(genre["id"]), page_size=settings.MAX_CATALOG_PAGE_SIZE
+                    )
                 except Exception:
                     logger.warning("Failed to fetch content for genre %s", genre.get("slug"))
                     return
                 for item in items:
+                    if len(scored) >= settings.MAX_CANDIDATES:
+                        return
                     cid = str(item["id"])
                     genre_slugs = {
                         str(g.get("slug", "")).lower()
@@ -192,6 +220,8 @@ class RecommendationService:
                 except Exception:
                     items = []
                 for item in items:
+                    if len(scored) >= settings.MAX_CANDIDATES:
+                        break
                     cid = str(item["id"])
                     genre_slugs = {
                         str(g.get("slug", "")).lower()

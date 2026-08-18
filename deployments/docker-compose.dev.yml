@@ -427,6 +427,7 @@ services:
       CONTENT_SERVICE_URL: http://content-service:8000
       REDIS_URL: redis://redis:6379/6
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EVENT_PUBLISHER: kafka
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key

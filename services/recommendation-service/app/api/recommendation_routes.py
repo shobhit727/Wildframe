@@ -4,7 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from jose import JWTError, jwt  # type: ignore[import-untyped]
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -78,11 +78,22 @@ async def get_rec_service(
 async def get_recommendations(
     user_id: Annotated[UUID, Depends(require_self)],
     service: RecommendationService = Depends(get_rec_service),  # noqa: B008
-    limit: int = 20,
+    limit: Annotated[int, Query(ge=1, le=settings.MAX_RECOMMENDATION_LIMIT)] = 20,
 ):
     """Get personalized recommendations."""
     recommendations = await service.get_recommendations(user_id, limit)
     return {"recommendations": recommendations, "total": len(recommendations)}
+
+
+def _validate_genre_list(name: str, genres: list | None) -> None:
+    """Reject unbounded preference lists (#228 F4)."""
+    if genres is None:
+        return
+    if len(genres) > settings.MAX_PREFERENCE_GENRES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{name} exceeds the {settings.MAX_PREFERENCE_GENRES} genre limit",
+        )
 
 
 @router.put("/preferences/{user_id}")
@@ -94,13 +105,16 @@ async def update_preferences(
     """Update user preferences.
 
     Body may be a raw list of liked genre slugs (legacy) or an object with
-    ``liked_genres`` / ``disliked_genres`` arrays. Recommendations are
-    regenerated afterwards.
+    ``liked_genres`` / ``disliked_genres`` arrays (each bounded to
+    ``MAX_PREFERENCE_GENRES``). Recommendations are regenerated afterwards.
     """
     if isinstance(body, list):
+        _validate_genre_list("liked_genres", body)
         liked_genres = body or None
         disliked_genres = None
     elif isinstance(body, dict):
+        _validate_genre_list("liked_genres", body.get("liked_genres"))
+        _validate_genre_list("disliked_genres", body.get("disliked_genres"))
         liked_genres = body.get("liked_genres")
         disliked_genres = body.get("disliked_genres")
     else:

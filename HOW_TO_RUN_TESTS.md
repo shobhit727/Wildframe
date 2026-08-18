@@ -1,6 +1,6 @@
 # How to Run Tests
 
-**Current State**: Unit/route tests for all 15 microservices + the shared SDK + the frontend (vitest) + a live-stack integration suite (`tests/integration/`, 110 tests). Backend suites green (878 unit/route tests, Aug 18, 2026). The integration suite needs the dockerized stack running and skips itself otherwise.
+**Current State**: Unit/route tests for all 15 microservices + the shared SDK + the frontend (vitest) + a live-stack integration suite (`tests/integration/`, 110 tests). Backend suites green (895 unit/route tests, Aug 18, 2026). The integration suite needs the dockerized stack running and skips itself otherwise.
 
 ---
 
@@ -105,12 +105,12 @@ npm run build           # production build
 | user-service | 51 |
 | api-gateway | 39 |
 | moderation-service | 36 |
-| recommendation-service | 26 |
+| recommendation-service | 43 |
 | uploads-service | 26 |
 | creators-service | 23 |
 | notification-service | 24 |
 | packages/sdk | 98 |
-| **Backend unit total** | **878** |
+| **Backend unit total** | **895** |
 | **tests/integration (live stack)** | **110** |
 | apps/web (vitest) | 43 |
 

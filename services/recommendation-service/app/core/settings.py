@@ -20,6 +20,19 @@ class Settings(BaseSettings):
     CONTENT_CATALOG_MAX_CONNECTIONS: int = 20
     CONTENT_CATALOG_MAX_KEEPALIVE: int = 10
 
+    # Generation bounds (#228 F4): candidate/model outputs are capped so one
+    # request can never fan out unbounded work or unbounded result rows.
+    MAX_RECOMMENDATION_LIMIT: int = 100
+    MAX_PREFERENCE_GENRES: int = 50
+    MAX_CANDIDATES: int = 500
+    MAX_CATALOG_PAGE_SIZE: int = 100
+
+    # Events (#228 F3): content.deleted / content.unpublished drive cache
+    # eviction. "memory" (default) for tests; "kafka" in the dev stack.
+    EVENT_PUBLISHER: str = "memory"
+    KAFKA_BOOTSTRAP_SERVERS: str = "kafka:29092"
+    KAFKA_CONSUMER_GROUP: str = "recommendation-service"
+
     # Security
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"

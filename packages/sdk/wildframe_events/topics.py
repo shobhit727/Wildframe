@@ -83,13 +83,13 @@ class Topic:
 
     #: Content was removed (admin delete). Consumers must drop the document
     #: from their indexes/stores. A re-delivery must be a no-op.
-    #: Producer: content-service. Consumers: search-service.
+    #: Producer: content-service. Consumers: search-service, recommendation-service.
     #: Idempotency key: ``deleted:{content_id}``
     CONTENT_DELETED = "content.deleted"
 
     #: Published content was unpublished/archived and must no longer be
     #: discoverable or searchable.
-    #: Producer: content-service. Consumers: search-service.
+    #: Producer: content-service. Consumers: search-service, recommendation-service.
     #: Idempotency key: ``unpublished:{content_id}``
     CONTENT_UNPUBLISHED = "content.unpublished"
 
@@ -239,13 +239,13 @@ TOPIC_METADATA = {
     },
     Topic.CONTENT_DELETED: {
         "producer": "content-service",
-        "consumers": ["search-service"],
+        "consumers": ["search-service", "recommendation-service"],
         "idempotency_key_pattern": "deleted:{content_id}",
         "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
     Topic.CONTENT_UNPUBLISHED: {
         "producer": "content-service",
-        "consumers": ["search-service"],
+        "consumers": ["search-service", "recommendation-service"],
         "idempotency_key_pattern": "unpublished:{content_id}",
         "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
@@ -410,6 +410,8 @@ _SERVICE_ACL: Dict[str, Dict[str, List[str]]] = {
         "produce": [],
         "consume": [
             Topic.CONTENT_PUBLISHED,
+            Topic.CONTENT_DELETED,
+            Topic.CONTENT_UNPUBLISHED,
         ],
     },
     "billing-service": {

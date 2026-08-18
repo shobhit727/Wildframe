@@ -155,6 +155,30 @@ Each item closed with unit tests plus live verification against the running HTTP
   — now naive-UTC; startup warm-up used `async for` on an
   `async_sessionmaker` and never backfilled — now `async with`. +4
   content-service tests (88 → 92), +10 search-service tests (46 → 56).
+- **Recommendation isolation** (#228, 5 findings): (1) the per-user
+  recommendation rows are the personalization cache; every input that
+  affects personalization (liked/disliked genres, preferred languages,
+  watch frequency) now invalidates it — `get_recommendations` regenerates
+  whenever `prefs.updated_at` is newer than the newest stored row (also
+  closes the swallowed-regeneration-failure hole from
+  `update_preferences`). (2) disliked-genre content is excluded in both the
+  genre-scored and trending-fallback generation paths, and the freshness
+  rule guarantees served rows always reflect current dislikes; no
+  blocked-content or private-content concept exists anywhere in the
+  platform (verified user-service/content-service/recommendation-service),
+  so those sub-findings are vacuous. (3) deleted/unpublished content is
+  evicted from stored rows via the `content.deleted` / `content.unpublished`
+  events (SDK `KafkaEventSubscriber`, dedup + DLQ; dev stack
+  `EVENT_PUBLISHER=kafka`) — idempotent delete-by-content_id across all
+  users; live-verified: content in recs → DELETE → event consumed
+  (`removed=1`) → gone without regeneration, same for archive/unpublish.
+  (4) generation bounded: route rejects `limit > 100` and genre lists
+  > 50 (422), service clamps inputs and caps the candidate set at 500.
+  (5) cache-key isolation pinned: rows keyed `user_id`, user-scoped
+  queries, `require_self` IDOR protection, two-user isolation tests;
+  eviction is content-scoped (all users), never user-scoped. +17
+  recommendation-service tests (26 → 43); SDK ACL/metadata updated
+  (recommendation-service now a consumer of the two topics).
 - **OAuth security** (#223, 5 findings): vacuous — no OAuth implementation
   exists anywhere (routes, settings, schemas, DB tables, frontend flows).
   Four guard tests in auth-service pin the absence (no `/oauth` endpoints,
