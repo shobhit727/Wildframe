@@ -60,7 +60,6 @@ class UserModerationRepository:
             moderation.status = status
             moderation.reason = reason
             moderation.moderated_by = moderated_by
-            await self.db.commit()
             await self.db.refresh(moderation)
         return moderation
 
@@ -142,7 +141,6 @@ class ContentModerationRepository:
             moderation.status = status
             moderation.resolved_by = resolved_by
             moderation.resolved_at = datetime.now(UTC) if status == "removed" else None
-            await self.db.commit()
             await self.db.refresh(moderation)
         return moderation
 
@@ -190,7 +188,6 @@ class SystemAlertRepository:
         if alert and not alert.acknowledged:
             alert.acknowledged = True
             alert.acknowledged_by = admin_id
-            await self.db.commit()
             await self.db.refresh(alert)
         return alert
 
@@ -233,7 +230,6 @@ class SystemConfigRepository:
         if config:
             config.value = value
             config.updated_by = updated_by
-            await self.db.commit()
             await self.db.refresh(config)
         return config
 

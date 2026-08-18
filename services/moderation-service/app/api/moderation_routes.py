@@ -13,10 +13,12 @@ Endpoints:
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
+from jose import JWTError, jwt  # type: ignore[import-untyped]
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.settings import settings
 from app.repositories import (
     ContentFlagRepository,
     CreatorStrikeRepository,
@@ -34,6 +36,50 @@ from app.schemas import (
 from app.services import ModerationError, ModerationService
 
 router = APIRouter(prefix="/api/v1/moderation", tags=["moderation"])
+
+
+def _verify_token(
+    authorization: str | None,
+    *,
+    require_admin: bool,
+) -> str:
+    """Decode an auth-service access token and return its subject.
+
+    Raises 401 for missing/invalid tokens and 403 when the caller is not an
+    admin. This is the service's own enforcement point: the api-gateway is a
+    transparent proxy that does not authorize backend requests.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    token = authorization.replace("Bearer ", "")
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            audience=settings.JWT_AUDIENCE,
+        )
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+    if require_admin and payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    return str(payload.get("sub") or payload.get("user_id"))
+
+
+async def get_current_user_id(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> str:
+    """Any authenticated user (access token only)."""
+    return _verify_token(authorization, require_admin=False)
+
+
+async def get_current_admin_id(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> str:
+    """An authenticated user with the admin role claim."""
+    return _verify_token(authorization, require_admin=True)
 
 
 async def get_moderation_service(
@@ -55,15 +101,16 @@ async def get_moderation_service(
 @router.post("/flags", response_model=FlagResponse, status_code=201)
 async def flag_content(
     request: FlagContentRequest,
+    reporter_id: Annotated[str, Depends(get_current_user_id)],
     service: Annotated[ModerationService, Depends(get_moderation_service)],
 ):
-    """Flag a piece of content for moderator review."""
+    """Flag a piece of content for moderator review (any authenticated user)."""
     try:
         flag = await service.flag_content(
             content_id=request.content_id,
             content_creator_id=request.content_creator_id,
             flag_reason=request.flag_reason,
-            reporter_id=request.reporter_id,
+            reporter_id=reporter_id,
         )
     except ModerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -72,10 +119,11 @@ async def flag_content(
 
 @router.get("/queue", response_model=QueueResponse)
 async def get_queue(
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
     service: Annotated[ModerationService, Depends(get_moderation_service)],
     limit: int = 50,
 ):
-    """List pending review items, oldest first."""
+    """List pending review items, oldest first (admin only)."""
     flags = await service.get_queue(limit=limit)
     return QueueResponse(
         items=[_flag_to_response(f) for f in flags],
@@ -86,14 +134,19 @@ async def get_queue(
 @router.post("/decisions", response_model=DecisionResponse, status_code=201)
 async def make_decision(
     request: MakeDecisionRequest,
+    moderator_id: Annotated[str, Depends(get_current_admin_id)],
     service: Annotated[ModerationService, Depends(get_moderation_service)],
 ):
-    """Make a moderation decision (approve / reject / escalate) on a flag."""
+    """Make a moderation decision (approve / reject / escalate) on a flag.
+
+    Admin only; the moderator identity is the verified token subject, never
+    a caller-supplied body field.
+    """
     try:
         decision = await service.make_decision(
             flag_id=request.flag_id,
             decision=request.decision,
-            moderator_id=request.moderator_id,
+            moderator_id=moderator_id,
             notes=request.notes,
         )
     except ModerationError as exc:
@@ -104,9 +157,10 @@ async def make_decision(
 @router.get("/strikes/{creator_id}", response_model=StrikesResponse)
 async def get_strikes(
     creator_id: UUID,
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
     service: Annotated[ModerationService, Depends(get_moderation_service)],
 ):
-    """Get the full strike history for a creator."""
+    """Get the full strike history for a creator (admin only)."""
     strikes = await service.get_strikes(creator_id)
     active_count = await service.strike_repo.count_active(creator_id)
     return StrikesResponse(

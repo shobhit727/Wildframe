@@ -188,6 +188,101 @@ class TestAuth:
             asyncio.run(get_current_admin_id("Bearer garbage"))
         assert exc.value.status_code == 401
 
+    def test_refresh_token_rejected_401(self):
+        """Token-type separation (#221): refresh tokens must 401, never 500."""
+        from datetime import UTC, datetime, timedelta
+
+        import jwt as pyjwt
+        from app.core.settings import settings
+        from fastapi import HTTPException
+
+        token = pyjwt.encode(
+            {
+                "sub": str(uuid4()),
+                "role": "admin",
+                "type": "refresh",
+                "aud": settings.JWT_AUDIENCE,
+                "exp": datetime.now(UTC) + timedelta(minutes=5),
+            },
+            settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+
+        import asyncio
+
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(get_current_admin_id(f"Bearer {token}"))
+
+        assert exc.value.status_code == 401
+
+    def test_token_with_wrong_audience_rejected_401(self):
+        """Tokens carrying a foreign audience must not decode."""
+        from datetime import UTC, datetime, timedelta
+
+        import jwt as pyjwt
+        from app.core.settings import settings
+        from fastapi import HTTPException
+
+        token = pyjwt.encode(
+            {
+                "sub": str(uuid4()),
+                "role": "admin",
+                "type": "access",
+                "aud": "some-other-api",
+                "exp": datetime.now(UTC) + timedelta(minutes=5),
+            },
+            settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+
+        import asyncio
+
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(get_current_admin_id(f"Bearer {token}"))
+
+        assert exc.value.status_code == 401
+
+
+class TestNoBulkSurface:
+    """#225 finding 5: no bulk admin mutations exist.
+
+    Every admin mutation request schema is single-item; there are no list
+    payloads and no collection endpoints. Bulk operations, if ever added,
+    need bounded batch sizes and atomic/partial-failure semantics.
+    """
+
+    def test_no_collection_bulk_routes(self):
+        from app.main import app
+
+        bulk_routes = [
+            route.path
+            for route in app.routes
+            if hasattr(route, "path")
+            and any(k in route.path.lower() for k in ("/bulk", "/batch"))
+        ]
+        assert not bulk_routes, f"bulk admin routes present: {bulk_routes}"
+
+    def test_mutation_schemas_are_single_item(self):
+        from app.schemas.admin import (
+            ContentModerationRequest,
+            SystemAlertRequest,
+            SystemConfigRequest,
+            UserModerationRequest,
+        )
+
+        for schema in (
+            UserModerationRequest,
+            ContentModerationRequest,
+            SystemAlertRequest,
+            SystemConfigRequest,
+        ):
+            list_fields = [
+                name
+                for name, field in schema.model_fields.items()
+                if "list" in str(field.annotation).lower()
+            ]
+            assert not list_fields, f"{schema.__name__} has list fields: {list_fields}"
+
 
 class TestUserModerationRoutes:
     def test_moderate_user(self, client, fake_service):
@@ -350,7 +445,7 @@ class TestAlertRoutes:
         response = client.post("/api/v1/admin/alerts/1/acknowledge")
 
         assert response.status_code == 200
-        fake_service.acknowledge_alert.assert_awaited_once_with(1, "admin-1")
+        fake_service.acknowledge_alert.assert_awaited_once_with(1, "admin-1", "testclient")
 
     def test_acknowledge_alert_missing_returns_404(self, client, fake_service):
         fake_service.acknowledge_alert = AsyncMock(return_value=None)

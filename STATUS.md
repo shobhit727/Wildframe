@@ -98,7 +98,7 @@ Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/O
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
-#62, #63, #168, #214, #217, #218, #221, #222, #223, #536, and #41 (open items: #45 DRM held as backlog).
+#62, #63, #168, #214, #217, #218, #221, #222, #223, #225, #536, and #41 (open items: #45 DRM held as backlog).
 
 Highlights:
 
@@ -156,6 +156,21 @@ Highlights:
   partial pipelines emit no completion event (tested at stage level);
   (5) retries never re-run a completed stage (stage_versions) and publish
   once. Adapters now receive all caps from settings in `_build_ports`.
+- **Admin security (#225)** — the moderation-service was a fully
+  unauthenticated admin-equivalent surface (flag, queue, decisions,
+  strikes) with caller-supplied actor identity. Now: every moderation
+  endpoint requires an auth-service access token with the `wildframe-api`
+  audience; flagging is open to any authenticated user but the reporter is
+  the token subject, and queue/decisions/strikes require the admin role
+  with the moderator taken from the token — body-supplied `reporter_id` /
+  `moderator_id` are ignored. Admin-service: refresh tokens now 401 (were
+  500 via an unimported `status`); alert acknowledgment audit records the
+  real client IP (was hardcoded `0.0.0.0`); every mutation+audit pair
+  persists in a single transaction (was two commits — a crash between them
+  left an un-audited mutation). No bulk admin operations exist: pinned with
+  guard tests (single-item schemas, no bulk routes). Live-verified: queue
+  401 no token / 403 user / 200 admin, decisions 403 user, flags 401 no
+  token / 201 user, strikes 200 admin, admin alerts + refresh token 401.
 - **OAuth security (#223)** — all five findings are vacuous: the platform
   ships no OAuth at all (no routes, settings, schemas, DB tables, or
   frontend flows; verified across all services + gateway + frontend). Four
@@ -260,7 +275,7 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (Aug 18, 2026): 853 backend unit/route tests + 110 integration
+Test totals (Aug 18, 2026): 861 backend unit/route tests + 110 integration
 tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
 tests. One known pre-existing failure, billing
 `test_release_tranche_not_locked`, is unrelated to the hardening work.

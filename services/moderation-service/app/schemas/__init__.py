@@ -28,20 +28,26 @@ StrikeReasonEnum = StrikeReason
 
 
 class FlagContentRequest(BaseModel):
-    """Request body for POST /moderation/flags."""
+    """Request body for POST /moderation/flags.
+
+    The reporter is the authenticated caller (token ``sub``), never a
+    caller-supplied body field.
+    """
 
     content_id: UUID
     content_creator_id: UUID | None = None
     flag_reason: FlagReasonEnum
-    reporter_id: UUID
 
 
 class MakeDecisionRequest(BaseModel):
-    """Request body for POST /moderation/decisions."""
+    """Request body for POST /moderation/decisions.
+
+    The moderator is the authenticated caller (token ``sub`` + admin role),
+    never a caller-supplied body field.
+    """
 
     flag_id: UUID
     decision: DecisionTypeEnum
-    moderator_id: UUID
     notes: str | None = Field(None, max_length=2000)
 
 

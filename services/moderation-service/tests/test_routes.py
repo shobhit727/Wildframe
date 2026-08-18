@@ -11,10 +11,30 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from jose import jwt
 
 from app.api.moderation_routes import get_moderation_service
+from app.core.settings import settings
 from app.main import app
 from app.services import ModerationError
+
+
+def make_token(*, sub: str, role: str, token_type: str = "access") -> str:
+    """Mint an auth-service-style token for route tests."""
+    return jwt.encode(
+        {
+            "sub": sub,
+            "role": role,
+            "type": token_type,
+            "aud": settings.JWT_AUDIENCE,
+        },
+        settings.JWT_SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM,
+    )
+
+
+ADMIN = make_token(sub=str(uuid4()), role="admin")
+USER = make_token(sub=str(uuid4()), role="user")
 
 
 def make_flag(**overrides):
@@ -94,10 +114,10 @@ class TestFlagContent:
 
         response = client.post(
             "/api/v1/moderation/flags",
+            headers={"Authorization": f"Bearer {USER}"},
             json={
                 "content_id": str(uuid4()),
                 "flag_reason": "copyright",
-                "reporter_id": str(uuid4()),
             },
         )
 
@@ -111,10 +131,10 @@ class TestFlagContent:
 
         response = client.post(
             "/api/v1/moderation/flags",
+            headers={"Authorization": f"Bearer {USER}"},
             json={
                 "content_id": str(uuid4()),
                 "flag_reason": "not-a-reason",
-                "reporter_id": str(uuid4()),
             },
         )
 
@@ -126,17 +146,17 @@ class TestFlagContent:
 
         response = client.post(
             "/api/v1/moderation/flags",
+            headers={"Authorization": f"Bearer {USER}"},
             json={
                 "content_id": str(uuid4()),
                 "flag_reason": "other",
-                "reporter_id": str(uuid4()),
             },
         )
 
         assert response.status_code == 400
         assert "cannot flag self" in response.json()["detail"]
 
-    def test_flag_missing_reporter_returns_422(self, client, service):
+    def test_flag_requires_auth(self, client, service):
         app.dependency_overrides[get_moderation_service] = override(service)
 
         response = client.post(
@@ -144,14 +164,46 @@ class TestFlagContent:
             json={"content_id": str(uuid4()), "flag_reason": "spam"},
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 401
+
+    def test_flag_rejects_refresh_token(self, client, service):
+        app.dependency_overrides[get_moderation_service] = override(service)
+
+        response = client.post(
+            "/api/v1/moderation/flags",
+            headers={
+                "Authorization": f"Bearer {make_token(sub=str(uuid4()), role='user', token_type='refresh')}"
+            },
+            json={"content_id": str(uuid4()), "flag_reason": "spam"},
+        )
+
+        assert response.status_code == 401
+
+    def test_flag_reporter_comes_from_token_not_body(self, client, service):
+        """A caller-supplied reporter_id must be ignored (#225 finding 3)."""
+        app.dependency_overrides[get_moderation_service] = override(service)
+        forged_id = str(uuid4())
+
+        client.post(
+            "/api/v1/moderation/flags",
+            headers={"Authorization": f"Bearer {USER}"},
+            json={
+                "content_id": str(uuid4()),
+                "flag_reason": "spam",
+                "reporter_id": forged_id,
+            },
+        )
+
+        assert service.flag_content.await_args.kwargs["reporter_id"] != forged_id
 
 
 class TestQueue:
     def test_get_queue_success(self, client, service):
         app.dependency_overrides[get_moderation_service] = override(service)
 
-        response = client.get("/api/v1/moderation/queue")
+        response = client.get(
+            "/api/v1/moderation/queue", headers={"Authorization": f"Bearer {ADMIN}"}
+        )
 
         assert response.status_code == 200
         body = response.json()
@@ -162,7 +214,10 @@ class TestQueue:
     def test_get_queue_honors_limit(self, client, service):
         app.dependency_overrides[get_moderation_service] = override(service)
 
-        client.get("/api/v1/moderation/queue?limit=10")
+        client.get(
+            "/api/v1/moderation/queue?limit=10",
+            headers={"Authorization": f"Bearer {ADMIN}"},
+        )
 
         service.get_queue.assert_awaited_once_with(limit=10)
 
@@ -170,10 +225,23 @@ class TestQueue:
         service.get_queue = AsyncMock(return_value=[])
         app.dependency_overrides[get_moderation_service] = override(service)
 
-        response = client.get("/api/v1/moderation/queue")
+        response = client.get(
+            "/api/v1/moderation/queue", headers={"Authorization": f"Bearer {ADMIN}"}
+        )
 
         assert response.status_code == 200
         assert response.json() == {"items": [], "total": 0}
+
+    def test_get_queue_requires_admin(self, client, service):
+        app.dependency_overrides[get_moderation_service] = override(service)
+
+        no_token = client.get("/api/v1/moderation/queue")
+        assert no_token.status_code == 401
+
+        as_user = client.get(
+            "/api/v1/moderation/queue", headers={"Authorization": f"Bearer {USER}"}
+        )
+        assert as_user.status_code == 403
 
 
 class TestDecisions:
@@ -182,10 +250,10 @@ class TestDecisions:
 
         response = client.post(
             "/api/v1/moderation/decisions",
+            headers={"Authorization": f"Bearer {ADMIN}"},
             json={
                 "flag_id": str(uuid4()),
                 "decision": "approve",
-                "moderator_id": str(uuid4()),
             },
         )
 
@@ -199,10 +267,10 @@ class TestDecisions:
 
         response = client.post(
             "/api/v1/moderation/decisions",
+            headers={"Authorization": f"Bearer {ADMIN}"},
             json={
                 "flag_id": str(uuid4()),
                 "decision": "reject",
-                "moderator_id": str(uuid4()),
             },
         )
 
@@ -214,14 +282,47 @@ class TestDecisions:
 
         response = client.post(
             "/api/v1/moderation/decisions",
+            headers={"Authorization": f"Bearer {ADMIN}"},
             json={
                 "flag_id": str(uuid4()),
                 "decision": "nuke",
-                "moderator_id": str(uuid4()),
             },
         )
 
         assert response.status_code == 422
+
+    def test_make_decision_requires_admin(self, client, service):
+        app.dependency_overrides[get_moderation_service] = override(service)
+
+        no_token = client.post(
+            "/api/v1/moderation/decisions",
+            json={"flag_id": str(uuid4()), "decision": "approve"},
+        )
+        assert no_token.status_code == 401
+
+        as_user = client.post(
+            "/api/v1/moderation/decisions",
+            headers={"Authorization": f"Bearer {USER}"},
+            json={"flag_id": str(uuid4()), "decision": "approve"},
+        )
+        assert as_user.status_code == 403
+
+    def test_make_decision_moderator_comes_from_token_not_body(self, client, service):
+        """A caller-supplied moderator_id must be ignored (#225 finding 3)."""
+        app.dependency_overrides[get_moderation_service] = override(service)
+        forged_id = str(uuid4())
+
+        client.post(
+            "/api/v1/moderation/decisions",
+            headers={"Authorization": f"Bearer {ADMIN}"},
+            json={
+                "flag_id": str(uuid4()),
+                "decision": "approve",
+                "moderator_id": forged_id,
+            },
+        )
+
+        assert service.make_decision.await_args.kwargs["moderator_id"] != forged_id
 
 
 class TestStrikes:
@@ -229,7 +330,10 @@ class TestStrikes:
         app.dependency_overrides[get_moderation_service] = override(service)
         creator_id = uuid4()
 
-        response = client.get(f"/api/v1/moderation/strikes/{creator_id}")
+        response = client.get(
+            f"/api/v1/moderation/strikes/{creator_id}",
+            headers={"Authorization": f"Bearer {ADMIN}"},
+        )
 
         assert response.status_code == 200
         body = response.json()
@@ -243,7 +347,10 @@ class TestStrikes:
         service.strike_repo.count_active = AsyncMock(return_value=0)
         app.dependency_overrides[get_moderation_service] = override(service)
 
-        response = client.get(f"/api/v1/moderation/strikes/{uuid4()}")
+        response = client.get(
+            f"/api/v1/moderation/strikes/{uuid4()}",
+            headers={"Authorization": f"Bearer {ADMIN}"},
+        )
 
         assert response.status_code == 200
         assert response.json()["active_count"] == 0
@@ -251,9 +358,25 @@ class TestStrikes:
     def test_get_strikes_invalid_creator_returns_422(self, client, service):
         app.dependency_overrides[get_moderation_service] = override(service)
 
-        response = client.get("/api/v1/moderation/strikes/not-a-uuid")
+        response = client.get(
+            "/api/v1/moderation/strikes/not-a-uuid",
+            headers={"Authorization": f"Bearer {ADMIN}"},
+        )
 
         assert response.status_code == 422
+
+    def test_get_strikes_requires_admin(self, client, service):
+        app.dependency_overrides[get_moderation_service] = override(service)
+        creator_id = uuid4()
+
+        no_token = client.get(f"/api/v1/moderation/strikes/{creator_id}")
+        assert no_token.status_code == 401
+
+        as_user = client.get(
+            f"/api/v1/moderation/strikes/{creator_id}",
+            headers={"Authorization": f"Bearer {USER}"},
+        )
+        assert as_user.status_code == 403
 
 
 class TestHealth:

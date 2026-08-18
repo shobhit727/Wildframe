@@ -238,7 +238,7 @@ class TestSystemAlerts:
         )
         admin_service.audit_repo.create = AsyncMock(return_value=None)
 
-        result = await admin_service.acknowledge_alert(1, "admin1")
+        result = await admin_service.acknowledge_alert(1, "admin1", "10.0.0.7")
 
         assert result["acknowledged"] is True
         assert result["acknowledged_by"] == "admin1"
@@ -248,7 +248,7 @@ class TestSystemAlerts:
             resource_type="alert",
             resource_id="1",
             changes=None,
-            ip_address="0.0.0.0",
+            ip_address="10.0.0.7",
         )
 
     @pytest.mark.asyncio
@@ -256,7 +256,7 @@ class TestSystemAlerts:
         admin_service.alert_repo.acknowledge = AsyncMock(return_value=None)
         admin_service.audit_repo.create = AsyncMock()
 
-        result = await admin_service.acknowledge_alert(999, "admin1")
+        result = await admin_service.acknowledge_alert(999, "admin1", "10.0.0.7")
 
         assert result is None
         admin_service.audit_repo.create.assert_not_awaited()

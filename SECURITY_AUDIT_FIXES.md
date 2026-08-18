@@ -101,6 +101,32 @@ Each item closed with unit tests plus live verification against the running HTTP
   rolled back (now committed in all 5 mutating repo methods). Live:
   create 200 → get 200 (persisted) → abort 200 → register 400, complete
   409; reaper log clean. +13 uploads tests.
+- **Admin security** (#225, 5 findings): (1) server-side enforcement —
+  moderation-service was a fully unauthenticated admin-equivalent surface
+  (POST /moderation/flags, GET /queue, POST /decisions, GET /strikes) with
+  actor identity taken from the request body. It now verifies
+  auth-service access tokens at its own boundary (audience
+  `wildframe-api`, type `access`); flagging is open to any authenticated
+  user with the reporter taken from the token subject, and
+  queue/decisions/strikes require the `admin` role claim with the
+  moderator taken from the token — body-supplied `reporter_id` /
+  `moderator_id` are ignored (schemas no longer accept them);
+  (2) no alternate non-admin routes — the moderation surface was exactly
+  that; now gated as above, and guard tests assert every admin mutation
+  schema is single-item with no bulk/batch routes; (3) audit metadata —
+  alert acknowledgment now records the real client IP (was hardcoded
+  `0.0.0.0`), actor identity always comes from the verified token
+  (`extra="forbid"` schemas); (4) config values — already masked via
+  `redact_secrets` on reads and audit changes, no settings dump endpoint,
+  no secrets logged (no change needed); (5) no bulk operations exist
+  (bounded limits already capped at 100/500 per query, service clamps at
+  1000); every mutation+audit pair now persists in ONE transaction
+  (repositories no longer commit mid-operation; a crash between the old
+  two commits could leave an un-audited mutation). Also fixed: refresh
+  tokens 401 instead of 500 (unimported `status`). +4 admin-service tests
+  (69 → 73) and +4 moderation-service tests. Live-verified through the
+  gateway: queue 401/403/200, decisions 403 user, flags 401/201, strikes
+  200 admin, admin alerts + refresh token 401.
 - **OAuth security** (#223, 5 findings): vacuous — no OAuth implementation
   exists anywhere (routes, settings, schemas, DB tables, frontend flows).
   Four guard tests in auth-service pin the absence (no `/oauth` endpoints,

@@ -150,6 +150,9 @@ class AdminService:
                 changes=f"severity={severity}",
                 ip_address=ip_address,
             )
+        else:
+            # No audit row to commit for: persist the mutation alone.
+            await self.db.commit()
         return {
             "id": alert.id,
             "alert_type": alert.alert_type,
@@ -177,7 +180,9 @@ class AdminService:
             for a in alerts
         ]
 
-    async def acknowledge_alert(self, alert_id: int, admin_id: str) -> dict | None:
+    async def acknowledge_alert(
+        self, alert_id: int, admin_id: str, ip_address: str
+    ) -> dict | None:
         alert = await self.alert_repo.acknowledge(alert_id, admin_id)
         if alert:
             await self.audit_repo.create(
@@ -186,7 +191,7 @@ class AdminService:
                 resource_type="alert",
                 resource_id=str(alert.id),
                 changes=None,
-                ip_address="0.0.0.0",
+                ip_address=ip_address,
             )
             return {
                 "id": alert.id,

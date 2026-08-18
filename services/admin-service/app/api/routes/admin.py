@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from jose import JWTError, jwt  # type: ignore[import-untyped]
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -216,12 +216,15 @@ async def get_critical_alerts(
 @router.post("/alerts/{alert_id}/acknowledge")
 async def acknowledge_alert(
     alert_id: int,
+    request_meta: Request,
     admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Acknowledge system alert. Returns 404 if alert does not exist."""
     service = AdminService(db)
-    result = await service.acknowledge_alert(alert_id, admin_id)
+    result = await service.acknowledge_alert(
+        alert_id, admin_id, _client_ip(request_meta)
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Not found")
     return result
