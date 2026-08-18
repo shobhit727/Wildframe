@@ -178,6 +178,7 @@ class TestContentLifecycle:
         published = []
         real = get_event_publisher()
         assert real is not None  # sanity: publisher exists before spying
+
         async def _spy_publish(self, event):
             published.append(event)
 
@@ -196,6 +197,7 @@ class TestContentLifecycle:
     async def test_delete_content_missing_emits_nothing(self, service, monkeypatch):
 
         published = []
+
         async def _spy_publish(self, event):
             published.append(event)
 
@@ -214,6 +216,7 @@ class TestContentLifecycle:
         from app.schemas import ContentPublishRequest
 
         published = []
+
         async def _spy_publish(self, event):
             published.append(event)
 
@@ -235,6 +238,7 @@ class TestContentLifecycle:
         from app.schemas import ContentPublishRequest
 
         published = []
+
         async def _spy_publish(self, event):
             published.append(event)
 

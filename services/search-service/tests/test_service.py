@@ -236,9 +236,7 @@ class TestSearchService:
         ensure_index creates the alias instead of failing on create (#227 F1).
         """
         es_mock.indices.get_alias = AsyncMock(side_effect=Exception("NotFound"))
-        es_mock.indices.exists = AsyncMock(
-            side_effect=lambda index: index == "content_v1"
-        )
+        es_mock.indices.exists = AsyncMock(side_effect=lambda index: index == "content_v1")
         es_mock.indices.create = AsyncMock()
 
         target = await service.ensure_index()

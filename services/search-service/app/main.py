@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 async def _warm_search_index() -> None:
     """Create the ES index and backfill from content-service, tolerantly."""
     try:
-        async with DatabaseManager.session_factory() as session:  # type: ignore[union-attr]
+        async with DatabaseManager.session_factory() as session:  # type: ignore[misc]
             service = SearchService(
                 es_client(), SearchQueryRepository(session), SearchIndexRepository(session)
             )
@@ -83,7 +83,7 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/ready")
-    async def ready() -> dict:
+    async def ready() -> Response:
         """Readiness probe: verifies database and Elasticsearch connectivity.
 
         Returns 200 when healthy, 503 when degraded.

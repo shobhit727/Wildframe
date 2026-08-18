@@ -116,9 +116,7 @@ class TestDeleteHandlers:
         es.delete = AsyncMock(return_value={"result": "deleted"})
         monkeypatch.setattr("app.api.search_routes.es_client", lambda: es)
 
-        await events_mod._handle_content_deleted(
-            _event("content.deleted", "not-a-uuid")
-        )
+        await events_mod._handle_content_deleted(_event("content.deleted", "not-a-uuid"))
 
         es.delete.assert_not_awaited()
 
