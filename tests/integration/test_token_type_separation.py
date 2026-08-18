@@ -4,6 +4,12 @@ Refresh tokens (7-day, same audience as access tokens) must never be
 accepted as Bearer credentials at any service boundary. The gateway is a
 transparent proxy, so every downstream service must reject a refresh token
 where an access token is required.
+
+Content reads are public, so the content-service probe uses the guarded
+write path (POST /content): a refresh token is rejected with 401 at the
+type check, while a valid access token passes authentication and is
+rejected only by the admin-role check (403). Streaming reads are
+user-authenticated and must reject a refresh token with 401.
 """
 
 from __future__ import annotations
@@ -22,9 +28,10 @@ from conftest import (
 
 pytestmark = pytest.mark.integration
 
-DOWNSTREAM_GETS = [
-    (CONTENT_SERVICE, "/content"),
-]
+
+@pytest.fixture(scope="module")
+def user_a(client: httpx.Client) -> dict:
+    return register_user(client)
 
 
 class TestRefreshTokenRejectedDownstream:
@@ -32,11 +39,16 @@ class TestRefreshTokenRejectedDownstream:
         self, client: httpx.Client, user_a: dict
     ) -> None:
         refresh_token = user_a["refresh_token"]
-        for base, path in DOWNSTREAM_GETS:
-            response = client.get(f"{base}{path}", headers=auth_headers(refresh_token))
-            assert response.status_code == 401, (
-                f"{base}{path} accepted a refresh token as Bearer: {response.status_code}"
-            )
+
+        content = client.post(
+            f"{CONTENT_SERVICE}/content",
+            headers=auth_headers(refresh_token),
+            json={},
+        )
+        assert content.status_code == 401, (
+            f"content accepted a refresh token as Bearer: {content.status_code}"
+        )
+
         streaming = client.get(
             f"{STREAMING_SERVICE}/users/{user_a['user_id']}/playback-sessions",
             headers=auth_headers(refresh_token),
@@ -48,14 +60,24 @@ class TestRefreshTokenRejectedDownstream:
     def test_access_token_still_accepted_downstream(
         self, client: httpx.Client, user_a: dict
     ) -> None:
-        targets = list(DOWNSTREAM_GETS) + [
-            (STREAMING_SERVICE, f"/users/{user_a['user_id']}/playback-sessions")
-        ]
-        for base, path in targets:
-            response = client.get(f"{base}{path}", headers=auth_headers(user_a["access_token"]))
-            assert response.status_code == 200, (
-                f"{base}{path} rejected a valid access token: {response.status_code}"
-            )
+        # Access token passes the auth boundary; only the admin-role check
+        # rejects the write (403), proving the type check did not misfire.
+        content = client.post(
+            f"{CONTENT_SERVICE}/content",
+            headers=auth_headers(user_a["access_token"]),
+            json={},
+        )
+        assert content.status_code == 403, (
+            f"content: expected 403 for non-admin access token, got {content.status_code}"
+        )
+
+        streaming = client.get(
+            f"{STREAMING_SERVICE}/users/{user_a['user_id']}/playback-sessions",
+            headers=auth_headers(user_a["access_token"]),
+        )
+        assert streaming.status_code == 200, (
+            f"streaming rejected a valid access token: {streaming.status_code}"
+        )
 
     def test_refresh_token_rejected_on_auth_service_me(
         self, client: httpx.Client, user_a: dict

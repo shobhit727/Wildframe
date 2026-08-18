@@ -101,6 +101,23 @@ Each item closed with unit tests plus live verification against the running HTTP
   rolled back (now committed in all 5 mutating repo methods). Live:
   create 200 → get 200 (persisted) → abort 200 → register 400, complete
   409; reaper log clean. +13 uploads tests.
+- **Authentication lifecycle** (#221, 5 findings): (1) logout invalidates
+  refresh credentials — refresh rows are hard-deleted from Postgres, so
+  revocation holds across replicas (logout → refresh 401; refresh tokens are
+  one-time-use, both pinned); (2) password change revokes every session —
+  `change_password` now calls `revoke_all_for_user` so a rotated credential
+  kills all outstanding refresh tokens; (3) inactive accounts cannot
+  authenticate — `get_by_email`/`get_by_id` in the live `UserRepository`
+  (`app/repositories/__init__.py`; the `user_repository.py` file is dead
+  shadowed code) filter `is_active`, so login/refresh/`/me` 401 after
+  deactivation; (4) token-type separation — 11 downstream services accepted
+  refresh tokens (7-day, same audience) as access tokens; every decode now
+  enforces `type == "access"` (401), and auth-service call sites catch the
+  `JWTError` the type check raises (was a 500). Live: content POST, streaming
+  sessions, `/me` reject a refresh Bearer (401) while access tokens pass
+  (200/403-only); `tests/integration/test_token_type_separation.py` (5
+  tests); (5) clock skew is bounded — `JWT_LEEWAY_SECONDS` 60s, beyond-leeway
+  expired tokens rejected (tested). +13 auth tests (136 → 149).
 - **Redis correctness** (#214, 5 findings): (1) no DB-backed cache exists
   in Redis — only ephemeral rate-limit counters and analytics event dedup,
   so no cache can outlive the DB state it mirrors; (2) every key carries a

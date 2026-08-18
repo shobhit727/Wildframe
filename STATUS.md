@@ -98,7 +98,7 @@ Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/O
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
-#62, #63, #168, #214, #217, #218, #536, and #41 (open items: #45 DRM held as backlog).
+#62, #63, #168, #214, #217, #218, #221, #536, and #41 (open items: #45 DRM held as backlog).
 
 Highlights:
 
@@ -156,6 +156,24 @@ Highlights:
   partial pipelines emit no completion event (tested at stage level);
   (5) retries never re-run a completed stage (stage_versions) and publish
   once. Adapters now receive all caps from settings in `_build_ports`.
+- **Authentication lifecycle (#221)** — all five findings verified and pinned
+  with 13 new tests (auth-service 136 → 149): (1) logout invalidates refresh
+  credentials — revocation is Postgres-backed (refresh rows are hard-deleted),
+  so it holds across replicas (logout → refresh 401, refresh is one-time-use);
+  (2) password change now revokes every refresh token for the account via
+  `revoke_all_for_user` (stolen sessions die with the credential rotation);
+  (3) inactive accounts can no longer authenticate — `get_by_email`/`get_by_id`
+  filter `is_active`, so login/refresh/`/me` all 401 (a soft-deleted user could
+  previously keep logging in; note the live `UserRepository` lives in
+  `app/repositories/__init__.py` — the `user_repository.py` file is dead,
+  shadowed code); (4) token-type separation — refresh tokens (7-day, same
+  audience) were accepted as access tokens by 11 downstream services; every
+  decode site now enforces `type == "access"` (401), and auth-service call
+  sites catch the `JWTError` the type check raises instead of 500ing; pinned by
+  `tests/integration/test_token_type_separation.py` (5 tests, 105 → 110) plus
+  live checks: content/streaming/`/me` reject a refresh Bearer token (401)
+  while access tokens still pass (200/403-only); (5) clock skew is bounded —
+  `JWT_LEEWAY_SECONDS` (60) expires beyond-leeway tokens (tested).
 - **Upload lifecycle (#217)** — all five findings verified and pinned with
   13 new tests (uploads-service 13 → 26): (1) sessions are terminal —
   register/complete/abort cross-checks reject after COMPLETE/ABORTED
@@ -203,7 +221,7 @@ Highlights:
   the audit's symlink-escape surface does not exist. A CI test
   (`tests/contract/test_archive_sandbox.py`) pins that invariant and
   documents the required sandboxed design for any future archive support.
-- **Live-stack integration suite** — `tests/integration/` (105 tests, ~16 min):
+- **Live-stack integration suite** — `tests/integration/` (110 tests, ~16 min):
   gateway auth matrix + 429 flood, token lifecycle, cross-service
   authorization, billing webhook idempotency (Stripe signature verification,
   exactly one PAID invoice row on replay), contract schemas, health/readiness,
@@ -216,7 +234,7 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (Aug 17, 2026): 828 backend unit/route tests + 105 integration
+Test totals (Aug 18, 2026): 841 backend unit/route tests + 110 integration
 tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
 tests. One known pre-existing failure, billing
 `test_release_tranche_not_locked`, is unrelated to the hardening work.

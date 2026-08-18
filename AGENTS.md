@@ -23,7 +23,7 @@ for svc in services/*/; do
 done
 
 # Run the live-stack integration suite (needs the compose stack up; skips
-# itself when the stack is down). ~16 min, 105 tests.
+# itself when the stack is down). ~16 min, 110 tests.
 poetry run pytest tests/integration -q
 
 # Frontend (Next.js 15)
