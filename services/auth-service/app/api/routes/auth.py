@@ -582,7 +582,6 @@ async def setup_mfa(
     The secret is encrypted at rest. It is returned exactly once so the
     client can seed the authenticator; re-enabling MFA issues a fresh secret.
     """
-    user_repo = UserRepository(db)
     user = await _get_user_locked(db, user_id)
     if user.mfa_enabled:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MFA is already enabled")
@@ -613,7 +612,6 @@ async def verify_mfa(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     """Enable MFA after a correct TOTP code from the just-provisioned secret."""
-    user_repo = UserRepository(db)
     user = await _get_user_locked(db, user_id)
     if user.mfa_enabled:
         return {"message": "MFA already enabled"}
@@ -637,7 +635,6 @@ async def disable_mfa(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     """Disable MFA after a valid TOTP code, clearing the stored secret."""
-    user_repo = UserRepository(db)
     user = await _get_user_locked(db, user_id)
     if not user.mfa_enabled:
         return {"message": "MFA is not enabled"}

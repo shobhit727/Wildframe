@@ -1,6 +1,5 @@
 """Service layer for Auth Service."""
 
-import json
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
