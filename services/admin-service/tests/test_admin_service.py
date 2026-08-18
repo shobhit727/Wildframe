@@ -600,12 +600,10 @@ class TestAppendOnlyAudit:
 
         listeners = event.registry._key_to_collection
         assert any(
-            k[0] == id(AdminAuditLog) and k[1] == "before_update"
-            for k in listeners
+            k[0] == id(AdminAuditLog) and k[1] == "before_update" for k in listeners
         ), "before_update listener not registered"
         assert any(
-            k[0] == id(AdminAuditLog) and k[1] == "before_delete"
-            for k in listeners
+            k[0] == id(AdminAuditLog) and k[1] == "before_delete" for k in listeners
         ), "before_delete listener not registered"
 
 
@@ -673,9 +671,7 @@ class TestConcurrencyLocks:
         # Mock get_by_content_id to return a flagged content on first call
         # (the pre-check in resolve_content_flag), then return the same
         # object on the second call (inside update_status with for_update=True).
-        mock_content = MagicMock(
-            id=1, content_id="movie1", status="flagged", is_active=True
-        )
+        mock_content = MagicMock(id=1, content_id="movie1", status="flagged", is_active=True)
         admin_service.content_repo.get_by_content_id = AsyncMock(
             side_effect=[mock_content, mock_content]
         )

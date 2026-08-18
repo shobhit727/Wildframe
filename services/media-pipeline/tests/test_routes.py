@@ -83,9 +83,7 @@ class TestPipelineAuth:
 
     def test_start_requires_token(self, client):
         app.dependency_overrides.pop(get_current_user_id, None)
-        response = client.post(
-            f"/api/v1/pipeline/jobs/{uuid4()}/start", json=self._start_payload()
-        )
+        response = client.post(f"/api/v1/pipeline/jobs/{uuid4()}/start", json=self._start_payload())
         assert response.status_code == 401
 
     def test_start_rejects_garbage_token(self, client):

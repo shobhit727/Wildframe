@@ -3,6 +3,7 @@ name = "streaming-service"
 version = "1.0.0"
 description = "Video streaming service with playback session management and manifest generation"
 authors = ["Your Name <you@example.com>"]
+packages = [{ include = "app" }]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.16"

@@ -52,10 +52,9 @@ class FakeRepo:
     async def received_indices(self, session_id: UUID) -> list[int]:
         return sorted(c.index for c in self.chunks.get(session_id, []))
 
-    async def enqueue_event(
-        self, topic: str, event_key: str, payload: dict
-    ) -> None:
+    async def enqueue_event(self, topic: str, event_key: str, payload: dict) -> None:
         self.enqueued_events.append({"topic": topic, "key": event_key, "payload": payload})
+
 
 def make_service():
     """Build an UploadService wired to in-memory stubs."""
@@ -233,6 +232,8 @@ async def test_abort_emits_content_uploaded_aborted_and_blocks_chunks():
     # No more chunks accepted after abort.
     with pytest.raises(UploadError):
         await service.register_chunk(session_id=session.id, index=0, size_bytes=1024)
+
+
 @pytest.mark.asyncio
 async def test_complete_is_idempotent_guard():
     """Completing an already-complete session is idempotent (no double-emission)."""

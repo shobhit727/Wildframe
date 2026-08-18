@@ -518,9 +518,7 @@ async def test_reject_without_content_creator_id_skips_strike():
 async def test_drain_publishes_pending_rows_and_marks_dispatched():
     """drain_outbox publishes PENDING rows once and marks them dispatched."""
     service, flag_repo, _, _ = make_service()
-    await service.flag_content(
-        content_id=uuid4(), flag_reason=FlagReason.SPAM, reporter_id=uuid4()
-    )
+    await service.flag_content(content_id=uuid4(), flag_reason=FlagReason.SPAM, reporter_id=uuid4())
     await service.flag_content(
         content_id=uuid4(), flag_reason=FlagReason.COPYRIGHT, reporter_id=uuid4()
     )
@@ -544,9 +542,7 @@ async def test_drain_publishes_pending_rows_and_marks_dispatched():
 async def test_drain_keeps_row_pending_on_publish_failure():
     """Broker failure leaves the row PENDING so the next drain retries it."""
     service, flag_repo, _, _ = make_service()
-    await service.flag_content(
-        content_id=uuid4(), flag_reason=FlagReason.SPAM, reporter_id=uuid4()
-    )
+    await service.flag_content(content_id=uuid4(), flag_reason=FlagReason.SPAM, reporter_id=uuid4())
     row = flag_repo.events[0]
 
     class FailingPublisher:
@@ -571,9 +567,7 @@ async def test_drain_keeps_row_pending_on_publish_failure():
 async def test_drain_publishes_in_fifo_order():
     """PENDING rows are drained oldest-first (out-of-order prevention)."""
     service, flag_repo, _, _ = make_service()
-    await service.flag_content(
-        content_id=uuid4(), flag_reason=FlagReason.SPAM, reporter_id=uuid4()
-    )
+    await service.flag_content(content_id=uuid4(), flag_reason=FlagReason.SPAM, reporter_id=uuid4())
     await service.flag_content(
         content_id=uuid4(), flag_reason=FlagReason.COPYRIGHT, reporter_id=uuid4()
     )

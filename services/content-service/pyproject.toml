@@ -3,6 +3,7 @@ name = "content-service"
 version = "1.0.0"
 description = "Content management service for streaming platform"
 authors = ["Your Name <you@example.com>"]
+packages = [{ include = "app" }]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.16"

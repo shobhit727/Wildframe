@@ -257,8 +257,7 @@ class TestNoBulkSurface:
         bulk_routes = [
             route.path
             for route in app.routes
-            if hasattr(route, "path")
-            and any(k in route.path.lower() for k in ("/bulk", "/batch"))
+            if hasattr(route, "path") and any(k in route.path.lower() for k in ("/bulk", "/batch"))
         ]
         assert not bulk_routes, f"bulk admin routes present: {bulk_routes}"
 

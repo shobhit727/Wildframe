@@ -8,7 +8,6 @@ from functools import lru_cache
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
-
 DEV_ENVIRONMENTS = {"", "development", "test"}
 
 # Convenient local-development defaults. Never applied in production; those
@@ -141,13 +140,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 "DATABASE_URL must be set explicitly when ENVIRONMENT is not development."
             )
-        if any(
-            credential in self.DATABASE_URL
-            for credential in KNOWN_INSECURE_DB_CREDENTIALS
-        ):
-            raise ValueError(
-                "DATABASE_URL must not use known default credentials."
-            )
+        if any(credential in self.DATABASE_URL for credential in KNOWN_INSECURE_DB_CREDENTIALS):
+            raise ValueError("DATABASE_URL must not use known default credentials.")
 
         if self.REDIS_URL is None:
             raise ValueError(

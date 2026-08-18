@@ -223,9 +223,13 @@ class TestSearchEndpoints:
     def test_reindex_concurrent_request_returns_409(self, client, service, admin_identity):
         app.dependency_overrides[get_search_service] = override_get_search_service(service)
 
-        with patch(
-            "app.api.search_routes.get_admin_identity", new=AsyncMock(return_value=admin_identity)
-        ), patch.object(search_routes._reindex_lock, "locked", return_value=True):
+        with (
+            patch(
+                "app.api.search_routes.get_admin_identity",
+                new=AsyncMock(return_value=admin_identity),
+            ),
+            patch.object(search_routes._reindex_lock, "locked", return_value=True),
+        ):
             response = client.post("/api/v1/search/reindex")
 
         assert response.status_code == 409

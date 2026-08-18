@@ -10,7 +10,12 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from app.services import ContentCatalogClient, close_catalog_client, get_catalog_client, RecommendationService
+from app.services import (
+    ContentCatalogClient,
+    close_catalog_client,
+    get_catalog_client,
+    RecommendationService,
+)
 
 GENRE_ID = str(uuid4())
 
@@ -73,7 +78,9 @@ async def test_concurrent_generations_share_one_client(service):
 @pytest.mark.asyncio
 async def test_close_catalog_client_closes_and_resets(service):
     """close_catalog_client closes the shared client and releases it."""
-    client = make_client(fetch_genres=AsyncMock(return_value=[]), fetch_global=AsyncMock(return_value=[]))
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=[]), fetch_global=AsyncMock(return_value=[])
+    )
     with patch("app.services.ContentCatalogClient", return_value=client):
         await service.generate(uuid4(), [], [], limit=10)
         assert get_catalog_client() is client
@@ -117,8 +124,12 @@ async def test_fetch_genres_timeout_propagates_but_client_kept(service):
 @pytest.mark.asyncio
 async def test_new_client_requested_after_close(service):
     """After close_catalog_client a later generation builds a fresh client."""
-    first = make_client(fetch_genres=AsyncMock(return_value=[]), fetch_global=AsyncMock(return_value=[]))
-    second = make_client(fetch_genres=AsyncMock(return_value=[]), fetch_global=AsyncMock(return_value=[]))
+    first = make_client(
+        fetch_genres=AsyncMock(return_value=[]), fetch_global=AsyncMock(return_value=[])
+    )
+    second = make_client(
+        fetch_genres=AsyncMock(return_value=[]), fetch_global=AsyncMock(return_value=[])
+    )
     with patch("app.services.ContentCatalogClient", side_effect=[first, second]):
         await service.generate(uuid4(), [], [], limit=10)
         assert get_catalog_client() is first

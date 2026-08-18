@@ -18,7 +18,6 @@ deliberate change reviewed against the audit's requirements:
 
 import re
 
-
 OAUTH_IDENTIFIERS = re.compile(
     r"\boauth\b|authorization.?code|redirect_uri|client_id|client_secret",
     re.IGNORECASE,

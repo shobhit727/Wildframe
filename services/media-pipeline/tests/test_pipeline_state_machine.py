@@ -388,9 +388,7 @@ async def test_drain_keeps_row_pending_on_publish_failure():
     processed = await service.drain_outbox()
 
     assert processed == len(rows)
-    assert all(
-        r.status == OutboxEventStatus.PENDING and r.dispatched_at is None for r in rows
-    )
+    assert all(r.status == OutboxEventStatus.PENDING and r.dispatched_at is None for r in rows)
 
     # Broker recovers: the same row now goes out.
     service.publisher = InMemoryEventPublisher()

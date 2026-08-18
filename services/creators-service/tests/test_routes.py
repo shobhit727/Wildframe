@@ -43,6 +43,8 @@ def make_acct(**overrides):
     for k, v in overrides.items():
         setattr(acct, k, v)
     return acct
+
+
 @pytest.fixture
 def auth_user_id():
     return uuid4()
@@ -296,7 +298,9 @@ class TestAdminCreatorAuth:
         return ms
 
     def test_no_token_rejected_401(self, client, service):
-        response = client.post(self.MILESTONE_URL, json={"title": "x", "total_cents": 100, "currency": "USD"})
+        response = client.post(
+            self.MILESTONE_URL, json={"title": "x", "total_cents": 100, "currency": "USD"}
+        )
         assert response.status_code == 401
 
     def test_garbage_token_rejected_401(self, client, service):

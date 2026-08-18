@@ -73,16 +73,12 @@ async def _stored_secret(db_session, email: str) -> str:
     from app.models import User
     from app.security import SecretCipher
 
-    user = (
-        await db_session.execute(select(User).where(User.email == email))
-    ).scalar_one()
+    user = (await db_session.execute(select(User).where(User.email == email))).scalar_one()
     return SecretCipher.decrypt(user.mfa_secret)
 
 
 async def _login_challenge(client, email: str) -> str:
-    login = await client.post(
-        "/api/v1/auth/login", json={"email": email, "password": PASSWORD}
-    )
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
     assert login.status_code == 200, login.text
     body = login.json()
     assert body["requires_mfa"] is True
@@ -229,9 +225,7 @@ class TestNoRecoveryCodes:
 
         email = "mfa-nocodes2@example.com"
         await _enable_mfa(client, email)
-        user = (
-            await db_session.execute(select(User).where(User.email == email))
-        ).scalar_one()
+        user = (await db_session.execute(select(User).where(User.email == email))).scalar_one()
         assert user.backup_codes is None
 
 
@@ -284,9 +278,7 @@ class TestDisableRequiresProof:
         challenge = await _login_challenge(client, email)
         assert challenge
 
-    async def test_disable_with_valid_code_succeeds_and_clears_secret(
-        self, client, db_session
-    ):
+    async def test_disable_with_valid_code_succeeds_and_clears_secret(self, client, db_session):
         email = "mfa-disable2@example.com"
         secret, headers = await _enable_mfa(client, email)
 
@@ -298,9 +290,7 @@ class TestDisableRequiresProof:
         assert response.status_code == 200
 
         # Login no longer challenges once MFA is off.
-        login = await client.post(
-            "/api/v1/auth/login", json={"email": email, "password": PASSWORD}
-        )
+        login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
         assert login.status_code == 200
         assert login.json().get("requires_mfa") is not True
 
@@ -308,8 +298,6 @@ class TestDisableRequiresProof:
 
         from app.models import User
 
-        user = (
-            await db_session.execute(select(User).where(User.email == email))
-        ).scalar_one()
+        user = (await db_session.execute(select(User).where(User.email == email))).scalar_one()
         assert user.mfa_secret is None
         assert user.mfa_enabled is False

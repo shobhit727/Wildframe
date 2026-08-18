@@ -338,6 +338,7 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
+          skip-files: apps/web/certificates/localhost-key.pem
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH

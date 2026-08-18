@@ -31,9 +31,7 @@ class TestProductionSettingsFailClosed:
 
     def test_default_database_credentials_fail(self):
         kwargs = dict(PROD_KWARGS)
-        kwargs["DATABASE_URL"] = (
-            "postgresql+asyncpg://wildframe:password@db:5432/auth_db"
-        )
+        kwargs["DATABASE_URL"] = "postgresql+asyncpg://wildframe:password@db:5432/auth_db"
         with pytest.raises(ValueError):
             Settings(**kwargs)
 
@@ -71,9 +69,7 @@ class TestProductionSettingsFailClosed:
 
     def test_error_messages_do_not_leak_secrets(self):
         kwargs = dict(PROD_KWARGS)
-        kwargs["DATABASE_URL"] = (
-            "postgresql+asyncpg://wildframe:password@db:5432/auth_db"
-        )
+        kwargs["DATABASE_URL"] = "postgresql+asyncpg://wildframe:password@db:5432/auth_db"
         with pytest.raises(ValueError) as exc_info:
             Settings(**kwargs)
         message = str(exc_info.value)
@@ -95,9 +91,7 @@ class TestProductionSettingsFailClosed:
 class TestDevelopmentSettingsKeepDefaults:
     def test_development_keeps_local_defaults(self):
         settings = Settings(ENVIRONMENT="development")
-        assert settings.DATABASE_URL.startswith(
-            "postgresql+asyncpg://wildframe:password@localhost"
-        )
+        assert settings.DATABASE_URL.startswith("postgresql+asyncpg://wildframe:password@localhost")
         assert settings.REDIS_URL == "redis://localhost:6379/0"
         assert settings.JWT_SECRET_KEY is not None
         assert settings.KAFKA_BOOTSTRAP_SERVERS == "localhost:9092"

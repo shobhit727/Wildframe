@@ -195,14 +195,10 @@ class TestPlaybackRoutes:
 
     def test_get_playback_session_requires_auth(self, client, fake_service):
         async def _deny() -> UUID:
-            raise HTTPException(
-                status_code=401, detail="Missing or invalid authorization header"
-            )
+            raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
 
         app.dependency_overrides[streaming_user_di] = _deny
-        fake_service.get_playback_session = AsyncMock(
-            return_value=make_playback_session()
-        )
+        fake_service.get_playback_session = AsyncMock(return_value=make_playback_session())
 
         response = client.get(f"/api/v1/playback-sessions/{uuid4()}")
 
@@ -245,9 +241,7 @@ class TestPlaybackRoutes:
         assert response.status_code == 200
         assert response.json()["current_position_seconds"] == 0
 
-    def test_update_playback_session_other_user_returns_403(
-        self, client, fake_service
-    ):
+    def test_update_playback_session_other_user_returns_403(self, client, fake_service):
         session = make_playback_session()  # owned by someone else
         fake_service.get_playback_session = AsyncMock(return_value=session)
 
@@ -266,9 +260,7 @@ class TestPlaybackRoutes:
 
         assert response.status_code == 204
 
-    def test_end_playback_session_other_user_returns_403(
-        self, client, fake_service
-    ):
+    def test_end_playback_session_other_user_returns_403(self, client, fake_service):
         session = make_playback_session()  # owned by someone else
         fake_service.get_playback_session = AsyncMock(return_value=session)
 
@@ -547,9 +539,7 @@ class TestDownloadRoutes:
         assert response.status_code == 200
         fake_service.update_download_progress.assert_awaited_once_with(download.id, 500)
 
-    def test_update_download_progress_other_user_returns_403(
-        self, client, fake_service
-    ):
+    def test_update_download_progress_other_user_returns_403(self, client, fake_service):
         download = make_download()  # owned by someone else
         fake_service.get_download_session = AsyncMock(return_value=download)
 
@@ -577,13 +567,9 @@ class TestIdorProtection:
 
     def test_single_session_endpoints_require_auth(self, client, fake_service):
         app.dependency_overrides.clear()
-        fake_service.get_playback_session = AsyncMock(
-            return_value=make_playback_session()
-        )
+        fake_service.get_playback_session = AsyncMock(return_value=make_playback_session())
         session_id = str(uuid4())
-        assert (
-            client.get(f"/api/v1/playback-sessions/{session_id}").status_code == 401
-        )
+        assert client.get(f"/api/v1/playback-sessions/{session_id}").status_code == 401
         assert (
             client.patch(
                 f"/api/v1/playback-sessions/{session_id}",
@@ -591,13 +577,8 @@ class TestIdorProtection:
             ).status_code
             == 401
         )
-        assert (
-            client.post(f"/api/v1/playback-sessions/{session_id}/end").status_code
-            == 401
-        )
-        assert (
-            client.get(f"/api/v1/download-sessions/{session_id}").status_code == 401
-        )
+        assert client.post(f"/api/v1/playback-sessions/{session_id}/end").status_code == 401
+        assert client.get(f"/api/v1/download-sessions/{session_id}").status_code == 401
 
     def test_start_playback_other_user_403(self, client):
         response = client.post(

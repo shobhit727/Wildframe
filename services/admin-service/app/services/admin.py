@@ -180,9 +180,7 @@ class AdminService:
             for a in alerts
         ]
 
-    async def acknowledge_alert(
-        self, alert_id: int, admin_id: str, ip_address: str
-    ) -> dict | None:
+    async def acknowledge_alert(self, alert_id: int, admin_id: str, ip_address: str) -> dict | None:
         alert = await self.alert_repo.acknowledge(alert_id, admin_id)
         if alert:
             await self.audit_repo.create(

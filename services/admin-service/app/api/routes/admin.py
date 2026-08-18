@@ -222,9 +222,7 @@ async def acknowledge_alert(
 ):
     """Acknowledge system alert. Returns 404 if alert does not exist."""
     service = AdminService(db)
-    result = await service.acknowledge_alert(
-        alert_id, admin_id, _client_ip(request_meta)
-    )
+    result = await service.acknowledge_alert(alert_id, admin_id, _client_ip(request_meta))
     if not result:
         raise HTTPException(status_code=404, detail="Not found")
     return result

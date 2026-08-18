@@ -131,9 +131,7 @@ async def test_shell_metacharacters_stay_one_argv_element():
 async def test_encoder_rejects_url_input():
     encoder = FFmpegMultiBitrateEncoder()
     with pytest.raises(UnsafeInput):
-        await encoder.encode(
-            "https://evil.example/x.mp4", "/tmp/wildframe/work/job/out", [400]
-        )
+        await encoder.encode("https://evil.example/x.mp4", "/tmp/wildframe/work/job/out", [400])
 
 
 # ---------------------------------------------------------------------------
@@ -156,8 +154,10 @@ async def test_encoder_clamps_threads_to_configured_cap():
             "asyncio.create_subprocess_exec", new=AsyncMock(return_value=FakeProcess())
         ) as spawn:
             await encoder.encode(
-                os.path.join(job_dir, "in.mp4"), out_dir,
-                [400], cpu_threads=64,
+                os.path.join(job_dir, "in.mp4"),
+                out_dir,
+                [400],
+                cpu_threads=64,
             )
         argv = spawn.await_args.args
         assert argv[argv.index("-threads") + 1] == "2"
@@ -179,9 +179,7 @@ async def test_encoder_wires_duration_cap_into_argv():
         with patch(
             "asyncio.create_subprocess_exec", new=AsyncMock(return_value=FakeProcess())
         ) as spawn:
-            await encoder.encode(
-                os.path.join(job_dir, "in.mp4"), out_dir, [400]
-            )
+            await encoder.encode(os.path.join(job_dir, "in.mp4"), out_dir, [400])
         argv = spawn.await_args.args
         assert "-t" in argv
         assert argv[argv.index("-t") + 1] == "14400"
@@ -222,9 +220,11 @@ async def test_run_process_passes_memory_rlimit():
 
 @pytest.mark.asyncio
 async def test_run_process_timeout_kills_process_group():
-    with patch(
-        "asyncio.create_subprocess_exec", new=AsyncMock(return_value=HangingProcess())
-    ), patch("os.killpg") as killpg, patch("os.getpgid", return_value=42):
+    with (
+        patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=HangingProcess())),
+        patch("os.killpg") as killpg,
+        patch("os.getpgid", return_value=42),
+    ):
         with pytest.raises(CommandTimeout):
             await run_process(["ffmpeg"], timeout=0.05)
         assert killpg.called  # SIGTERM (and SIGKILL on grace expiry)
@@ -235,10 +235,10 @@ async def test_run_process_timeout_kills_process_group():
 @pytest.mark.asyncio
 async def test_timeout_survives_killpg_failure():
     """A failing kill must never mask the CommandTimeout itself."""
-    with patch(
-        "asyncio.create_subprocess_exec", new=AsyncMock(return_value=HangingProcess())
-    ), patch("os.killpg", side_effect=OSError("permission denied")), patch(
-        "os.getpgid", return_value=42
+    with (
+        patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=HangingProcess())),
+        patch("os.killpg", side_effect=OSError("permission denied")),
+        patch("os.getpgid", return_value=42),
     ):
         with pytest.raises(CommandTimeout):
             await run_process(["ffmpeg"], timeout=0.05)

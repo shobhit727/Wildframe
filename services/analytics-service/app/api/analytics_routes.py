@@ -104,10 +104,7 @@ async def require_creator_access(
     creator_id = request.path_params.get("creator_id")
     if creator_id is None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
-    if (
-        str(creator_id) == str(claims["user_id"])
-        or claims["role"] == settings.PRIVILEGED_ROLE
-    ):
+    if str(creator_id) == str(claims["user_id"]) or claims["role"] == settings.PRIVILEGED_ROLE:
         return UUID(str(creator_id))
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -147,9 +144,7 @@ async def require_content_access(
             detail="Could not verify content ownership",
         ) from None
     if owner is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Content not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
     if owner != claims["user_id"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -244,6 +239,7 @@ async def get_creator_analytics(
     if not analytics:
         return {"creator_id": str(creator_id), "analytics": None}
     return analytics
+
 
 @router.get("/content/{content_id}")
 async def get_content_performance(

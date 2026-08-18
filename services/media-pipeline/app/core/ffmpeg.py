@@ -94,9 +94,7 @@ def _child_rlimit(memory_limit_bytes: int | None):
 
     def _apply() -> None:
         try:
-            resource.setrlimit(
-                resource.RLIMIT_AS, (memory_limit_bytes, memory_limit_bytes)
-            )
+            resource.setrlimit(resource.RLIMIT_AS, (memory_limit_bytes, memory_limit_bytes))
         except (ValueError, OSError):
             pass  # best-effort: the wall-clock/timeout bounds still apply
 
@@ -171,7 +169,9 @@ async def run_process(
             except (ProcessLookupError, ChildProcessError):
                 pass
         except Exception:  # noqa: BLE001 - a kill failure must never mask the timeout
-            logger.exception("failed to kill subprocess group for pid %s", getattr(proc, "pid", "?"))
+            logger.exception(
+                "failed to kill subprocess group for pid %s", getattr(proc, "pid", "?")
+            )
 
     try:
         return await asyncio.wait_for(_spawn_and_wait(), timeout=timeout)

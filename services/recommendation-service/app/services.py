@@ -31,7 +31,8 @@ class ContentCatalogClient:
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=self.timeout,
-            limits=limits or httpx.Limits(
+            limits=limits
+            or httpx.Limits(
                 max_connections=settings.CONTENT_CATALOG_MAX_CONNECTIONS,
                 max_keepalive_connections=settings.CONTENT_CATALOG_MAX_KEEPALIVE,
             ),
@@ -51,9 +52,7 @@ class ContentCatalogClient:
         return list(resp.json())
 
     async def fetch_global(self, page_size: int = 100) -> list[dict]:
-        resp = await self.client.get(
-            "/api/v1/content/trending", params={"limit": page_size}
-        )
+        resp = await self.client.get("/api/v1/content/trending", params={"limit": page_size})
         resp.raise_for_status()
         return list(resp.json())
 
@@ -135,6 +134,7 @@ class RecommendationService:
             genres = await catalog.fetch_genres()
             by_slug = {str(g.get("slug", "")).lower(): g for g in genres}
             by_name = {str(g.get("name", "")).lower(): g for g in genres}
+
             # Resolve a user-supplied genre reference by either slug or name
             # so a preference like "Science Fiction" matches the genre whose
             # slug is "science-fiction" and vice versa. This resolution was
@@ -147,14 +147,10 @@ class RecommendationService:
 
             liked = [g for g in (resolve(x) for x in liked_genres) if g]
 
-            disliked_genres_resolved = [
-                g for g in (resolve(x) for x in disliked_genres) if g
-            ]
+            disliked_genres_resolved = [g for g in (resolve(x) for x in disliked_genres) if g]
             disliked_ids = {str(g.get("id")) for g in disliked_genres_resolved if g.get("id")}
             disliked_slugs = {
-                str(g.get("slug", "")).lower()
-                for g in disliked_genres_resolved
-                if g.get("slug")
+                str(g.get("slug", "")).lower() for g in disliked_genres_resolved if g.get("slug")
             }
 
             scored: dict[str, tuple[float, str]] = {}
@@ -174,9 +170,7 @@ class RecommendationService:
                         if g.get("slug")
                     }
                     item_genre_ids = {
-                        str(g.get("id"))
-                        for g in (item.get("genres") or [])
-                        if g.get("id")
+                        str(g.get("id")) for g in (item.get("genres") or []) if g.get("id")
                     }
                     if genre_slugs & disliked_slugs or item_genre_ids & disliked_ids:
                         continue
@@ -205,9 +199,7 @@ class RecommendationService:
                         if g.get("slug")
                     }
                     item_genre_ids = {
-                        str(g.get("id"))
-                        for g in (item.get("genres") or [])
-                        if g.get("id")
+                        str(g.get("id")) for g in (item.get("genres") or []) if g.get("id")
                     }
                     if genre_slugs & disliked_slugs or item_genre_ids & disliked_ids:
                         continue

@@ -11,7 +11,13 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import ContentFlag, CreatorStrike, ModerationDecision, OutboxEvent, OutboxEventStatus
+from app.models import (
+    ContentFlag,
+    CreatorStrike,
+    ModerationDecision,
+    OutboxEvent,
+    OutboxEventStatus,
+)
 
 
 class ContentFlagRepository:

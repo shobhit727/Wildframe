@@ -218,7 +218,10 @@ class TestWriteAuthz:
         (
             "post",
             "/api/v1/content/{cid}/recommendations",
-            {"recommended_content_id": "00000000-0000-0000-0000-000000000099", "similarity_score": 0.5},
+            {
+                "recommended_content_id": "00000000-0000-0000-0000-000000000099",
+                "similarity_score": 0.5,
+            },
         ),
         ("post", "/api/v1/content/{cid}/cast", {"name": "Actor", "slug": "actor"}),
         ("post", "/api/v1/content/{cid}/publish", {"status": "published"}),
@@ -277,7 +280,9 @@ class TestWriteAuthz:
 
         assert response.status_code == 201
 
-    def test_ratings_require_any_authenticated_user_not_admin(self, client, fake_service, content_id):
+    def test_ratings_require_any_authenticated_user_not_admin(
+        self, client, fake_service, content_id
+    ):
         rating = MagicMock()
         rating.id = uuid4()
         rating.user_id = uuid4()

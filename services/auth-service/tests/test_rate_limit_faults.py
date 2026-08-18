@@ -76,7 +76,9 @@ async def test_cooldown_spacing():
     client.set = AsyncMock(return_value=True)  # first send creates the flag
 
     with patch("app.core.rate_limit._get_client", return_value=client):
-        assert await allow("probe-key", max_requests=5, window_seconds=60, cooldown_seconds=30) is True
+        assert (
+            await allow("probe-key", max_requests=5, window_seconds=60, cooldown_seconds=30) is True
+        )
     client.set.assert_awaited_once()
     cooldown_key = client.set.call_args.args[0]
     assert cooldown_key.startswith("rl:cooldown:")
@@ -84,4 +86,7 @@ async def test_cooldown_spacing():
 
     client.set = AsyncMock(return_value=False)  # second send within cooldown
     with patch("app.core.rate_limit._get_client", return_value=client):
-        assert await allow("probe-key", max_requests=5, window_seconds=60, cooldown_seconds=30) is False
+        assert (
+            await allow("probe-key", max_requests=5, window_seconds=60, cooldown_seconds=30)
+            is False
+        )

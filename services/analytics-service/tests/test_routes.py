@@ -293,6 +293,7 @@ class TestContentPerformance:
     def test_admin_can_read_any_content(self, client, service, auth_user_id, monkeypatch):
         set_claims(auth_user_id, role="admin")
         app.dependency_overrides[get_analytics_service] = override(service)
+
         # Admin path must NOT need an ownership resolution call.
         async def _never(content_id):
             raise AssertionError("admin path must not resolve ownership")

@@ -49,9 +49,7 @@ async def _repo_with(existing: StripeWebhookEvent | None, flush_raises: bool = F
     update_result.rowcount = 1
     session.execute.side_effect = [select_result, update_result]
     if flush_raises:
-        session.flush.side_effect = IntegrityError(
-            "stmt", {}, Exception("duplicate key")
-        )
+        session.flush.side_effect = IntegrityError("stmt", {}, Exception("duplicate key"))
     return WebhookEventRepository(session), session
 
 
@@ -101,9 +99,7 @@ class TestClaimArbitration:
     async def test_processing_fresh_lease_is_not_reclaimed(self):
         fresh = datetime.now(UTC).replace(tzinfo=None)
         repo, _session = await _repo_with(
-            existing=_make_row(
-                status=WebhookEventStatus.PROCESSING, claimed_at=fresh, attempts=1
-            ),
+            existing=_make_row(status=WebhookEventStatus.PROCESSING, claimed_at=fresh, attempts=1),
             flush_raises=True,
         )
 
@@ -114,9 +110,7 @@ class TestClaimArbitration:
     async def test_processing_stale_lease_is_reclaimed(self):
         stale = (datetime.now(UTC) - timedelta(seconds=120)).replace(tzinfo=None)
         repo, _session = await _repo_with(
-            existing=_make_row(
-                status=WebhookEventStatus.PROCESSING, claimed_at=stale, attempts=1
-            ),
+            existing=_make_row(status=WebhookEventStatus.PROCESSING, claimed_at=stale, attempts=1),
             flush_raises=True,
         )
 

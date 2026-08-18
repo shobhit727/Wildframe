@@ -54,8 +54,6 @@ _ENUMERATION_SAFE_MESSAGE = (
 )
 
 
-
-
 async def _get_user_locked(db: AsyncSession, user_id: UUID) -> User:
     """Fetch the user row with a FOR UPDATE lock (serializes MFA state
     transitions so concurrent enrollment requests cannot race)."""
@@ -65,6 +63,7 @@ async def _get_user_locked(db: AsyncSession, user_id: UUID) -> User:
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
+
 
 async def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
     """Get auth service instance.

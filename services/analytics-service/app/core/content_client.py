@@ -59,9 +59,7 @@ async def resolve_content_owner(content_id: UUID) -> UUID | None:
         response = await client.get(f"/api/v1/content/{content_id}")
     except httpx.HTTPError as exc:
         logger.warning("content-service unavailable: %s", exc)
-        raise ContentServiceUnavailableError(
-            f"could not resolve content {content_id}"
-        ) from exc
+        raise ContentServiceUnavailableError(f"could not resolve content {content_id}") from exc
     if response.status_code == 404:
         return None
     if response.status_code != 200:
@@ -70,9 +68,7 @@ async def resolve_content_owner(content_id: UUID) -> UUID | None:
             response.status_code,
             content_id,
         )
-        raise ContentServiceUnavailableError(
-            f"could not resolve content {content_id}"
-        )
+        raise ContentServiceUnavailableError(f"could not resolve content {content_id}")
     try:
         payload = response.json()
         owner = payload.get("creator_id")
