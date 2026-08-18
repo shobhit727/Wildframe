@@ -31,6 +31,7 @@ class UploadChunkRepository:
     async def create(self, session: UploadSession) -> UploadSession:
         self.session.add(session)
         await self.session.flush()
+        await self.session.commit()
         return session
 
     async def get(self, session_id: UUID) -> UploadSession | None:
@@ -51,6 +52,7 @@ class UploadChunkRepository:
     async def save(self, session: UploadSession) -> UploadSession:
         session.updated_at = datetime.now(UTC)  # type: ignore[assignment]
         await self.session.flush()
+        await self.session.commit()
         return session
 
     # -- UploadChunk ---------------------------------------------------------
@@ -58,6 +60,7 @@ class UploadChunkRepository:
     async def add_chunk(self, chunk: UploadChunk) -> UploadChunk:
         self.session.add(chunk)
         await self.session.flush()
+        await self.session.commit()
         return chunk
 
     async def count_chunks(self, session_id: UUID) -> int:
@@ -81,6 +84,7 @@ class UploadChunkRepository:
         row = OutboxEvent(topic=topic, event_key=event_key, payload=payload)
         self.session.add(row)
         await self.session.flush()
+        await self.session.commit()
         return row
 
     async def pending_events(self, limit: int = 100) -> list[OutboxEvent]:
@@ -98,6 +102,7 @@ class UploadChunkRepository:
             row.status = OutboxEventStatus.DISPATCHED  # type: ignore[assignment]
             row.dispatched_at = datetime.now(UTC)  # type: ignore[assignment]
             await self.session.flush()
+            await self.session.commit()
 
     # -- Reaper --------------------------------------------------------------
 

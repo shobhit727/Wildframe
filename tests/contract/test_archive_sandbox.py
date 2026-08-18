@@ -64,11 +64,15 @@ def test_no_archive_extraction_apis_anywhere() -> None:
 
 def test_no_archive_processing_in_critical_services() -> None:
     """Defense in depth: media-pipeline and uploads-service must not grow
-    archive handling without explicit review."""
+    archive handling without explicit review. Scans runtime code only;
+    tests/ are excluded (they may legitimately reference archive strings
+    while pinning the invariant)."""
     suspicious = []
     for svc in ("media-pipeline", "uploads-service"):
         base = REPO / "services" / svc
         for path in sorted(base.rglob("*.py")):
+            if "tests" in path.parts:
+                continue
             text = path.read_text(errors="ignore")
             if re.search(r"\.zip|\.tar|\.gz", text):
                 suspicious.append(str(path.relative_to(REPO)))

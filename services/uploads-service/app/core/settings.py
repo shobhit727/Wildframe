@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 15
+    # Audience claim carried by auth-service-issued tokens; every decode must
+    # check it so tokens minted for other audiences are rejected.
+    JWT_AUDIENCE: str = "wildframe-api"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"

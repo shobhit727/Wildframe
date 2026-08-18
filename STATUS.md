@@ -98,7 +98,7 @@ Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/O
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
-#62, #63, #168, #214, #536, and #41 (open items: #45 DRM held as backlog).
+#62, #63, #168, #214, #217, #536, and #41 (open items: #45 DRM held as backlog).
 
 Highlights:
 
@@ -140,6 +140,26 @@ Highlights:
   stays POST-only. The sweep surfaced a live bug: **user-service JWT decode
   had no audience** — `GET /users/api/v1/profiles/{id}` 401'd with a valid
   token; fixed (plus a `JWT_AUDIENCE` setting).
+- **Upload lifecycle (#217)** — all five findings verified and pinned with
+  13 new tests (uploads-service 13 → 26): (1) sessions are terminal —
+  register/complete/abort cross-checks reject after COMPLETE/ABORTED
+  (live: 400/409 after abort); (2) pre-signed URL TTLs are clamped to
+  PRESIGNED_URL_MAX_TTL_SECONDS (3600s), sessions expire server-side, and
+  the reaper aborts + cleans stale sessions; (3) storage keys derive only
+  from the unguessable session UUID (client filename never in the path;
+  static AST check proves no route accepts a client-chosen storage key);
+  (4) cleanup is scoped per session and retried via `storage_cleaned_at`
+  when it fails; (5) completion re-reads authoritative storage metadata —
+  client size/checksum assertions are ignored. Three real bugs found and
+  fixed while verifying: uploads-service decoded JWTs WITHOUT the
+  wildframe-api audience (every request 401 — same bug class as #44's
+  user-service); the live DB was missing `upload_sessions.storage_cleaned_at`
+  (reaper 500'd every 2s — ALTER applied); and the same silent-data-loss
+  bug as #43 — `get_db` never commits, repos only flushed, so every
+  session/outbox row rolled back (live 404 on freshly created sessions;
+  now committed in all 5 mutating repo methods). #536's archive sandbox
+  scan now excludes `tests/` (runtime-only invariant; was tripping on a
+  `n.target.id` AST string).
 - **Redis correctness (#214)** — Redis is used only for ephemeral rate
   limiting (gateway `rate_limit:` keys, auth `rl:` hashed keys) and analytics
   event dedup (`wf:analytics:dedup:`) — no DB state is cached in Redis, and
@@ -180,7 +200,7 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (Aug 17, 2026): 800 backend unit/route tests + 105 integration
+Test totals (Aug 17, 2026): 812 backend unit/route tests + 105 integration
 tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
 tests. One known pre-existing failure, billing
 `test_release_tranche_not_locked`, is unrelated to the hardening work.
