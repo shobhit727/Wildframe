@@ -72,6 +72,21 @@ Each item closed with unit tests plus live verification against the running HTTP
   catalog 200, search 200); analytics events stays POST-only (405 on GET).
   The sweep surfaced a live bug — user-service JWT decode without audience —
   now fixed (see audience bullet).
+- **Upload lifecycle** (#217, 5 findings): (1) terminal sessions — no
+  chunk/complete/abort transition accepted after COMPLETE/ABORTED; (2)
+  bounded pre-signed TTLs (clamped to 3600s max) + server-side session
+  expiry + reaper abort/cleanup; (3) storage keys derived only from the
+  unguessable session UUID — client filename never in the path, and a
+  static AST test proves no route accepts a client storage key; (4)
+  cleanup scoped to the owning session, retried via `storage_cleaned_at`
+  on failure; (5) completion re-reads storage metadata (size, server
+  checksum) and ignores client assertions. Bugs found while verifying:
+  JWT decode missing `audience=wildframe-api` (all uploads requests 401);
+  live DB missing `storage_cleaned_at` column (reaper 500 loop); the #43
+  silent-data-loss class — `get_db` never committed, sessions/outbox rows
+  rolled back (now committed in all 5 mutating repo methods). Live:
+  create 200 → get 200 (persisted) → abort 200 → register 400, complete
+  409; reaper log clean. +13 uploads tests.
 - **Redis correctness** (#214, 5 findings): (1) no DB-backed cache exists
   in Redis — only ephemeral rate-limit counters and analytics event dedup,
   so no cache can outlive the DB state it mirrors; (2) every key carries a
