@@ -75,7 +75,9 @@ async def test_handler_evicts_rows_for_unpublished_content(monkeypatch):
     repo.session.commit = AsyncMock()
     monkeypatch.setattr(events_mod, "RecommendationRepository", repo_cls)
 
-    await events_mod._handle_content_unpublished(_event({"content_id": content_id}, "content.unpublished"))
+    await events_mod._handle_content_unpublished(
+        _event({"content_id": content_id}, "content.unpublished")
+    )
 
     repo.delete_for_content.assert_awaited_once_with(UUID(content_id))
     _FakeSessionFactory.instances[-1].commit.assert_awaited_once()

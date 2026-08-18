@@ -193,7 +193,9 @@ async def test_get_recommendations_serves_fresh_rows_without_regeneration(servic
     """Fresh stored rows (newer than the preferences) are served as-is (#228 F1)."""
     now = datetime.now(UTC)
     service.pref_repo.get_or_create = AsyncMock(
-        return_value=MagicMock(liked_genres=["action"], disliked_genres=[], updated_at=now - timedelta(minutes=5))
+        return_value=MagicMock(
+            liked_genres=["action"], disliked_genres=[], updated_at=now - timedelta(minutes=5)
+        )
     )
     row = MagicMock(content_id=uuid4(), score=0.9, reason="Because you like Action")
     service.rec_repo.get_for_user = AsyncMock(return_value=[row])
@@ -271,9 +273,7 @@ async def test_generate_caps_candidate_set(service):
     """Generation bounds: the scored candidate set is capped (#228 F4)."""
     client = make_client(
         fetch_genres=AsyncMock(return_value=fake_genres()),
-        fetch_by_genre=AsyncMock(
-            side_effect=lambda gid, **kwargs: [fake_items(gid)[0]] * 600
-        ),
+        fetch_by_genre=AsyncMock(side_effect=lambda gid, **kwargs: [fake_items(gid)[0]] * 600),
     )
     with patch("app.services.ContentCatalogClient", return_value=client):
         count = await service.generate(uuid4(), ["action"], [], limit=100)
