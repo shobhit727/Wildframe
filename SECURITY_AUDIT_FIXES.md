@@ -101,6 +101,23 @@ Each item closed with unit tests plus live verification against the running HTTP
   rolled back (now committed in all 5 mutating repo methods). Live:
   create 200 → get 200 (persisted) → abort 200 → register 400, complete
   409; reaper log clean. +13 uploads tests.
+- **MFA lifecycle** (#222, 5 findings): (1) challenges are single-use and
+  atomically consumed — the challenge hash is written to the
+  `token_blacklist` table (unique PK) BEFORE tokens are issued; a replayed
+  challenge 401s even with a still-valid TOTP code, and concurrent
+  consumption is race-safe (live: login-verify 200, same-code replay 401);
+  (2) TOTP secrets stay decryptable across rotation — `SecretCipher` uses a
+  keyring (`MFA_ENCRYPTION_KEY` + `MFA_ENCRYPTION_KEY_PREVIOUS`, default
+  derived from `JWT_SECRET_KEY`), so rotating the encryption key or running
+  multiple replicas never strands enrollments; (3) no recovery codes are
+  issued or stored — live setup returns only `secret`/`totp_uri` and
+  `backup_codes` stays NULL; the dead service-layer code that generated and
+  stored PLAINTEXT backup codes was deleted; (4) enrollment cannot be
+  replaced — setup 409s while a pending secret exists and MFA transitions
+  use `SELECT ... FOR UPDATE` row locks (live: setup → setup = 409);
+  (5) disabling requires a valid TOTP code, not just a session (live: wrong
+  code 400; valid code 200, login stops challenging). +13 auth tests
+  (149 → 157); 5 dead-code tests removed.
 - **Authentication lifecycle** (#221, 5 findings): (1) logout invalidates
   refresh credentials — refresh rows are hard-deleted from Postgres, so
   revocation holds across replicas (logout → refresh 401; refresh tokens are

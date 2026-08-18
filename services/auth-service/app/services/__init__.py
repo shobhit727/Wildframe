@@ -9,6 +9,7 @@ from uuid import UUID
 from app.repositories import (
     LoginAuditRepository,
     RefreshTokenRepository,
+    TokenBlacklistRepository,
     UserRepository,
 )
 from app.schemas import (
@@ -18,6 +19,7 @@ from app.schemas import (
     UserResponse,
 )
 from app.security import PasswordManager, TokenManager
+from app.core.settings import settings
 from fastapi import HTTPException, status
 
 logger = logging.getLogger(__name__)
@@ -41,12 +43,14 @@ class AuthService:
         audit_repo: LoginAuditRepository,
         password_manager: PasswordManager,
         token_manager: TokenManager,
+        blacklist_repo: TokenBlacklistRepository | None = None,
     ):
         self.user_repo = user_repo
         self.token_repo = token_repo
         self.audit_repo = audit_repo
         self.password_manager = password_manager
         self.token_manager = token_manager
+        self.blacklist_repo = blacklist_repo
         self.max_login_attempts = 5
         self.lockout_minutes = 15
 
@@ -228,6 +232,33 @@ class AuthService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid MFA code",
             )
+
+        # Single-use challenge (#221): atomically consume the challenge
+        # before issuing tokens. The token_blacklist primary key on
+        # token_hash makes concurrent consumption race-safe: exactly one
+        # request wins the INSERT, every other gets a 401.
+        if self.blacklist_repo is not None:
+            challenge_hash = self.token_manager.hash_token(challenge_token)
+            if await self.blacklist_repo.is_blacklisted(challenge_hash):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired MFA challenge",
+                )
+            from sqlalchemy.exc import IntegrityError
+
+            try:
+                await self.blacklist_repo.create(
+                    token_hash=challenge_hash,
+                    user_id=user_id,
+                    expires_at=datetime.now(UTC)
+                    + timedelta(minutes=settings.MFA_CHALLENGE_EXPIRATION_MINUTES),
+                )
+                await self.blacklist_repo.commit()
+            except IntegrityError:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired MFA challenge",
+                )
 
         # MFA passed — issue tokens (mirrors the tail of login()).
         access_token = self.token_manager.create_access_token(user.id, user.email)
@@ -436,107 +467,3 @@ class AuthService:
 
         logger.info(f"Email verified for user: {user.email}")
         return {"message": "Email verified successfully"}
-
-    async def setup_mfa(self, user_id: UUID) -> dict:
-        """Setup MFA for user - generate TOTP secret and QR code."""
-        user = await self.user_repo.get_by_id(user_id)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
-            )
-
-        if user.mfa_enabled:
-            return {"message": "MFA already enabled"}
-
-        # Generate TOTP secret
-        secret = secrets.token_urlsafe(20)[:32]
-
-        # Generate backup codes
-        backup_codes = [secrets.token_hex(4).upper() for _ in range(10)]
-
-        # Store secret and backup codes (encrypted in production)
-        user.mfa_secret = secret
-        user.backup_codes = json.dumps(backup_codes)
-        await self.user_repo.commit()
-
-        # Generate provisioning URI for QR code
-        import urllib.parse
-
-        totp_uri = (
-            f"otpauth://totp/{urllib.parse.quote('Wildframe')}:"
-            f"{urllib.parse.quote(user.email)}?"
-            f"secret={secret}&issuer={urllib.parse.quote('Wildframe')}"
-        )
-
-        logger.info(f"MFA setup initiated for user: {user.email}")
-        return {
-            "secret": secret,
-            "totp_uri": totp_uri,
-            "backup_codes": backup_codes,
-        }
-
-    async def verify_mfa(self, user_id: UUID, code: str) -> dict:
-        """Verify MFA code and enable MFA."""
-        user = await self.user_repo.get_by_id(user_id)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
-            )
-
-        if user.mfa_enabled:
-            return {"message": "MFA already enabled"}
-
-        if not user.mfa_secret:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="MFA not set up",
-            )
-
-        # Verify TOTP code
-        import pyotp
-
-        totp = pyotp.TOTP(user.mfa_secret)
-        if not totp.verify(code, valid_window=1):
-            # Check backup codes
-            if user.backup_codes:
-                backup_codes = json.loads(user.backup_codes)
-                if code.upper() in backup_codes:
-                    # Remove used backup code
-                    backup_codes.remove(code.upper())
-                    user.backup_codes = json.dumps(backup_codes)
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Invalid MFA code",
-                    )
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid MFA code",
-                )
-
-        # Enable MFA
-        user.mfa_enabled = True
-        await self.user_repo.commit()
-
-        logger.info(f"MFA enabled for user: {user.email}")
-        return {"message": "MFA enabled successfully"}
-
-    async def disable_mfa(self, user_id: UUID) -> dict:
-        """Disable MFA for user."""
-        user = await self.user_repo.get_by_id(user_id)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
-            )
-
-        user.mfa_enabled = False
-        user.mfa_secret = None
-        user.backup_codes = None
-        await self.user_repo.commit()
-
-        logger.info(f"MFA disabled for user: {user.email}")
-        return {"message": "MFA disabled successfully"}

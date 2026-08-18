@@ -98,7 +98,7 @@ Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/O
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
-#62, #63, #168, #214, #217, #218, #221, #536, and #41 (open items: #45 DRM held as backlog).
+#62, #63, #168, #214, #217, #218, #221, #222, #536, and #41 (open items: #45 DRM held as backlog).
 
 Highlights:
 
@@ -156,6 +156,25 @@ Highlights:
   partial pipelines emit no completion event (tested at stage level);
   (5) retries never re-run a completed stage (stage_versions) and publish
   once. Adapters now receive all caps from settings in `_build_ports`.
+- **MFA lifecycle (#222)** — all five findings verified and pinned with 13
+  new tests (auth-service 149 → 157; five dead service-layer MFA tests that
+  pinned unused code were removed): (1) MFA challenges are single-use and
+  atomically consumed — the challenge hash is inserted into the
+  `token_blacklist` table (unique PK) before tokens are issued, so replay of
+  a consumed challenge 401s even with a still-valid TOTP code, and
+  concurrent consumption is race-safe (live: login-verify 200 → replay 401);
+  (2) TOTP secrets survive key rotation — `SecretCipher` now uses a keyring
+  (`MFA_ENCRYPTION_KEY` current + `MFA_ENCRYPTION_KEY_PREVIOUS` retired
+  keys, defaulting to the JWT-secret-derived key for backward compat), so a
+  key rotation never strands enrollments and any replica sharing settings
+  can decrypt; (3) no recovery codes are issued or stored — the live setup
+  flow returns only `secret` + `totp_uri` and never writes `backup_codes`
+  (the plaintext-code generator lived in dead service-layer code, now
+  deleted); (4) enrollment cannot be replaced — setup refuses with 409 when
+  a pending (not-yet-verified) secret exists and all MFA state transitions
+  take a `SELECT ... FOR UPDATE` row lock (live: setup → setup = 409);
+  (5) disabling MFA requires a valid TOTP code, not just a session (live:
+  wrong code 400, valid code 200 and login stops challenging).
 - **Authentication lifecycle (#221)** — all five findings verified and pinned
   with 13 new tests (auth-service 136 → 149): (1) logout invalidates refresh
   credentials — revocation is Postgres-backed (refresh rows are hard-deleted),
@@ -234,7 +253,7 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (Aug 18, 2026): 841 backend unit/route tests + 110 integration
+Test totals (Aug 18, 2026): 849 backend unit/route tests + 110 integration
 tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
 tests. One known pre-existing failure, billing
 `test_release_tranche_not_locked`, is unrelated to the hardening work.

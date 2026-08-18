@@ -274,49 +274,6 @@ class TestEmailVerificationBranches:
         repos["user_repo"].commit.assert_awaited_once()
 
 
-class TestMfaBranches:
-    async def test_setup_mfa_incomplete_returns_501(self):
-        pass
-
-    async def test_setup_mfa_generates_secret(self, service, repos):
-        user = make_user()
-        repos["user_repo"].get_by_id.return_value = user
-
-        result = await service.setup_mfa(user.id)
-
-        assert result["secret"]
-        assert len(result["backup_codes"]) == 10
-        assert "otpauth://" in result["totp_uri"]
-        repos["user_repo"].commit.assert_awaited_once()
-
-    async def test_setup_mfa_already_enabled(self, service, repos):
-        user = make_user(mfa_enabled=True)
-        repos["user_repo"].get_by_id.return_value = user
-
-        result = await service.setup_mfa(user.id)
-
-        assert "already enabled" in result["message"]
-
-    async def test_verify_mfa_no_setup_400(self, service, repos):
-        user = make_user()
-        repos["user_repo"].get_by_id.return_value = user
-
-        with pytest.raises(HTTPException) as exc:
-            await service.verify_mfa(user.id, "123456")
-
-        assert exc.value.status_code == 400
-
-    async def test_disable_mfa_clears_secret(self, service, repos):
-        user = make_user(mfa_enabled=True, mfa_secret="S3CR3T")
-        repos["user_repo"].get_by_id.return_value = user
-
-        result = await service.disable_mfa(user.id)
-
-        assert "disabled" in result["message"]
-        assert user.mfa_secret is None
-        repos["user_repo"].commit.assert_awaited_once()
-
-
 def _user():
     """Standalone user mock helper (not a fixture to keep it importorable)."""
     u = MagicMock()

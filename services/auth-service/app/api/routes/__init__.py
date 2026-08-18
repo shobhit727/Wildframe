@@ -51,6 +51,7 @@ async def get_auth_service(
         audit_repo=audit_repo,
         password_manager=password_manager,
         token_manager=token_manager,
+        blacklist_repo=TokenBlacklistRepository(session),
     )
 
 

@@ -313,27 +313,44 @@ class TokenManager:
 
 
 class SecretCipher:
-    """Index-encrypts at-rest secrets (TOTP MFA) with a key derived from
-    the JWT secret. Keys are unique to this app instance; they do not need
-    to survive cluster-wide rotation. Never store MFA secrets in plaintext."""
+    """Index-encrypts at-rest secrets (TOTP MFA) with a dedicated key.
+
+    Encryption always uses the current key (``MFA_ENCRYPTION_KEY``, or the
+    JWT-secret-derived key when unset). Decryption tries the current key
+    first, then every ``MFA_ENCRYPTION_KEY_PREVIOUS`` entry, so rotating the
+    encryption key never strands existing MFA enrollments and any replica
+    sharing the settings can decrypt the same secrets (finding 2). Never
+    store MFA secrets in plaintext."""
 
     @staticmethod
-    def _fernet():
+    def _fernet(key_str: str):
         from cryptography.fernet import Fernet
 
-        key = base64.urlsafe_b64encode(hashlib.sha256(settings.JWT_SECRET_KEY.encode()).digest())
+        key = base64.urlsafe_b64encode(hashlib.sha256(key_str.encode()).digest())
         return Fernet(key)
 
     @classmethod
+    def _keys(cls) -> list[str]:
+        keys = [settings.MFA_ENCRYPTION_KEY or settings.JWT_SECRET_KEY]
+        keys.extend(k for k in settings.MFA_ENCRYPTION_KEY_PREVIOUS if k)
+        return keys
+
+    @classmethod
     def encrypt(cls, plaintext: str) -> str:
-        return str(cls._fernet().encrypt(plaintext.encode()).decode())
+        return str(cls._fernet(cls._keys()[0]).encrypt(plaintext.encode()).decode())
 
     @classmethod
     def decrypt(cls, token: str) -> str:
-        try:
-            return str(cls._fernet().decrypt(token.encode()).decode())
-        except Exception:  # noqa: BLE001
-            return ""
+        from cryptography.fernet import InvalidToken
+
+        last_error: Exception | None = None
+        for key in cls._keys():
+            try:
+                return str(cls._fernet(key).decrypt(token.encode()).decode())
+            except (InvalidToken, ValueError, TypeError) as exc:  # noqa: PERF203
+                last_error = exc
+        logger.warning(f"Secret decryption failed with all keys: {last_error!s}")
+        return ""
 
 
 class RateLimiter:

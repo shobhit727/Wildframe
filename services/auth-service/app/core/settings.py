@@ -107,6 +107,13 @@ class Settings(BaseSettings):
     MFA_CHALLENGE_EXPIRATION_MINUTES: int = 5
     MFA_BACKUP_CODES_COUNT: int = 10
     MFA_BACKUP_CODE_LENGTH: int = 8
+    # Encryption key for at-rest TOTP secrets. Empty = derive from
+    # JWT_SECRET_KEY (backward compatible with pre-keyring deployments).
+    # MFA_ENCRYPTION_KEY_PREVIOUS lists retired keys so secrets encrypted
+    # under an older key stay decryptable through ordinary key rotation
+    # (a JWT secret rotation must not strand MFA enrollments).
+    MFA_ENCRYPTION_KEY: str = ""
+    MFA_ENCRYPTION_KEY_PREVIOUS: list[str] = []
 
     @model_validator(mode="before")
     @classmethod

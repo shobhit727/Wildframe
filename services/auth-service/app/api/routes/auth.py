@@ -11,9 +11,11 @@ from uuid import UUID
 import pyotp
 from jose.exceptions import JWTError
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.models import User
 from app.core.rate_limit import allow
 from app.core.settings import settings
 from app.repositories import (
@@ -52,6 +54,18 @@ _ENUMERATION_SAFE_MESSAGE = (
 )
 
 
+
+
+async def _get_user_locked(db: AsyncSession, user_id: UUID) -> User:
+    """Fetch the user row with a FOR UPDATE lock (serializes MFA state
+    transitions so concurrent enrollment requests cannot race)."""
+    stmt = select(User).where(User.id == user_id).with_for_update()
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return user
+
 async def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
     """Get auth service instance.
 
@@ -67,6 +81,7 @@ async def get_auth_service(db: Annotated[AsyncSession, Depends(get_db)]) -> Auth
         audit_repo=LoginAuditRepository(db),
         password_manager=PasswordManager(),
         token_manager=TokenManager(),
+        blacklist_repo=TokenBlacklistRepository(db),
     )
 
 
@@ -568,11 +583,17 @@ async def setup_mfa(
     client can seed the authenticator; re-enabling MFA issues a fresh secret.
     """
     user_repo = UserRepository(db)
-    user = await user_repo.get_by_id(user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user = await _get_user_locked(db, user_id)
     if user.mfa_enabled:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MFA is already enabled")
+    if user.mfa_secret:
+        # A pending (not-yet-verified) enrollment already exists. Refusing to
+        # overwrite it means a concurrent setup request can never replace the
+        # secret another request just issued (#221 finding 4).
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="MFA setup already pending; verify the issued secret first",
+        )
 
     secret = pyotp.random_base32()
     issuer = settings.MFA_ISSUER_NAME
@@ -593,9 +614,7 @@ async def verify_mfa(
 ) -> dict:
     """Enable MFA after a correct TOTP code from the just-provisioned secret."""
     user_repo = UserRepository(db)
-    user = await user_repo.get_by_id(user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user = await _get_user_locked(db, user_id)
     if user.mfa_enabled:
         return {"message": "MFA already enabled"}
     if not user.mfa_secret:
@@ -619,9 +638,7 @@ async def disable_mfa(
 ) -> dict:
     """Disable MFA after a valid TOTP code, clearing the stored secret."""
     user_repo = UserRepository(db)
-    user = await user_repo.get_by_id(user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user = await _get_user_locked(db, user_id)
     if not user.mfa_enabled:
         return {"message": "MFA is not enabled"}
 
