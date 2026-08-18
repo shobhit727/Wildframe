@@ -98,7 +98,7 @@ Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/O
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
-#62, #63, #168, #214, #217, #218, #221, #222, #536, and #41 (open items: #45 DRM held as backlog).
+#62, #63, #168, #214, #217, #218, #221, #222, #223, #536, and #41 (open items: #45 DRM held as backlog).
 
 Highlights:
 
@@ -156,6 +156,13 @@ Highlights:
   partial pipelines emit no completion event (tested at stage level);
   (5) retries never re-run a completed stage (stage_versions) and publish
   once. Adapters now receive all caps from settings in `_build_ports`.
+- **OAuth security (#223)** — all five findings are vacuous: the platform
+  ships no OAuth at all (no routes, settings, schemas, DB tables, or
+  frontend flows; verified across all services + gateway + frontend). Four
+  guard tests now pin the absence and require the audit's five requirements
+  (unpredictable/session-bound/single-use state, exact redirect allowlist,
+  single-use authorization codes, safe account linking, issuer + client_id
+  claim validation) before any OAuth code can land.
 - **MFA lifecycle (#222)** — all five findings verified and pinned with 13
   new tests (auth-service 149 → 157; five dead service-layer MFA tests that
   pinned unused code were removed): (1) MFA challenges are single-use and
@@ -253,7 +260,7 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (Aug 18, 2026): 849 backend unit/route tests + 110 integration
+Test totals (Aug 18, 2026): 853 backend unit/route tests + 110 integration
 tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
 tests. One known pre-existing failure, billing
 `test_release_tranche_not_locked`, is unrelated to the hardening work.

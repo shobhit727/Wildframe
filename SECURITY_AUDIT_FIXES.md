@@ -101,6 +101,18 @@ Each item closed with unit tests plus live verification against the running HTTP
   rolled back (now committed in all 5 mutating repo methods). Live:
   create 200 → get 200 (persisted) → abort 200 → register 400, complete
   409; reaper log clean. +13 uploads tests.
+- **OAuth security** (#223, 5 findings): vacuous — no OAuth implementation
+  exists anywhere (routes, settings, schemas, DB tables, frontend flows).
+  Four guard tests in auth-service pin the absence (no `/oauth` endpoints,
+  no OAuth settings/schemas/tables, no OAuth identifiers in runtime code)
+  and require the audit's five requirements — unpredictable
+  session-bound single-use state, exact redirect-URI allowlist (no
+  parser-widening), single-use authorization codes, safe account linking,
+  and issuer + client_id claim validation — before any OAuth code can be
+  added. +4 auth tests (157 → 161). Also fixed a regression in
+  `tests/pytest.ini` introduced by commit fa648ff that dropped the
+  `markers =` section (strict-markers collection errors on
+  `@pytest.mark.unit` / `@pytest.mark.integration`).
 - **MFA lifecycle** (#222, 5 findings): (1) challenges are single-use and
   atomically consumed — the challenge hash is written to the
   `token_blacklist` table (unique PK) BEFORE tokens are issued; a replayed
