@@ -24,7 +24,9 @@ def _get_client() -> Redis | None:
     global _client
     if _client is None:
         try:
-            _client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+            redis_url = settings.REDIS_URL
+            assert redis_url is not None, "REDIS_URL is not configured"
+            _client = Redis.from_url(redis_url, decode_responses=True)
         except Exception:  # noqa: BLE001 - malformed URL etc. degrades to fail-open
             _client = None
     return _client

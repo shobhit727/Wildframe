@@ -46,8 +46,10 @@ class DatabaseManager:
                     "pool_recycle": settings.DATABASE_POOL_RECYCLE,
                 }
 
+            database_url = settings.DATABASE_URL
+            assert database_url is not None, "DATABASE_URL is not configured"
             cls._engine = create_async_engine(
-                settings.DATABASE_URL,
+                database_url,
                 echo=settings.DEBUG,
                 poolclass=pool_class,
                 **pool_kwargs,

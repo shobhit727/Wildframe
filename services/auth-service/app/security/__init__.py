@@ -12,12 +12,19 @@ from typing import Any
 from uuid import UUID
 import bcrypt
 from app.core.settings import settings
-from jose import JWTError, jwt  # type: ignore[import-untyped]
-from jose.exceptions import ExpiredSignatureError  # type: ignore[import-untyped]
+from jose import JWTError, jwt
+from jose.exceptions import ExpiredSignatureError
 
 from app.models import User
 
 logger = logging.getLogger(__name__)
+
+
+def _jwt_secret() -> str:
+    """Return the configured JWT secret (validated non-None at boot)."""
+    secret = settings.JWT_SECRET_KEY
+    assert secret is not None, "JWT_SECRET_KEY is not configured"
+    return secret
 
 
 PASSWORD_MAX_LENGTH: int = 128
@@ -110,10 +117,10 @@ class TokenManager:
 
         token = jwt.encode(
             payload,
-            settings.JWT_SECRET_KEY,
+            _jwt_secret(),
             algorithm=settings.JWT_ALGORITHM,
         )
-        return token  # type: ignore[no-any-return]
+        return token
 
     @staticmethod
     def create_refresh_token(user_id: UUID) -> str:
@@ -141,10 +148,10 @@ class TokenManager:
 
         token = jwt.encode(
             payload,
-            settings.JWT_SECRET_KEY,
+            _jwt_secret(),
             algorithm=settings.JWT_ALGORITHM,
         )
-        return token  # type: ignore[no-any-return]
+        return token
 
     @staticmethod
     def create_email_verification_token(user_id: UUID, email: str) -> str:
@@ -169,7 +176,7 @@ class TokenManager:
             "aud": settings.JWT_AUDIENCE,
             "jti": f"emailverify_{user_id}_{now.timestamp()}",
         }
-        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)  # type: ignore[no-any-return]
+        return jwt.encode(payload, _jwt_secret(), algorithm=settings.JWT_ALGORITHM)
 
     @staticmethod
     def create_mfa_challenge_token(user_id: UUID, email: str) -> str:
@@ -192,7 +199,7 @@ class TokenManager:
             "aud": settings.JWT_AUDIENCE,
             "jti": f"mfa_{user_id}_{now.timestamp()}",
         }
-        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)  # type: ignore[no-any-return]
+        return jwt.encode(payload, _jwt_secret(), algorithm=settings.JWT_ALGORITHM)
 
     @staticmethod
     def verify_mfa_challenge(token: str) -> UUID | None:
@@ -227,7 +234,7 @@ class TokenManager:
         try:
             payload = jwt.decode(
                 token,
-                settings.JWT_SECRET_KEY,
+                _jwt_secret(),
                 algorithms=[settings.JWT_ALGORITHM],
                 issuer=settings.JWT_ISSUER,
                 audience=settings.JWT_AUDIENCE,
@@ -238,7 +245,7 @@ class TokenManager:
                 logger.warning(f"Invalid token type: expected {token_type}")
                 raise JWTError(f"Invalid token type: expected {token_type}")
 
-            return payload  # type: ignore[no-any-return]
+            return payload
 
         except ExpiredSignatureError:
             logger.debug("Token expired")
@@ -262,7 +269,7 @@ class TokenManager:
         try:
             payload = jwt.decode(
                 token,
-                settings.JWT_SECRET_KEY,
+                _jwt_secret(),
                 algorithms=[settings.JWT_ALGORITHM],
                 options={
                     "verify_signature": False,
@@ -331,7 +338,11 @@ class SecretCipher:
 
     @classmethod
     def _keys(cls) -> list[str]:
-        keys = [settings.MFA_ENCRYPTION_KEY or settings.JWT_SECRET_KEY]
+        keys: list[str] = []
+        if settings.MFA_ENCRYPTION_KEY:
+            keys.append(settings.MFA_ENCRYPTION_KEY)
+        if settings.JWT_SECRET_KEY:
+            keys.append(settings.JWT_SECRET_KEY)
         keys.extend(k for k in settings.MFA_ENCRYPTION_KEY_PREVIOUS if k)
         return keys
 
