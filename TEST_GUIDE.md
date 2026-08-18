@@ -61,6 +61,13 @@ cd services/auth-service
 python3 -m pytest tests/ -m "integration" -v --tb=short
 ```
 
+### Option 4: Cross-Service Integration Suite (tests/integration/)
+```bash
+# Requires the docker-compose stack to be reachable at $WILDFRAME_GATEWAY_URL
+# (default https://localhost:8000); fails fast if it is not up.
+scripts/test-integration.sh
+```
+
 ---
 
 ## Testing by Service
