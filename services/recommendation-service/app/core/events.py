@@ -45,7 +45,11 @@ async def _handle_content_gone(event: DomainEvent, action: str) -> None:
     except (ValueError, TypeError):
         logger.warning("dropping %s event with invalid content_id=%r", action, content_id)
         return
-    async with DatabaseManager.session_factory() as session:  # type: ignore[union-attr]
+    factory = DatabaseManager.session_factory
+    if factory is None:
+        logger.warning("database not initialized; skipping %s eviction", action)
+        return
+    async with factory() as session:
         removed = await RecommendationRepository(session).delete_for_content(content_uuid)
         await session.commit()
         logger.info("content %s %s -> removed=%s", content_id, action, removed)

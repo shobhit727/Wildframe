@@ -273,7 +273,7 @@ class S3StoragePort(StoragePort):
         # session_id -> multipart UploadId (created lazily on first part URL).
         self._upload_ids: dict[str, str] = {}
 
-        import boto3  # type: ignore[import-not-found]
+        import boto3  # type: ignore[import-untyped]
 
         self._client = boto3.client(
             "s3",

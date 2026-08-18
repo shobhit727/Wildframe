@@ -27,10 +27,7 @@ from stripe import (
     StripeError as _StripeError,
 )
 
-try:
-    from stripe import HTTPXClient as _StripeHTTPClient
-except ImportError:  # stripe >= 7.0 renamed it to HTTPClient
-    from stripe import HTTPClient as _StripeHTTPClient
+from stripe import HTTPClient as _StripeHTTPClient
 
 from app.core.money import to_minor_units, validate_currency
 from app.core.settings import settings
@@ -100,7 +97,7 @@ class StripeClient:
                 tier,
                 session.id,
             )
-            return session  # type: ignore[return-value]
+            return session
         except _StripeError as exc:
             logger.error("Stripe create_checkout_session failed: %s", exc)
             raise StripeError(f"Failed to create checkout session: {exc}") from exc
@@ -159,7 +156,7 @@ class StripeClient:
                 content_id,
                 session.id,
             )
-            return session  # type: ignore[return-value]
+            return session
         except _StripeError as exc:
             logger.error("Stripe create_tvod_purchase_session failed: %s", exc)
             raise StripeError(f"Failed to create TVOD purchase session: {exc}") from exc
@@ -234,7 +231,7 @@ class StripeClient:
                 creator_id,
                 account.id,
             )
-            return account  # type: ignore[return-value]
+            return account
         except _StripeError as exc:
             logger.error("Stripe create_connect_account failed: %s", exc)
             raise StripeError(f"Failed to create Connect account: {exc}") from exc
@@ -275,7 +272,7 @@ class StripeClient:
                 transfer.id,
                 idempotency_key,
             )
-            return transfer  # type: ignore[return-value]
+            return transfer
         except _StripeError as exc:
             logger.error("Stripe transfer_to_creator failed: %s", exc)
             raise StripeError(f"Failed to transfer to creator: {exc}") from exc

@@ -110,7 +110,7 @@ async def flag_content(
             content_id=request.content_id,
             content_creator_id=request.content_creator_id,
             flag_reason=request.flag_reason,
-            reporter_id=reporter_id,
+            reporter_id=UUID(reporter_id),
         )
     except ModerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -146,7 +146,7 @@ async def make_decision(
         decision = await service.make_decision(
             flag_id=request.flag_id,
             decision=request.decision,
-            moderator_id=moderator_id,
+            moderator_id=UUID(moderator_id),
             notes=request.notes,
         )
     except ModerationError as exc:

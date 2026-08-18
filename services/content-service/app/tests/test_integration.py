@@ -13,7 +13,7 @@ from app.services import ContentService
 @pytest_asyncio.fixture
 async def client():
     """Async HTTP client for testing."""
-    async with AsyncClient(app=app, base_url="http://test") as ac:  # type: ignore[call-arg]
+    async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
 
 

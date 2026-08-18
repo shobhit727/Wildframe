@@ -1,8 +1,10 @@
 """Recommendation service repositories."""
 
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import delete, desc, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Recommendation, UserPreferences
@@ -69,5 +71,5 @@ class RecommendationRepository:
         handlers; idempotent (deleting absent rows is a no-op) (#228 F3).
         """
         stmt = delete(Recommendation).where(Recommendation.content_id == content_id)
-        result = await self.session.execute(stmt)
+        result = cast(CursorResult, await self.session.execute(stmt))
         return result.rowcount

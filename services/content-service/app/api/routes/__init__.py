@@ -55,7 +55,8 @@ async def get_current_user(
     Identity is read from the verified JWT ``sub`` claim, never from a
     caller-supplied query parameter.
     """
-    return await _require_identity(authorization)
+    user_id, _role = await _require_identity(authorization)
+    return user_id
 
 
 async def get_admin_identity(
@@ -78,7 +79,7 @@ async def get_admin_identity(
 
 async def _require_identity(
     authorization: str | None, *, with_role: bool = False
-) -> UUID | tuple[UUID, str]:
+) -> tuple[UUID, str | None]:
     """Shared JWT verification returning the verified subject (and role)."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -118,7 +119,7 @@ async def _require_identity(
     user_id = UUID(sub)
     if with_role:
         return user_id, str(payload.get("role") or "user")
-    return user_id
+    return user_id, None
 
 
 # Genre endpoints

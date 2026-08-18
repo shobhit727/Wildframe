@@ -74,7 +74,9 @@ async def get_current_user_id(
     claims: Annotated[dict, Depends(get_current_user_claims)],
 ) -> UUID:
     """Resolve the authenticated user id from the JWT sub claim."""
-    return claims["user_id"]
+    user_id = claims["user_id"]
+    assert isinstance(user_id, UUID)
+    return user_id
 
 
 async def require_self(

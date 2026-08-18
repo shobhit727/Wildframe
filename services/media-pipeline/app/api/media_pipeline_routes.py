@@ -13,8 +13,8 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
-from jose import jwt
-from jose.exceptions import JWTError
+from jose import jwt  # type: ignore[import-untyped]
+from jose.exceptions import JWTError  # type: ignore[import-untyped]
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 

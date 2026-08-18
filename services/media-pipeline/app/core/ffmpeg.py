@@ -94,7 +94,10 @@ def _child_rlimit(memory_limit_bytes: int | None):
 
     def _apply() -> None:
         try:
-            resource.setrlimit(resource.RLIMIT_AS, (memory_limit_bytes, memory_limit_bytes))
+            limit = memory_limit_bytes
+            if limit is None:
+                return
+            resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
         except (ValueError, OSError):
             pass  # best-effort: the wall-clock/timeout bounds still apply
 

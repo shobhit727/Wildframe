@@ -1,7 +1,7 @@
 from http import HTTPStatus as http_status
 import jwt
 from app.core.settings import settings
-from jose import JWTError  # type: ignore[import-untyped]
+from jose import JWTError
 
 """Billing service API routes.
 
