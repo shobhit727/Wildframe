@@ -363,7 +363,14 @@ class AuthService:
         await self.user_repo.update(user_id, password_hash=new_hash)
         await self.user_repo.commit()
 
-        logger.info(f"Password changed for user: {user.email}")
+        # Security policy: a password change invalidates all existing
+        # sessions — every refresh token for the user is revoked so a
+        # stolen token cannot outlive the credential rotation (#221).
+        revoked = await self.token_repo.revoke_all_for_user(user_id)
+        await self.token_repo.commit()
+        logger.info(
+            f"Password changed for user: {user.email}; revoked {revoked} refresh token(s)"
+        )
         return True
 
     async def send_email_verification(self, user_id: UUID) -> dict:

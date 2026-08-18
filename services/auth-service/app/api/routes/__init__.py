@@ -21,6 +21,7 @@ from app.schemas import (
 from app.security import PasswordManager, TokenManager
 from app.services import AuthService
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from jose.exceptions import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.auth import router as auth_router
@@ -84,7 +85,14 @@ async def get_current_user_id(
             )
 
         token_manager = TokenManager()
-        payload = token_manager.verify_token(token, token_type="access")
+        try:
+            payload = token_manager.verify_token(token, token_type="access")
+        except JWTError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         if not payload:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

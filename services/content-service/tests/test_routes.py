@@ -233,6 +233,7 @@ class TestWriteAuthz:
         now = int(time.time())
         payload = {
             "sub": str(uuid4()),
+            "type": "access",
             "aud": settings.JWT_AUDIENCE,
             "iat": now,
             "exp": now + 900,

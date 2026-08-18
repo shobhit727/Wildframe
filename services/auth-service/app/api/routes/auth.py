@@ -9,6 +9,7 @@ from typing import Annotated
 from uuid import UUID
 
 import pyotp
+from jose.exceptions import JWTError
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -101,7 +102,12 @@ async def get_current_user(
         )
 
     # Verify token
-    payload = TokenManager.verify_token(token, token_type="access")
+    try:
+        payload = TokenManager.verify_token(token, token_type="access")
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
@@ -112,6 +118,12 @@ async def get_current_user(
     except (ValueError, KeyError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload"
+        )
+
+    # Disabled/deleted accounts must not be able to use live access tokens.
+    if await UserRepository(db).get_by_id(user_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
         )
 
     return user_id
@@ -331,7 +343,12 @@ async def logout(
             )
 
         token = authorization.replace("Bearer ", "")
-        payload = TokenManager.verify_token(token, token_type="access")
+        try:
+            payload = TokenManager.verify_token(token, token_type="access")
+        except JWTError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+            )
         if not payload:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
@@ -454,7 +471,13 @@ async def verify_email(
     email. It is only issued after account creation or an explicit resend,
     so verifying proves possession of the inbox link/address it was sent to.
     """
-    payload = TokenManager.verify_token(request.token, token_type="email_verification")
+    try:
+        payload = TokenManager.verify_token(request.token, token_type="email_verification")
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification token",
+        )
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

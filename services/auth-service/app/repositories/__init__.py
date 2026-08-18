@@ -48,13 +48,17 @@ class UserRepository(BaseRepository):
 
     async def get_by_email(self, email: str) -> User | None:
         """Get user by email."""
-        stmt = select(User).where(User.email == email)
+        # Inactive (disabled/soft-deleted) accounts can never authenticate.
+        stmt = select(User).where(User.email == email, User.is_active.is_(True))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_by_id(self, user_id: UUID) -> User | None:
         """Get user by ID."""
-        return await self.session.get(User, user_id)
+        # Inactive accounts must not be resolvable for refresh/verification.
+        stmt = select(User).where(User.id == user_id, User.is_active.is_(True))
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def update(self, user_id: UUID, **kwargs) -> User | None:
         """Update user."""

@@ -64,7 +64,9 @@ class UserRepository:
         Returns:
             User instance or None if not found
         """
-        stmt = select(User).where(User.email == email)
+        # Inactive (soft-deleted/disabled) accounts can never authenticate:
+        # login, refresh, and password flows all resolve users through here.
+        stmt = select(User).where(User.email == email, User.is_active.is_(True))
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -77,7 +79,8 @@ class UserRepository:
         Returns:
             User instance or None if not found
         """
-        stmt = select(User).where(User.id == user_id)
+        # Inactive accounts must not be resolvable for token refresh/verification.
+        stmt = select(User).where(User.id == user_id, User.is_active.is_(True))
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 

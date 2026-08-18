@@ -59,6 +59,13 @@ async def current_user(
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
         )
+        # Token-type separation (#221): refresh tokens share the audience but
+        # must never be accepted as access tokens.
+        if payload.get("type") != "access":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+            )
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
@@ -100,6 +107,13 @@ async def current_admin(
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
         )
+        # Token-type separation (#221): refresh tokens share the audience but
+        # must never be accepted as access tokens.
+        if payload.get("type") != "access":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+            )
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"

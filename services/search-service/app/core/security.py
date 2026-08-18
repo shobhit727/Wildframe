@@ -41,6 +41,9 @@ def verify_token(request: Request) -> Identity | None:
             audience=settings.JWT_AUDIENCE,
             options={"require": ["exp"]},
         )
+        # Token-type separation (#221): refresh tokens are not access tokens.
+        if payload.get("type") != "access":
+            return None
         raw_user_id = payload.get("user_id") or payload.get("sub")
         if not raw_user_id:
             return None

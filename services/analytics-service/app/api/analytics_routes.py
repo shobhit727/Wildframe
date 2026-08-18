@@ -47,6 +47,13 @@ async def get_current_user_claims(
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
         )
+        # Token-type separation (#221): refresh tokens share the audience but
+        # must never be accepted as access tokens.
+        if payload.get("type") != "access":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+            )
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     sub = payload.get("sub") or payload.get("user_id")

@@ -36,6 +36,13 @@ async def get_current_admin_id(
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
         )
+        # Token-type separation (#221): refresh tokens share the audience but
+        # must never be accepted as access tokens.
+        if payload.get("type") != "access":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token type",
+            )
         if payload.get("role") != "admin":
             # Least privilege: a token without the admin role claim (plain user
             # or API-key-scoped identity) must never inherit admin privileges.

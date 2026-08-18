@@ -269,6 +269,7 @@ class TestAdminCreatorAuth:
 
         payload = {
             "sub": str(uuid4()),
+            "type": "access",
             "role": role,
             "aud": settings.JWT_AUDIENCE,
             "iat": datetime.now(UTC),
