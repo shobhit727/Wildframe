@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     PIPELINE_MAX_DURATION_SECONDS: float = 4 * 3600.0
     PIPELINE_MAX_OUTPUT_BYTES: int = 0  # 0 = unlimited (per rendition)
     PIPELINE_MAX_CPU_THREADS: int = 2
+    # Per-job address-space cap for ffmpeg/ffprobe children (bytes); enforced
+    # via RLIMIT_AS in the child before exec. 0 = unlimited.
+    PIPELINE_MAX_MEMORY_BYTES: int = 2 * 1024 * 1024 * 1024  # 2 GiB
 
     # Adapter selection: "stub" (default, no binaries) or "ffmpeg" (real
     # hardened subprocess adapters). Controlled via env for prod vs test.

@@ -238,9 +238,18 @@ class MediaPipelineService:
             return {
                 "virus_scanner": ClamavScanner(),
                 "metadata_extractor": FFmpegMetadataExtractor(),
-                "thumbnail_generator": FFmpegThumbnailGenerator(),
-                "encoder": FFmpegMultiBitrateEncoder(),
-                "packager": FFmpegPackager(),
+                "thumbnail_generator": FFmpegThumbnailGenerator(
+                    memory_limit_bytes=settings.PIPELINE_MAX_MEMORY_BYTES,
+                ),
+                "encoder": FFmpegMultiBitrateEncoder(
+                    cpu_threads=settings.PIPELINE_MAX_CPU_THREADS,
+                    max_output_bytes=settings.PIPELINE_MAX_OUTPUT_BYTES,
+                    max_duration_seconds=settings.PIPELINE_MAX_DURATION_SECONDS,
+                    memory_limit_bytes=settings.PIPELINE_MAX_MEMORY_BYTES,
+                ),
+                "packager": FFmpegPackager(
+                    memory_limit_bytes=settings.PIPELINE_MAX_MEMORY_BYTES,
+                ),
                 "object_storage": StubObjectStorage(),  # S3 adapter TBD
                 "cdn": StubCDN(),
             }
@@ -587,6 +596,12 @@ class MediaPipelineService:
                     # already failed the job and emitted DLQ event.
                     self._cleanup_job_dirs(job)
                     return job
+                except asyncio.CancelledError:
+                    # Orchestrator shutdown / worker cancellation mid-stage:
+                    # the subprocess was killed by run_process; remove the
+                    # job's temp files so no half-baked media lingers (#218).
+                    self._cleanup_job_dirs(job)
+                    raise
 
                 # _run_stage_with_retries returns an updated ctx on success or after
                 # skipping a non-critical stage. If a critical stage exhausted

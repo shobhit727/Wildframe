@@ -72,6 +72,20 @@ Each item closed with unit tests plus live verification against the running HTTP
   catalog 200, search 200); analytics events stays POST-only (405 on GET).
   The sweep surfaced a live bug — user-service JWT decode without audience —
   now fixed (see audience bullet).
+- **Media processing** (#218, 5 findings): (1) fixed argv arrays only —
+  create_subprocess_exec, no shell, metacharacter filenames stay single
+  argv elements (mock-pinned); (2) per-job limits: threads clamped to
+  PIPELINE_MAX_CPU_THREADS, new RLIMIT_AS memory cap
+  (PIPELINE_MAX_MEMORY_BYTES, 2 GiB default, verified in a real child),
+  disk quota check, duration cap `-t` now actually wired from
+  PIPELINE_MAX_DURATION_SECONDS (previously configured but never passed),
+  wall-clock timeout kills the process group and a kill failure can no
+  longer mask CommandTimeout; (3) temp dirs removed on success, failure,
+  and cancellation (new CancelledError handler); (4) no completion event
+  (content.published) until every stage succeeds — partial pipelines emit
+  none; (5) retries never re-run completed stages (stage_versions) and
+  publish exactly once. Caps wired from settings into adapters in
+  `_build_ports`. +16 media-pipeline tests.
 - **Upload lifecycle** (#217, 5 findings): (1) terminal sessions — no
   chunk/complete/abort transition accepted after COMPLETE/ABORTED; (2)
   bounded pre-signed TTLs (clamped to 3600s max) + server-side session

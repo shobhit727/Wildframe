@@ -36,6 +36,7 @@ from app.core.security import (
     is_local_media_path,
     sanitize_metadata,
 )
+from app.core.settings import settings
 from app.core.stages import (
     MetadataExtractor,
     MultiBitrateEncoder,
@@ -84,6 +85,25 @@ async def _read_capped(stream: asyncio.StreamReader, limit: int) -> tuple[bytes,
     return captured, total
 
 
+def _child_rlimit(memory_limit_bytes: int | None):
+    """Build a ``preexec_fn`` that bounds the child's address space (#218).
+
+    Runs inside the forked child before exec; must be fork-safe (no
+    allocations, no locks, no Python-visible exceptions).
+    """
+    import resource
+
+    def _apply() -> None:
+        try:
+            resource.setrlimit(
+                resource.RLIMIT_AS, (memory_limit_bytes, memory_limit_bytes)
+            )
+        except (ValueError, OSError):
+            pass  # best-effort: the wall-clock/timeout bounds still apply
+
+    return _apply if memory_limit_bytes else None
+
+
 async def run_process(
     argv: list[str],
     *,
@@ -91,6 +111,7 @@ async def run_process(
     env: dict[str, str] | None = None,
     cwd: str | None = None,
     max_pipe_bytes: int = MAX_PIPE_CAPTURE_BYTES,
+    memory_limit_bytes: int | None = None,
 ) -> tuple[int, bytes, bytes, int, int]:
     """Run ``argv`` with hard execution bounds.
 
@@ -102,6 +123,8 @@ async def run_process(
     * On cancellation (e.g. an orchestrator shutdown mid-stage) the child is
       killed the same way — no orphaned ffmpeg processes.
     * Pipe reads are capped at ``max_pipe_bytes``.
+    * ``memory_limit_bytes`` (when set) bounds the child's address space via
+      ``RLIMIT_AS`` applied in a fork-safe ``preexec_fn`` (#218).
 
     Raises ``CommandTimeout`` on wall-clock expiry, ``CommandFailure`` when the
     process cannot be started.
@@ -122,6 +145,7 @@ async def run_process(
                 env=env,
                 cwd=cwd,
                 start_new_session=True,  # own process group -> kill the whole tree
+                preexec_fn=_child_rlimit(memory_limit_bytes),
             )
         except OSError as exc:
             raise CommandFailure(f"failed to start {argv[0]}: {exc}") from exc
@@ -147,6 +171,8 @@ async def run_process(
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             except (ProcessLookupError, ChildProcessError):
                 pass
+        except Exception:  # noqa: BLE001 - a kill failure must never mask the timeout
+            logger.exception("failed to kill subprocess group for pid %s", getattr(proc, "pid", "?"))
 
     try:
         return await asyncio.wait_for(_spawn_and_wait(), timeout=timeout)
@@ -269,6 +295,7 @@ class FFmpegMultiBitrateEncoder(MultiBitrateEncoder):
         cpu_threads: int = 2,
         max_output_bytes: int = 0,
         max_duration_seconds: float = 0.0,
+        memory_limit_bytes: int | None = None,
         work_root: str = "/tmp/wildframe/work",
         quarantine_root: str = "/tmp/wildframe/quarantine",
     ) -> None:
@@ -277,6 +304,7 @@ class FFmpegMultiBitrateEncoder(MultiBitrateEncoder):
         self.cpu_threads = cpu_threads
         self.max_output_bytes = max_output_bytes
         self.max_duration_seconds = max_duration_seconds
+        self.memory_limit_bytes = memory_limit_bytes
         self.work_root = work_root
         self.quarantine_root = quarantine_root
 
@@ -292,7 +320,9 @@ class FFmpegMultiBitrateEncoder(MultiBitrateEncoder):
     ) -> dict[int, str]:
         _require_local_input(path, self.work_root, self.quarantine_root)
         os.makedirs(out_dir, mode=0o700, exist_ok=True)
-        threads = cpu_threads or self.cpu_threads
+        # The adapter's configured thread count is the hard ceiling: a caller
+        # (or ctx) can never raise it above the per-job cap (#218).
+        threads = min(cpu_threads or self.cpu_threads, self.cpu_threads)
         size_cap = max_output_bytes or self.max_output_bytes
         outputs: dict[int, str] = {}
         for bitrate in bitrates:
@@ -323,7 +353,9 @@ class FFmpegMultiBitrateEncoder(MultiBitrateEncoder):
                 out_path,
             ]
             returncode, _stdout, stderr, _st, _err = await run_process(
-                argv, timeout=timeout or self.timeout
+                argv,
+                timeout=timeout or self.timeout,
+                memory_limit_bytes=self.memory_limit_bytes,
             )
             if returncode != 0:
                 raise CommandFailure(
@@ -350,11 +382,13 @@ class FFmpegThumbnailGenerator(ThumbnailGenerator):
         *,
         ffmpeg_bin: str = "ffmpeg",
         timeout: float = 60.0,
+        memory_limit_bytes: int | None = None,
         work_root: str = "/tmp/wildframe/work",
         quarantine_root: str = "/tmp/wildframe/quarantine",
     ) -> None:
         self.ffmpeg_bin = ffmpeg_bin
         self.timeout = timeout
+        self.memory_limit_bytes = memory_limit_bytes
         self.work_root = work_root
         self.quarantine_root = quarantine_root
 
@@ -380,7 +414,9 @@ class FFmpegThumbnailGenerator(ThumbnailGenerator):
             out_path,
         ]
         returncode, _stdout, stderr, _st, _err = await run_process(
-            argv, timeout=timeout or self.timeout
+            argv,
+            timeout=timeout or self.timeout,
+            memory_limit_bytes=self.memory_limit_bytes,
         )
         if returncode != 0:
             raise CommandFailure(
@@ -400,11 +436,13 @@ class FFmpegHlsPackager(Packager):
         *,
         ffmpeg_bin: str = "ffmpeg",
         timeout: float = 3600.0,
+        memory_limit_bytes: int | None = None,
         work_root: str = "/tmp/wildframe/work",
         quarantine_root: str = "/tmp/wildframe/quarantine",
     ) -> None:
         self.ffmpeg_bin = ffmpeg_bin
         self.timeout = timeout
+        self.memory_limit_bytes = memory_limit_bytes
         self.work_root = work_root
         self.quarantine_root = quarantine_root
 
@@ -441,7 +479,9 @@ class FFmpegHlsPackager(Packager):
                 playlist,
             ]
             returncode, _stdout, stderr, _st, _err = await run_process(
-                argv, timeout=timeout or self.timeout
+                argv,
+                timeout=timeout or self.timeout,
+                memory_limit_bytes=self.memory_limit_bytes,
             )
             if returncode != 0:
                 raise CommandFailure(
@@ -464,11 +504,13 @@ class FFmpegDashPackager(Packager):
         *,
         ffmpeg_bin: str = "ffmpeg",
         timeout: float = 3600.0,
+        memory_limit_bytes: int | None = None,
         work_root: str = "/tmp/wildframe/work",
         quarantine_root: str = "/tmp/wildframe/quarantine",
     ) -> None:
         self.ffmpeg_bin = ffmpeg_bin
         self.timeout = timeout
+        self.memory_limit_bytes = memory_limit_bytes
         self.work_root = work_root
         self.quarantine_root = quarantine_root
 
@@ -498,7 +540,9 @@ class FFmpegDashPackager(Packager):
             manifest,
         ]
         returncode, _stdout, stderr, _st, _err = await run_process(
-            argv, timeout=timeout or self.timeout
+            argv,
+            timeout=timeout or self.timeout,
+            memory_limit_bytes=self.memory_limit_bytes,
         )
         if returncode != 0:
             raise CommandFailure(

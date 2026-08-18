@@ -98,7 +98,7 @@ Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/O
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
-#62, #63, #168, #214, #217, #536, and #41 (open items: #45 DRM held as backlog).
+#62, #63, #168, #214, #217, #218, #536, and #41 (open items: #45 DRM held as backlog).
 
 Highlights:
 
@@ -140,6 +140,22 @@ Highlights:
   stays POST-only. The sweep surfaced a live bug: **user-service JWT decode
   had no audience** — `GET /users/api/v1/profiles/{id}` 401'd with a valid
   token; fixed (plus a `JWT_AUDIENCE` setting).
+- **Media processing (#218)** — all five findings verified and pinned with
+  16 new tests (media-pipeline 46 → 62): (1) ffmpeg/ffprobe commands are
+  fixed argv arrays via create_subprocess_exec, never a shell — mock-level
+  tests prove argv stays one element per argument even with shell
+  metacharacters in a filename; (2) per-job limits: CPU (`-threads` clamped
+  to PIPELINE_MAX_CPU_THREADS), memory (new RLIMIT_AS preexec cap,
+  PIPELINE_MAX_MEMORY_BYTES 2 GiB, verified in a real child process), disk
+  (PIPELINE_DISK_QUOTA_BYTES check), duration (`-t` now actually wired from
+  PIPELINE_MAX_DURATION_SECONDS — it was configured but never passed to the
+  encoder), wall-clock (stage timeout kills the process group; a kill
+  failure can no longer mask CommandTimeout); (3) work/quarantine dirs are
+  removed on success, failure, and now cancellation (new CancelledError
+  handler); (4) content.published fires only after every stage completes —
+  partial pipelines emit no completion event (tested at stage level);
+  (5) retries never re-run a completed stage (stage_versions) and publish
+  once. Adapters now receive all caps from settings in `_build_ports`.
 - **Upload lifecycle (#217)** — all five findings verified and pinned with
   13 new tests (uploads-service 13 → 26): (1) sessions are terminal —
   register/complete/abort cross-checks reject after COMPLETE/ABORTED
@@ -200,7 +216,7 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (Aug 17, 2026): 812 backend unit/route tests + 105 integration
+Test totals (Aug 17, 2026): 828 backend unit/route tests + 105 integration
 tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
 tests. One known pre-existing failure, billing
 `test_release_tranche_not_locked`, is unrelated to the hardening work.
