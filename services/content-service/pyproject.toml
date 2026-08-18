@@ -19,6 +19,7 @@ email-validator = "^2.1.0"
 httpx = "^0.25.0"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
 aiokafka = "^0.10.0"
+protobuf = ">=5.29.6,<6"
 opentelemetry-api = "^1.21.0"
 opentelemetry-sdk = "^1.21.0"
 opentelemetry-exporter-jaeger = "^1.21.0"

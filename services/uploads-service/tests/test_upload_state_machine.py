@@ -231,7 +231,7 @@ async def test_abort_emits_content_uploaded_aborted_and_blocks_chunks():
     assert event["payload"]["reason"] == "user cancelled"
 
     # No more chunks accepted after abort.
-    with pytest.raises(UploadError) as exc:
+    with pytest.raises(UploadError):
         await service.register_chunk(session_id=session.id, index=0, size_bytes=1024)
 @pytest.mark.asyncio
 async def test_complete_is_idempotent_guard():
@@ -250,8 +250,6 @@ async def test_complete_is_idempotent_guard():
     await service.complete_session(session.id)
 
     # Second completion should be idempotent - return session without re-emitting.
-    publisher = service.publisher
-    sent_before = len(publisher.sent)
     result = await service.complete_session(session.id)
     assert result.status == UploadSessionStatus.COMPLETE
     # No new event emitted.

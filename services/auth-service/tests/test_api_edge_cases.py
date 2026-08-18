@@ -9,7 +9,6 @@ Covers the endpoint-level branches the happy-path suites skip:
 """
 
 import pytest
-from app.api.routes import auth as auth_routes
 from app.core.database import DatabaseManager
 from app.main import create_app
 from app.models import Base

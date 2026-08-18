@@ -36,7 +36,6 @@ from app.core.security import (
     is_local_media_path,
     sanitize_metadata,
 )
-from app.core.settings import settings
 from app.core.stages import (
     MetadataExtractor,
     MultiBitrateEncoder,

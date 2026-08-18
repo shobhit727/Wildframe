@@ -32,11 +32,8 @@ from app.core.ffmpeg import (
 from app.core.security import UnsafeInput
 from app.core.stages import Stage, StageRegistry
 from app.models import PipelineJob, PipelineJobStatus
-from app.services import MediaPipelineService
 from tests.test_pipeline_state_machine import (
     CountingStage,
-    FakeJobRepo,
-    FakeLogRepo,
     make_service,
 )
 

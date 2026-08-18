@@ -6,6 +6,7 @@ threshold, decision making, and event emission. They use in-memory stubs
 for the event publisher and fake repositories.
 """
 
+from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 

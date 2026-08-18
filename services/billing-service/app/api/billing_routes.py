@@ -60,7 +60,7 @@ async def get_current_user_id(
         # must never be accepted as access tokens.
         if payload.get("type") != "access":
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=http_status.UNAUTHORIZED,
                 detail="Invalid token type",
             )
     except JWTError:

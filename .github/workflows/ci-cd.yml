@@ -27,7 +27,7 @@ concurrency:
 env:
   PYTHON_VERSION: "3.13"
   NODE_VERSION: "20"
-  POETRY_VERSION: "1.8.3"
+  POETRY_VERSION: "2.4.1"
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   SERVICES: >-
@@ -220,7 +220,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install pytest
-        run: python -m pip install --quiet "pytest<8"
+        run: python -m pip install --quiet "pytest<8" "pytest-cov<5"
 
       - name: Detect frontend/backend route drift
         run: python -m pytest tests/contract -q

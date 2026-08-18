@@ -54,7 +54,7 @@ class TestSubscribe:
         service.sub_repo.session = MagicMock()
         service.sub_repo.session.flush = AsyncMock()
 
-        result = await service.subscribe(uuid4(), "svod")
+        await service.subscribe(uuid4(), "svod")
 
         # Verify subscription attributes were updated
         assert sub.tier == RevenueTier.SVOD
@@ -167,7 +167,7 @@ class TestMilestone:
         milestone = MagicMock(status=MilestoneStatus.PENDING)
         service.milestone_repo.get.return_value = milestone
         service.milestone_repo.get_tranches.return_value = [
-            MagicMock(tranche_number=1, status=TrancheStatus.REVERTED)
+            MagicMock(tranche_number=1, status=TrancheStatus.RELEASED)
         ]
 
         # RELEASED -> RELEASED is an idempotent no-op (does not raise)

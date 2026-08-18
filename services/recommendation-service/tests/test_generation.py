@@ -3,7 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
-import httpx
 import pytest
 
 from app.services import ContentCatalogClient, RecommendationService

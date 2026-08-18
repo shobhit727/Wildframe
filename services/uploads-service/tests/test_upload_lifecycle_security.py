@@ -23,7 +23,7 @@ import pytest
 
 from app.core.events import InMemoryEventPublisher, set_event_publisher
 from app.core.storage import StubStoragePort, clamp_ttl, set_storage, storage_key_for
-from app.models import UploadChunk, UploadSession, UploadSessionStatus
+from app.models import UploadSessionStatus
 from app.services import UploadError, UploadService
 
 ROUTES_FILE = Path(__file__).resolve().parent.parent / "app" / "api" / "uploads_routes.py"

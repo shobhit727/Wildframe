@@ -8,7 +8,6 @@ import httpx
 from app.middleware import ServiceRegistry, get_optional_user
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
-from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

@@ -6,7 +6,6 @@ keys are namespaced + PII-hashed, and every key carries a TTL so nothing
 grows indefinitely.
 """
 
-from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

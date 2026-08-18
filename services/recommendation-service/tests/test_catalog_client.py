@@ -5,7 +5,7 @@ Regression tests for the [BUG] finding that a new httpx client was created
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 import pytest
