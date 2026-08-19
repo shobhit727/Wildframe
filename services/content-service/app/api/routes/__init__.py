@@ -55,7 +55,7 @@ async def get_current_user(
     Identity is read from the verified JWT ``sub`` claim, never from a
     caller-supplied query parameter.
     """
-    user_id, _role = await _require_identity(authorization)
+    user_id, role, _arv = await _require_identity(authorization)
     return user_id
 
 
@@ -68,8 +68,15 @@ async def get_admin_identity(
     cast, publish) must never be reachable by unauthenticated or non-admin
     callers, regardless of how the network boundary is configured.
     """
-    user_id, role = await _require_identity(authorization, with_role=True)
+    user_id, role, arv = await _require_identity(authorization, with_role=True)
     if role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator privileges required",
+        )
+    if arv != settings.ADMIN_ROLE_VERSION:
+        # #81/#101: role revocation is immediate — a token minted before
+        # ADMIN_ROLE_VERSION was bumped must not retain admin access.
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrator privileges required",
@@ -79,8 +86,8 @@ async def get_admin_identity(
 
 async def _require_identity(
     authorization: str | None, *, with_role: bool = False
-) -> tuple[UUID, str | None]:
-    """Shared JWT verification returning the verified subject (and role)."""
+) -> tuple[UUID, str | None, int]:
+    """Shared JWT verification returning the verified subject (role, arv)."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -117,9 +124,10 @@ async def _require_identity(
             detail="Token missing subject claim",
         )
     user_id = UUID(sub)
+    arv = int(payload.get("arv") or 0)
     if with_role:
-        return user_id, str(payload.get("role") or "user")
-    return user_id, None
+        return user_id, str(payload.get("role") or "user"), arv
+    return user_id, None, arv
 
 
 # Genre endpoints

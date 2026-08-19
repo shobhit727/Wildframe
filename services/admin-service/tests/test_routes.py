@@ -157,6 +157,35 @@ class TestAuth:
 
         assert exc.value.status_code == 403
 
+    def test_stale_admin_role_version_rejected_403(self, monkeypatch):
+        """#81/#101: admin token minted before the role-version bump is rejected."""
+        from datetime import UTC, datetime, timedelta
+
+        import jwt as pyjwt
+        from app.core.settings import settings
+        from fastapi import HTTPException
+
+        monkeypatch.setattr(settings, "ADMIN_ROLE_VERSION", 1)
+
+        token = pyjwt.encode(
+            {
+                "sub": str(uuid4()),
+                "role": "admin",
+                "type": "access",
+                "arv": 0,
+                "exp": datetime.now(UTC) + timedelta(minutes=5),
+            },
+            settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+
+        import asyncio
+
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(get_current_admin_id(f"Bearer {token}"))
+
+        assert exc.value.status_code == 403
+
     def test_admin_role_accepted(self):
         from datetime import UTC, datetime, timedelta
 

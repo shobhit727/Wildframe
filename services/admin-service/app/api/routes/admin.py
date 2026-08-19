@@ -47,6 +47,10 @@ async def get_current_admin_id(
             # Least privilege: a token without the admin role claim (plain user
             # or API-key-scoped identity) must never inherit admin privileges.
             raise HTTPException(status_code=403, detail="Admin privileges required")
+        if int(payload.get("arv") or 0) != settings.ADMIN_ROLE_VERSION:
+            # #81/#101: role revocation is immediate — a token minted before
+            # ADMIN_ROLE_VERSION was bumped must not retain admin access.
+            raise HTTPException(status_code=403, detail="Admin privileges required")
         return str(payload.get("sub") or payload.get("user_id"))
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")

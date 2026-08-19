@@ -2,6 +2,7 @@
 
 import logging
 from typing import Annotated
+from uuid import UUID
 
 from app.core.database import get_db_session
 from app.repositories import (
@@ -106,6 +107,16 @@ async def get_current_user_id(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Access tokens minted before the last credential rotation carry an
+        # older "av" claim and are rejected immediately (#79/#99).
+        user = await UserRepository(db).get_by_id(UUID(user_id))
+        if user is None or int(payload.get("av", 0)) != user.auth_version:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return str(user_id)

@@ -65,6 +65,10 @@ def _verify_token(
         raise HTTPException(status_code=401, detail="Invalid token type")
     if require_admin and payload.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
+    if require_admin and int(payload.get("arv") or 0) != settings.ADMIN_ROLE_VERSION:
+        # #81/#101: role revocation is immediate — a token minted before
+        # ADMIN_ROLE_VERSION was bumped must not retain admin access.
+        raise HTTPException(status_code=403, detail="Admin privileges required")
     return str(payload.get("sub") or payload.get("user_id"))
 
 

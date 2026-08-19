@@ -12,6 +12,7 @@ import pyotp
 from jose.exceptions import JWTError
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -134,10 +135,17 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload"
         )
 
-    # Disabled/deleted accounts must not be able to use live access tokens.
-    if await UserRepository(db).get_by_id(user_id) is None:
+    # Disabled/deleted accounts must not be able to use live access tokens,
+    # and access tokens minted before the last credential rotation (av <
+    # the account's current auth_version) are rejected immediately (#79/#99).
+    user = await UserRepository(db).get_by_id(user_id)
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
+    if int(payload.get("av", 0)) != user.auth_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked"
         )
 
     return user_id
@@ -169,7 +177,10 @@ async def register(
         # Auto-login: generate tokens for the new user
         user_id = user.id
         email = user.email
-        access_token = TokenManager.create_access_token(user_id, email)
+        orm_user = await UserRepository(db).get_by_id(user_id)
+        access_token = TokenManager.create_access_token(
+            user_id, email, orm_user.auth_version if orm_user else 0
+        )
         refresh_token = TokenManager.create_refresh_token(user_id)
         refresh_hash = TokenManager.hash_refresh_token(refresh_token)
         expires_at = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRATION_DAYS)
@@ -265,6 +276,24 @@ async def mfa_login_verify(
     """Complete an MFA-gated login: exchange a challenge token + TOTP code
     for real access/refresh tokens."""
     ip_address = http_request.client.host if http_request.client else "unknown"
+
+    # Anti-brute-force (#77/#97): a valid challenge can be probed with
+    # guessed TOTP codes. Bound attempts per IP and per user; fail-open on
+    # Redis outage so availability is not traded for security here.
+    if not await allow(f"mfa:verify:ip:{ip_address}", max_requests=30, window_seconds=900):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests. Try again later.",
+        )
+    challenge_user_id = TokenManager.verify_mfa_challenge(request.mfa_challenge)
+    if challenge_user_id is not None and not await allow(
+        f"mfa:verify:user:{challenge_user_id}", max_requests=10, window_seconds=900
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests. Try again later.",
+        )
+
     try:
         token_response = await auth_service.complete_mfa_login(
             request.mfa_challenge, request.code, ip_address=ip_address
@@ -454,6 +483,10 @@ async def change_password(
 
         # Update password
         user.password_hash = PasswordManager.hash_password(request.new_password)
+        # Advance the account's auth version: every access token issued
+        # before this change carries an older "av" claim and is rejected
+        # at the boundary (#79/#99).
+        user.auth_version += 1
         await db.flush()
 
         # Revoke all refresh tokens
@@ -511,16 +544,40 @@ async def verify_email(
             detail="Token email does not match requested email",
         )
 
+    # Single-use enforcement (#80/#100): the token's hash is recorded in the
+    # blacklist table with the token's own expiry, atomically on success.
+    # A replayed token (or a concurrent second use) hits the unique
+    # constraint and is rejected.
+    token_hash = TokenManager.hash_token(request.token)
+    blacklist_repo = TokenBlacklistRepository(db)
+    if await blacklist_repo.is_blacklisted(token_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification token",
+        )
+
     user_repo = UserRepository(db)
     user = await user_repo.get_by_id(token_user_id)
     if not user or user.email != request.email:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    if not user.email_verified:
-        user.email_verified = True
-        user.email_verified_at = datetime.now(UTC)
+    expires_at = datetime.fromtimestamp(payload["exp"], tz=UTC)
+    try:
+        if not user.email_verified:
+            user.email_verified = True
+            user.email_verified_at = datetime.now(UTC)
+        await blacklist_repo.create(
+            token_hash=token_hash, user_id=token_user_id, expires_at=expires_at
+        )
         await db.commit()
         logger.info(f"Email verified for user: {user.email}")
+    except IntegrityError:
+        # Concurrent use won the consumption race — treat as replay.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired verification token",
+        )
 
     return {"message": "Email verified successfully"}
 

@@ -5,6 +5,10 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    # Admin role version (#81/#101): bump in lockstep with auth-service
+    # ADMIN_EMAILS changes so already-issued admin tokens (arv < this)
+    # are rejected at this service's admin boundary.
+    ADMIN_ROLE_VERSION: int = 0
     """Application settings.
 
     Twelve-factor: every value has a safe dev default and is overridable via

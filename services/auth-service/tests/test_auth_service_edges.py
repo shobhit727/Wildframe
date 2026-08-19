@@ -2,7 +2,7 @@
 
 from datetime import UTC, timedelta
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from app.schemas import UserLoginRequest, UserRegisterRequest
@@ -51,6 +51,7 @@ def make_user(**overrides):
     u.email_verification_code = None
     u.email_verification_code_expires_at = None
     u.mfa_enabled = False
+    u.auth_version = 0
     u.mfa_secret = None
     u.backup_codes = None
     u.role = "user"
@@ -61,7 +62,12 @@ def make_user(**overrides):
 
 class TestRegisterBranches:
     async def test_duplicate_email_409(self, service, repos):
-        repos["user_repo"].get_by_email.return_value = MagicMock()
+        mock_user = MagicMock()
+        mock_user.id = UUID(int=1)
+        mock_user.email = "test@example.com"
+        mock_user.auth_version = 0
+        mock_user.mfa_enabled = False
+        repos["user_repo"].get_by_email.return_value = mock_user
 
         with pytest.raises(HTTPException) as exc:
             await service.register(UserRegisterRequest(email="a@b.com", password="PasSword123!"))
@@ -286,6 +292,7 @@ def _user():
     u.first_name = "First"
     u.last_name = "Last"
     u.role = "user"
+    u.auth_version = 0
     u.mfa_enabled = False
     return u
 

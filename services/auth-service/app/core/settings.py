@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     # Admin roles — comma-separated emails whose tokens/me carry role "admin".
     ADMIN_EMAILS: str = ""
 
+    # Admin role version (#81/#101): bump this when ADMIN_EMAILS changes so
+    # access tokens minted before the change (arv < this value) are rejected
+    # by privileged endpoints instead of outliving the revocation.
+    ADMIN_ROLE_VERSION: int = 0
+
     # Kafka Configuration
     KAFKA_BOOTSTRAP_SERVERS: str | None = None
     KAFKA_GROUP_ID: str = "auth-service"

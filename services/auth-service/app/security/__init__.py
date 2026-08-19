@@ -89,12 +89,15 @@ class TokenManager:
     """Manages JWT token generation and validation."""
 
     @staticmethod
-    def create_access_token(user_id: UUID, email: str) -> str:
+    def create_access_token(user_id: UUID, email: str, auth_version: int = 0) -> str:
         """Create JWT access token.
 
         Args:
             user_id: User ID
             email: User email
+            auth_version: User's current auth version (``av`` claim); tokens
+                minted with an older version are rejected by verifiers once
+                the account's version has advanced (#79/#99).
 
         Returns:
             str: JWT access token
@@ -108,6 +111,8 @@ class TokenManager:
             "email": email,
             "role": role_for_email(email),
             "type": "access",
+            "av": auth_version,
+            "arv": settings.ADMIN_ROLE_VERSION,
             "iat": now,
             "exp": expires_at,
             "iss": settings.JWT_ISSUER,
@@ -289,7 +294,7 @@ class TokenManager:
     # Convenience wrappers for service layer compatibility
     def create_access_token_for_user(self, user: User) -> str:
         """Create access token from a user object (service-friendly)."""
-        return TokenManager.create_access_token(user.id, user.email)
+        return TokenManager.create_access_token(user.id, user.email, user.auth_version)
 
     def create_refresh_token_for_user(self, user: User) -> tuple[str, str, datetime]:
         """Create refresh token and return token, hash, and expires_at."""

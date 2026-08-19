@@ -171,7 +171,9 @@ class AuthService:
             raise MfaChallengeRequired(challenge)
 
         # Generate tokens
-        access_token = self.token_manager.create_access_token(user.id, user.email)
+        access_token = self.token_manager.create_access_token(
+            user.id, user.email, user.auth_version
+        )
         (
             refresh_token_str,
             refresh_token_hash,
@@ -260,7 +262,9 @@ class AuthService:
                 )
 
         # MFA passed — issue tokens (mirrors the tail of login()).
-        access_token = self.token_manager.create_access_token(user.id, user.email)
+        access_token = self.token_manager.create_access_token(
+            user.id, user.email, user.auth_version
+        )
         (
             refresh_token_str,
             refresh_token_hash,
@@ -317,7 +321,9 @@ class AuthService:
         await self.token_repo.commit()
 
         # Create new tokens
-        access_token = self.token_manager.create_access_token(user.id, user.email)
+        access_token = self.token_manager.create_access_token(
+            user.id, user.email, user.auth_version
+        )
         (
             new_refresh_token,
             new_token_hash,
@@ -389,8 +395,12 @@ class AuthService:
         # Hash new password
         new_hash = self.password_manager.hash_password(new_password)
 
-        # Update password
-        await self.user_repo.update(user_id, password_hash=new_hash)
+        # Update password and advance the account's auth version: every
+        # access token issued before this change carries an older "av"
+        # claim and is rejected at the boundary (#79/#99).
+        await self.user_repo.update(
+            user_id, password_hash=new_hash, auth_version=user.auth_version + 1
+        )
         await self.user_repo.commit()
 
         # Security policy: a password change invalidates all existing

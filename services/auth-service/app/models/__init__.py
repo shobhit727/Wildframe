@@ -127,6 +127,17 @@ class User(Base, BaseModel):
         nullable=True,
     )
 
+    # Session version (#79/#99): bumped on every credential rotation
+    # (password change). Access tokens carry this value as the "av" claim;
+    # token verification rejects any token whose "av" is older than the
+    # stored value, so a password change immediately invalidates every
+    # already-issued access token.
+    auth_version: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+
     # MFA
     mfa_enabled: Mapped[bool] = mapped_column(
         Boolean,

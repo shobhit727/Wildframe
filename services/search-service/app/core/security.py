@@ -19,10 +19,21 @@ class Identity:
 
     user_id: UUID
     role: str = "user"
+    arv: int = 0
 
     @property
     def is_admin(self) -> bool:
         return self.role == "admin"
+
+    @property
+    def role_current(self) -> bool:
+        """True when the token's admin role version matches the live config.
+
+        #81/#101: admin role revocation is immediate — tokens minted before
+        ADMIN_ROLE_VERSION was bumped carry an older "arv" and must not
+        grant privileged access.
+        """
+        return self.arv == settings.ADMIN_ROLE_VERSION
 
 
 def verify_token(request: Request) -> Identity | None:
@@ -47,7 +58,11 @@ def verify_token(request: Request) -> Identity | None:
         raw_user_id = payload.get("user_id") or payload.get("sub")
         if not raw_user_id:
             return None
-        return Identity(user_id=UUID(str(raw_user_id)), role=str(payload.get("role") or "user"))
+        return Identity(
+            user_id=UUID(str(raw_user_id)),
+            role=str(payload.get("role") or "user"),
+            arv=int(payload.get("arv") or 0),
+        )
     except Exception:  # noqa: BLE001 - invalid/expired/malformed tokens are anonymous
         return None
 
@@ -74,6 +89,10 @@ async def get_admin_identity(request: Request) -> Identity:
     identity = await get_required_identity(request)
     if not identity.is_admin:
         raise HTTPException(status_code=403, detail="Administrator privileges required")
+    if not identity.role_current:
+        raise HTTPException(
+            status_code=403, detail="Administrator privileges required (role version changed)"
+        )
     return identity
 
 

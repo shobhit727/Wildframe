@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # Content service (catalog backfill for indexing)
     CONTENT_SERVICE_URL: str = "http://content-service:8000"
 
+    # Admin role version (#81/#101): bump in lockstep with ADMIN_EMAILS
+    # changes so already-issued admin tokens (arv < this) are rejected.
+    ADMIN_ROLE_VERSION: int = 0
+
     # Logging
     LOG_LEVEL: str = "INFO"
 

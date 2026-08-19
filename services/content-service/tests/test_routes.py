@@ -227,7 +227,7 @@ class TestWriteAuthz:
         ("post", "/api/v1/content/{cid}/publish", {"status": "published"}),
     ]
 
-    def _token(self, role: str | None) -> str:
+    def _token(self, role: str | None, arv: int = 0) -> str:
         import time
 
         import jwt
@@ -240,6 +240,7 @@ class TestWriteAuthz:
             "aud": settings.JWT_AUDIENCE,
             "iat": now,
             "exp": now + 900,
+            "arv": arv,
         }
         if role is not None:
             payload["role"] = role
@@ -279,6 +280,23 @@ class TestWriteAuthz:
             app.dependency_overrides[get_admin_identity] = lambda: str(uuid4())
 
         assert response.status_code == 201
+
+    def test_stale_admin_token_rejected_after_role_version_bump(self, client, monkeypatch):
+        """#81/#101: a token minted before ADMIN_ROLE_VERSION was bumped
+        must not retain admin access."""
+        from app.core.settings import settings
+
+        monkeypatch.setattr(settings, "ADMIN_ROLE_VERSION", 1)
+        app.dependency_overrides.pop(get_admin_identity, None)
+        try:
+            response = client.post(
+                "/api/v1/genres",
+                json={"name": "SciFi", "slug": "scifi"},
+                headers={"Authorization": f"Bearer {self._token('admin', arv=0)}"},
+            )
+        finally:
+            app.dependency_overrides[get_admin_identity] = lambda: str(uuid4())
+        assert response.status_code == 403
 
     def test_ratings_require_any_authenticated_user_not_admin(
         self, client, fake_service, content_id

@@ -204,6 +204,43 @@ class TestSearchEndpoints:
         assert response.status_code == 401
         service.reindex_catalog.assert_not_awaited()
 
+    def test_reindex_stale_admin_role_version_returns_403(self, client, service, monkeypatch):
+        """#81/#101: an admin token from before the role-version bump is rejected.
+
+        The real get_admin_identity runs here (no patch): the stale arv must
+        stop the request before any service call.
+        """
+        from app.core.settings import settings
+
+        monkeypatch.setattr(settings, "ADMIN_ROLE_VERSION", 1)
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+
+        import time
+        from uuid import uuid4
+
+        import jwt as pyjwt
+
+        now = int(time.time())
+        token = pyjwt.encode(
+            {
+                "sub": str(uuid4()),
+                "type": "access",
+                "aud": settings.JWT_AUDIENCE,
+                "role": "admin",
+                "arv": 0,
+                "iat": now,
+                "exp": now + 900,
+            },
+            settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+        response = client.post(
+            "/api/v1/search/reindex", headers={"Authorization": f"Bearer {token}"}
+        )
+
+        assert response.status_code == 403
+        service.reindex_catalog.assert_not_awaited()
+
     def test_reindex_non_admin_returns_403(self, client, service):
         app.dependency_overrides[get_search_service] = override_get_search_service(service)
 

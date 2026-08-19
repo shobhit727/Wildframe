@@ -100,6 +100,19 @@ tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
 #62, #63, #168, #214, #217, #218, #221, #222, #223, #225, #227, #228, #536, and #41 (open items: #45 DRM held as backlog).
 
+Newest additions:
+
+- **Credential-rotation session invalidation (#77, #79, #80, #81, #97, #98,
+  #99, #100, #101)** — users gain an `auth_version` column; access tokens
+  carry an `av` claim and are rejected at the auth-service boundary the
+  moment a password changes (stale token 401 live-verified, fresh token
+  works). Email-verification tokens are consumed exactly once (atomic
+  blacklist insert, replay → 400, concurrent use single-success). MFA
+  challenge exchange is rate-limited per IP and per user. Admin tokens carry
+  an `arv` role-version claim that content/search/moderation/admin services
+  compare against their own `ADMIN_ROLE_VERSION` — revoking an admin (remove
+  from `ADMIN_EMAILS` + bump the version) is immediate, not at token expiry.
+
 Highlights:
 
 - **Cross-service JWT audience verification** — auth-service tokens carry

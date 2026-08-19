@@ -225,6 +225,16 @@ class TestMfaEdgeCases:
         assert response.status_code == 200
         assert response.json()["message"] == "MFA is not enabled"
 
+    def test_mfa_login_verify_rate_limited_returns_429(self, client):
+        """#77/#97: TOTP brute-force on the challenge exchange is throttled."""
+        with patch("app.api.routes.auth.allow", new=AsyncMock(return_value=False)):
+            response = client.post(
+                "/api/v1/auth/mfa/login-verify",
+                json={"mfa_challenge": "any.challenge.token", "code": "123456"},
+            )
+
+        assert response.status_code == 429
+
 
 class TestChangePasswordEdgeCases:
     def test_change_password_wrong_current_password_returns_401(self, client, registered):
