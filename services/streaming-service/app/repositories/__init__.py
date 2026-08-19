@@ -96,16 +96,26 @@ class PlaybackSessionRepository(BaseRepository):
             await self.flush()
         return session
 
-    async def mark_completed(self, session_id: UUID) -> PlaybackSession | None:
-        """Mark session as completed."""
-        from datetime import datetime
-
-        return await self.update(
-            session_id,
-            status=PlaybackSessionStatus.COMPLETED,
-            ended_at=datetime.now(UTC).replace(tzinfo=None),
         )
 
+    async def count_active_sessions_locked(self, user_id: UUID) -> int:
+        """Count active sessions for user with row-level lock (SELECT FOR UPDATE).
+        
+        Used for atomic concurrency enforcement (#281, #490).
+        """
+        from sqlalchemy import func
+        
+        result = await self.session.execute(
+            select(func.count(PlaybackSession.id)).where(
+                and_(
+                    PlaybackSession.user_id == user_id,
+                    PlaybackSession.status == PlaybackSessionStatus.ACTIVE,
+                )
+            ).with_for_update()
+        )
+        return result.scalar_one()
+
+    async def mark_completed(self, session_id: UUID) -> PlaybackSession | None:
 
 class VideoManifestRepository(BaseRepository):
     """Repository for video manifest operations."""

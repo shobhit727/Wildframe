@@ -37,14 +37,12 @@ class DatabaseManager:
             # Use NullPool for development, QueuePool for production
             pool_class = NullPool if settings.ENVIRONMENT == "development" else QueuePool
 
-            pool_kwargs: dict = {}
-            if settings.ENVIRONMENT != "development":
-                pool_kwargs = {
-                    "pool_size": settings.DATABASE_POOL_SIZE,
-                    "max_overflow": settings.DATABASE_MAX_OVERFLOW,
-                    "pool_timeout": settings.DATABASE_POOL_TIMEOUT,
-                    "pool_recycle": settings.DATABASE_POOL_RECYCLE,
-                }
+            pool_kwargs: dict = {
+                "pool_size": 5,
+                "max_overflow": 5,
+                "pool_timeout": 30,
+                "pool_recycle": 3600,
+            }
 
             database_url = settings.DATABASE_URL
             assert database_url is not None, "DATABASE_URL is not configured"
@@ -53,9 +51,10 @@ class DatabaseManager:
                 echo=settings.DEBUG,
                 poolclass=pool_class,
                 **pool_kwargs,
+                pool_pre_ping=True,
                 connect_args={
                     "timeout": 10,
-                    "command_timeout": 60,
+                    "command_timeout": 30,
                 },
             )
         return cls._engine

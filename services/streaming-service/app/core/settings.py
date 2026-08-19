@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
     LOG_LEVEL: str = "INFO"
+    # Concurrency limits (#281, #490)
+    MAX_ACTIVE_SESSIONS: int = 5
+    # Signed playback URLs (#489, #491)
+    PLAYBACK_URL_SIGNING_SECRET: str = "dev-playback-signing-secret-change-in-production"
+    PLAYBACK_URL_TTL_SECONDS: int = 3600
+    # Entitlement check (#587)
+    ENTITLEMENT_CHECK_ENABLED: bool = True
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

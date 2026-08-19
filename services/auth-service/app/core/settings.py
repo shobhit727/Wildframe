@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     JWT_EXPIRATION_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRATION_DAYS: int = 7
     TOKEN_BLACKLIST_ENABLED: bool = True
+    # JWT Key Set (#138): JSON list of {"kid": "...", "secret": "..."}
+    # Current key is first; previous keys accepted for verification overlap.
+    # Example: '[{"kid": "k1", "secret": "..."}, {"kid": "k0", "secret": "..."}]'
+    JWT_KEYS: str | list[dict[str, str]] | None = None
 
     # Admin roles — comma-separated emails whose tokens/me carry role "admin".
     ADMIN_EMAILS: str = ""
@@ -72,7 +76,7 @@ class Settings(BaseSettings):
     KAFKA_TOPIC_TOKEN_REVOKED: str = "token.revoked"
 
     # Security Configuration
-    PASSWORD_MIN_LENGTH: int = 8
+    PASSWORD_MIN_LENGTH: int = 12
     PASSWORD_REQUIRE_UPPERCASE: bool = True
     PASSWORD_REQUIRE_DIGITS: bool = True
     PASSWORD_REQUIRE_SPECIAL: bool = True
@@ -84,6 +88,47 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT_WINDOW: int = 900  # 15 minutes
     REGISTRATION_RATE_LIMIT_ATTEMPTS: int = 3
     REGISTRATION_RATE_LIMIT_WINDOW: int = 3600  # 1 hour
+    # MFA rate limits (#241)
+    MFA_SETUP_RATE_LIMIT_ATTEMPTS: int = 5
+    MFA_SETUP_RATE_LIMIT_WINDOW: int = 3600
+    MFA_VERIFY_RATE_LIMIT_ATTEMPTS: int = 10
+    MFA_VERIFY_RATE_LIMIT_WINDOW: int = 900
+    MFA_DISABLE_RATE_LIMIT_ATTEMPTS: int = 5
+    MFA_DISABLE_RATE_LIMIT_WINDOW: int = 3600
+    MFA_LOGIN_VERIFY_RATE_LIMIT_ATTEMPTS: int = 10
+    MFA_LOGIN_VERIFY_RATE_LIMIT_WINDOW: int = 900
+    # Email verification rate limit (#69/#140)
+    EMAIL_VERIFY_RATE_LIMIT_ATTEMPTS: int = 10
+    EMAIL_VERIFY_RATE_LIMIT_WINDOW: int = 3600
+
+    # CORS Configuration
+    CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001"]
+    CORS_ALLOW_CREDENTIALS: bool = True
+
+    # Observability Configuration
+    LOG_LEVEL: str = "INFO"
+    JAEGER_ENABLED: bool = False
+    JAEGER_AGENT_HOST: str = "localhost"
+    JAEGER_AGENT_PORT: int = 6831
+    JAEGER_SERVICE_NAME: str = "wildframe-auth"
+
+    # Email Configuration
+    EMAIL_VERIFICATION_ENABLED: bool = True
+    EMAIL_VERIFICATION_EXPIRATION_HOURS: int = 24
+
+    # MFA Configuration
+    MFA_ENABLED: bool = True
+    MFA_ISSUER_NAME: str = "Wildframe"
+    MFA_CHALLENGE_EXPIRATION_MINUTES: int = 5
+    MFA_BACKUP_CODES_COUNT: int = 10
+    MFA_BACKUP_CODE_LENGTH: int = 8
+    # Encryption key for at-rest TOTP secrets. Empty = derive from
+    # JWT_SECRET_KEY (backward compatible with pre-keyring deployments).
+    # MFA_ENCRYPTION_KEY_PREVIOUS lists retired keys so secrets encrypted
+    # under an older key stay decryptable through ordinary key rotation
+    # (a JWT secret rotation must not strand MFA enrollments).
+    MFA_ENCRYPTION_KEY: str = ""
+    MFA_ENCRYPTION_KEY_PREVIOUS: list[str] = []
 
     # CORS Configuration
     CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001"]

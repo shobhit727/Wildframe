@@ -192,7 +192,13 @@ class APIClient {
 
     this.client.interceptors.request.use((config) => {
       const token = getAccessToken();
-      if (token) config.headers.Authorization = `Bearer ${token}`;
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+        // #526: never let authenticated responses be cached (browser or
+        // intermediate caches). Also prevents a shared cache from serving
+        // one user's data to another via a cross-origin GET.
+        config.headers['Cache-Control'] = 'no-store';
+      }
       return config;
     });
 

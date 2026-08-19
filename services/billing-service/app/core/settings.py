@@ -29,7 +29,14 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_AUDIENCE: str = "wildframe-api"
-    JWT_EXPIRATION_MINUTES: int = 15
+    JWT_ISSUER: str = "wildframe-auth"
+
+    # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
+    # connections per service instance to prevent DB exhaustion.
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 5
+
+     # Logging
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
@@ -95,7 +102,24 @@ class Settings(BaseSettings):
             if self.STRIPE_WEBHOOK_SECRET.startswith("whsec_default"):
                 raise ValueError("STRIPE_WEBHOOK_SECRET must be set in production")
             if self.JWT_SECRET_KEY == "your-secret-key-change-in-production":
-                raise ValueError("JWT_SECRET_KEY must be set in production")
+                raise ValueError(
+                    "JWT_SECRET_KEY must be set to a strong random value in production. "
+                    "Refusing to start with default insecure secret."
+                )
+        return self
+
+    @model_validator(mode="after")
+    def validate_cors_credentials(self) -> "Settings":
+        """Reject wildcard CORS with credentials in production (#68)."""
+        if (
+            self.ENVIRONMENT == "production"
+            and self.CORS_ALLOWED_ORIGINS == ["*"]
+            and self.CORS_ALLOW_CREDENTIALS
+        ):
+            raise ValueError(
+                "CORS_ALLOWED_ORIGINS cannot be ['*'] with CORS_ALLOW_CREDENTIALS=True in production. "
+                "Use explicit origin list or disable credentials."
+            )
         return self
 
     @model_validator(mode="after")
@@ -103,6 +127,13 @@ class Settings(BaseSettings):
         """Validate DEFAULT_CURRENCY against ISO-4217 allowlist (#477/#478)."""
         validate_currency(self.DEFAULT_CURRENCY)
         return self
+
+    # Issue #319: Per-provider daily email quota (for notification-service integration)
+    EMAIL_PROVIDER_DAILY_QUOTA: dict[str, int] = {}
+    # Issue #488/#545: Per-creator max concurrent jobs
+    PIPELINE_MAX_JOBS_PER_CREATOR: int = 2
+    # Issue #495: CloudFront distribution ID for CDN invalidation
+    CLOUDFRONT_DISTRIBUTION_ID: str | None = None
 
     class Config:
         env_file = ".env"

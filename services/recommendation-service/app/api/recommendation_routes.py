@@ -63,8 +63,8 @@ async def require_self(
     if path_user_id is None or str(path_user_id) == str(jwt_user_id):
         return jwt_user_id
     raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="You can only access your own data",
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Not found",
     )
 
 

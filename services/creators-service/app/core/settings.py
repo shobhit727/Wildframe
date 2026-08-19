@@ -1,5 +1,6 @@
 """Configuration settings for Creators Service."""
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,18 +17,31 @@ class Settings(BaseSettings):
     # Security
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
-    JWT_AUDIENCE: str = "wildframe-api"
-    JWT_EXPIRATION_MINUTES: int = 15
+    JWT_ISSUER: str = "wildframe-auth"
 
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379"
-
-    # Logging
-    LOG_LEVEL: str = "INFO"
+    # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
+    # connections per service instance to prevent DB exhaustion.
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 5
 
     # CORS
     CORS_ALLOWED_ORIGINS: list[str] = ["*"]
     CORS_ALLOW_CREDENTIALS: bool = True
+
+    @model_validator(mode="after")
+    def validate_cors_credentials(self) -> "Settings":
+        """Reject wildcard CORS with credentials in production (#68)."""
+        if (
+            self.ENVIRONMENT == "production"
+            and self.CORS_ALLOWED_ORIGINS == ["*"]
+            and self.CORS_ALLOW_CREDENTIALS
+        ):
+            raise ValueError(
+                "CORS_ALLOWED_ORIGINS cannot be ['*'] with CORS_ALLOW_CREDENTIALS=True in production. "
+                "Use explicit origin list or disable credentials."
+            )
+        return self
+
 
     # Creator Pool
     # Fraction of net revenue that flows into the Creator Pool each cycle.

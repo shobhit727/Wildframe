@@ -479,12 +479,24 @@ async def verify_email(
     request: VerifyEmailRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Verify email via a signed ownership token.
+    """Verify email via a signed ownership token (single-use #69/#140).
 
     The token is a JWT of type ``email_verification`` bound to the user and
     email. It is only issued after account creation or an explicit resend,
     so verifying proves possession of the inbox link/address it was sent to.
     """
+    # Rate limit on verification attempts (#69/#140)
+    client_ip = "unknown"  # Could extract from request if needed
+    if not await allow(
+        f"verify:ip:{client_ip}",
+        max_requests=settings.EMAIL_VERIFY_RATE_LIMIT_ATTEMPTS,
+        window_seconds=settings.EMAIL_VERIFY_RATE_LIMIT_WINDOW,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many verification attempts. Try again later.",
+        )
+
     try:
         payload = TokenManager.verify_token(request.token, token_type="email_verification")
     except JWTError:
@@ -500,6 +512,7 @@ async def verify_email(
 
     try:
         token_user_id = UUID(payload.get("user_id") or payload.get("sub"))
+        token_jti = payload.get("jti")
     except (ValueError, KeyError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification token"
@@ -515,6 +528,15 @@ async def verify_email(
     user = await user_repo.get_by_id(token_user_id)
     if not user or user.email != request.email:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Single-use: atomically consume the JTI (#69/#140)
+    if token_jti:
+        consumed = await user_repo.consume_email_verification_jti(token_user_id, token_jti)
+        if not consumed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or already used verification token",
+            )
 
     if not user.email_verified:
         user.email_verified = True
@@ -562,7 +584,18 @@ async def resend_verification(
         logger.info("Resend-verification requested for %s (no email issued)", email)
         return {"message": _ENUMERATION_SAFE_MESSAGE}
 
+    # Issue token and store JTI hash for single-use consumption (#69/#140)
     token = TokenManager.create_email_verification_token(user.id, user.email)
+    # Extract JTI from token and store hash
+    try:
+        payload = TokenManager.verify_token(token, token_type="email_verification")
+        if payload and payload.get("jti"):
+            jti_hash = hashlib.sha256(payload["jti"].encode()).hexdigest()
+            user.email_verification_token_jti = jti_hash
+            await db.flush()
+    except JWTError:
+        pass
+
     logger.info("Email verification token issued for %s", user.email)
 
     response: dict = {"message": _ENUMERATION_SAFE_MESSAGE}

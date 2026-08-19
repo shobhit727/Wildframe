@@ -112,7 +112,7 @@ async def get_unread_notifications(
     """Get unread notifications belonging to the authenticated user."""
     if user_id != current_user:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="You can only access your own data"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found"
         )
 
     notifications = await service.get_unread(user_id, limit=limit, offset=offset)
@@ -144,7 +144,7 @@ async def get_unread_count(
     """Get the unread notification count for the authenticated user."""
     if user_id != current_user:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="You can only access your own data"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found"
         )
     return {"count": await service.get_unread_count(user_id)}
 

@@ -45,6 +45,38 @@ class BaseRepository:
         """Flush pending changes."""
         await self.session.flush()
 
+    def _apply_scope(self, stmt, user_id: UUID, content_id: UUID | None = None):
+        """Apply ownership scope filter to query (#434).
+        
+        Args:
+            stmt: SQLAlchemy select statement
+            user_id: Current user ID
+            content_id: Optional specific content ID to filter by
+            
+        Returns:
+            Modified statement with ownership filter
+        """
+        from app.models import Content
+        if content_id:
+            stmt = stmt.where(and_(Content.id == content_id, Content.creator_id == user_id))
+        else:
+            stmt = stmt.where(Content.creator_id == user_id)
+        return stmt
+
+    def _not_found_or_forbidden(self, content: Content | None, user_id: UUID) -> tuple[Content | None, int | None]:
+        """Check if content exists and user has access (#435).
+        
+        Returns:
+            Tuple of (content, status_code) where status_code is:
+            - None if content exists and user owns it
+            - 404 if content doesn't exist
+            - 403 if content exists but user doesn't own it
+        """
+        if content is None:
+            return None, 404
+        if content.creator_id and content.creator_id != user_id:
+            return None, 403
+        return content, None
 
 class GenreRepository(BaseRepository):
     """Repository for genre operations."""
@@ -159,28 +191,9 @@ class ContentRepository(BaseRepository):
             title=title,
             slug=slug,
             description=description,
-            content_type=content_type,
-            release_date=release_date,
-            duration_minutes=duration_minutes,
-            original_language=original_language,
-            country=country,
-            poster_url=poster_url,
-            backdrop_url=backdrop_url,
-            trailer_url=trailer_url,
-            imdb_rating=imdb_rating,
-            content_rating=content_rating,
-            is_premium=is_premium,
-            can_download=can_download,
-            can_stream=can_stream,
-            genres=genres or [],
-        )
-        self.session.add(content)
-        await self.flush()
-        return content
-
-    async def get_by_id(self, content_id: UUID) -> Content | None:
+    async def get_by_id(self, content_id: UUID, include_deleted: bool = False) -> Content | None:
         """Get content by ID with all relationships."""
-        result = await self.session.execute(
+        stmt = (
             select(Content)
             .where(Content.id == content_id)
             .options(
@@ -190,18 +203,24 @@ class ContentRepository(BaseRepository):
                 selectinload(Content.episodes),
             )
         )
+        if not include_deleted:
+            stmt = stmt.where(Content.deleted_at.is_(None))
+        result = await self.session.execute(stmt)
         return result.scalars().unique().first()
 
-    async def get_by_slug(self, slug: str) -> Content | None:
+    async def get_by_slug(self, slug: str, include_deleted: bool = False) -> Content | None:
         """Get content by slug."""
-        result = await self.session.execute(select(Content).where(Content.slug == slug))
+        stmt = select(Content).where(Content.slug == slug)
+        if not include_deleted:
+            stmt = stmt.where(Content.deleted_at.is_(None))
+        result = await self.session.execute(stmt)
         return result.scalars().first()
 
     async def get_published(self) -> Sequence[Content]:
         """Get all published content."""
         result = await self.session.execute(
             select(Content)
-            .where(Content.status == ContentStatus.PUBLISHED)
+            .where(and_(Content.status == ContentStatus.PUBLISHED, Content.deleted_at.is_(None)))
             .options(selectinload(Content.genres), selectinload(Content.cast_members))
         )
         return result.scalars().unique().all()
@@ -215,7 +234,7 @@ class ContentRepository(BaseRepository):
         genre_id: UUID | None = None,
     ) -> Sequence[Content]:
         """Get paginated content with optional type/status/genre filters."""
-        stmt = select(Content).options(selectinload(Content.genres))
+        stmt = select(Content).options(selectinload(Content.genres)).where(Content.deleted_at.is_(None))
 
         conditions = []
         if content_type:
@@ -243,19 +262,19 @@ class ContentRepository(BaseRepository):
             select(Content)
             .where(
                 and_(
-                    Content.content_type == content_type, Content.status == ContentStatus.PUBLISHED
+                    Content.content_type == content_type,
+                    Content.status == ContentStatus.PUBLISHED,
+                    Content.deleted_at.is_(None),
                 )
             )
             .options(selectinload(Content.genres))
         )
-        return result.scalars().unique().all()
-
     async def get_by_genre(self, genre_id: UUID) -> Sequence[Content]:
         """Get content by genre."""
         result = await self.session.execute(
             select(Content)
             .join(Content.genres)
-            .where(and_(Genre.id == genre_id, Content.status == ContentStatus.PUBLISHED))
+            .where(and_(Genre.id == genre_id, Content.status == ContentStatus.PUBLISHED, Content.deleted_at.is_(None)))
             .options(selectinload(Content.genres))
         )
         return result.scalars().unique().all()
@@ -267,6 +286,7 @@ class ContentRepository(BaseRepository):
             .where(
                 and_(
                     Content.status == ContentStatus.PUBLISHED,
+                    Content.deleted_at.is_(None),
                     or_(Content.title.ilike(f"%{query}%"), Content.description.ilike(f"%{query}%")),
                 )
             )
@@ -279,7 +299,7 @@ class ContentRepository(BaseRepository):
         result = await self.session.execute(
             select(Content)
             .options(selectinload(Content.genres))
-            .where(Content.status == ContentStatus.PUBLISHED)
+            .where(and_(Content.status == ContentStatus.PUBLISHED, Content.deleted_at.is_(None)))
             .order_by(Content.audience_score.desc(), Content.total_votes.desc(), Content.id.desc())
             .limit(limit)
         )
@@ -289,7 +309,7 @@ class ContentRepository(BaseRepository):
         """Get premium content."""
         result = await self.session.execute(
             select(Content).where(
-                and_(Content.is_premium == True, Content.status == ContentStatus.PUBLISHED)
+                and_(Content.is_premium == True, Content.status == ContentStatus.PUBLISHED, Content.deleted_at.is_(None))
             )
         )
         return list(result.scalars().all())

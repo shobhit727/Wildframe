@@ -31,6 +31,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy import (
     Enum as SQLEnum,
@@ -156,8 +157,10 @@ class ContentFlag(Base):
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
-
-    __table_args__ = (Index("idx_content_flag_status_created", "status", "created_at"),)
+    __table_args__ = (
+        Index("idx_content_flag_status_created", "status", "created_at"),
+        UniqueConstraint("content_id", "reported_by", name="uq_content_flag_content_reporter"),
+    )
 
 
 class ModerationDecision(Base):
@@ -180,8 +183,10 @@ class ModerationDecision(Base):
         default=lambda: datetime.now(UTC),
         nullable=False,
     )
-
-    __table_args__ = (Index("idx_decision_flag_created", "flag_id", "created_at"),)
+    __table_args__ = (
+        Index("idx_decision_flag_created", "flag_id", "created_at"),
+        UniqueConstraint("flag_id", name="uq_moderation_decision_flag"),
+    )
 
 
 class CreatorStrike(Base):
@@ -190,7 +195,12 @@ class CreatorStrike(Base):
     __tablename__ = "creator_strikes"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    creator_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("creator_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     strike_reason: Mapped[StrikeReason] = mapped_column(SQLEnum(StrikeReason), nullable=False)
     related_flag_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -204,5 +214,6 @@ class CreatorStrike(Base):
         default=lambda: datetime.now(UTC),
         nullable=False,
     )
+    version: Mapped[int] = mapped_column(default=1, nullable=False)
 
     __table_args__ = (Index("idx_strike_creator_active", "creator_id", "is_active"),)

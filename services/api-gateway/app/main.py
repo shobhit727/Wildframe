@@ -5,13 +5,21 @@ import logging
 from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from wildframe_observability.wire import wire_observability
 
 from app.api.gateway_routes import router as gateway_router
 from app.core.settings import settings
-from app.middleware import AuthenticationMiddleware, RateLimiter
+from app.middleware import (
+    AuthenticationMiddleware,
+    BodyLimitMiddleware,
+    HeaderSanitizerMiddleware,
+    RateLimiter,
+    install_header_redaction,
+    shared_client_lifespan,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +27,20 @@ logger = logging.getLogger(__name__)
 auth_middleware = None
 rate_limiter = None
 
+# Graceful shutdown state (#426)
+_shutdown_event: asyncio.Event | None = None
+_in_flight_requests = 0
+_in_flight_lock = asyncio.Lock()
+_MAX_DRAIN_SECONDS = 30  # bounded drain timeout
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage FastAPI application lifespan."""
-    global auth_middleware, rate_limiter
+    global auth_middleware, rate_limiter, _shutdown_event, _in_flight_requests
     # Startup
+    _shutdown_event = asyncio.Event()
+    _in_flight_requests = 0
     app.state.shutting_down = False
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
@@ -34,20 +50,45 @@ async def lifespan(app: FastAPI):
     app.state.redis_client = redis_client
     rate_limiter = RateLimiter(redis_client)
 
+    # Start shared AsyncClient lifespan
+    client_cm = shared_client_lifespan()
+    await client_cm.__aenter__()
+    app.state._shared_client_cm = client_cm
+
     logger.info("API Gateway started successfully")
 
     # Apply the header-redaction + log-injection filter to whatever logger
     # handlers the observability SDK (or basicConfig) installed. Must run
     # after wire_observability in create_app; idempotent so the lifespan
     # invocation covers handlers added later by uvicorn.
-    from app.middleware import install_header_redaction
-
     install_header_redaction()
 
     yield
 
-    # Shutdown
+    # Shutdown (#426): stop accepting new requests, drain in-flight, close client
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
+    app.state.shutting_down = True
+    _shutdown_event.set()  # signal no new requests
+
+    # Wait for in-flight requests to complete (bounded)
+    try:
+        async with asyncio.timeout(_MAX_DRAIN_SECONDS):
+            while True:
+                async with _in_flight_lock:
+                    if _in_flight_requests == 0:
+                        break
+                await asyncio.sleep(0.1)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Shutdown drain timeout after %ds; %d requests still in flight",
+            _MAX_DRAIN_SECONDS,
+            _in_flight_requests,
+        )
+
+    # Close shared client
+    if hasattr(app.state, "_shared_client_cm"):
+        await app.state._shared_client_cm.__aexit__(None, None, None)
+
     await redis_client.close()
     logger.info("Shutdown complete")
 
@@ -60,6 +101,18 @@ def create_app() -> FastAPI:
         description="API Gateway Service - Request routing, authentication, rate limiting",
         lifespan=lifespan,
     )
+
+    # Middleware order (last added = first executed):
+    # 1. BodyLimitMiddleware (innermost - enforces limits first)
+    # 2. HeaderSanitizerMiddleware (strips/rewrites headers)
+    # 3. AuthenticationMiddleware (checks auth on protected routes)
+    # 4. RateLimiter (checks rate limits)
+    # 5. CORSMiddleware
+    # 6. Observability (added by wire_observability)
+
+    app.add_middleware(BodyLimitMiddleware)
+    app.add_middleware(HeaderSanitizerMiddleware)
+    app.add_middleware(AuthenticationMiddleware, jwt_secret=settings.JWT_SECRET_KEY)
 
     # CORS middleware — credentials require explicit origins, never "*".
     app.add_middleware(
@@ -77,11 +130,7 @@ def create_app() -> FastAPI:
     # body carries no connection strings or credentials.
     @app.get("/health")
     async def health() -> dict:
-        return {
-            "status": "healthy",
-            "service": "api-gateway",
-            "version": settings.SERVICE_VERSION,
-        }
+        return {"status": "ok"}
 
     # Readiness probe — required dependencies are reachable and initialized.
     # Verifies Redis with a bounded timeout so a hung dependency cannot stall
@@ -124,6 +173,25 @@ def create_app() -> FastAPI:
 
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
     wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
+
+    # Middleware to track in-flight requests for graceful shutdown (#426)
+    @app.middleware("http")
+    async def track_in_flight(request: Request, call_next):
+        global _in_flight_requests
+        if app.state.shutting_down:
+            return Response(
+                content="Service shutting down",
+                status_code=503,
+                headers={"Retry-After": str(_MAX_DRAIN_SECONDS)},
+            )
+        async with _in_flight_lock:
+            _in_flight_requests += 1
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            async with _in_flight_lock:
+                _in_flight_requests -= 1
 
     return app
 

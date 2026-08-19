@@ -18,10 +18,15 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 15
-    JWT_AUDIENCE: str = "wildframe-api"
+    JWT_ISSUER: str = "wildframe-auth"
 
+    # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
+    # connections per service instance to prevent DB exhaustion.
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 5
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
+
 
     # Content ownership resolution (creator dashboard / content performance).
     # Set to http://content-service:8000 inside the docker network.

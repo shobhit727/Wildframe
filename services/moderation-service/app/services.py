@@ -146,7 +146,7 @@ class ModerationService:
         Raises ``ModerationError`` if the flag doesn't exist or has already
         been resolved/escalated.
         """
-        flag = await self.flag_repo.get(flag_id)
+        flag = await self.flag_repo.get_for_update(flag_id)
         if flag is None:
             raise ModerationError(f"flag {flag_id} not found")
         if flag.status in (FlagStatus.RESOLVED, FlagStatus.ESCALATED):
@@ -250,12 +250,13 @@ class ModerationService:
         )
         await self.strike_repo.create(strike)
 
-        # Check suspension threshold.
-        active_count = await self.strike_repo.count_active(creator_id)
-        if active_count >= settings.STRIKES_BEFORE_SUSPENSION:
+        # Check suspension threshold with row-level lock on strike rows.
+        active_count = await self.strike_repo.count_active_for_update(creator_id)
+        # Idempotent suspension: only emit if this strike pushed count from 2 to 3.
+        if active_count == settings.STRIKES_BEFORE_SUSPENSION:
             await self.flag_repo.enqueue_event(
                 topic="creator.suspended",
-                event_key=str(creator_id),
+                event_key=f"{creator_id}:suspended",
                 payload={
                     "creator_id": str(creator_id),
                     "active_strikes": active_count,

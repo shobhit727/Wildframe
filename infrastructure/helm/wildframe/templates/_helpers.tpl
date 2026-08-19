@@ -11,3 +11,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "wildframe.dburl" -}}
 postgresql://wildframe:$(POSTGRES_PASSWORD)@{{ .Values.infra.postgresHost }}:{{ .Values.infra.postgresPort }}/{{ .db }}
 {{- end -}}
+{{- define "wildframe.configChecksum" -}}
+{{- $ctx := dict "svc" .svc "values" .Values "release" .Release "chart" .Chart }}
+{{- toJson $ctx | sha256sum }}
+{{- end -}}
+
+{{- define "wildframe.secretChecksum" -}}
+{{- $secret := .Values.secrets.existingSecret }}
+{{- printf "%s" $secret | sha256sum }}
+{{- end -}}

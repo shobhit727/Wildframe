@@ -24,11 +24,14 @@ class Settings(BaseSettings):
     JWT_EXPIRATION_MINUTES: int = 15
     # Audience of auth-service-issued tokens. Every service that verifies
     # those tokens must decode with this audience (see AGENTS.md).
-    JWT_AUDIENCE: str = "wildframe-api"
+    JWT_ISSUER: str = "wildframe-auth"
+
+    # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
+    # connections per service instance to prevent DB exhaustion.
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 5
 
     # Redis
-    REDIS_URL: str = "redis://localhost:6379"
-
     # Logging
     LOG_LEVEL: str = "INFO"
 
@@ -36,14 +39,20 @@ class Settings(BaseSettings):
     CORS_ALLOWED_ORIGINS: list[str] = ["*"]
     CORS_ALLOW_CREDENTIALS: bool = True
 
-    # Strike policy
-    # A creator is automatically suspended once this many active strikes
-    # accumulate. Enforced in the service layer (not a DB constraint) so the
-    # threshold is easy to tune and the suspension logic can emit an event.
-    STRIKES_BEFORE_SUSPENSION: int = 3
-    # How long a strike stays active before it expires (days). Expired strikes
-    # no longer count toward the suspension threshold.
-    STRIKE_EXPIRES_DAYS: int = 90
+    @model_validator(mode="after")
+    def validate_cors_credentials(self) -> "Settings":
+        """Reject wildcard CORS with credentials in production (#68)."""
+        if (
+            self.ENVIRONMENT == "production"
+            and self.CORS_ALLOWED_ORIGINS == ["*"]
+            and self.CORS_ALLOW_CREDENTIALS
+        ):
+            raise ValueError(
+                "CORS_ALLOWED_ORIGINS cannot be ['*'] with CORS_ALLOW_CREDENTIALS=True in production. "
+                "Use explicit origin list or disable credentials."
+            )
+        return self
+
 
     # Server
     SERVER_HOST: str = "0.0.0.0"

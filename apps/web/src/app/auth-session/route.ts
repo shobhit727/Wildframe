@@ -1,22 +1,13 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  REFRESH_COOKIE_NAME,
+  REFRESH_COOKIE_MAX_AGE,
+  buildRefreshCookieHeader,
+} from '@/utils/authCookie';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://localhost:8000';
-const REFRESH_COOKIE = 'wf_refresh';
 const REFRESH_ENDPOINT = `${API_BASE_URL}/auth/api/v1/auth/refresh`;
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
-
-function cookieHeader(maxAge: number): string {
-  const isProd = process.env.NODE_ENV === 'production';
-  const attrs = [
-    'Path=/',
-    `Max-Age=${maxAge}`,
-    'HttpOnly',
-    'SameSite=Strict',
-  ];
-  if (isProd) attrs.push('Secure');
-  return attrs.join('; ');
-}
 
 /**
  * POST /auth-session
@@ -37,7 +28,10 @@ export async function POST(request: NextRequest) {
   }
 
   const res = NextResponse.json({ ok: true });
-  res.headers.set('Set-Cookie', `${REFRESH_COOKIE}=${encodeURIComponent(token)}; ${cookieHeader(COOKIE_MAX_AGE)}`);
+  res.headers.set(
+    'Set-Cookie',
+    `${REFRESH_COOKIE_NAME}=${encodeURIComponent(token)}; ${buildRefreshCookieHeader({ maxAge: REFRESH_COOKIE_MAX_AGE })}`
+  );
   return res;
 }
 
@@ -49,7 +43,7 @@ export async function POST(request: NextRequest) {
  */
 export async function GET() {
   const cookieStore = await cookies();
-  const raw = cookieStore.get(REFRESH_COOKIE)?.value;
+  const raw = cookieStore.get(REFRESH_COOKIE_NAME)?.value;
   if (!raw) {
     return NextResponse.json({ error: 'no_session' }, { status: 401 });
   }
@@ -72,7 +66,7 @@ export async function GET() {
     if (!response.ok) {
       // Clear stale cookie
       const res = NextResponse.json({ error: 'refresh_failed' }, { status: 401 });
-      res.headers.set('Set-Cookie', `${REFRESH_COOKIE}=; ${cookieHeader(0)}`);
+      res.headers.set('Set-Cookie', `${REFRESH_COOKIE_NAME}=; ${buildRefreshCookieHeader({ maxAge: 0 })}`);
       return res;
     }
 
@@ -93,7 +87,7 @@ export async function GET() {
 
     // Rotate refresh token if the backend issued a new one
     if (typeof data?.refresh_token === 'string' && data.refresh_token) {
-      res.headers.set('Set-Cookie', `${REFRESH_COOKIE}=${encodeURIComponent(data.refresh_token)}; ${cookieHeader(COOKIE_MAX_AGE)}`);
+      res.headers.set('Set-Cookie', `${REFRESH_COOKIE_NAME}=${encodeURIComponent(data.refresh_token)}; ${buildRefreshCookieHeader({ maxAge: REFRESH_COOKIE_MAX_AGE })}`);
     }
     return res;
   } catch {
@@ -108,6 +102,6 @@ export async function GET() {
  */
 export async function DELETE() {
   const res = NextResponse.json({ ok: true });
-  res.headers.set('Set-Cookie', `${REFRESH_COOKIE}=; ${cookieHeader(0)}`);
+  res.headers.set('Set-Cookie', `${REFRESH_COOKIE_NAME}=; ${buildRefreshCookieHeader({ maxAge: 0 })}`);
   return res;
 }

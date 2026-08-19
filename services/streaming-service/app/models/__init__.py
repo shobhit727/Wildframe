@@ -106,6 +106,7 @@ class PlaybackSession(Base):
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
     ended_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)  # Session expiration for signed URLs
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

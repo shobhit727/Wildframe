@@ -122,7 +122,7 @@ class TestUnread:
 
         assert response.status_code == 422
 
-    def test_unread_other_user_403(self, client):
+    def test_unread_other_user_404(self, client):
         response = client.get(f"/api/v1/notifications/unread/{uuid4()}")
 
-        assert response.status_code == 403
+        assert response.status_code == 404

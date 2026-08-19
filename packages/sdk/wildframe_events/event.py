@@ -169,6 +169,46 @@ class DomainEvent:
     sequence: Optional[int] = None
     correlation_id: Optional[str] = None
 
+    @classmethod
+    def create(
+        cls,
+        topic: str,
+        key: str,
+        payload: Dict[str, Any] = None,
+        producer: str = "",
+        correlation_id: Optional[str] = None,
+    ) -> DomainEvent:
+        """Create a DomainEvent, auto-populating correlation_id from context if not provided.
+
+        If correlation_id is None, attempts to read from the observability contextvar
+        (wildframe_observability.logging.correlation_id_var). This allows services to
+        emit events correlated with the current request without explicit threading.
+
+        Args:
+            topic: Event topic (e.g., Topic.CONTENT_UPLOADED).
+            key: Partition key for ordering guarantees.
+            payload: Event payload dict (default: empty).
+            producer: Service name emitting the event.
+            correlation_id: Explicit correlation ID (overrides context).
+
+        Returns:
+            A new DomainEvent instance.
+        """
+        if correlation_id is None:
+            # Try to import and get from observability context
+            try:
+                from wildframe_observability.logging import get_correlation_id
+
+                correlation_id = get_correlation_id() or None
+            except ImportError:
+                correlation_id = None
+        return cls(
+            topic=topic,
+            key=key,
+            payload=payload or {},
+            producer=producer,
+            correlation_id=correlation_id,
+        )
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to a Kafka-friendly dict (JSON-serializable)."""
         return {

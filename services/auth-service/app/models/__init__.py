@@ -106,6 +106,12 @@ class User(Base, BaseModel):
         DateTime(timezone=True),
         nullable=True,
     )
+    # Single-use email verification token JTI (hashed) — consumed on verify
+    email_verification_token_jti: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+    )
 
     # Login tracking
     last_login_at: Mapped[datetime | None] = mapped_column(
@@ -125,6 +131,14 @@ class User(Base, BaseModel):
     locked_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+    # Token version — incremented on password change, role change, email change
+    # Used to invalidate all existing access tokens without blacklisting each
+    token_version: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
     )
 
     # MFA
@@ -198,8 +212,6 @@ class RefreshToken(Base, BaseModel):
         String(255),
         unique=True,
         nullable=False,
-        index=True,
-    )
     device_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -212,10 +224,28 @@ class RefreshToken(Base, BaseModel):
         DateTime(timezone=True),
         nullable=True,
     )
+    # Family tracking for rotation reuse detection (#183/#440)
+    family_id: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+    )
+    # Parent token hash for chain verification (reuse detection)
+    parent_token_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    # Reuse detected flag — when true, all tokens in family are revoked
+    reuse_detected: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
 
     __table_args__ = (
         Index("idx_refresh_tokens_user_expires", "user_id", "expires_at"),
         Index("idx_refresh_tokens_device", "device_id", "user_id"),
+        Index("idx_refresh_tokens_family", "family_id", "user_id"),
     )
 
 

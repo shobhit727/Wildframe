@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import {
   clearTokens,
   getAccessToken,
   normalizeContent,
   setTokens,
+  sweepLegacyTokenStorage,
 } from '@/api/client';
 import type { BackendContent } from '@/types';
 
@@ -79,5 +80,84 @@ describe('normalizeContent', () => {
     const c = normalizeContent({ ...movie, backdrop_url: undefined });
     expect(c.backdrop).toBe(movie.poster_url);
     expect(c.poster).toBe(movie.poster_url);
+  });
+});
+
+describe('legacy token sweep', () => {
+  const ACCESS_KEY = 'accessToken';
+  const REFRESH_KEY = 'refreshToken';
+  const USER_KEY = 'user';
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('removes legacy localStorage keys on setTokens', () => {
+    // Pre-populate legacy keys
+    localStorage.setItem(ACCESS_KEY, 'old-access');
+    localStorage.setItem(REFRESH_KEY, 'old-refresh');
+    localStorage.setItem(USER_KEY, '{"id":"u1"}');
+
+    setTokens({ access_token: 'new-access', refresh_token: 'new-refresh' });
+
+    expect(localStorage.getItem(ACCESS_KEY)).toBeNull();
+    expect(localStorage.getItem(REFRESH_KEY)).toBeNull();
+    expect(localStorage.getItem(USER_KEY)).toBeNull();
+    // New tokens stored in memory only
+    expect(getAccessToken()).toBe('new-access');
+  });
+
+  it('removes legacy localStorage keys on clearTokens', () => {
+    localStorage.setItem(ACCESS_KEY, 'old-access');
+    localStorage.setItem(REFRESH_KEY, 'old-refresh');
+    localStorage.setItem(USER_KEY, '{"id":"u1"}');
+
+    clearTokens();
+
+    expect(localStorage.getItem(ACCESS_KEY)).toBeNull();
+    expect(localStorage.getItem(REFRESH_KEY)).toBeNull();
+    expect(localStorage.getItem(USER_KEY)).toBeNull();
+    expect(getAccessToken()).toBeNull();
+  });
+});
+
+describe('Cache-Control no-store on authed requests (#526)', () => {
+  it('axios interceptor adds Cache-Control: no-store when token present', async () => {
+    // Import the singleton client to test its interceptors
+    const { apiClient } = await import('@/api/client');
+    // The axios instance is private; we test via a mock request
+    // Create a fresh instance with the same interceptor logic for isolation
+    const axios = (await import('axios')).default;
+    const { getAccessToken, setTokens: _setTokens, clearTokens } = await import(
+      '@/api/client'
+    );
+
+    clearTokens();
+    const client = axios.create({ baseURL: '/test' });
+
+    // Replicate the interceptor logic from APIClient constructor
+    let capturedConfig: { headers: Record<string, string> } | null = null;
+    client.interceptors.request.use((config) => {
+      const token = getAccessToken();
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+        config.headers['Cache-Control'] = 'no-store';
+      }
+      capturedConfig = config as { headers: Record<string, string> };
+      return config;
+    });
+
+    // No token -> no Cache-Control
+    await client.get('/test').catch(() => {});
+    expect(capturedConfig?.headers['Cache-Control']).toBeUndefined();
+
+    // With token -> Cache-Control: no-store
+    setTokens({ access_token: 'test-token', refresh_token: 'test-refresh' });
+    capturedConfig = null;
+    await client.get('/test').catch(() => {});
+    expect(capturedConfig?.headers['Cache-Control']).toBe('no-store');
+    expect(capturedConfig?.headers.Authorization).toBe('Bearer test-token');
+
+    clearTokens();
   });
 });

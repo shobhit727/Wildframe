@@ -34,7 +34,12 @@ function authHeaders() {
 }
 
 function api() {
-  return axios.create({ baseURL, timeout: 15000 });
+  // #526: admin endpoints are always authenticated; never let responses be cached.
+  return axios.create({
+    baseURL,
+    timeout: 15000,
+    headers: { 'Cache-Control': 'no-store' },
+  });
 }
 
 // ---- User moderation ----

@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8006
     DATABASE_URL: str = "postgresql+asyncpg://wildframe:password@localhost:5432/admin_db"
+    JWT_ISSUER: str = "wildframe-auth"
+
+    # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
+    # connections per service instance to prevent DB exhaustion.
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 5
+
     JWT_SECRET_KEY: str = "dev-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_AUDIENCE: str = "wildframe-api"

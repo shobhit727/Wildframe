@@ -50,36 +50,50 @@ class AuthService:
         self.password_manager = password_manager
         self.token_manager = token_manager
         self.blacklist_repo = blacklist_repo
-        self.max_login_attempts = 5
-        self.lockout_minutes = 15
+        self.max_login_attempts = settings.LOGIN_RATE_LIMIT_ATTEMPTS
+        self.base_lockout_minutes = 15
+        self.max_lockout_hours = 24
 
     async def register(
         self,
         request: UserRegisterRequest,
     ) -> UserResponse:
-        """Register new user."""
-        # Check if user exists
-        existing_user = await self.user_repo.get_by_email(request.email)
+        """Register new user with password policy enforcement (#164/#224)."""
+        from app.security import canonicalize_email, check_password_strength
+
+        # Canonicalize email (#161/#186)
+        canonical_email = canonicalize_email(request.email)
+
+        # Check password strength
+        strength_error = check_password_strength(request.password)
+        if strength_error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=strength_error,
+            )
+
+        # Check if user exists (using canonical email)
+        existing_user = await self.user_repo.get_by_email(canonical_email)
         if existing_user:
-            logger.warning(f"Registration failed: user already exists: {request.email}")
+            logger.warning(f"Registration failed: user already exists: {canonical_email}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="User with this email already exists",
             )
 
-        # Hash password
+        # Hash password (enforces 72-byte limit via _encode_password)
         password_hash = self.password_manager.hash_password(request.password)
 
-        # Create user
+        # Create user with canonical email
         try:
             user = await self.user_repo.create(
-                email=request.email,
+                email=canonical_email,
                 password_hash=password_hash,
                 first_name=request.first_name,
                 last_name=request.last_name,
             )
             await self.user_repo.commit()
-            logger.info(f"User registered: {request.email}")
+            logger.info(f"User registered: {canonical_email}")
             return UserResponse.from_orm(user)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Registration error: {e!s}")
@@ -93,18 +107,25 @@ class AuthService:
         request: UserLoginRequest,
         ip_address: str,
     ) -> TokenResponse:
-        """Authenticate user and return tokens."""
+        """Authenticate user and return tokens with exponential backoff lockout (#131)."""
+        from app.security import canonicalize_email
+
+        # Canonicalize email (#161/#186)
+        canonical_email = canonicalize_email(request.email)
+
         # Get user
-        user = await self.user_repo.get_by_email(request.email)
+        user = await self.user_repo.get_by_email(canonical_email)
 
         if not user:
-            logger.warning(f"Login failed: user not found: {request.email}")
+            logger.warning(f"Login failed: user not found: {canonical_email}")
             await self.audit_repo.create(
                 user_id=UUID(int=0),  # Unknown user
                 status="failed",
                 ip_address=ip_address,
             )
             await self.audit_repo.commit()
+            # Constant-time dummy hash to equalize timing (#163/#436)
+            self.password_manager.dummy_hash()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password",
@@ -128,32 +149,38 @@ class AuthService:
         if not self.password_manager.verify_password(request.password, user.password_hash):
             logger.warning(f"Login failed: invalid password: {user.email}")
 
-            # Increment failed attempts
-            user = await self.user_repo.increment_login_attempts(user.id)
-            assert user is not None  # known to exist (fetched at start of login)
-            # Lock user if too many attempts
-            if user.login_attempts >= self.max_login_attempts:
-                locked_until = datetime.now(UTC) + timedelta(minutes=self.lockout_minutes)
-                user = await self.user_repo.update(user.id, locked_until=locked_until)
-                assert user is not None
-            await self.user_repo.commit()
+            # Atomic increment with exponential backoff (#131/#278)
+            user, locked = await self.user_repo.increment_login_attempts_atomic(
+                user.id,
+                max_attempts=self.max_login_attempts,
+                base_lockout_minutes=self.base_lockout_minutes,
+                max_lockout_hours=self.max_lockout_hours,
+            )
 
             await self.audit_repo.create(
-                user_id=user.id,
+                user_id=user.id if user else UUID(int=0),
                 status="failed",
                 ip_address=ip_address,
             )
             await self.audit_repo.commit()
 
+            # Constant-time dummy hash to equalize timing (#163/#436)
+            self.password_manager.dummy_hash()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password",
             )
 
+        # Password correct — check if rehash needed (#437)
+        if self.password_manager.needs_rehash(user.password_hash):
+            user.password_hash = self.password_manager.hash_password(request.password)
+            await self.user_repo.flush()
+            logger.info(f"Password rehashed for user: {user.email}")
+
         # Reset login attempts on successful login
         await self.user_repo.reset_login_attempts(user.id)
-        user = await self.user_repo.update(user.id, last_login_at=datetime.now(UTC))
-        assert user is not None  # known to exist (fetched earlier this call)
+        user = await self.user_repo.update(user.id, last_login_at=datetime.now(UTC), last_login_ip=ip_address)
+        assert user is not None
         await self.user_repo.commit()
 
         # Create audit record
@@ -170,15 +197,15 @@ class AuthService:
             logger.info(f"Login awaiting MFA challenge for user: {user.email}")
             raise MfaChallengeRequired(challenge)
 
-        # Generate tokens
-        access_token = self.token_manager.create_access_token(user.id, user.email)
+        # Generate tokens with token_version (#79/#81)
+        access_token = self.token_manager.create_access_token(user.id, user.email, user.token_version)
         (
             refresh_token_str,
             refresh_token_hash,
             expires_at,
         ) = self.token_manager.create_refresh_token_for_user(user)
 
-        # Store refresh token
+        # Store refresh token with family tracking (#183/#440)
         await self.token_repo.create(
             user_id=user.id,
             token_hash=refresh_token_hash,
@@ -197,14 +224,11 @@ class AuthService:
     async def complete_mfa_login(
         self, challenge_token: str, code: str, ip_address: str
     ) -> TokenResponse:
-        """Complete a password-verified login with a valid TOTP code.
-
-        Verifies the short-lived ``mfa_challenge`` token (proof that the
-        password check already passed), then validates the TOTP code before
-        issuing real access/refresh tokens.
-        """
+        """Complete a password-verified login with a valid TOTP code."""
         user_id = self.token_manager.verify_mfa_challenge(challenge_token)
         if not user_id:
+            # Constant-time dummy hash on failure (#163/#436)
+            self.password_manager.dummy_hash()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired MFA challenge",
@@ -227,15 +251,14 @@ class AuthService:
 
         secret = SecretCipher.decrypt(user.mfa_secret) if user.mfa_secret else ""
         if not secret or not pyotp.TOTP(secret).verify(code, valid_window=1):
+            # Constant-time dummy hash on failure (#163/#436)
+            self.password_manager.dummy_hash()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid MFA code",
             )
 
         # Single-use challenge (#221): atomically consume the challenge
-        # before issuing tokens. The token_blacklist primary key on
-        # token_hash makes concurrent consumption race-safe: exactly one
-        # request wins the INSERT, every other gets a 401.
         if self.blacklist_repo is not None:
             challenge_hash = self.token_manager.hash_token(challenge_token)
             if await self.blacklist_repo.is_blacklisted(challenge_hash):
@@ -259,8 +282,8 @@ class AuthService:
                     detail="Invalid or expired MFA challenge",
                 )
 
-        # MFA passed — issue tokens (mirrors the tail of login()).
-        access_token = self.token_manager.create_access_token(user.id, user.email)
+        # MFA passed — issue tokens with token_version
+        access_token = self.token_manager.create_access_token(user.id, user.email, user.token_version)
         (
             refresh_token_str,
             refresh_token_hash,
@@ -283,11 +306,13 @@ class AuthService:
         )
 
     async def refresh_token(self, refresh_token: str) -> TokenResponse:
-        """Refresh access token."""
+        """Refresh access token with atomic rotation and reuse detection (#183/#440)."""
         # Verify and decode refresh token
         user_id = self.token_manager.verify_refresh_token(refresh_token)
         if not user_id:
             logger.warning("Token refresh failed: invalid token")
+            # Constant-time dummy hash on failure (#163/#436)
+            self.password_manager.dummy_hash()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid refresh token",
@@ -307,29 +332,36 @@ class AuthService:
         stored_token = await self.token_repo.get_by_token_hash(token_hash)
         if not stored_token:
             logger.warning(f"Token refresh failed: token not stored: {user_id}")
+            # Constant-time dummy hash on failure (#163/#436)
+            self.password_manager.dummy_hash()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token not found",
             )
 
-        # Revoke old refresh token
-        await self.token_repo.revoke(token_hash)
-        await self.token_repo.commit()
+        # Atomic rotation with reuse detection (#183/#440)
+        now = datetime.now(UTC)
+        expires_at = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRATION_DAYS)
+        new_refresh_token = self.token_manager.create_refresh_token(user.id)
+        new_token_hash = self.token_manager.hash_refresh_token(new_refresh_token)
 
-        # Create new tokens
-        access_token = self.token_manager.create_access_token(user.id, user.email)
-        (
-            new_refresh_token,
-            new_token_hash,
-            new_expires_at,
-        ) = self.token_manager.create_refresh_token_for_user(user)
-
-        # Store new refresh token
-        await self.token_repo.create(
-            user_id=user.id,
-            token_hash=new_token_hash,
-            expires_at=new_expires_at,
+        rotated = await self.token_repo.rotate_atomic(
+            old_token_hash=token_hash,
+            new_token_hash=new_token_hash,
+            expires_at=expires_at,
         )
+
+        if rotated is None:
+            # Reuse detected — family already revoked
+            logger.warning(f"Refresh token reuse detected for user: {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token",
+            )
+
+        # Create new access token with current token_version
+        access_token = self.token_manager.create_access_token(user.id, user.email, user.token_version)
+
         await self.token_repo.commit()
 
         logger.info(f"Token refreshed for user: {user.email}")
@@ -370,7 +402,9 @@ class AuthService:
         old_password: str,
         new_password: str,
     ) -> bool:
-        """Change user password."""
+        """Change user password with token_version increment (#79/#81)."""
+        from app.security import check_password_strength
+
         user = await self.user_repo.get_by_id(user_id)
         if not user:
             raise HTTPException(
@@ -381,9 +415,18 @@ class AuthService:
         # Verify old password
         if not self.password_manager.verify_password(old_password, user.password_hash):
             logger.warning(f"Password change failed: invalid password: {user.email}")
+            self.password_manager.dummy_hash()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid password",
+            )
+
+        # Check new password strength
+        strength_error = check_password_strength(new_password)
+        if strength_error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=strength_error,
             )
 
         # Hash new password
@@ -393,12 +436,15 @@ class AuthService:
         await self.user_repo.update(user_id, password_hash=new_hash)
         await self.user_repo.commit()
 
+        # Increment token_version to invalidate all existing access tokens (#79/#81)
+        await self.user_repo.increment_token_version(user_id)
+        await self.user_repo.commit()
+
         # Security policy: a password change invalidates all existing
-        # sessions — every refresh token for the user is revoked so a
-        # stolen token cannot outlive the credential rotation (#221).
+        # sessions — every refresh token for the user is revoked
         revoked = await self.token_repo.revoke_all_for_user(user_id)
         await self.token_repo.commit()
-        logger.info(f"Password changed for user: {user.email}; revoked {revoked} refresh token(s)")
+        logger.info(f"Password changed for user: {user.email}; revoked {revoked} refresh token(s); token_version incremented")
         return True
 
     async def send_email_verification(self, user_id: UUID) -> dict:

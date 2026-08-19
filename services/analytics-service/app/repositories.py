@@ -33,7 +33,12 @@ class EventRepository:
         return event
 
     async def get_by_user(self, user_id: UUID, limit: int = 100) -> list[Event]:
-        stmt = select(Event).where(Event.user_id == user_id).limit(limit)
+        stmt = (
+            select(Event)
+            .where(Event.user_id == user_id)
+            .order_by(Event.created_at.desc(), Event.id.desc())
+            .limit(limit)
+        )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

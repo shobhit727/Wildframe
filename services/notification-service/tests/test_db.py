@@ -103,8 +103,8 @@ class TestUnreadEndpoints:
 
     def test_unread_other_user_inaccessible(self, client, auth_user_id, other_user_id):
         send(client, auth_user_id)
-        assert client.get(f"/api/v1/notifications/unread/{other_user_id}").status_code == 403
-        assert client.get(f"/api/v1/notifications/unread-count/{other_user_id}").status_code == 403
+        assert client.get(f"/api/v1/notifications/unread/{other_user_id}").status_code == 404
+        assert client.get(f"/api/v1/notifications/unread-count/{other_user_id}").status_code == 404
 
     def test_unread_pagination(self, client, auth_user_id):
         for i in range(5):

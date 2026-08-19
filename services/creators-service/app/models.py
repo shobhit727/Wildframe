@@ -14,15 +14,20 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     """SQLAlchemy 2.0 declarative base (mypy-friendly vs declarative_base())."""
+
+
+class CreatorSuspendedError(Exception):
+    """Raised when an operation is attempted on a suspended creator."""
 
 
 class KYCStatus(str, Enum):
@@ -232,4 +237,38 @@ class PayoutLedger(Base):
         CheckConstraint("pool_topup_cents >= 0", name="ck_ledger_pool_non_negative"),
         CheckConstraint("share_cents >= 0", name="ck_ledger_share_non_negative"),
         Index("ix_ledger_creator_period", "creator_id", "period_start", "period_end"),
+    )
+
+
+class InboundEventStatus(str, Enum):
+    """Processing status of an inbound event from another service."""
+
+    PENDING = "pending"
+    PROCESSED = "processed"
+    FAILED = "failed"
+
+
+class InboundEvent(Base):
+    """Inbound event from another service (e.g., moderation.creator.suspended).
+
+    Events are written to this table by a consumer worker (polling or Kafka).
+    The event_key enables idempotent processing - each event is processed exactly once.
+    """
+
+    __tablename__ = "inbound_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    topic: Mapped[str] = mapped_column(String(127), nullable=False, index=True)
+    event_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[InboundEventStatus] = mapped_column(
+        SQLEnum(InboundEventStatus), default=InboundEventStatus.PENDING, nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC).replace(tzinfo=None)
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_inbound_status_created", "status", "created_at"),
     )

@@ -9,10 +9,14 @@ from uuid import UUID
 
 from fastapi import HTTPException, Request
 from jose import jwt  # type: ignore[import-untyped]
+from wildframe_observability.logging import get_correlation_id
 
 from app.core.settings import settings
 
 
+@dataclass(frozen=True)
+class Identity:
+    """Authenticated caller derived from the bearer token, never from query params."""
 @dataclass(frozen=True)
 class Identity:
     """Authenticated caller derived from the bearer token, never from query params."""

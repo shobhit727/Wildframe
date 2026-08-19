@@ -17,6 +17,9 @@ updates:
     commit-message:
       prefix: "ci(deps)"
       include: "scope"
+    # Update pinned SHA refs to newer versions (version-update only, not security)
+    update-types:
+      - "version-update:semver-patch"
 
   - package-ecosystem: "pip"
     directory: "/"

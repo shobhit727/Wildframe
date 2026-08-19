@@ -3,6 +3,11 @@
 # accepts app traffic from api-gateway (plus the ingress controller for
 # api-gateway itself). Infra pods are addressed by the labels used by the
 # cluster topology (app: postgres / redis / kafka / jaeger-agent).
+# 
+# DNS egress (issue #346): restricted to kube-system/kube-dns.
+# External RDS/ElastiCache egress (issues #347/#348): when
+# external.postgres/redis.enabled with cidrs, ipBlock rules are added.
+# FQDNs require Cilium/Calico FQDN policy support (not in vanilla k8s).
 {{- range $name, $svc := .Values.services }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -37,13 +42,30 @@ spec:
     - protocol: TCP
       port: {{ $svc.containerPort }}
   egress:
+  # DNS: only to kube-dns in kube-system (issue #346)
   - to:
-    - namespaceSelector: {}
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
     ports:
     - protocol: UDP
       port: 53
     - protocol: TCP
       port: 53
+  # Redis: external (ElastiCache) or in-cluster
+  {{- if and $.Values.external.redis.enabled $.Values.external.redis.cidrs }}
+  {{- range $cidr := $.Values.external.redis.cidrs }}
+  - to:
+    - ipBlock:
+        cidr: {{ $cidr }}
+    ports:
+    - protocol: TCP
+      port: {{ $.Values.infra.redisPort }}
+  {{- end }}
+  {{- else }}
   - to:
     - podSelector:
         matchLabels:
@@ -51,6 +73,8 @@ spec:
     ports:
     - protocol: TCP
       port: {{ $.Values.infra.redisPort }}
+  {{- end }}
+  # Kafka: always in-cluster (plain bootstrap)
   - to:
     - podSelector:
         matchLabels:
@@ -58,6 +82,7 @@ spec:
     ports:
     - protocol: TCP
       port: {{ $.Values.infra.kafkaPort }}
+  # Jaeger agent (UDP)
   - to:
     - podSelector:
         matchLabels:
@@ -65,7 +90,18 @@ spec:
     ports:
     - protocol: UDP
       port: {{ $.Values.infra.jaegerAgentPort }}
+  # Postgres: external (RDS) or in-cluster
   {{- if $svc.db }}
+  {{- if and $.Values.external.postgres.enabled $.Values.external.postgres.cidrs }}
+  {{- range $cidr := $.Values.external.postgres.cidrs }}
+  - to:
+    - ipBlock:
+        cidr: {{ $cidr }}
+    ports:
+    - protocol: TCP
+      port: {{ $.Values.infra.postgresPort }}
+  {{- end }}
+  {{- else }}
   - to:
     - podSelector:
         matchLabels:
@@ -74,6 +110,8 @@ spec:
     - protocol: TCP
       port: {{ $.Values.infra.postgresPort }}
   {{- end }}
+  {{- end }}
+  # Intra-service traffic (e.g. service mesh, peer health checks)
   - to:
     - podSelector:
         matchLabels:

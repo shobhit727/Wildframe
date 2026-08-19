@@ -153,6 +153,8 @@ class Content(Base):
 
     # Metadata tags
     tags = Column(JSONB, default={})  # {"production_company": "...", "director": "..."}
+    # Soft delete
+    deleted_at = Column(DateTime, nullable=True, index=True)  # Non-null when soft-deleted (#433)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

@@ -7,6 +7,9 @@ import base64
 import hashlib
 import json
 import logging
+import os
+import secrets
+import unicodedata
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -20,11 +23,47 @@ from app.models import User
 logger = logging.getLogger(__name__)
 
 
+# Common password blocklist (top ~50 breached passwords) — #164
+COMMON_PASSWORDS: frozenset[str] = frozenset({
+    "password", "123456", "123456789", "guest", "qwerty", "12345678",
+    "111111", "12345", "col123456", "123123", "1234567", "1234",
+    "1234567890", "123456a", "abc123", "password1", "123456789a",
+    "letmein", "admin", "welcome", "monkey", "dragon", "master",
+    "hello", "freedom", "whatever", "qazwsx", "trustno1", "654321",
+    "666666", "123321", "mustang", "michael", "shadow", "sunshine",
+    "iloveyou", "football", "superman", "123qwe", "starwars", "jordan",
+    "charlie", "andrew", "michelle", "love", "secret", "jennifer",
+})
+
+# Bcrypt input limit — #224
+BCRYPT_MAX_BYTES: int = 72
+
+
 def _jwt_secret() -> str:
     """Return the configured JWT secret (validated non-None at boot)."""
     secret = settings.JWT_SECRET_KEY
     assert secret is not None, "JWT_SECRET_KEY is not configured"
     return secret
+
+
+# JWT key set support (#138): list of {"kid": "...", "secret": "..."}
+# Current key is first; previous key(s) accepted for verification overlap.
+def _jwt_key_set() -> list[dict[str, str]]:
+    """Return list of valid JWT keys for verification.
+
+    Keys are read from settings.JWT_KEYS (JSON list of {"kid", "secret"}).
+    Falls back to single-key mode using JWT_SECRET_KEY for backward compat.
+    """
+    raw = getattr(settings, "JWT_KEYS", None)
+    if raw:
+        try:
+            keys = json.loads(raw) if isinstance(raw, str) else raw
+            if isinstance(keys, list) and keys:
+                return keys
+        except (json.JSONDecodeError, TypeError):
+            pass
+    # Fallback: single key with deterministic kid
+    return [{"kid": "default", "secret": _jwt_secret()}]
 
 
 PASSWORD_MAX_LENGTH: int = 128
@@ -33,12 +72,48 @@ PASSWORD_MAX_LENGTH: int = 128
 def _encode_password(password: str) -> bytes:
     """Validate password length and encode for bcrypt.
 
-    Raises ValueError if password exceeds PASSWORD_MAX_LENGTH characters
-    instead of silently truncating.
+    Raises ValueError if password exceeds BCRYPT_MAX_BYTES when encoded
+    instead of silently truncating. Also enforces PASSWORD_MAX_LENGTH chars.
     """
     if len(password) > PASSWORD_MAX_LENGTH:
         raise ValueError(f"password exceeds maximum length of {PASSWORD_MAX_LENGTH} characters")
-    return password.encode("utf-8")
+    encoded = password.encode("utf-8")
+    if len(encoded) > BCRYPT_MAX_BYTES:
+        raise ValueError(f"password exceeds bcrypt limit of {BCRYPT_MAX_BYTES} bytes")
+    return encoded
+
+
+def canonicalize_email(email: str) -> str:
+    """Canonicalize email per #161/#186: NFKC normalize + lowercase.
+
+    Args:
+        email: Raw email string
+
+    Returns:
+        Canonicalized email
+    """
+    if not email:
+        return ""
+    # NFKC normalization handles compatibility characters, then lowercase
+    return unicodedata.normalize("NFKC", email.strip()).lower()
+
+
+def check_password_strength(password: str) -> str | None:
+    """Validate password against policy and common password blocklist.
+
+    Returns error message string if invalid, None if valid.
+    """
+    if len(password) < 12:
+        return "Password must be at least 12 characters"
+    if password in COMMON_PASSWORDS:
+        return "Password is too common; choose a stronger password"
+    if not any(c.isupper() for c in password):
+        return "Password must contain an uppercase letter"
+    if not any(c.isdigit() for c in password):
+        return "Password must contain a digit"
+    if not any(not c.isalnum() for c in password):
+        return "Password must contain a special character"
+    return None
 
 
 def role_for_email(email: str | None) -> str:
@@ -46,8 +121,7 @@ def role_for_email(email: str | None) -> str:
     if not email:
         return "user"
     admins = {a.strip().lower() for a in settings.ADMIN_EMAILS.split(",") if a.strip()}
-    return "admin" if email.strip().lower() in admins else "user"
-
+    return "admin" if canonicalize_email(email) in admins else "user"
 
 class PasswordManager:
     """Manages password hashing and verification."""
@@ -84,41 +158,96 @@ class PasswordManager:
         except (ValueError, TypeError):
             return False
 
+    @staticmethod
+    def needs_rehash(hashed_password: str) -> bool:
+        """Check if hash uses fewer rounds than current config (#437).
 
+        Args:
+            hashed_password: Existing bcrypt hash
+
+        Returns:
+            bool: True if rehash needed
+        """
+        try:
+            # bcrypt hash format: $2b$12$... where 12 is the rounds
+            parts = hashed_password.split("$")
+            if len(parts) >= 3 and parts[1] in ("2a", "2b", "2y"):
+                stored_rounds = int(parts[2])
+                return stored_rounds < settings.PASSWORD_BCRYPT_ROUNDS
+        except (ValueError, IndexError):
+            pass
+        return False
+
+    @staticmethod
+    def dummy_hash() -> None:
+        """Run bcrypt against a dummy hash to equalize timing (#163/#436).
+
+        Call this on any authentication failure path (user not found,
+        wrong password, invalid token, etc.) to prevent timing attacks.
+        """
+        bcrypt.checkpw(b"dummy", b"$2b$12$dummydummydummydummydummydu")
+
+    @staticmethod
+    def get_hash_rounds(hashed_password: str) -> int | None:
+        """Extract bcrypt rounds from hash for inspection."""
+        try:
+            parts = hashed_password.split("$")
+            if len(parts) >= 3 and parts[1] in ("2a", "2b", "2y"):
+                return int(parts[2])
+        except (ValueError, IndexError):
+            pass
+        return None
 class TokenManager:
     """Manages JWT token generation and validation."""
 
     @staticmethod
-    def create_access_token(user_id: UUID, email: str) -> str:
+    def _current_kid() -> str:
+        """Get current key ID from key set."""
+        keys = _jwt_key_set()
+        return keys[0]["kid"] if keys else "default"
+
+    @staticmethod
+    def _signing_secret() -> str:
+        """Get current signing secret."""
+        keys = _jwt_key_set()
+        return keys[0]["secret"] if keys else _jwt_secret()
+
+    @staticmethod
+    def create_access_token(user_id: UUID, email: str, token_version: int = 0) -> str:
         """Create JWT access token.
 
         Args:
             user_id: User ID
             email: User email
+            token_version: User token version for revocation (#79/#81)
 
         Returns:
             str: JWT access token
         """
         now = datetime.now(UTC)
         expires_at = now + timedelta(minutes=settings.JWT_EXPIRATION_MINUTES)
+        canonical_email = canonicalize_email(email)
 
         payload = {
             "sub": str(user_id),
             "user_id": str(user_id),
-            "email": email,
-            "role": role_for_email(email),
+            "email": canonical_email,
+            "role": role_for_email(canonical_email),
             "type": "access",
             "iat": now,
             "exp": expires_at,
             "iss": settings.JWT_ISSUER,
             "aud": settings.JWT_AUDIENCE,
             "jti": f"access_{user_id}_{now.timestamp()}",
+            "tv": token_version,
+            "kid": TokenManager._current_kid(),
         }
 
         token = jwt.encode(
             payload,
-            _jwt_secret(),
+            TokenManager._signing_secret(),
             algorithm=settings.JWT_ALGORITHM,
+            headers={"kid": TokenManager._current_kid()},
         )
         return token
 
@@ -144,12 +273,14 @@ class TokenManager:
             "iss": settings.JWT_ISSUER,
             "aud": settings.JWT_AUDIENCE,
             "jti": f"refresh_{user_id}_{now.timestamp()}",
+            "kid": TokenManager._current_kid(),
         }
 
         token = jwt.encode(
             payload,
-            _jwt_secret(),
+            TokenManager._signing_secret(),
             algorithm=settings.JWT_ALGORITHM,
+            headers={"kid": TokenManager._current_kid()},
         )
         return token
 
@@ -166,17 +297,19 @@ class TokenManager:
         """
         now = datetime.now(UTC)
         expires_at = now + timedelta(hours=settings.EMAIL_VERIFICATION_EXPIRATION_HOURS)
+        canonical_email = canonicalize_email(email)
         payload = {
             "user_id": str(user_id),
-            "email": email,
+            "email": canonical_email,
             "type": "email_verification",
             "iat": now,
             "exp": expires_at,
             "iss": settings.JWT_ISSUER,
             "aud": settings.JWT_AUDIENCE,
             "jti": f"emailverify_{user_id}_{now.timestamp()}",
+            "kid": TokenManager._current_kid(),
         }
-        return jwt.encode(payload, _jwt_secret(), algorithm=settings.JWT_ALGORITHM)
+        return jwt.encode(payload, TokenManager._signing_secret(), algorithm=settings.JWT_ALGORITHM, headers={"kid": TokenManager._current_kid()})
 
     @staticmethod
     def create_mfa_challenge_token(user_id: UUID, email: str) -> str:
@@ -188,18 +321,20 @@ class TokenManager:
         """
         now = datetime.now(UTC)
         expires_at = now + timedelta(minutes=settings.MFA_CHALLENGE_EXPIRATION_MINUTES)
+        canonical_email = canonicalize_email(email)
         payload = {
             "sub": str(user_id),
             "user_id": str(user_id),
-            "email": email,
+            "email": canonical_email,
             "type": "mfa_challenge",
             "iat": now,
             "exp": expires_at,
             "iss": settings.JWT_ISSUER,
             "aud": settings.JWT_AUDIENCE,
             "jti": f"mfa_{user_id}_{now.timestamp()}",
+            "kid": TokenManager._current_kid(),
         }
-        return jwt.encode(payload, _jwt_secret(), algorithm=settings.JWT_ALGORITHM)
+        return jwt.encode(payload, TokenManager._signing_secret(), algorithm=settings.JWT_ALGORITHM, headers={"kid": TokenManager._current_kid()})
 
     @staticmethod
     def verify_mfa_challenge(token: str) -> UUID | None:
@@ -222,7 +357,9 @@ class TokenManager:
 
     @staticmethod
     def verify_token(token: str, token_type: str = "access") -> dict[str, Any] | None:
-        """Verify and decode JWT token.
+        """Verify and decode JWT token with key rotation support (#138).
+
+        Tries current key first, then previous keys from JWT_KEYS.
 
         Args:
             token: JWT token to verify
@@ -231,10 +368,27 @@ class TokenManager:
         Returns:
             dict | None: Decoded token payload, or None if invalid/expired
         """
+        # Extract kid from header to select correct key
+        try:
+            header = jwt.get_unverified_header(token)
+            kid = header.get("kid", "default")
+        except JWTError:
+            kid = "default"
+
+        # Find matching key
+        keys = _jwt_key_set()
+        secret = None
+        for k in keys:
+            if k.get("kid") == kid:
+                secret = k["secret"]
+                break
+        if secret is None:
+            secret = keys[0]["secret"] if keys else _jwt_secret()
+
         try:
             payload = jwt.decode(
                 token,
-                _jwt_secret(),
+                secret,
                 algorithms=[settings.JWT_ALGORITHM],
                 issuer=settings.JWT_ISSUER,
                 audience=settings.JWT_AUDIENCE,
@@ -269,7 +423,7 @@ class TokenManager:
         try:
             payload = jwt.decode(
                 token,
-                _jwt_secret(),
+                TokenManager._signing_secret(),
                 algorithms=[settings.JWT_ALGORITHM],
                 options={
                     "verify_signature": False,
@@ -289,7 +443,7 @@ class TokenManager:
     # Convenience wrappers for service layer compatibility
     def create_access_token_for_user(self, user: User) -> str:
         """Create access token from a user object (service-friendly)."""
-        return TokenManager.create_access_token(user.id, user.email)
+        return TokenManager.create_access_token(user.id, user.email, user.token_version)
 
     def create_refresh_token_for_user(self, user: User) -> tuple[str, str, datetime]:
         """Create refresh token and return token, hash, and expires_at."""
