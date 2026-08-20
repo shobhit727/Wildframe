@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     def validate_currency(self) -> "Settings":
         """Validate DEFAULT_CURRENCY against ISO-4217 allowlist (#477/#478)."""
         validate_currency(self.DEFAULT_CURRENCY)
+        return self
 
     @model_validator(mode="after")
     def validate_cors_credentials(self) -> "Settings":

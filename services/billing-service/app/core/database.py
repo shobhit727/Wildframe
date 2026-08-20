@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import QueuePool
 
 from app.core.settings import settings
 
@@ -32,7 +31,6 @@ class DatabaseManager:
             echo=False,
             future=True,
             isolation_level="READ COMMITTED",  # Explicit isolation level for financial transactions (#428)
-            poolclass=QueuePool,
             pool_size=5,
             max_overflow=5,
             pool_timeout=30,

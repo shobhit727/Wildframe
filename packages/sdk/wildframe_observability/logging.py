@@ -99,9 +99,9 @@ def _redact_secrets(value: Any, depth: int = 0) -> Any:
         redacted_keys = {f.replace("-", "").replace("_", "") for f in REDACT_FIELDS}
         return {
             k: (
-                _redact_secrets(v, depth + 1)
+                "***REDACTED***"
                 if k.lower().replace("-", "").replace("_", "") in redacted_keys
-                else v
+                else _redact_secrets(v, depth + 1)
             )
             for k, v in value.items()
         }

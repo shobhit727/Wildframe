@@ -60,6 +60,7 @@ class Settings(BaseSettings):
                 "JWT_SECRET_KEY must be set to a strong random value in production. "
                 "Refusing to start with default insecure secret."
             )
+        return self
 
     @model_validator(mode="after")
     def validate_cors_credentials(self) -> "Settings":

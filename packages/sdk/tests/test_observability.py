@@ -197,9 +197,11 @@ class TestWireObservability:
 
 class TestContextVarGetters:
     def test_get_correlation_id_returns_empty_when_unset(self):
+        set_correlation_id("")
         assert get_correlation_id() == ""
 
     def test_get_request_id_returns_empty_when_unset(self):
+        set_request_id("")
         assert get_request_id() == ""
 
     def test_get_correlation_id_after_set(self):

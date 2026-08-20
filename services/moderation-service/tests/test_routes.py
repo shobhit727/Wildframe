@@ -19,9 +19,7 @@ from app.main import app
 from app.services import ModerationError
 
 
-def make_token(
-    *, sub: str, role: str, token_type: str = "access", arv: int = 0
-) -> str:
+def make_token(*, sub: str, role: str, token_type: str = "access", arv: int = 0) -> str:
     """Mint an auth-service-style token for route tests."""
     return jwt.encode(
         {

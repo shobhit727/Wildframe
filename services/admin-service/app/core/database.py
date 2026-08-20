@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import QueuePool
 
 from app.core.settings import settings
 
@@ -25,7 +24,6 @@ class DatabaseManager:
             settings.DATABASE_URL,
             echo=settings.DEBUG,
             future=True,
-            poolclass=QueuePool,
             pool_size=5,
             max_overflow=5,
             pool_timeout=30,
