@@ -37,6 +37,7 @@ version newer than the supported one (``SchemaVersionError``) instead
 of silently misinterpreting them. Unknown fields are dropped (not
 crashed on), which keeps older producers readable by newer consumers.
 """
+
 from __future__ import annotations
 
 import copy
@@ -46,7 +47,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from uuid import uuid4
-
 
 # Current schema version — bump when breaking changes happen.
 SCHEMA_VERSION = 1
@@ -124,9 +124,7 @@ def validate_payload(
         return
     if isinstance(payload, (list, tuple)):
         for index, item in enumerate(payload):
-            validate_payload(
-                item, forbid_secret_keys=forbid_secret_keys, path=f"{path}[{index}]"
-            )
+            validate_payload(item, forbid_secret_keys=forbid_secret_keys, path=f"{path}[{index}]")
         return
     raise PayloadValidationError(
         f"unsupported type {type(payload).__name__} at {path} "
@@ -168,6 +166,47 @@ class DomainEvent:
     server_time: Optional[str] = None
     sequence: Optional[int] = None
     correlation_id: Optional[str] = None
+
+    @classmethod
+    def create(
+        cls,
+        topic: str,
+        key: str,
+        payload: Dict[str, Any] = None,
+        producer: str = "",
+        correlation_id: Optional[str] = None,
+    ) -> DomainEvent:
+        """Create a DomainEvent, auto-populating correlation_id from context if not provided.
+
+        If correlation_id is None, attempts to read from the observability contextvar
+        (wildframe_observability.logging.correlation_id_var). This allows services to
+        emit events correlated with the current request without explicit threading.
+
+        Args:
+            topic: Event topic (e.g., Topic.CONTENT_UPLOADED).
+            key: Partition key for ordering guarantees.
+            payload: Event payload dict (default: empty).
+            producer: Service name emitting the event.
+            correlation_id: Explicit correlation ID (overrides context).
+
+        Returns:
+            A new DomainEvent instance.
+        """
+        if correlation_id is None:
+            # Try to import and get from observability context
+            try:
+                from wildframe_observability.logging import get_correlation_id
+
+                correlation_id = get_correlation_id() or None
+            except ImportError:
+                correlation_id = None
+        return cls(
+            topic=topic,
+            key=key,
+            payload=payload or {},
+            producer=producer,
+            correlation_id=correlation_id,
+        )
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to a Kafka-friendly dict (JSON-serializable)."""
@@ -256,9 +295,7 @@ class DomainEvent:
 
         sequence = data.get("sequence")
         if sequence is not None and (not isinstance(sequence, int) or isinstance(sequence, bool)):
-            raise PayloadValidationError(
-                f"event sequence must be an int, got {sequence!r}"
-            )
+            raise PayloadValidationError(f"event sequence must be an int, got {sequence!r}")
         payload = copy.deepcopy(data.get("payload", {}))
         validate_payload(payload, forbid_secret_keys=True)
         return cls(

@@ -29,12 +29,55 @@ spec:
         prometheus.io.path: "/metrics"
     spec:
       automountServiceAccountToken: {{ $svc.automountServiceAccountToken | default $.Values.automountServiceAccountToken }}
+      {{- if $.Values.serviceAccount.create }}
+      serviceAccountName: {{ $name }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ $svc.terminationGracePeriodSeconds | default $.Values.terminationGracePeriodSeconds }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
+      {{- if $.Values.topologySpread.enabled }}
+      topologySpreadConstraints:
+      {{- $ts := default dict $svc.topologySpread }}
+      {{- $globalTS := $.Values.topologySpread }}
+        - maxSkew: {{ $ts.maxSkew | default $globalTS.maxSkew }}
+          topologyKey: {{ $ts.topologyKey | default $globalTS.topologyKey }}
+          whenUnsatisfiable: {{ $ts.whenUnsatisfiable | default $globalTS.whenUnsatisfiable }}
+          labelSelector:
+            {{- $ls := $ts.labelSelector | default $globalTS.labelSelector }}
+            {{- if $ls }}
+              {{- toYaml $ls | nindent 12 }}
+            {{- else }}
+              matchLabels:
+                app: {{ $name }}
+            {{- end }}
+      {{- end }}
+      {{- if $.Values.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          {{- $pa := default dict $svc.podAntiAffinity }}
+          {{- $globalPA := $.Values.podAntiAffinity }}
+          {{- if eq $pa.type "required" }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+          {{- else }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+          {{- end }}
+          {{- if eq $pa.type "required" }}
+            - labelSelector:
+                matchLabels:
+                  app: {{ $name }}
+              topologyKey: {{ $pa.topologyKey | default $globalPA.topologyKey }}
+          {{- else }}
+            - weight: {{ $pa.weight | default $globalPA.weight }}
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: {{ $name }}
+                topologyKey: {{ $pa.topologyKey | default $globalPA.topologyKey }}
+          {{- end }}
+      {{- end }}
       {{- with $.Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -48,6 +91,7 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: {{ $.Values.containerSecurity.readOnlyRootFilesystem }}
         ports:
         - name: http
           containerPort: {{ $svc.containerPort }}
@@ -110,4 +154,14 @@ spec:
           timeoutSeconds: {{ $lp.timeoutSeconds }}
           failureThreshold: {{ $lp.failureThreshold }}
         resources: {{- toYaml ($svc.resources | default $.Values.resources) | nindent 10 }}
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: logs
+        emptyDir: {}
 {{- end }}

@@ -92,7 +92,6 @@ async def get_admin_identity(request: Request) -> Identity:
     """Admin-only dependency for expensive/destructive operations."""
     identity = await get_required_identity(request)
     if not identity.is_admin:
-    if not identity.is_admin:
         raise HTTPException(
             status_code=403,
             detail={
@@ -107,8 +106,6 @@ async def get_admin_identity(request: Request) -> Identity:
                 "message": "Administrator privileges required (role version changed)",
                 "correlation_id": correlation_id_var.get(),
             },
-        )
-    return identity
         )
     return identity
 

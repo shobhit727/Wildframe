@@ -1,7 +1,5 @@
-"""
-Terraform root module for Wildframe infrastructure.
-Defines all infrastructure resources for the OTT platform.
-"""
+# Terraform root module for Wildframe infrastructure.
+# Defines all infrastructure resources for the OTT platform.
 
 terraform {
   required_version = ">= 1.0"
@@ -271,9 +269,9 @@ resource "aws_security_group" "eks_cluster" {
 
 # EKS Cluster
 resource "aws_eks_cluster" "main" {
-  name            = "wildframe-${var.environment}"
-  role_arn        = aws_iam_role.eks_cluster_role.arn
-  version         = var.kubernetes_version
+  name     = "wildframe-${var.environment}"
+  role_arn = aws_iam_role.eks_cluster_role.arn
+  version  = var.kubernetes_version
   vpc_config {
     subnet_ids              = local.private_subnet_ids
     security_group_ids      = [aws_security_group.eks_cluster.id]
@@ -354,6 +352,8 @@ resource "aws_rds_cluster_parameter_group" "postgres" {
   family      = "aurora-postgresql14"
   description = "Wildframe Aurora PostgreSQL cluster parameter group"
 
+  # Aggregate connection budget: sum of all service pool sizes (max + overflow) across
+  # all replicas must stay below max_connections. Enforce per-service limits in app config.
   parameter {
     name  = "log_min_duration_statement"
     value = "1000"
@@ -362,6 +362,22 @@ resource "aws_rds_cluster_parameter_group" "postgres" {
   parameter {
     name  = "rds.force_ssl"
     value = "1"
+  }
+
+  # #429/#430: enforce statement/lock/idle timeouts to prevent unbounded connection hold
+  parameter {
+    name  = "statement_timeout"
+    value = "30000"
+  }
+
+  parameter {
+    name  = "lock_timeout"
+    value = "10000"
+  }
+
+  parameter {
+    name  = "idle_in_transaction_session_timeout"
+    value = "60000"
   }
 
   tags = {
@@ -490,7 +506,7 @@ resource "aws_security_group" "redis" {
 # ElastiCache slow log group
 resource "aws_cloudwatch_log_group" "redis_slow_log" {
   name              = "/aws/elasticache/wildframe-${var.environment}/slow-log"
-  retention_in_days = 7
+  retention_in_days = 30
 
   tags = {
     Name = "wildframe-${var.environment}-redis-slow-log"
@@ -572,6 +588,35 @@ resource "aws_kms_alias" "s3" {
   name          = "alias/wildframe-${var.environment}-s3"
   target_key_id = aws_kms_key.s3.key_id
 }
+# CloudFront response headers policy with security headers (#384)
+resource "aws_cloudfront_response_headers_policy" "security_headers" {
+  name    = "wildframe-security-headers"
+  comment = "Security headers for Wildframe CDN (HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy)"
+
+  security_headers_config {
+    strict_transport_security {
+      access_control_max_age_sec = 31536000
+      include_subdomains         = true
+      override                   = true
+    }
+    content_type_options {
+      override = true
+    }
+    frame_options {
+      frame_option = "DENY"
+      override     = true
+    }
+    referrer_policy {
+      referrer_policy = "strict-origin-when-cross-origin"
+      override        = true
+    }
+    xss_protection {
+      protection = true
+      mode_block = true
+      override   = true
+    }
+  }
+}
 
 # CloudFront Origin Access Identity for video bucket
 resource "aws_cloudfront_origin_access_identity" "videos" {
@@ -604,10 +649,11 @@ resource "aws_cloudfront_distribution" "videos" {
       }
     }
 
-    viewer_protocol_policy = "redirect-to-https"
-    min_ttl                = 0
-    default_ttl            = 3600
-    max_ttl                = 86400
+    viewer_protocol_policy     = "redirect-to-https"
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.security_headers.id
+    min_ttl                    = 0
+    default_ttl                = 3600
+    max_ttl                    = 86400
   }
 
   restrictions {
@@ -618,6 +664,7 @@ resource "aws_cloudfront_distribution" "videos" {
 
   viewer_certificate {
     cloudfront_default_certificate = true
+    minimum_protocol_version       = "TLSv1.2_2021"
   }
 
   tags = {

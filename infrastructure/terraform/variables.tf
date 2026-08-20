@@ -28,9 +28,14 @@ variable "availability_zones" {
 }
 
 variable "kubernetes_version" {
-  description = "Kubernetes version for EKS"
+  description = "Kubernetes version for EKS (use a currently supported version)"
   type        = string
-  default     = "1.28"
+  default     = "1.31"
+
+  validation {
+    condition     = contains(["1.30", "1.31", "1.32"], var.kubernetes_version)
+    error_message = "Kubernetes version must be a supported EKS version: 1.30, 1.31, or 1.32. Update this validation when new versions are supported."
+  }
 }
 
 variable "eks_desired_size" {
@@ -146,8 +151,8 @@ variable "tags" {
   description = "Common tags for all resources"
   type        = map(string)
   default = {
-    Project     = "Wildframe"
-    ManagedBy   = "Terraform"
-    CostCenter  = "Engineering"
+    Project    = "Wildframe"
+    ManagedBy  = "Terraform"
+    CostCenter = "Engineering"
   }
 }

@@ -34,10 +34,10 @@ from wildframe_observability.logging import (
     _sanitize_for_log,
 )
 
-
 # ---------------------------------------------------------------------------
 # Event payload validation
 # ---------------------------------------------------------------------------
+
 
 class TestEventPayloadValidation:
     def test_validate_payload_rejects_secret_keys(self):
@@ -50,7 +50,15 @@ class TestEventPayloadValidation:
         # x_amz_security_token, aws_secret_access_key
         # Matching uses key.lower().lstrip("_") - so "Private_Key" -> "private_key" works,
         # but "PrivateKey" -> "privatekey" does NOT match "private_key"
-        for key in ["PASSWORD", "Password", "ApiKey", "SECRET", "Authorization", "ACCESS_TOKEN", "PRIVATE_KEY"]:
+        for key in [
+            "PASSWORD",
+            "Password",
+            "ApiKey",
+            "SECRET",
+            "Authorization",
+            "ACCESS_TOKEN",
+            "PRIVATE_KEY",
+        ]:
             with pytest.raises(PayloadValidationError, match="secret-shaped key"):
                 validate_payload({key: "value"})
 
@@ -69,25 +77,38 @@ class TestEventPayloadValidation:
     def test_validate_payload_accepts_valid(self):
         # Should not raise
         validate_payload({"normal": "value", "number": 42, "bool": True, "list": [1, 2, 3]})
+
     def test_domain_event_from_dict_validates_payload(self):
         with pytest.raises(PayloadValidationError, match="secret-shaped key"):
-            DomainEvent.from_dict({
-                "topic": "t", "key": "k", "payload": {"password": "x"},
-                "schema_version": 1, "event_id": "00000000-0000-4000-8000-000000000000",
-                "occurred_at": "2026-01-01T00:00:00+00:00",
-            })
+            DomainEvent.from_dict(
+                {
+                    "topic": "t",
+                    "key": "k",
+                    "payload": {"password": "x"},
+                    "schema_version": 1,
+                    "event_id": "00000000-0000-4000-8000-000000000000",
+                    "occurred_at": "2026-01-01T00:00:00+00:00",
+                }
+            )
 
     def test_domain_event_from_dict_validates_schema_version(self):
         with pytest.raises(SchemaVersionError, match="newer than supported"):
-            DomainEvent.from_dict({
-                "topic": "t", "key": "k", "payload": {"a": 1},
-                "schema_version": 999, "event_id": "00000000-0000-4000-8000-000000000000",
-                "occurred_at": "2026-01-01T00:00:00+00:00",
-            })
+            DomainEvent.from_dict(
+                {
+                    "topic": "t",
+                    "key": "k",
+                    "payload": {"a": 1},
+                    "schema_version": 999,
+                    "event_id": "00000000-0000-4000-8000-000000000000",
+                    "occurred_at": "2026-01-01T00:00:00+00:00",
+                }
+            )
 
     def test_domain_event_roundtrip_preserves_new_fields(self):
         evt = DomainEvent(
-            topic="t", key="k", payload={"x": 1},
+            topic="t",
+            key="k",
+            payload={"x": 1},
             correlation_id="corr-123",
             sequence=42,
             server_time="2026-01-01T00:00:00+00:00",
@@ -102,6 +123,7 @@ class TestEventPayloadValidation:
 # ---------------------------------------------------------------------------
 # Publisher size enforcement
 # ---------------------------------------------------------------------------
+
 
 class TestPublisherSizeEnforcement:
     @pytest.mark.asyncio
@@ -135,6 +157,7 @@ class TestPublisherSizeEnforcement:
 # Subscriber DLQ / quarantine / retry / dedup
 # ---------------------------------------------------------------------------
 
+
 class TestInMemoryDeduplicationStore:
     @pytest.mark.asyncio
     async def test_check_and_mark_dedup(self):
@@ -161,8 +184,10 @@ class TestInMemoryEventSubscriber:
     async def test_handler_receives_event(self):
         sub = InMemoryEventSubscriber()
         received = []
+
         async def handler(e):
             received.append(e)
+
         await sub.subscribe("test.topic", handler)
         await sub.start()
         evt = DomainEvent(topic="test.topic", key="k", payload={"a": 1})
@@ -173,8 +198,13 @@ class TestInMemoryEventSubscriber:
     async def test_multiple_handlers_same_topic_all_called(self):
         sub = InMemoryEventSubscriber()
         calls = []
-        async def h1(e): calls.append(1)
-        async def h2(e): calls.append(2)
+
+        async def h1(e):
+            calls.append(1)
+
+        async def h2(e):
+            calls.append(2)
+
         await sub.subscribe("t", h1)
         await sub.subscribe("t", h2)
         await sub.start()
@@ -185,7 +215,10 @@ class TestInMemoryEventSubscriber:
     async def test_handler_not_called_for_other_topic(self):
         sub = InMemoryEventSubscriber()
         calls = []
-        async def h(e): calls.append(1)
+
+        async def h(e):
+            calls.append(1)
+
         await sub.subscribe("t1", h)
         await sub.start()
         await sub.deliver(DomainEvent(topic="t2", key="k", payload={}))
@@ -195,8 +228,13 @@ class TestInMemoryEventSubscriber:
     async def test_raising_handler_does_not_stop_others(self):
         sub = InMemoryEventSubscriber()
         calls = []
-        async def good(e): calls.append("good")
-        async def bad(e): raise ValueError("boom")
+
+        async def good(e):
+            calls.append("good")
+
+        async def bad(e):
+            raise ValueError("boom")
+
         await sub.subscribe("t", good)
         await sub.subscribe("t", bad)
         await sub.start()
@@ -227,6 +265,7 @@ class TestKafkaEventSubscriberLogic:
         sub._reconnect_attempt = 0
 
         from wildframe_events.subscriber import KafkaEventSubscriber
+
         subscriber = KafkaEventSubscriber(
             bootstrap_servers="localhost:9092",
             group_id="test-group",
@@ -263,6 +302,7 @@ class TestKafkaEventSubscriberLogic:
         subscriber._lazy_dlq_publisher = subscriber.dlq_publisher
 
         attempts = []
+
         async def flaky_handler(e):
             attempts.append(1)
             if len(attempts) < 2:
@@ -281,6 +321,7 @@ class TestKafkaEventSubscriberLogic:
 # ---------------------------------------------------------------------------
 # Topic ACL
 # ---------------------------------------------------------------------------
+
 
 class TestTopicACL:
     def test_billing_service_acl(self):
@@ -301,6 +342,7 @@ class TestTopicACL:
 
     def test_all_topics_and_dlq(self):
         from wildframe_events.topics import all_topics, all_dlq_topics
+
         topics = all_topics()
         dlqs = all_dlq_topics()
         assert len(topics) == 22
@@ -315,6 +357,7 @@ class TestTopicACL:
 # ---------------------------------------------------------------------------
 # Log injection sanitization
 # ---------------------------------------------------------------------------
+
 
 class TestLogSanitization:
     def test_sanitize_strips_control_chars(self):
@@ -402,6 +445,7 @@ class TestLogSanitization:
 # ---------------------------------------------------------------------------
 # CorrelationMiddleware header sanitization
 # ---------------------------------------------------------------------------
+
 
 class TestCorrelationMiddlewareSanitization:
     @pytest.mark.asyncio

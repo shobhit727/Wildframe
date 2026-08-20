@@ -13,6 +13,10 @@ from wildframe_observability.logging import (
     get_logger,
     set_correlation_id,
     set_request_id,
+    get_correlation_id,
+    get_request_id,
+    REDACT_FIELDS,
+    _redact_secrets,
 )
 from wildframe_observability.metrics import _is_uuid_like, _normalize_endpoint
 from wildframe_observability.middleware import CorrelationMiddleware
@@ -189,3 +193,144 @@ class TestWireObservability:
         resp = client.get("/")
         assert "x-request-id" in resp.headers
         assert "x-correlation-id" in resp.headers
+
+
+class TestContextVarGetters:
+    def test_get_correlation_id_returns_empty_when_unset(self):
+        assert get_correlation_id() == ""
+
+    def test_get_request_id_returns_empty_when_unset(self):
+        assert get_request_id() == ""
+
+    def test_get_correlation_id_after_set(self):
+        set_correlation_id("test-corr-123")
+        assert get_correlation_id() == "test-corr-123"
+
+    def test_get_request_id_after_set(self):
+        set_request_id("test-req-456")
+        assert get_request_id() == "test-req-456"
+
+    def test_getters_independent(self):
+        set_correlation_id("corr-1")
+        set_request_id("req-1")
+        assert get_correlation_id() == "corr-1"
+        assert get_request_id() == "req-1"
+
+
+class TestREDACTFIELDS:
+    def test_redact_fields_contains_expected_keys(self):
+        expected = {
+            "password",
+            "passwd",
+            "pwd",
+            "token",
+            "access_token",
+            "refresh_token",
+            "secret",
+            "secret_key",
+            "authorization",
+            "cookie",
+            "set-cookie",
+            "api_key",
+            "apikey",
+            "api-key",
+            "stripe_key",
+            "stripe_secret_key",
+            "stripe_api_key",
+        }
+        assert REDACT_FIELDS == frozenset(expected)
+
+    def test_redact_fields_case_insensitive(self):
+        assert "password" in REDACT_FIELDS
+
+
+class TestRedactSecrets:
+    def test_redact_secrets_dict(self):
+        data = {"password": "secret123", "username": "john"}
+        result = _redact_secrets(data)
+        assert result["password"] == "***REDACTED***"
+        assert result["username"] == "john"
+
+    def test_redact_secrets_nested_dict(self):
+        data = {"user": {"password": "secret123", "name": "john"}}
+        result = _redact_secrets(data)
+        assert result["user"]["password"] == "***REDACTED***"
+        assert result["user"]["name"] == "john"
+
+    def test_redact_secrets_list(self):
+        data = [{"token": "abc123"}, {"api_key": "key456"}]
+        result = _redact_secrets(data)
+        assert result[0]["token"] == "***REDACTED***"
+        assert result[1]["api_key"] == "***REDACTED***"
+
+    def test_redact_secrets_case_insensitive_keys(self):
+        data = {"Password": "secret", "TOKEN": "abc", "Api-Key": "key"}
+        result = _redact_secrets(data)
+        assert result["Password"] == "***REDACTED***"
+        assert result["TOKEN"] == "***REDACTED***"
+        assert result["Api-Key"] == "***REDACTED***"
+
+    def test_redact_secrets_stripe_keys(self):
+        data = {
+            "stripe_key": "sk_test_123",
+            "stripe_secret_key": "sk_live_456",
+            "stripe_api_key": "sk_test_789",
+        }
+        result = _redact_secrets(data)
+        assert result["stripe_key"] == "***REDACTED***"
+        assert result["stripe_secret_key"] == "***REDACTED***"
+        assert result["stripe_api_key"] == "***REDACTED***"
+
+    def test_redact_secrets_non_secret_fields_unchanged(self):
+        data = {"username": "john", "email": "john@example.com", "user_id": 123}
+        result = _redact_secrets(data)
+        assert result == data
+
+
+class TestJSONFormatterRedaction:
+    def test_formatter_redacts_secrets_in_extra(self, caplog):
+        import logging
+
+        logger = get_logger("test.redaction")
+        logger.setLevel(logging.DEBUG)
+        handler = logging.StreamHandler()
+        handler.setFormatter(JSONFormatter(service_name="test"))
+        logger.addHandler(handler)
+
+        with caplog.at_level(logging.INFO, logger="test.redaction"):
+            logger.info(
+                "user login",
+                extra={"password": "secret123", "username": "john", "api_key": "key456"},
+            )
+
+        log_records = [r for r in caplog.records if r.name == "test.redaction"]
+        assert len(log_records) == 1
+        import json as jsonlib
+
+        log_data = jsonlib.loads(log_records[0].message)
+        assert log_data.get("password") == "***REDACTED***"
+        assert log_data.get("api_key") == "***REDACTED***"
+        assert log_data.get("username") == "john"
+
+    def test_formatter_redacts_secrets_in_extra_dict(self, caplog):
+        import logging
+
+        logger = get_logger("test.redaction2")
+        logger.setLevel(logging.DEBUG)
+        handler = logging.StreamHandler()
+        handler.setFormatter(JSONFormatter(service_name="test"))
+        logger.addHandler(handler)
+
+        with caplog.at_level(logging.INFO, logger="test.redaction2"):
+            logger.info(
+                "nested data",
+                extra={"user": {"password": "secret123", "name": "john"}},
+            )
+
+        log_records = [r for r in caplog.records if r.name == "test.redaction2"]
+        assert len(log_records) == 1
+        import json as jsonlib
+
+        log_data = jsonlib.loads(log_records[0].message)
+        assert log_data.get("user", {}).get("password") == "***REDACTED***"
+        assert log_data.get("user", {}).get("name") == "john"

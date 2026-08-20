@@ -530,6 +530,7 @@ def all_topics() -> Set[str]:
         and isinstance(getattr(Topic, attr), str)
     }
 
+
 def all_dlq_topics() -> Set[str]:
     """Return the set of all DLQ topic names (``<topic>.dlq``)."""
     return {t + Topic.DLQ_SUFFIX for t in all_topics()}

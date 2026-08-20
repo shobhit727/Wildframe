@@ -97,6 +97,33 @@ jobs:
       - name: Lint chart
         run: helm lint infrastructure/helm/wildframe
 
+      - name: Reject placeholder image registries
+        run: |
+          set -euo pipefail
+          # Fail if any tracked k8s manifest or helm values/template references
+          # a placeholder registry (issue #341).
+          if grep -RInE 'registry\.example\.com|example\.com/.+:latest' \
+              infrastructure/kubernetes infrastructure/helm 2>/dev/null; then
+            echo "ERROR: placeholder image registry reference found (issue #341)"
+            exit 1
+          fi
+
+      - name: Enforce committed Chart.lock (dependency drift check)
+        run: |
+          set -euo pipefail
+          # Helm charts must pin dependencies in a committed Chart.lock.
+          # Regenerate and fail on any diff (issue #514).
+          if [ ! -f infrastructure/helm/wildframe/Chart.lock ] && \
+             grep -q '^dependencies:' infrastructure/helm/wildframe/Chart.yaml; then
+            echo "ERROR: Chart.lock missing for chart with dependencies (issue #514)"
+            exit 1
+          fi
+          if grep -q '^dependencies:' infrastructure/helm/wildframe/Chart.yaml; then
+            helm dependency update infrastructure/helm/wildframe
+            git diff --exit-code -- infrastructure/helm/wildframe/Chart.lock \
+              || { echo "ERROR: Chart.lock drifted from Chart.yaml (issue #514)"; exit 1; }
+          fi
+
       - name: Render default manifests
         run: helm template wildframe infrastructure/helm/wildframe --namespace wildframe > /tmp/helm-out.yaml
 

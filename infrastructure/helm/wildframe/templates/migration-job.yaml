@@ -1,0 +1,77 @@
+{{- if .Values.migration.enabled }}
+{{- $hook := .Values.migration.hook }}
+{{- $cmd := .Values.migration.command | default (list "alembic" "upgrade" "head") }}
+{{- $weight := -20 }}
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.db }}
+---
+# One serialized migration Job per database-backed service (issue #342):
+# a single pod runs `alembic upgrade head` exactly once (restartPolicy Never,
+# backoffLimit retries), instead of racing initContainers on every replica.
+# Jobs are sequenced via helm.sh/hook-weight so migrations never overlap.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-migrate
+  namespace: {{ $.Values.namespace }}
+  labels:
+    app: {{ $name }}
+    {{- include "wildframe.labels" $ | nindent 4 }}
+  {{- if $hook }}
+  annotations:
+    "helm.sh/hook": {{ $hook | quote }}
+    "helm.sh/hook-weight": "{{ $weight }}"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+  {{- end }}
+spec:
+  backoffLimit: 4
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}
+        {{- include "wildframe.labels" $ | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: {{ $.Values.automountServiceAccountToken }}
+      {{- if $.Values.serviceAccount.create }}
+      serviceAccountName: {{ $name }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: migrate
+        image: "{{ $.Values.image.repository }}/{{ $name }}:{{ $.Values.image.tag }}"
+        imagePullPolicy: {{ $.Values.image.pullPolicy }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        command: {{ toYaml $cmd | nindent 10 }}
+        env:
+        - name: ENVIRONMENT
+          value: {{ $svc.environment | default "production" }}
+        - name: DATABASE_URL
+          value: "postgresql+asyncpg://wildframe:$(POSTGRES_PASSWORD)@{{ $.Values.infra.postgresHost }}:{{ $.Values.infra.postgresPort }}/{{ $svc.db }}"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ $.Values.secrets.existingSecret }}
+              key: {{ $.Values.secrets.postgresPasswordKey }}
+        {{- if $hook }}
+        # Runs before app pods start; a failed migration aborts the release
+        # (helm --atomic).
+        {{- end }}
+        resources: {{- toYaml ($svc.migrationResources | default $.Values.migration.resources) | nindent 10 }}
+{{- $weight = add $weight 1 }}
+{{- end }}
+{{- end }}
+{{- end }}

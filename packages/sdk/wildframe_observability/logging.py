@@ -23,6 +23,7 @@ Security: all user-supplied data (log messages, extra fields, header values)
 is sanitized to prevent log-injection attacks (CRLF injection, JSON breakout,
 ansi escape sequences). See :func:`_sanitize_for_log`.
 """
+
 from __future__ import annotations
 
 import json
@@ -37,6 +38,76 @@ from typing import Any, Optional
 # Contextvars propagated by CorrelationMiddleware.
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
+
+
+def get_correlation_id() -> str:
+    """Get the current correlation_id from contextvar.
+
+    Returns empty string if not set.
+    """
+    return correlation_id_var.get("")
+
+
+def get_request_id() -> str:
+    """Get the current request_id from contextvar.
+
+    Returns empty string if not set.
+    """
+    return request_id_var.get("")
+
+
+# ---------------------------------------------------------------------------
+# Field-level secret redaction
+# ---------------------------------------------------------------------------
+
+#: Field names (case-insensitive) whose values should be redacted in logs.
+#: Includes common secret patterns: passwords, tokens, secrets, auth headers,
+#: cookies, API keys, and Stripe keys.
+REDACT_FIELDS: frozenset[str] = frozenset(
+    {
+        "password",
+        "passwd",
+        "pwd",
+        "token",
+        "access_token",
+        "refresh_token",
+        "secret",
+        "secret_key",
+        "authorization",
+        "cookie",
+        "set-cookie",
+        "api_key",
+        "apikey",
+        "api-key",
+        "stripe_key",
+        "stripe_secret_key",
+        "stripe_api_key",
+    }
+)
+
+
+def _redact_secrets(value: Any, depth: int = 0) -> Any:
+    """Recursively redact secret field values in dicts and lists.
+
+    Only dict keys matching REDACT_FIELDS (case-insensitive) are redacted.
+    Other values are passed through unchanged (they will still be sanitized
+    by _sanitize_for_log for control chars, etc.).
+    """
+    if depth > 10:
+        return "<max-depth>"
+    if isinstance(value, dict):
+        redacted_keys = {f.replace("-", "").replace("_", "") for f in REDACT_FIELDS}
+        return {
+            k: (
+                _redact_secrets(v, depth + 1)
+                if k.lower().replace("-", "").replace("_", "") in redacted_keys
+                else v
+            )
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_secrets(item, depth + 1) for item in value]
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -94,14 +165,33 @@ class JSONFormatter(logging.Formatter):
     def __init__(self, service_name: str = "") -> None:
         super().__init__()
         self.service_name = service_name
+
     def format(self, record: logging.LogRecord) -> str:
         # Standard LogRecord attributes we handle explicitly or ignore.
         STANDARD_ATTRS = {
-            "name", "msg", "args", "levelname", "levelno", "pathname",
-            "filename", "module", "lineno", "funcName", "created",
-            "msecs", "relativeCreated", "thread", "threadName",
-            "processName", "process", "message", "exc_info", "exc_text",
-            "stack_info", "taskName", "getMessage",
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "pathname",
+            "filename",
+            "module",
+            "lineno",
+            "funcName",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "processName",
+            "process",
+            "message",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "taskName",
+            "getMessage",
         }
 
         message = _sanitize_for_log(record.getMessage())
@@ -122,19 +212,22 @@ class JSONFormatter(logging.Formatter):
             if key == "extra" and isinstance(value, dict):
                 # Also support the test pattern: record.extra = {...}
                 for k, v in value.items():
+                    # Redact secret fields, then sanitize for log injection.
+                    v = _redact_secrets(v)
                     log_entry[_sanitize_for_log(k)] = _sanitize_for_log(v)
                 continue
+            # Redact secret fields, then sanitize for log injection.
+            value = _redact_secrets(value)
             log_entry[_sanitize_for_log(key)] = _sanitize_for_log(value)
 
         # Also promote well-known extra attributes (idempotent with above).
         for key in ("creator_id", "content_id", "user_id", "job_id", "trace_id"):
             value = getattr(record, key, None)
             if value is not None:
+                value = _redact_secrets(value)
                 log_entry[key] = _sanitize_for_log(str(value))
         if record.exc_info and record.exc_info[1]:
-            log_entry["exception"] = _sanitize_for_log(
-                self.formatException(record.exc_info)
-            )
+            log_entry["exception"] = _sanitize_for_log(self.formatException(record.exc_info))
         return json.dumps(log_entry, default=str)
 
 

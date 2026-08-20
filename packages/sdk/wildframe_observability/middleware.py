@@ -13,6 +13,7 @@ Security: all header values used in correlation IDs are sanitized via
 :func:`wildframe_observability.logging._sanitize_for_log` to prevent
 log-injection attacks (CRLF, ANSI escapes, control chars).
 """
+
 from __future__ import annotations
 
 import logging

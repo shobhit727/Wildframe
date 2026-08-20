@@ -3,6 +3,7 @@
 import json
 import re
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 
 from wildframe_events import DomainEvent, Topic
@@ -68,6 +69,78 @@ class TestDomainEvent:
         assert event.to_json()
         assert isinstance(event.event_id, str)
         assert len(event.event_id) == 36
+
+
+class TestDomainEventCreate:
+    def test_create_with_explicit_correlation_id(self):
+        event = DomainEvent.create(
+            topic=Topic.CONTENT_UPLOADED,
+            key="test-key",
+            payload={"foo": "bar"},
+            producer="test-service",
+            correlation_id="explicit-corr-123",
+        )
+        assert event.correlation_id == "explicit-corr-123"
+        assert event.topic == Topic.CONTENT_UPLOADED
+        assert event.key == "test-key"
+        assert event.payload == {"foo": "bar"}
+        assert event.producer == "test-service"
+
+    def test_create_without_correlation_id_uses_none(self):
+        event = DomainEvent.create(
+            topic=Topic.CONTENT_UPLOADED,
+            key="test-key",
+        )
+        # When observability not available, correlation_id is None
+        assert event.correlation_id is None
+
+    def test_create_auto_populates_from_context(self):
+        # Mock the observability get_correlation_id to return a value
+        with patch("wildframe_observability.logging.get_correlation_id") as mock_get:
+            mock_get.return_value = "context-corr-456"
+            event = DomainEvent.create(
+                topic=Topic.CONTENT_UPLOADED,
+                key="test-key",
+            )
+            assert event.correlation_id == "context-corr-456"
+
+    def test_create_explicit_overrides_context(self):
+        # Even if context has a value, explicit should win
+        with patch("wildframe_observability.logging.get_correlation_id") as mock_get:
+            mock_get.return_value = "context-corr-456"
+            event = DomainEvent.create(
+                topic=Topic.CONTENT_UPLOADED,
+                key="test-key",
+                correlation_id="explicit-corr-789",
+            )
+            assert event.correlation_id == "explicit-corr-789"
+
+    def test_create_correlation_id_in_to_dict(self):
+        event = DomainEvent.create(
+            topic=Topic.CONTENT_UPLOADED,
+            key="test-key",
+            correlation_id="test-corr",
+        )
+        d = event.to_dict()
+        assert d["correlation_id"] == "test-corr"
+
+    def test_create_correlation_id_in_to_json(self):
+        event = DomainEvent.create(
+            topic=Topic.CONTENT_UPLOADED,
+            key="test-key",
+            correlation_id="test-corr",
+        )
+        json_str = event.to_json()
+        assert '"correlation_id": "test-corr"' in json_str
+
+    def test_from_dict_restores_correlation_id(self):
+        data = {
+            "topic": "content.uploaded",
+            "key": "test-key",
+            "correlation_id": "restored-corr",
+        }
+        event = DomainEvent.from_dict(data)
+        assert event.correlation_id == "restored-corr"
 
 
 class TestTopics:

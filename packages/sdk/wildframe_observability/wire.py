@@ -14,6 +14,7 @@ This adds:
   - /metrics endpoint (Prometheus scrape)
   - Structured JSON logging setup
 """
+
 from __future__ import annotations
 
 import os

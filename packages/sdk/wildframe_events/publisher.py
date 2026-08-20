@@ -25,6 +25,7 @@ Delivery semantics
   exhausted ``publish`` raises, so callers that require delivery see
   the failure instead of silently losing the event.
 """
+
 from __future__ import annotations
 
 import json
@@ -213,4 +214,3 @@ class KafkaEventPublisher(EventPublisher):
         if self._producer is not None:
             await self._producer.stop()  # type: ignore[unreachable]
             self._producer = None
-

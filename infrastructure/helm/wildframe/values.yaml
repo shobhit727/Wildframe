@@ -178,9 +178,83 @@ secrets:
   jwtSecretKey: JWT_SECRET_KEY
   postgresPasswordKey: POSTGRES_PASSWORD
 
+# Migration job (single serialized job, not per-pod initContainers, issue #342).
+migration:
+  enabled: true
+  image: ""
+  # If empty, uses $.Values.image.repository/migration:$.Values.image.tag
+  command: ["alembic", "upgrade", "head"]
+  # Hook annotation: "pre-install" | "pre-upgrade" | "" (manual)
+  hook: "pre-install"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# External managed service CIDRs/FQDNs for NetworkPolicy egress.
+# When set, egress rules allow traffic to these destinations instead of/in
+# addition to in-cluster podSelectors (issues #347/#348).
+external:
+  postgres:
+    enabled: false
+    # CIDR blocks (e.g. "10.0.0.0/16") or FQDNs (requires Cilium/Calico FQDN support)
+    cidrs: []
+    fqdns: []
+  redis:
+    enabled: false
+    cidrs: []
+    fqdns: []
+
+# Kafka SASL/ACL enablement (scaffold — requires Strimzi KafkaUser operator or manual ACLs, issues #550/#551).
 kafka:
   enabled: true
   topics:
     - user.registered
     - user.login
     - token.revoked
+  sasl:
+    enabled: false
+    mechanism: SCRAM-SHA-512
+    # secretRef: name of secret containing sasl username/password keys
+    secretRef: ""
+  acl:
+    enabled: false
+    # Per-service topic ACLs (producer/consumer) — scaffold only, operator applies.
+    # Example:
+    # auth-service:
+    #   produce: [user.registered, token.revoked]
+    #   consume: [user.login]
+    services: {}
+
+# Global defaults for topology spread and pod anti-affinity (issue #387/#636).
+# Override per service via services.<name>.topologySpread / .podAntiAffinity.
+topologySpread:
+  enabled: true
+  maxSkew: 1
+  topologyKey: kubernetes.io/hostname
+  whenUnsatisfiable: DoNotSchedule
+  # Optional: labelSelector to spread over (defaults to app label)
+  # labelSelector: {}
+
+podAntiAffinity:
+  enabled: true
+  # "preferred" (soft) or "required" (hard)
+  type: preferred
+  weight: 100
+  topologyKey: kubernetes.io/hostname
+
+# Container security hardening (issues #519/#520/#521).
+containerSecurity:
+  readOnlyRootFilesystem: true
+  # App writes to /tmp and /app/logs via emptyDir volumes (already mounted).
+
+# ServiceAccount per workload (least-privilege RBAC, issue #343).
+serviceAccount:
+  create: true
+  # Annotations for IRSA / workload identity.
+  annotations: {}
+  # Automount service account token (false by global default).
+  automountToken: false

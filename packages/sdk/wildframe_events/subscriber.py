@@ -49,6 +49,7 @@ Failure semantics (KafkaEventSubscriber)
   Prometheus (``wildframe_event_*``) when ``prometheus_client`` is
   installed; otherwise the same events are visible in structured logs.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -152,9 +153,7 @@ class RedisDeduplicationStore(DeduplicationStore):
         return not bool(await self._redis.exists(f"{self._key_prefix}:{key}"))
 
     async def mark(self, key: str, ttl_seconds: float) -> None:
-        await self._redis.set(
-            f"{self._key_prefix}:{key}", "1", px=int(ttl_seconds * 1000)
-        )
+        await self._redis.set(f"{self._key_prefix}:{key}", "1", px=int(ttl_seconds * 1000))
 
 
 class EventSubscriber(ABC):
@@ -278,9 +277,7 @@ class KafkaEventSubscriber(EventSubscriber):
         )
         await self._consumer.start()  # type: ignore[attr-defined]
         self._reconnect_attempt = 0
-        self._task = asyncio.create_task(
-            self._run(), name=f"wildframe-subscriber-{self.group_id}"
-        )
+        self._task = asyncio.create_task(self._run(), name=f"wildframe-subscriber-{self.group_id}")
 
     async def _run(self) -> None:
         """Poll loop. Reconnects with bounded backoff on consumer errors."""
@@ -366,15 +363,11 @@ class KafkaEventSubscriber(EventSubscriber):
             envelope = json.loads(raw.decode("utf-8"))
             event = DomainEvent.from_dict(envelope)
         except SchemaVersionError as exc:
-            await self._quarantine_raw(
-                topic, key, raw, "schema_version_unsupported", str(exc)
-            )
+            await self._quarantine_raw(topic, key, raw, "schema_version_unsupported", str(exc))
             await self._commit(message)
             return
         except (PayloadValidationError, ValueError, TypeError) as exc:
-            await self._quarantine_raw(
-                topic, key, raw, "malformed", f"{type(exc).__name__}: {exc}"
-            )
+            await self._quarantine_raw(topic, key, raw, "malformed", f"{type(exc).__name__}: {exc}")
             await self._commit(message)
             return
 
@@ -382,16 +375,12 @@ class KafkaEventSubscriber(EventSubscriber):
         # producer-supplied occurred_at.
         ts_ms = getattr(message, "timestamp", None)
         if ts_ms and not event.server_time:
-            event.server_time = datetime.fromtimestamp(
-                ts_ms / 1000.0, tz=timezone.utc
-            ).isoformat()
+            event.server_time = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc).isoformat()
 
         if self.dedup_store is not None:
             marks: List[str] = []
             for dedup_key in self._dedup_keys(event):
-                if not await self.dedup_store.check(
-                    dedup_key, self.dedup_ttl_seconds
-                ):
+                if not await self.dedup_store.check(dedup_key, self.dedup_ttl_seconds):
                     self._note_duplicate(event)
                     await self._commit(message)
                     return
@@ -433,7 +422,9 @@ class KafkaEventSubscriber(EventSubscriber):
                     )
                     await self._send_to_dlq(event, exc, attempt, "permanent_failure")
                     break
-                except Exception as exc:  # noqa: BLE001 - handler errors are quarantined, never fatal
+                except (
+                    Exception
+                ) as exc:  # noqa: BLE001 - handler errors are quarantined, never fatal
                     if attempt >= self.max_retries:
                         await self._send_to_dlq(event, exc, attempt, "retries_exhausted")
                         break

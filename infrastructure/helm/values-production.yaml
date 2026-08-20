@@ -1,6 +1,9 @@
 namespace: wildframe-production
 
-replicaCount: 1
+# Production scale-out (issue #387): critical services get a minimum of 2
+# replicas with PDBs (minAvailable 1) and topology spread + anti-affinity so
+# a node loss never takes a critical service offline.
+replicaCount: 2
 
 image:
   repository: ghcr.io/shobhit727/wildframe
@@ -14,6 +17,61 @@ infra:
 ingress:
   enabled: true
   host: app.wildframe.com
+
+# External managed services (AWS RDS / ElastiCache): uncomment and set the
+# VPC CIDRs or Cilium FQDNs when the cluster uses managed datastores
+# (issues #347/#348). NetworkPolicy will allow egress to these instead of
+# the in-cluster podSelectors.
+external:
+  postgres:
+    enabled: false # set true; cidrs: ["10.0.0.0/16"] (RDS VPC/subnet CIDRs)
+    cidrs: []
+    fqdns: []
+  redis:
+    enabled: false # set true; cidrs: ["10.0.1.0/16"] (ElastiCache VPC CIDRs)
+    cidrs: []
+    fqdns: []
+
+# Critical services: >1 replica, spread across hosts, hard anti-affinity.
+services:
+  api-gateway:
+    replicas: 3
+    pdb:
+      minAvailable: 2
+  auth-service:
+    replicas: 2
+    pdb:
+      minAvailable: 1
+    podAntiAffinity:
+      type: required
+  content-service:
+    replicas: 2
+    pdb:
+      minAvailable: 1
+    podAntiAffinity:
+      type: required
+  streaming-service:
+    replicas: 2
+    pdb:
+      minAvailable: 1
+    podAntiAffinity:
+      type: required
+  billing-service:
+    replicas: 2
+    pdb:
+      minAvailable: 1
+    podAntiAffinity:
+      type: required
+
+# Mixed-version prevention for stateful-ish workloads (issue #636):
+# maxUnavailable=1 with maxSurge=0 would be used for StatefulSets; these are
+# Deployments, so the standard surge=1/unavailable=0 rolling update applies.
+# Topology spread (spread pods across hosts/zones) is enabled globally.
+topologySpread:
+  enabled: true
+  maxSkew: 2
+  topologyKey: kubernetes.io/hostname
+  whenUnsatisfiable: DoNotSchedule
 
 resources:
   requests:

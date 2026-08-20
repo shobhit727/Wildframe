@@ -1,0 +1,26 @@
+# Code owners for Wildframe
+# Syntax: path @owner1 @owner2
+
+# Backend services
+/services/auth-service/           @wildframe/backend-owners
+/services/billing-service/        @wildframe/backend-owners
+/services/content-service/        @wildframe/backend-owners
+/services/streaming-service/      @wildframe/backend-owners
+/services/search-service/         @wildframe/backend-owners
+/services/recommendation-service/ @wildframe/backend-owners
+/services/analytics-service/      @wildframe/backend-owners
+/services/notification-service/   @wildframe/backend-owners
+/services/media-pipeline/         @wildframe/backend-owners
+/services/creators-service/       @wildframe/backend-owners
+/services/moderation-service/     @wildframe/backend-owners
+/services/uploads-service/        @wildframe/backend-owners
+/services/admin-service/          @wildframe/backend-owners
+/services/api-gateway/            @wildframe/backend-owners
+/services/user-service/           @wildframe/backend-owners
+
+# Infrastructure as Code
+/infrastructure/terraform/        @wildframe/infra-owners
+/infrastructure/helm/             @wildframe/infra-owners
+
+# CI/CD Workflows
+/.github/workflows/               @wildframe/ci-owners

@@ -24,6 +24,7 @@ Each event contract documents:
 Events are the integration surface — services never reach into another
 service's DB.
 """
+
 from wildframe_events.topics import Topic
 from wildframe_events.event import DomainEvent
 from wildframe_events.publisher import EventPublisher, InMemoryEventPublisher, KafkaEventPublisher

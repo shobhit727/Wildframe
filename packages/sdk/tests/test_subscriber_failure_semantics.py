@@ -108,7 +108,9 @@ class TestAckAfterProcess:
     @pytest.mark.asyncio
     async def test_offset_committed_only_after_handler_success(self):
         sub = make_subscriber()
-        consumer = FakeConsumer([FakeMessage(event_bytes(DomainEvent(topic="test.topic", key="k", payload={"n": 1})))])
+        consumer = FakeConsumer(
+            [FakeMessage(event_bytes(DomainEvent(topic="test.topic", key="k", payload={"n": 1})))]
+        )
         sub._consumer = consumer
         calls = []
 
@@ -125,7 +127,9 @@ class TestAckAfterProcess:
     @pytest.mark.asyncio
     async def test_no_commit_when_handler_cancelled_mid_processing(self):
         sub = make_subscriber()
-        consumer = FakeConsumer([FakeMessage(event_bytes(DomainEvent(topic="test.topic", key="k", payload={})))])
+        consumer = FakeConsumer(
+            [FakeMessage(event_bytes(DomainEvent(topic="test.topic", key="k", payload={})))]
+        )
         sub._consumer = consumer
         entered = asyncio.Event()
 
@@ -148,7 +152,9 @@ class TestAckAfterProcess:
     @pytest.mark.asyncio
     async def test_no_commit_when_stop_cancels_inflight_work(self):
         sub = make_subscriber()
-        consumer = FakeConsumer([FakeMessage(event_bytes(DomainEvent(topic="test.topic", key="k", payload={})))])
+        consumer = FakeConsumer(
+            [FakeMessage(event_bytes(DomainEvent(topic="test.topic", key="k", payload={})))]
+        )
         sub._consumer = consumer
         entered = asyncio.Event()
 
@@ -167,7 +173,9 @@ class TestAckAfterProcess:
     @pytest.mark.asyncio
     async def test_commit_happens_after_dlq_not_before(self):
         sub = make_subscriber(max_retries=1)
-        consumer = FakeConsumer([FakeMessage(event_bytes(DomainEvent(topic="test.topic", key="k", payload={})))])
+        consumer = FakeConsumer(
+            [FakeMessage(event_bytes(DomainEvent(topic="test.topic", key="k", payload={})))]
+        )
         sub._consumer = consumer
 
         async def bad_handler(e):
@@ -291,7 +299,9 @@ class TestDeduplication:
     @pytest.mark.asyncio
     async def test_duplicate_event_skipped_handler_not_called(self):
         sub = self._dedup_subscriber()
-        consumer = FakeConsumer([FakeMessage(event_bytes(DomainEvent(topic="test.topic", key="k", payload={})))])
+        consumer = FakeConsumer(
+            [FakeMessage(event_bytes(DomainEvent(topic="test.topic", key="k", payload={})))]
+        )
         sub._consumer = consumer
         calls = []
 
@@ -309,7 +319,9 @@ class TestDeduplication:
     @pytest.mark.asyncio
     async def test_dedup_mark_happens_after_successful_processing(self):
         sub = self._dedup_subscriber()
-        consumer = FakeConsumer([FakeMessage(event_bytes(DomainEvent(topic="test.topic", key="k", payload={})))])
+        consumer = FakeConsumer(
+            [FakeMessage(event_bytes(DomainEvent(topic="test.topic", key="k", payload={})))]
+        )
         sub._consumer = consumer
         entered = asyncio.Event()
         release = asyncio.Event()

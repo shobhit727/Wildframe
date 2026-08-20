@@ -18,6 +18,7 @@ Usage::
         from fastapi.responses import Response
         return Response(content=generate_latest(), media_type="text/plain")
 """
+
 from __future__ import annotations
 
 import time
