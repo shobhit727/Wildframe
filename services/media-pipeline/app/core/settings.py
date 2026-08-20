@@ -75,6 +75,7 @@ class Settings(BaseSettings):
 
     # Issue #469: Metrics endpoint token
     METRICS_TOKEN: str = ""
+    CLOUDFRONT_DISTRIBUTION_ID: str | None = None
 
 
 settings = Settings()

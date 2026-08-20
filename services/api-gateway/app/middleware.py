@@ -342,7 +342,7 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
         scope = dict(request.scope)
         scope["body"] = body
         request.scope = scope
-        request._body = body  # type: ignore[attr-defined]
+        request._body = body
 
         # Process request
         response = await call_next(request)
@@ -363,17 +363,18 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
 
     async def _stream_with_limit(self, response: StreamingResponse) -> Response:
         """Stream response body with size limit, return 502 if exceeded."""
-        chunks = []
+        chunks: list[bytes] = []
         total = 0
         async for chunk in response.body_iterator:
-            total += len(chunk)
+            chunk_bytes = chunk if isinstance(chunk, bytes) else bytes(chunk)
+            total += len(chunk_bytes)
             if total > self.max_response_body:
                 return Response(
                     content=f"Response body exceeds limit: {total} > {self.max_response_body}",
                     status_code=502,
                     headers={"X-Request-ID": response.headers.get("x-request-id", "")},
                 )
-            chunks.append(chunk)
+            chunks.append(chunk_bytes)
 
         body = b"".join(chunks)
         return Response(

@@ -254,13 +254,13 @@ def get_logger(name: str) -> logging.Logger:
 
 def set_request_id(rid: Optional[str] = None) -> str:
     """Set the request_id contextvar. Generates a UUID if not provided."""
-    rid = rid or str(uuid.uuid4())
+    rid = rid if rid is not None else str(uuid.uuid4())
     request_id_var.set(rid)
     return rid
 
 
 def set_correlation_id(cid: Optional[str] = None) -> str:
     """Set the correlation_id contextvar. Generates a UUID if not provided."""
-    cid = cid or str(uuid.uuid4())
+    cid = cid if cid is not None else str(uuid.uuid4())
     correlation_id_var.set(cid)
     return cid
