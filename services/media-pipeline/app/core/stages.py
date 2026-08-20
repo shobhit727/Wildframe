@@ -336,6 +336,47 @@ class StubCDN(CDN):
         logger.info("stub CDN invalidate: %s", path)
 
 
+class CloudFrontCDN(CDN):
+    """CloudFront invalidation adapter (#495).
+
+    Requires boto3 and AWS credentials with cloudfront:CreateInvalidation permission.
+    Distribution ID is read from settings.CLOUDFRONT_DISTRIBUTION_ID.
+    """
+
+    def __init__(self, distribution_id: str | None = None, region: str | None = None):
+        self.distribution_id = distribution_id
+        self.region = region or "us-east-1"
+
+    async def invalidate(self, path: str) -> None:
+        if not self.distribution_id:
+            logger.warning(
+                "CloudFront distribution ID not configured; skipping invalidation for %s", path
+            )
+            return
+        try:
+            import boto3
+
+            client = boto3.client("cloudfront", region_name=self.region)
+            # Ensure path starts with /
+            if not path.startswith("/"):
+                path = f"/{path}"
+            caller_ref = f"wildframe-{path}-{int(asyncio.get_event_loop().time())}"
+            await asyncio.to_thread(
+                client.create_invalidation,
+                DistributionId=self.distribution_id,
+                InvalidationBatch={
+                    "Paths": {"Quantity": 1, "Items": [path]},
+                    "CallerReference": caller_ref,
+                },
+            )
+            logger.info(
+                "CloudFront invalidation created for %s (dist=%s)", path, self.distribution_id
+            )
+        except Exception as exc:
+            logger.exception("CloudFront invalidation failed for %s: %s", path, exc)
+            raise
+
+
 # ---------------------------------------------------------------------------
 # Concrete stages.
 #

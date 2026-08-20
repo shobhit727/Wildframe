@@ -549,3 +549,61 @@ async def list_cast(
 ):
     """List cast for content."""
     return await service.list_cast(content_id)
+
+
+# Reindex endpoints (#116)
+# In-memory job registry for async reindex jobs
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+import uuid as uuid_lib
+
+
+class JobStatus(str, Enum):
+    """Job status enumeration."""
+
+    ACCEPTED = "accepted"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
+@dataclass
+class ReindexJob:
+    job_id: UUID
+    status: JobStatus
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error: str | None = None
+    progress: int = 0  # 0-100
+
+
+_reindex_jobs: dict[UUID, ReindexJob] = {}
+
+
+@router.post("/reindex", response_model=dict[str, str])
+async def start_reindex() -> dict[str, str]:
+    """Start async reindex job, returns job_id."""
+    job_id = uuid_lib.uuid4()
+    job = ReindexJob(job_id=job_id, status=JobStatus.ACCEPTED)
+    _reindex_jobs[job_id] = job
+    # TODO: integrate with actual reindex background task
+    return {"job_id": str(job_id)}
+
+
+@router.get("/reindex/{job_id}", response_model=dict)
+async def get_reindex_status(job_id: UUID) -> dict:
+    """Get reindex job status."""
+    job = _reindex_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    return {
+        "job_id": str(job.job_id),
+        "status": job.status.value,
+        "created_at": job.created_at.isoformat(),
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "error": job.error,
+        "progress": job.progress,
+    }

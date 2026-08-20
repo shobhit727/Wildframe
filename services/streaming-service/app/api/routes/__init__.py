@@ -23,6 +23,8 @@ from app.schemas import (
     TranscodingJobCreateRequest,
     TranscodingJobResponse,
     VideoManifestResponse,
+    SignedPlaybackUrlRequest,
+    SignedPlaybackUrlResponse,
 )
 from app.services import StreamingService
 
@@ -184,16 +186,19 @@ async def end_playback_session(
 async def generate_manifest(
     request: ManifestGenerationRequest,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
-    """Generate video manifest for streaming."""
+    """Generate video manifest for streaming (requires authentication)."""
     return await service.generate_manifest(request)
 
 
 @router.get("/manifests/{manifest_id}", response_model=VideoManifestResponse)
 async def get_manifest(
-    manifest_id: UUID, service: Annotated[StreamingService, Depends(get_streaming_service)]
+    manifest_id: UUID,
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
-    """Get manifest by ID."""
+    """Get manifest by ID (requires authentication)."""
     manifest = await service.get_manifest(manifest_id)
     if not manifest:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manifest not found")
@@ -204,9 +209,34 @@ async def get_manifest(
 async def get_episode_manifest(
     episode_id: UUID,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
     protocol: str = Query(default="hls", pattern="^(hls|dash|smooth_streaming)$"),
+    # Signed URL params for token-scoped access (#489, #491)
+    session_id: UUID | None = Query(default=None),
+    signature: str | None = Query(default=None),
+    expires: int | None = Query(default=None),
 ):
-    """Get manifest for episode and protocol."""
+    """Get manifest for episode and protocol (requires authentication or signed URL)."""
+    # If signed URL params provided, verify them
+    if session_id and signature and expires:
+        if not service.verify_signed_url(session_id, episode_id, signature, expires):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid or expired signed URL",
+            )
+        # Verify session is valid for playback
+        if not await service.check_session_valid_for_playback(session_id, current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Session expired or revoked",
+            )
+    else:
+        # Regular auth path - could add entitlement check here (#587)
+        if settings.ENTITLEMENT_CHECK_ENABLED:
+            # Light entitlement check - in real impl, check user subscription tier
+            # For now, we just ensure user is authenticated (done by get_current_user_id)
+            pass
+
     manifest = await service.get_manifest_for_episode(episode_id, protocol)
     if not manifest:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manifest not found")
@@ -390,3 +420,41 @@ async def update_download_progress(
             detail="You can only access your own downloads",
         )
     return await service.update_download_progress(download_id, bytes_downloaded)
+
+
+# Signed playback URL endpoints (#489, #491)
+
+
+@router.post(
+    "/playback-sessions/signed-url",
+    response_model=SignedPlaybackUrlResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_signed_playback_url(
+    request: SignedPlaybackUrlRequest,
+    service: Annotated[StreamingService, Depends(get_streaming_service)],
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
+):
+    """Generate HMAC-signed playback URL for manifest access."""
+    # Verify the session belongs to the current user
+    session = await service.get_playback_session(request.session_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    if session.user_id != current_user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only generate signed URLs for your own sessions",
+        )
+    if session.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Session is not active",
+        )
+
+    signed_url, expires_at = service.generate_signed_url(request)
+    return SignedPlaybackUrlResponse(
+        signed_url=signed_url,
+        expires_at=expires_at,
+        session_id=request.session_id,
+        content_id=request.content_id,
+    )

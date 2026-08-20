@@ -57,8 +57,8 @@ class Settings(BaseSettings):
     PIPELINE_MAX_TOTAL_RETRY_TIME_SECONDS: float = 7200.0
     PIPELINE_JOB_LEASE_SECONDS: float = 300.0
     PIPELINE_DISK_QUOTA_BYTES: int = 0  # 0 = unlimited
-    PIPELINE_MAX_GLOBAL_JOBS: int = 0  # 0 = unlimited
     PIPELINE_MAX_JOBS_PER_CONTENT: int = 0  # 0 = unlimited
+    PIPELINE_MAX_JOBS_PER_CREATOR: int = 2  # 0 = unlimited, #488/#545
     PIPELINE_CIRCUIT_BREAKER_THRESHOLD: int = 10
     PIPELINE_MAX_DURATION_SECONDS: float = 4 * 3600.0
     PIPELINE_MAX_OUTPUT_BYTES: int = 0  # 0 = unlimited (per rendition)
@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     MEDIA_PIPELINE_ADAPTERS: str = "stub"
     FFMPEG_BIN: str = "ffmpeg"
     FFPROBE_BIN: str = "ffprobe"
+
+    # Issue #469: Metrics endpoint token
+    METRICS_TOKEN: str = ""
 
 
 settings = Settings()

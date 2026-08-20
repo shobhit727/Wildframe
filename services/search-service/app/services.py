@@ -523,6 +523,7 @@ class SearchService:
         """Safeguarded deletion of a versioned index only (#586).
 
         Refuses to delete the search alias itself or any non-versioned name.
+        Idempotent: deleting an already-absent index is a successful no-op.
         """
         if index_name == CONTENT_INDEX:
             raise ValueError("refusing to delete the search alias")
@@ -531,7 +532,7 @@ class SearchService:
             raise ValueError("refusing to delete the currently aliased index")
         if not self._is_versioned_index(index_name):
             raise ValueError("only versioned indices (content_v<N>) can be deleted")
-        await self.es.indices.delete(index=index_name)
+        await self.es.indices.delete(index=index_name, ignore_unavailable=True)
         logger.info("Deleted versioned index %s", index_name)
 
     # ---- shutdown --------------------------------------------------------

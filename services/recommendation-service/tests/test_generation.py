@@ -84,7 +84,6 @@ async def test_generate_uses_global_fallback_without_prefs(service):
     service.rec_repo.create.assert_awaited()
 
 
-@pytest.mark.asyncio
 async def test_fetch_global_uses_popularity_endpoint():
     """The fallback must ask content-service for popularity-ranked items,
     not treat the first catalog page as 'global'."""
@@ -128,7 +127,6 @@ async def test_fallback_selects_most_popular_outside_first_page(service):
     assert created_ids[0] == UUID(popular_and_late)
 
 
-@pytest.mark.asyncio
 async def test_fallback_ranking_is_deterministic_on_ties(service):
     """Equal scores must resolve deterministically by content id, not
     insertion order."""

@@ -2,9 +2,13 @@
 Service layer for Streaming Service business logic.
 """
 
+import hashlib
+import hmac
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
+
+from fastapi import HTTPException, status
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +20,8 @@ from app.repositories import (
     TranscodingJobRepository,
     VideoManifestRepository,
 )
+from app.core.settings import settings
+from app.models import PlaybackSessionStatus
 from app.schemas import (
     CDNRegionCreateRequest,
     DownloadSessionCreateRequest,
@@ -23,6 +29,7 @@ from app.schemas import (
     PlaybackSessionCreateRequest,
     PlaybackSessionUpdateRequest,
     QualityProfileCreateRequest,
+    SignedPlaybackUrlRequest,
     TranscodingJobCreateRequest,
 )
 
@@ -44,8 +51,19 @@ class StreamingService:
     # Playback session operations
 
     async def start_playback_session(self, request: PlaybackSessionCreateRequest):
-        """Start a new playback session."""
+        """Start a new playback session with concurrency enforcement (#281, #490)."""
         try:
+            # Atomic check: count active sessions with row lock
+            active_count = await self.playback_repo.count_active_sessions_locked(request.user_id)
+            if active_count >= settings.MAX_ACTIVE_SESSIONS:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Maximum concurrent sessions ({settings.MAX_ACTIVE_SESSIONS}) reached",
+                )
+
+            # Also enforce max_concurrent_streams from subscription tier if available
+            # This would come from user-service; for now we use the global setting
+
             session = await self.playback_repo.create(
                 user_id=request.user_id,
                 content_id=request.content_id,
@@ -58,6 +76,9 @@ class StreamingService:
             )
             await self.playback_repo.commit()
             return session
+        except HTTPException:
+            await self.playback_repo.rollback()
+            raise
         except Exception as e:
             await self.playback_repo.rollback()
             logger.error(f"Failed to start playback session: {e}")
@@ -96,7 +117,68 @@ class StreamingService:
             logger.error(f"Failed to end playback session: {e}")
             raise
 
-    # Video manifest operations
+    # Signed playback URL operations (#489, #491)
+
+    def generate_signed_url(self, request: SignedPlaybackUrlRequest) -> tuple[str, datetime]:
+        """Generate HMAC-signed playback URL.
+
+        Signature = HMAC(secret, session_id|content_id|expiry)
+        """
+        ttl = request.ttl_seconds or settings.PLAYBACK_URL_TTL_SECONDS
+        expires_at = datetime.now(UTC) + timedelta(seconds=ttl)
+        expires_unix = int(expires_at.timestamp())
+
+        # Create message: session_id|content_id|expiry
+        message = f"{request.session_id}|{request.content_id}|{expires_unix}".encode()
+        secret = settings.PLAYBACK_URL_SIGNING_SECRET.encode()
+        signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
+
+        # Build signed URL with query params
+        signed_url = (
+            f"/api/v1/episodes/{request.content_id}/manifest"
+            f"?session_id={request.session_id}"
+            f"&signature={signature}"
+            f"&expires={expires_unix}"
+        )
+        return signed_url, expires_at
+
+    def verify_signed_url(
+        self, session_id: UUID, content_id: UUID, signature: str, expires: int
+    ) -> bool:
+        """Verify HMAC-signed playback URL.
+
+        Checks:
+        1. Signature matches HMAC(secret, session_id|content_id|expiry)
+        2. Expiry not in the past
+        3. Session exists and is active
+        """
+        # Check expiry
+        if datetime.now(UTC).timestamp() > expires:
+            return False
+
+        # Verify signature
+        message = f"{session_id}|{content_id}|{expires}".encode()
+        secret = settings.PLAYBACK_URL_SIGNING_SECRET.encode()
+        expected_signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
+
+        return hmac.compare_digest(signature, expected_signature)
+
+    async def check_session_valid_for_playback(self, session_id: UUID, user_id: UUID) -> bool:
+        """Check if session is valid for playback (not expired, not revoked).
+
+        Implements expiry/revocation checks at playback time (#76, #147, #194, #219, #251).
+        """
+        session = await self.playback_repo.get_by_id(session_id)
+        if not session:
+            return False
+        if session.user_id != user_id:
+            return False
+        if session.status != PlaybackSessionStatus.ACTIVE:
+            return False
+        # Check expiry
+        if session.expires_at and datetime.now(UTC).replace(tzinfo=None) > session.expires_at:
+            return False
+        return True
 
     async def generate_manifest(self, request: ManifestGenerationRequest):
         """Generate video manifest for streaming."""

@@ -323,7 +323,9 @@ class TestSearchService:
 
         # Allows versioned non-aliased
         await service.delete_index("content_v1")
-        service.es.indices.delete.assert_awaited_once_with(index="content_v1")
+        service.es.indices.delete.assert_awaited_once_with(
+            index="content_v1", ignore_unavailable=True
+        )
 
 
 class TestContentToDoc:

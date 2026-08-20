@@ -7,6 +7,7 @@ for the event publisher and fake repositories.
 """
 
 from __future__ import annotations
+import asyncio
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -51,6 +52,10 @@ class FakeFlagRepo:
 
     async def get(self, flag_id: UUID) -> ContentFlag | None:
         return self.flags.get(flag_id)
+
+    async def get_for_update(self, flag_id: UUID) -> ContentFlag | None:
+        """Alias to get for tests without locking."""
+        return await self.get(flag_id)
 
     async def list_pending(self, limit: int = 50) -> list[ContentFlag]:
         pending = [f for f in self.flags.values() if f.status == FlagStatus.PENDING]
@@ -119,6 +124,14 @@ class FakeStrikeRepo:
 
     async def list_active(self, creator_id: UUID) -> list[CreatorStrike]:
         return [s for s in self.strikes if s.creator_id == creator_id and s.is_active]
+
+    async def count_active_for_update(self, creator_id: UUID) -> int:
+        """Alias to count_active for tests without locking."""
+        return await self.count_active(creator_id)
+
+    async def list_active_for_update(self, creator_id: UUID) -> list[CreatorStrike]:
+        """Alias to list_active for tests without locking."""
+        return await self.list_active(creator_id)
 
     async def count_active(self, creator_id: UUID) -> int:
         return len(await self.list_active(creator_id))
@@ -577,3 +590,205 @@ async def test_drain_publishes_in_fifo_order():
     sent_keys = [e.key for e in service.publisher.sent]
     assert sent_keys == [str(e.event_key) for e in flag_repo.events]
     assert flag_repo.events[0].created_at <= flag_repo.events[1].created_at
+
+
+# ---------------------------------------------------------------------------
+# Concurrent behavior tests. These emulate a single-writer database: the
+# repository *for-update* operations take a shared transaction lock (held
+# until ``session.commit()``), and every write yields to the event loop so
+# genuinely parallel calls interleave. This mirrors SELECT ... FOR UPDATE +
+# READ COMMITTED semantics without a real DB, and proves the atomic
+# decision / idempotent-suspension contract under asyncio.gather.
+# ---------------------------------------------------------------------------
+
+
+class _ConcurrentSession(_NoopSession):
+    """A DB-wide write lock, held for the life of one transaction.
+
+    The first ``acquire()`` inside a transaction wins the lock; ``commit()``
+    releases it. Concurrent transactions therefore serialize exactly like
+    row-locked Postgres transactions, and a transaction only ever observes
+    already-committed state.
+    """
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._held = False
+        self._owner = None  # task that holds the lock
+
+    async def acquire(self) -> None:
+        current = asyncio.current_task()
+        if self._owner is current:
+            return  # reentrant: same task already holds the lock
+        await self._lock.acquire()
+        self._held = True
+        self._owner = current
+
+    async def commit(self) -> None:
+        if self._held and self._owner is asyncio.current_task():
+            self._lock.release()
+            self._held = False
+            self._owner = None
+
+    async def rollback(self) -> None:
+        """Release the lock on transaction abort."""
+        if self._held and self._owner is asyncio.current_task():
+            self._lock.release()
+            self._held = False
+            self._owner = None
+
+
+class _ConcurrentFlagRepo(FakeFlagRepo):
+    """FakeFlagRepo whose for-update read takes the transaction lock."""
+
+    def __init__(self, session: _ConcurrentSession) -> None:
+        super().__init__()
+        self.session = session
+
+    async def create(self, flag: ContentFlag) -> ContentFlag:
+        await asyncio.sleep(0)  # model I/O latency so coroutines interleave
+        return await super().create(flag)
+
+    async def get_for_update(self, flag_id: UUID) -> ContentFlag | None:
+        await self.session.acquire()
+        await asyncio.sleep(0)
+        return self.flags.get(flag_id)
+
+    async def save(self, flag: ContentFlag) -> ContentFlag:
+        await asyncio.sleep(0)
+        return await super().save(flag)
+
+    async def enqueue_event(self, topic: str, event_key: str, payload: dict) -> FakeOutboxRow:
+        await asyncio.sleep(0)
+        return await super().enqueue_event(topic, event_key, payload)
+
+
+class _ConcurrentDecisionRepo(FakeDecisionRepo):
+    """FakeDecisionRepo that yields on write (I/O latency)."""
+
+    async def create(self, decision: ModerationDecision) -> ModerationDecision:
+        await asyncio.sleep(0)
+        return await super().create(decision)
+
+
+class _ConcurrentStrikeRepo(FakeStrikeRepo):
+    """FakeStrikeRepo whose for-update read takes the transaction lock."""
+
+    def __init__(self, session: _ConcurrentSession) -> None:
+        super().__init__()
+        self.session = session
+
+    async def create(self, strike: CreatorStrike) -> CreatorStrike:
+        await asyncio.sleep(0)
+        return await super().create(strike)
+
+    async def count_active(self, creator_id: UUID) -> int:
+        await asyncio.sleep(0)
+        return await super().count_active(creator_id)
+
+    async def count_active_for_update(self, creator_id: UUID) -> int:
+        await self.session.acquire()
+        await asyncio.sleep(0)
+        return len(await self.list_active(creator_id))
+
+
+def _make_concurrent_service():
+    """Three service instances sharing ONE session + shared fake repositories."""
+    session = _ConcurrentSession()
+    flag_repo = _ConcurrentFlagRepo(session)
+    decision_repo = _ConcurrentDecisionRepo()
+    strike_repo = _ConcurrentStrikeRepo(session)
+    set_event_publisher(InMemoryEventPublisher())
+    services = [
+        ModerationService(
+            flag_repo=flag_repo,
+            decision_repo=decision_repo,
+            strike_repo=strike_repo,
+        )
+        for _ in range(3)
+    ]
+    return services, flag_repo, decision_repo, strike_repo
+
+
+def _seed_flag(flag_repo: FakeFlagRepo, *, creator_id: UUID | None = None) -> ContentFlag:
+    flag = ContentFlag(
+        id=uuid4(),
+        content_id=uuid4(),
+        flag_reason=FlagReason.SPAM,
+        reported_by=uuid4(),
+        content_creator_id=creator_id,
+        status=FlagStatus.PENDING,
+    )
+    flag_repo.flags[flag.id] = flag
+    return flag
+
+
+@pytest.mark.asyncio
+async def test_concurrent_decisions_same_flag_one_succeeds():
+    """Two parallel make_decision calls on same flag -> one succeeds, one raises ModerationError."""
+    services, flag_repo, decision_repo, strike_repo = _make_concurrent_service()
+    flag = _seed_flag(flag_repo, creator_id=uuid4())
+    moderator_a, moderator_b = uuid4(), uuid4()
+
+    results = await asyncio.gather(
+        services[0].make_decision(
+            flag_id=flag.id, decision=DecisionType.APPROVE, moderator_id=moderator_a
+        ),
+        services[1].make_decision(
+            flag_id=flag.id, decision=DecisionType.REJECT, moderator_id=moderator_b
+        ),
+        return_exceptions=True,
+    )
+
+    # Clean up: release any held lock from failed transactions.
+    await flag_repo.session.rollback()
+
+    successes = [r for r in results if not isinstance(r, Exception)]
+    errors = [r for r in results if isinstance(r, Exception)]
+
+    assert len(successes) == 1, f"expected exactly 1 winner, got {len(successes)}"
+    assert len(errors) == 1, f"expected exactly 1 loser, got {len(errors)}"
+    assert isinstance(errors[0], ModerationError)
+    assert "already" in str(errors[0])
+
+    # The flag is resolved exactly once and carries one audit decision.
+    assert flag.status == FlagStatus.RESOLVED
+    decisions = await decision_repo.list_by_flag(flag.id)
+    assert len(decisions) == 1
+    # Only the winner's side effects exist: a strike iff the recorded decision was a reject.
+    strikes = [s for s in strike_repo.strikes if s.related_flag_id == flag.id]
+    assert len(strikes) == (1 if decisions[0].decision == DecisionType.REJECT else 0)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_rejects_same_creator_one_suspension():
+    """Three parallel rejects on same creator with different flags -> exactly one creator.suspended event."""
+    services, flag_repo, _, strike_repo = _make_concurrent_service()
+    creator_id = uuid4()
+    flag_ids = [_seed_flag(flag_repo, creator_id=creator_id).id for _ in range(3)]
+
+    results = await asyncio.gather(
+        *[
+            services[i].make_decision(
+                flag_id=flag_ids[i], decision=DecisionType.REJECT, moderator_id=uuid4()
+            )
+            for i in range(3)
+        ],
+        return_exceptions=True,
+    )
+
+    # Clean up: release any held lock.
+    await flag_repo.session.rollback()
+
+    errors = [r for r in results if isinstance(r, Exception)]
+    assert errors == [], f"expected all 3 rejects to succeed, got errors: {errors}"
+
+    # All three strikes landed...
+    strikes = await strike_repo.list_active(creator_id)
+    assert len(strikes) == 3
+
+    # ...but exactly ONE suspension crosses the 3-strike threshold.
+    suspension_events = [e for e in flag_repo.events if e.topic == "creator.suspended"]
+    assert len(suspension_events) == 1
+    assert suspension_events[0].payload["creator_id"] == str(creator_id)
+    assert suspension_events[0].payload["active_strikes"] >= 3

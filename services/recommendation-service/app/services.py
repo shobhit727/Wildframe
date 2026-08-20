@@ -1,40 +1,120 @@
 """Recommendation service business logic."""
 
+import json
 import logging
+import random
 from datetime import datetime, timezone
 from uuid import UUID
 
 import httpx
+import redis.asyncio as redis_async
 
 from app.core.settings import settings
 from app.repositories import RecommendationRepository, UserPreferencesRepository
 
 logger = logging.getLogger(__name__)
 
+# Cache TTL with jitter to prevent cache stampede (#456)
+RECOMMENDATION_CACHE_TTL_SECONDS = 300  # 5 minutes base
+RECOMMENDATION_CACHE_JITTER_SECONDS = 60  # ±60 seconds jitter
+
+
+_redis_client: redis_async.Redis | None = None
+
+
+async def get_redis_client() -> redis_async.Redis | None:
+    """Lazily create the shared redis.asyncio client; fail-open if unavailable."""
+    global _redis_client
+    if _redis_client is None:
+        try:
+            _redis_client = await redis_async.from_url(
+                settings.REDIS_URL,
+                encoding="utf-8",
+                decode_responses=True,
+            )
+            # Verify connection
+            await _redis_client.ping()
+        except Exception:
+            logger.warning("Redis unavailable; recommendation cache disabled")
+            _redis_client = None
+    return _redis_client
+
+
+async def close_redis_client() -> None:
+    """Close the shared Redis client."""
+    global _redis_client
+    if _redis_client is not None:
+        await _redis_client.aclose()
+        _redis_client = None
+
+
+def _cache_key(user_id: UUID) -> str:
+    """Generate cache key for user recommendations."""
+    return f"wf:rec:user:{user_id}"
+
+
+def _jittered_ttl() -> int:
+    """Return TTL with random jitter to prevent synchronized expiry."""
+    return RECOMMENDATION_CACHE_TTL_SECONDS + random.randint(
+        -RECOMMENDATION_CACHE_JITTER_SECONDS, RECOMMENDATION_CACHE_JITTER_SECONDS
+    )
+
+
+async def _cache_get(user_id: UUID) -> list[dict] | None:
+    """Get cached recommendations from Redis."""
+    client = await get_redis_client()
+    if client is None:
+        return None
+    try:
+        data = await client.get(_cache_key(user_id))
+        if data:
+            return list(json.loads(data))
+    except Exception:
+        logger.warning("Redis cache get failed for user %s", user_id)
+    return None
+
+
+async def _cache_set(user_id: UUID, recommendations: list[dict]) -> None:
+    """Set cached recommendations in Redis with jittered TTL."""
+    client = await get_redis_client()
+    if client is None:
+        return
+    try:
+        await client.set(
+            _cache_key(user_id),
+            json.dumps(recommendations),
+            ex=_jittered_ttl(),
+        )
+    except Exception:
+        logger.warning("Redis cache set failed for user %s", user_id)
+
+
+async def _cache_invalidate(user_id: UUID) -> None:
+    """Invalidate cached recommendations for a user."""
+    client = await get_redis_client()
+    if client is None:
+        return
+    try:
+        await client.delete(_cache_key(user_id))
+    except Exception:
+        logger.warning("Redis cache invalidate failed for user %s", user_id)
+
 
 class ContentCatalogClient:
-    """Fetches genres and published content from content-service.
-
-    Uses an httpx.AsyncClient with connection pooling and bounded
-    connection limits. One client is shared process-wide (see
-    get_catalog_client) rather than created per request.
-    """
+    """Fetches genres and published content from content-service."""
 
     def __init__(
         self,
-        base_url: str = settings.CONTENT_SERVICE_URL,
-        timeout: float | None = None,
-        limits: httpx.Limits | None = None,
+        base_url: str,
+        timeout: float = 10.0,
+        max_connections: int = 20,
+        max_keepalive: int = 10,
     ):
         self.base_url = base_url.rstrip("/")
-        self.timeout = timeout if timeout is not None else settings.CONTENT_CATALOG_TIMEOUT_SECONDS
         self.client = httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=self.timeout,
-            limits=limits
-            or httpx.Limits(
-                max_connections=settings.CONTENT_CATALOG_MAX_CONNECTIONS,
-                max_keepalive_connections=settings.CONTENT_CATALOG_MAX_KEEPALIVE,
+            timeout=timeout,
+            limits=httpx.Limits(
+                max_connections=max_connections, max_keepalive_connections=max_keepalive
             ),
         )
 
@@ -45,8 +125,7 @@ class ContentCatalogClient:
 
     async def fetch_by_genre(self, genre_id, page_size: int = 100) -> list[dict]:
         resp = await self.client.get(
-            "/api/v1/content",
-            params={"page": 1, "page_size": page_size, "genre_id": genre_id},
+            f"/api/v1/genres/{genre_id}/content", params={"limit": page_size}
         )
         resp.raise_for_status()
         return list(resp.json())
@@ -65,18 +144,16 @@ _catalog_client_class: type | None = None
 
 
 def get_catalog_client() -> ContentCatalogClient:
-    """Return the process-wide shared catalog client, creating it lazily.
-
-    The client is reused across all recommendation generations so HTTP
-    connection pooling and TLS sessions are amortized. The class identity
-    check exists so tests that patch ``ContentCatalogClient`` still get a
-    client built from the patched class (production never patches, so a
-    single shared client is used there).
-    """
+    """Return the process-wide shared catalog client, creating it lazily."""
     global _catalog_client, _catalog_client_class
-    if _catalog_client is None or ContentCatalogClient is not _catalog_client_class:
-        _catalog_client = ContentCatalogClient()
+    if _catalog_client is None:
         _catalog_client_class = ContentCatalogClient
+        _catalog_client = ContentCatalogClient(
+            base_url=settings.CONTENT_SERVICE_URL,
+            timeout=settings.CONTENT_CATALOG_TIMEOUT_SECONDS,
+            max_connections=settings.CONTENT_CATALOG_MAX_CONNECTIONS,
+            max_keepalive=settings.CONTENT_CATALOG_MAX_KEEPALIVE,
+        )
     return _catalog_client
 
 
@@ -110,12 +187,18 @@ class RecommendationService:
         never request an unbounded result set (#228 F4).
         """
         limit = max(1, min(limit, settings.MAX_RECOMMENDATION_LIMIT))
+
+        # Try Redis cache first (#456)
+        cached = await _cache_get(user_id)
+        if cached is not None:
+            return cached[:limit]
+
         prefs = await self.pref_repo.get_or_create(user_id)
         recommendations = await self.rec_repo.get_for_user(user_id, limit)
         if recommendations:
             latest_generated = await self.rec_repo.latest_created_at(user_id)
             if latest_generated is not None and latest_generated >= prefs.updated_at:
-                return [
+                result = [
                     {
                         "content_id": str(r.content_id),
                         "score": r.score,
@@ -123,6 +206,8 @@ class RecommendationService:
                     }
                     for r in recommendations
                 ]
+                await _cache_set(user_id, result)
+                return result
         try:
             await self.generate(
                 user_id, prefs.liked_genres or [], prefs.disliked_genres or [], limit
@@ -130,10 +215,12 @@ class RecommendationService:
             recommendations = await self.rec_repo.get_for_user(user_id, limit)
         except Exception:
             logger.exception("Recommendation generation failed; returning stored rows")
-        return [
+        result = [
             {"content_id": str(r.content_id), "score": r.score, "reason": r.reason}
             for r in recommendations
         ]
+        await _cache_set(user_id, result)
+        return result
 
     async def generate(
         self,
@@ -268,6 +355,8 @@ class RecommendationService:
             prefs.disliked_genres = disliked_genres
         prefs.updated_at = datetime.now(timezone.utc)
         await self.pref_repo.session.commit()
+        # Invalidate Redis cache on preference change (#456)
+        await _cache_invalidate(user_id)
         try:
             await self.generate(user_id, prefs.liked_genres or [], prefs.disliked_genres or [])
         except Exception:

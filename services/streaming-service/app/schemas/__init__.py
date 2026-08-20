@@ -245,3 +245,29 @@ class HealthCheckResponse(BaseModel):
     version: str
     database: str
     redis: str
+
+
+class SignedPlaybackUrlRequest(BaseModel):
+    """Request to generate a signed playback URL."""
+
+    session_id: UUID
+    content_id: UUID
+    ttl_seconds: int | None = Field(default=None, ge=60, le=86400)
+
+
+class SignedPlaybackUrlResponse(BaseModel):
+    """Signed playback URL response schema."""
+
+    signed_url: str
+    expires_at: datetime
+    session_id: UUID
+    content_id: UUID
+
+
+class ManifestAccessRequest(BaseModel):
+    """Request to access manifest with signed token."""
+
+    session_id: UUID
+    content_id: UUID
+    signature: str
+    expires_at: int  # Unix timestamp

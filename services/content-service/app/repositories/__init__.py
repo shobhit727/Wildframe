@@ -124,9 +124,10 @@ class CastMemberRepository(BaseRepository):
         return result.scalars().first()
 
     async def search(self, name: str) -> list[CastMember]:
-        """Search cast members by name."""
+        """Search cast members by name (#582: escape ILIKE wildcards)."""
+        escaped = name.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
         result = await self.session.execute(
-            select(CastMember).where(CastMember.name.ilike(f"%{name}%")).limit(20)
+            select(CastMember).where(CastMember.name.ilike(f"%{escaped}%", escape="\\")).limit(20)
         )
         return list(result.scalars().all())
 
@@ -308,10 +309,12 @@ class ContentRepository(BaseRepository):
         return content
 
     async def delete(self, content_id: UUID) -> bool:
-        """Delete content."""
-        content = await self.get_by_id(content_id)
+        """Soft delete content by setting deleted_at timestamp (#433)."""
+        from datetime import datetime
+
+        content = await self.get_by_id(content_id, include_deleted=True)
         if content:
-            await self.session.delete(content)
+            content.deleted_at = datetime.utcnow()
             await self.flush()
             return True
         return False
@@ -328,6 +331,7 @@ class ContentRepository(BaseRepository):
                 and_(
                     Content.animation_style == animation_style,
                     Content.status == ContentStatus.PUBLISHED,
+                    Content.deleted_at.is_(None),
                 )
             )
             .order_by(Content.created_at.desc(), Content.id.desc())
@@ -343,7 +347,11 @@ class ContentRepository(BaseRepository):
         result = await self.session.execute(
             select(Content)
             .where(
-                and_(Content.series_id == series_id, Content.content_type == ContentType.EPISODE)
+                and_(
+                    Content.series_id == series_id,
+                    Content.content_type == ContentType.EPISODE,
+                    Content.deleted_at.is_(None),
+                )
             )
             .order_by(Content.season_number.asc(), Content.episode_number.asc(), Content.id.asc())
             .limit(limit)
@@ -358,7 +366,11 @@ class ContentRepository(BaseRepository):
         result = await self.session.execute(
             select(Content)
             .where(
-                and_(Content.creator_id == creator_id, Content.status == ContentStatus.PUBLISHED)
+                and_(
+                    Content.creator_id == creator_id,
+                    Content.status == ContentStatus.PUBLISHED,
+                    Content.deleted_at.is_(None),
+                )
             )
             .order_by(Content.created_at.desc(), Content.id.desc())
             .limit(limit)

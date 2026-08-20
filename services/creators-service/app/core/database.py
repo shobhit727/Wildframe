@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool, QueuePool
 
 from app.core.settings import settings
 
@@ -22,7 +23,30 @@ class DatabaseManager:
     @classmethod
     async def init(cls) -> None:
         """Initialize database."""
-        cls.engine = create_async_engine(settings.DATABASE_URL, echo=False, future=True)
+        # Use NullPool for SQLite (in-memory tests), QueuePool for PostgreSQL
+        if settings.DATABASE_URL.startswith("sqlite"):
+            poolclass = NullPool
+            pool_kwargs = {}
+        else:
+            poolclass = QueuePool
+            pool_kwargs = {
+                "pool_size": 5,
+                "max_overflow": 5,
+                "pool_timeout": 30,
+                "pool_recycle": 3600,
+                "pool_pre_ping": True,
+            }
+
+        cls.engine = create_async_engine(
+            settings.DATABASE_URL,
+            echo=False,
+            future=True,
+            poolclass=poolclass,
+            connect_args=(
+                {"command_timeout": 30} if not settings.DATABASE_URL.startswith("sqlite") else {}
+            ),
+            **pool_kwargs,
+        )
         cls.session_factory = async_sessionmaker(
             cls.engine, class_=AsyncSession, expire_on_commit=False
         )

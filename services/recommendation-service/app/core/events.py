@@ -23,6 +23,7 @@ from wildframe_events.subscriber import KafkaEventSubscriber, RedisDeduplication
 from app.core.database import DatabaseManager
 from app.core.settings import settings
 from app.repositories import RecommendationRepository
+from app.services import _cache_invalidate
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,39 @@ async def _handle_content_deleted(event: DomainEvent) -> None:
 
 async def _handle_content_unpublished(event: DomainEvent) -> None:
     await _handle_content_gone(event, "unpublished")
+
+
+async def _handle_billing_subscription_change(event: DomainEvent) -> None:
+    """Evict user recommendations on subscription lifecycle changes.
+
+    When a subscription is created, updated, or cancelled, the user's
+    entitlements may change, so we invalidate their cached recommendations
+    to force regeneration with the new access level.
+    """
+    user_id = event.payload.get("user_id")
+    if not user_id:
+        logger.warning("dropping billing event %s without user_id: %s", event.topic, event.event_id)
+        return
+    try:
+        user_uuid = UUID(user_id)
+    except (ValueError, TypeError):
+        logger.warning("dropping billing event %s with invalid user_id=%r", event.topic, user_id)
+        return
+    factory = DatabaseManager.session_factory
+    if factory is None:
+        logger.warning("database not initialized; skipping billing eviction")
+        return
+    async with factory() as session:
+        removed = await RecommendationRepository(session).clear_for_user(user_uuid)
+        await session.commit()
+    # Invalidate Redis cache as well (#456)
+    await _cache_invalidate(user_uuid)
+    logger.info(
+        "billing event %s for user %s -> cleared %s recommendations",
+        event.topic,
+        user_id,
+        removed,
+    )
 
 
 def get_event_subscriber() -> EventSubscriber:
@@ -106,6 +140,15 @@ async def start_event_subscriber() -> None:
         subscriber = get_event_subscriber()
         await subscriber.subscribe("content.deleted", _handle_content_deleted)
         await subscriber.subscribe("content.unpublished", _handle_content_unpublished)
+        await subscriber.subscribe(
+            "billing.subscription.created", _handle_billing_subscription_change
+        )
+        await subscriber.subscribe(
+            "billing.subscription.updated", _handle_billing_subscription_change
+        )
+        await subscriber.subscribe(
+            "billing.subscription.cancelled", _handle_billing_subscription_change
+        )
         await subscriber.start()
     except Exception:
         logger.exception("event subscriber failed to start; rows stay fresh via regeneration")

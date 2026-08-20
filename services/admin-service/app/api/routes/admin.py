@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
@@ -56,6 +58,63 @@ async def get_current_admin_id(
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
+# Step-up reauth (#613): destructive admin actions (content removal, user
+# suspension/ban) require proof of a recent login. auth-service has no
+# dedicated reauth endpoint, so the X-Admin-Reauth header carries the access
+# token itself and must have been issued (iat) within REAUTH_MAX_AGE_SECONDS.
+REAUTH_MAX_AGE_SECONDS: int = 600  # 10 minutes
+
+
+async def verify_admin_reauth(
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
+    x_admin_reauth: Annotated[str | None, Header(alias="X-Admin-Reauth")] = None,
+) -> str:
+    """Step-up reauth gate for destructive admin actions.
+
+    Requires ``X-Admin-Reauth`` holding the admin's access token issued
+    within the last 10 minutes, for the same admin identity. 403 for a
+    different admin, 401 for missing/expired/invalid step-up proof.
+    """
+    if not x_admin_reauth:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Step-up authentication required: X-Admin-Reauth header missing",
+        )
+    try:
+        payload = jwt.decode(
+            x_admin_reauth,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            audience=settings.JWT_AUDIENCE,
+        )
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid reauth token")
+    if payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid reauth token type"
+        )
+    if payload.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
+        )
+    if str(payload.get("sub") or payload.get("user_id")) != admin_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Reauth token admin mismatch"
+        )
+    iat = payload.get("iat")
+    if not isinstance(iat, (int, float)):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Reauth token missing issued-at claim",
+        )
+    if datetime.now(UTC).timestamp() - iat > REAUTH_MAX_AGE_SECONDS:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Reauth token expired: log in again",
+        )
+    return admin_id
+
+
 def _client_ip(request: Request) -> str:
     """Best-effort client address for audit records (never hard-coded).
 
@@ -94,10 +153,10 @@ def _ensure_admin_can_view_resource(resource_type: str, viewer_id: str) -> None:
 async def moderate_user(
     request: UserModerationRequest,
     request_meta: Request,
-    admin_id: Annotated[str, Depends(get_current_admin_id)],
+    admin_id: Annotated[str, Depends(verify_admin_reauth)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Moderate a user (suspend/ban/activate)"""
+    """Moderate a user (suspend/ban/activate). Step-up reauth required."""
     service = AdminService(db)
     return await service.moderate_user(
         request.user_id, request.status, request.reason, admin_id, _client_ip(request_meta)
@@ -150,11 +209,11 @@ async def flag_content(
 async def resolve_content_flag(
     content_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    admin_id: Annotated[str, Depends(get_current_admin_id)],
+    admin_id: Annotated[str, Depends(verify_admin_reauth)],
     request_meta: Request,
     status: Annotated[str, Query(pattern="^(active|removed)$")],
 ):
-    """Resolve flagged content. Returns 404 if the flag does not exist."""
+    """Resolve flagged content (removed deletes it). Step-up reauth required."""
     service = AdminService(db)
     result = await service.resolve_content_flag(
         content_id, status, admin_id, _client_ip(request_meta)

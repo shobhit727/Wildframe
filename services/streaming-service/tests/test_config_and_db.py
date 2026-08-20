@@ -90,3 +90,24 @@ async def test_get_db_session_yields_and_closes():
     # The generator should then close the session and finish.
     with pytest.raises(StopAsyncIteration):
         await gen.asend(None)
+
+
+@pytest.mark.unit
+def test_streaming_settings_exist():
+    """New streaming settings must exist (#281, #489, #490, #491, #587)."""
+    from app.core.settings import settings
+
+    assert hasattr(settings, "MAX_ACTIVE_SESSIONS")
+    assert isinstance(settings.MAX_ACTIVE_SESSIONS, int)
+    assert settings.MAX_ACTIVE_SESSIONS > 0
+
+    assert hasattr(settings, "PLAYBACK_URL_SIGNING_SECRET")
+    assert isinstance(settings.PLAYBACK_URL_SIGNING_SECRET, str)
+    assert len(settings.PLAYBACK_URL_SIGNING_SECRET) > 0
+
+    assert hasattr(settings, "PLAYBACK_URL_TTL_SECONDS")
+    assert isinstance(settings.PLAYBACK_URL_TTL_SECONDS, int)
+    assert settings.PLAYBACK_URL_TTL_SECONDS > 0
+
+    assert hasattr(settings, "ENTITLEMENT_CHECK_ENABLED")
+    assert isinstance(settings.ENTITLEMENT_CHECK_ENABLED, bool)

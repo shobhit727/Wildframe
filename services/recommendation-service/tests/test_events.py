@@ -113,7 +113,7 @@ async def test_handler_drops_event_with_invalid_content_id(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_subscriber_registers_both_topics(monkeypatch):
-    """start_event_subscriber subscribes to deleted + unpublished."""
+    """start_event_subscriber subscribes to deleted + unpublished + billing."""
     from app.core import events as events_mod
 
     subscriber = MagicMock()
@@ -124,7 +124,11 @@ async def test_subscriber_registers_both_topics(monkeypatch):
     await events_mod.start_event_subscriber()
 
     calls = [c.args[0] for c in subscriber.subscribe.await_args_list]
-    assert calls == ["content.deleted", "content.unpublished"]
+    assert "content.deleted" in calls
+    assert "content.unpublished" in calls
+    assert "billing.subscription.created" in calls
+    assert "billing.subscription.updated" in calls
+    assert "billing.subscription.cancelled" in calls
     subscriber.start.assert_awaited_once()
 
 
@@ -163,3 +167,125 @@ async def test_memory_subscriber_round_trip(monkeypatch):
     repo_cls.return_value.delete_for_content.assert_awaited_once_with(UUID(content_id))
     await events_mod.stop_event_subscriber()
     events_mod.reset_event_subscriber()
+
+
+@pytest.mark.asyncio
+async def test_billing_subscription_created_evicts_user_recs(monkeypatch):
+    """billing.subscription.created clears user recommendations and cache."""
+    from app.core import events as events_mod
+
+    user_id = str(uuid4())
+    monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
+    repo_cls = MagicMock()
+    repo = repo_cls.return_value
+    repo.clear_for_user = AsyncMock(return_value=3)
+    repo.session.commit = AsyncMock()
+    monkeypatch.setattr(events_mod, "RecommendationRepository", repo_cls)
+    cache_invalidate = AsyncMock()
+    monkeypatch.setattr(events_mod, "_cache_invalidate", cache_invalidate)
+
+    await events_mod._handle_billing_subscription_change(
+        _event({"user_id": user_id}, "billing.subscription.created")
+    )
+
+    repo_cls.assert_called_once()
+    repo.clear_for_user.assert_awaited_once_with(UUID(user_id))
+    _FakeSessionFactory.instances[-1].commit.assert_awaited_once()
+    cache_invalidate.assert_awaited_once_with(UUID(user_id))
+
+
+@pytest.mark.asyncio
+async def test_billing_subscription_updated_evicts_user_recs(monkeypatch):
+    """billing.subscription.updated clears user recommendations and cache."""
+    from app.core import events as events_mod
+
+    user_id = str(uuid4())
+    monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
+    repo_cls = MagicMock()
+    repo = repo_cls.return_value
+    repo.clear_for_user = AsyncMock(return_value=1)
+    repo.session.commit = AsyncMock()
+    monkeypatch.setattr(events_mod, "RecommendationRepository", repo_cls)
+    cache_invalidate = AsyncMock()
+    monkeypatch.setattr(events_mod, "_cache_invalidate", cache_invalidate)
+
+    await events_mod._handle_billing_subscription_change(
+        _event({"user_id": user_id}, "billing.subscription.updated")
+    )
+
+    repo.clear_for_user.assert_awaited_once_with(UUID(user_id))
+    cache_invalidate.assert_awaited_once_with(UUID(user_id))
+
+
+@pytest.mark.asyncio
+async def test_billing_subscription_cancelled_evicts_user_recs(monkeypatch):
+    """billing.subscription.cancelled clears user recommendations and cache."""
+    from app.core import events as events_mod
+
+    user_id = str(uuid4())
+    monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
+    repo_cls = MagicMock()
+    repo = repo_cls.return_value
+    repo.clear_for_user = AsyncMock(return_value=5)
+    repo.session.commit = AsyncMock()
+    monkeypatch.setattr(events_mod, "RecommendationRepository", repo_cls)
+    cache_invalidate = AsyncMock()
+    monkeypatch.setattr(events_mod, "_cache_invalidate", cache_invalidate)
+
+    await events_mod._handle_billing_subscription_change(
+        _event({"user_id": user_id}, "billing.subscription.cancelled")
+    )
+
+    repo.clear_for_user.assert_awaited_once_with(UUID(user_id))
+    cache_invalidate.assert_awaited_once_with(UUID(user_id))
+
+
+@pytest.mark.asyncio
+async def test_billing_handler_drops_event_without_user_id(monkeypatch):
+    """Billing events without user_id are dropped."""
+    from app.core import events as events_mod
+
+    monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
+    repo_cls = MagicMock()
+    monkeypatch.setattr(events_mod, "RecommendationRepository", repo_cls)
+
+    await events_mod._handle_billing_subscription_change(
+        _event({"foo": "bar"}, "billing.subscription.created")
+    )
+
+    repo_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_billing_handler_drops_event_with_invalid_user_id(monkeypatch):
+    """Billing events with invalid user_id are dropped."""
+    from app.core import events as events_mod
+
+    monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
+    repo_cls = MagicMock()
+    monkeypatch.setattr(events_mod, "RecommendationRepository", repo_cls)
+
+    await events_mod._handle_billing_subscription_change(
+        _event({"user_id": "not-a-uuid"}, "billing.subscription.updated")
+    )
+
+    repo_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_subscriber_registers_billing_topics(monkeypatch):
+    """start_event_subscriber subscribes to billing topics."""
+    from app.core import events as events_mod
+
+    subscriber = MagicMock()
+    subscriber.subscribe = AsyncMock()
+    subscriber.start = AsyncMock()
+    monkeypatch.setattr(events_mod, "get_event_subscriber", lambda: subscriber)
+
+    await events_mod.start_event_subscriber()
+
+    calls = [c.args[0] for c in subscriber.subscribe.await_args_list]
+    assert "billing.subscription.created" in calls
+    assert "billing.subscription.updated" in calls
+    assert "billing.subscription.cancelled" in calls
+    subscriber.start.assert_awaited_once()

@@ -1,12 +1,15 @@
-"""API Gateway - routing, load balancing, authentication."""
+"""API Gateway - routing, load balancing, authentication, request hardening."""
 
 import logging
+from contextlib import asynccontextmanager
 from types import MappingProxyType
 
 import httpx
 import jwt
 import redis.asyncio as redis
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, Response, status
+from fastapi.responses import StreamingResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +22,26 @@ _CONTROL_CHARS = (
     "".join(chr(c) for c in range(32) if c not in (9,)) + "\x7f"  # keep tab, drop the rest
 )
 _CONTROL_TRANSLATION = str.maketrans({c: "?" for c in _CONTROL_CHARS})
+
+# Headers that must not be forwarded upstream (host is re-set by httpx/ASGI
+# servers; the client would otherwise get the gateway's own responses).
+_PROXY_AGENT_HEADERS = frozenset({"host", "content-length"})
+
+# Client-supplied headers to strip/rewrite at the edge (#314, #522, #625).
+# X-Forwarded-For / X-Real-IP are replaced with trusted values.
+# X-User-* identity headers are dropped entirely.
+# X-Correlation-ID / X-Request-ID are always regenerated server-side.
+_STRIP_HEADERS = frozenset(
+    {
+        "x-forwarded-for",
+        "x-real-ip",
+        "x-user-id",
+        "x-user-email",
+        "x-user-roles",
+        "x-correlation-id",
+        "x-request-id",
+    }
+)
 
 
 def _sanitize_message(message: str) -> str:
@@ -54,6 +77,311 @@ def install_header_redaction() -> None:
     for handler in logging.getLogger().handlers:
         if not any(isinstance(f, HeaderRedactionFilter) for f in handler.filters):
             handler.addFilter(filt)
+
+
+# Module-level shared AsyncClient for upstream requests (#123).
+# Initialized on startup, closed on shutdown. Limits honor settings.
+_shared_client: httpx.AsyncClient | None = None
+
+
+@asynccontextmanager
+async def shared_client_lifespan():
+    """Lifespan context for the shared httpx.AsyncClient.
+
+    Creates a single client with connection pooling limits derived from
+    settings (UPSTREAM_MAX_CONNECTIONS, UPSTREAM_MAX_KEEPALIVE) and
+    timeouts from settings (UPSTREAM_CONNECT_TIMEOUT, UPSTREAM_READ_TIMEOUT,
+    UPSTREAM_WRITE_TIMEOUT, UPSTREAM_POOL_TIMEOUT).
+    """
+    global _shared_client
+    from app.core.settings import settings
+
+    limits = httpx.Limits(
+        max_connections=settings.UPSTREAM_MAX_CONNECTIONS,
+        max_keepalive_connections=settings.UPSTREAM_MAX_KEEPALIVE,
+    )
+    timeout = httpx.Timeout(
+        connect=settings.UPSTREAM_CONNECT_TIMEOUT,
+        read=settings.UPSTREAM_READ_TIMEOUT,
+        write=settings.UPSTREAM_WRITE_TIMEOUT,
+        pool=settings.UPSTREAM_POOL_TIMEOUT,
+    )
+    _shared_client = httpx.AsyncClient(limits=limits, timeout=timeout)
+    logger.info(
+        "Shared AsyncClient initialized: max_connections=%d, max_keepalive=%d",
+        settings.UPSTREAM_MAX_CONNECTIONS,
+        settings.UPSTREAM_MAX_KEEPALIVE,
+    )
+    try:
+        yield
+    finally:
+        if _shared_client:
+            await _shared_client.aclose()
+            _shared_client = None
+            logger.info("Shared AsyncClient closed")
+
+
+def get_shared_client() -> httpx.AsyncClient:
+    """Get the shared AsyncClient instance.
+
+    Raises RuntimeError if called outside of lifespan (client not initialized).
+    """
+    if _shared_client is None:
+        raise RuntimeError("Shared AsyncClient not initialized — call within lifespan")
+    return _shared_client
+
+
+class RateLimiter:
+    """Rate limiting middleware with per-endpoint limits.
+
+    Limits are configured via settings (RATE_LIMIT_* per minute).
+    Key = user sub (if authenticated) or client IP.
+    Fail-open on Redis errors (#214).
+    """
+
+    def __init__(self, redis_client: redis.Redis):
+        self.redis = redis_client
+        from app.core.settings import settings
+
+        # Map service/endpoint -> limit per minute
+        self.limits = {
+            "auth": settings.RATE_LIMIT_AUTH,
+            "search": settings.RATE_LIMIT_SEARCH,
+            "uploads": settings.RATE_LIMIT_UPLOAD_CREATE,  # create session
+            "reindex": settings.RATE_LIMIT_REINDEX,
+            "default": settings.RATE_LIMIT_DEFAULT,
+        }
+        # Special sub-limits for upload finalize (complete/abort)
+        self._upload_finalize_limit = settings.RATE_LIMIT_UPLOAD_FINALIZE
+
+    def _get_limit(self, service: str, path: str = "") -> int:
+        """Get rate limit for a service, with sub-endpoint overrides."""
+        # Upload finalize (complete/abort) has stricter limit
+        if service == "uploads" and (path.endswith("/complete") or path.endswith("/abort")):
+            return self._upload_finalize_limit
+        # Reindex is an expensive operation on search service
+        if path.endswith("/reindex"):
+            from app.core.settings import settings
+
+            return self.limits.get("reindex", settings.RATE_LIMIT_REINDEX)
+        return self.limits.get(service, self.limits["default"])
+
+    async def check_rate_limit(self, user_id: str, service: str, path: str = "") -> bool:
+        """Check if user has exceeded rate limit for service.
+
+        Fail-open on Redis errors (unavailable, corrupt counter value): the
+        rate limiter is anti-abuse protection, not an authorization
+        decision, and a Redis outage or restart must not take the whole
+        gateway down (#214). Windows are ephemeral by design.
+        """
+        key = f"rate_limit:{user_id}:{service}"
+        limit = self._get_limit(service, path)
+
+        try:
+            count = int(await self.redis.incr(key))
+            if count == 1:
+                await self.redis.expire(key, 60)  # 1 minute window
+        except Exception:  # noqa: BLE001 - fail open on Redis errors
+            logger.warning("Rate limiter Redis error for %s; allowing request", service)
+            return True
+
+        return count <= limit
+
+
+class HeaderSanitizerMiddleware(BaseHTTPMiddleware):
+    """Strip/rewrite client-supplied headers at the edge (#314, #522, #625).
+
+    - X-Forwarded-For: append client IP to trusted chain, drop client value
+    - X-Real-IP: replace with client IP
+    - X-User-*: drop entirely (identity headers must come from auth)
+    - X-Correlation-ID / X-Request-ID: always regenerate server-side
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        # Get client IP
+        client_ip = request.client.host if request.client else "unknown"
+
+        # Build new headers dict with sanitized values
+        new_headers = {}
+        for key, value in request.headers.items():
+            key_lower = key.lower()
+            if key_lower in _STRIP_HEADERS:
+                continue  # drop client-supplied value
+            new_headers[key] = value
+
+        # Rewrite X-Forwarded-For: append client IP to existing (trusted) chain
+        # If no existing XFF, start new chain with client IP
+        existing_xff = request.headers.get("x-forwarded-for")
+        if existing_xff:
+            new_headers["x-forwarded-for"] = f"{existing_xff}, {client_ip}"
+        else:
+            new_headers["x-forwarded-for"] = client_ip
+
+        # Rewrite X-Real-IP to client IP
+        new_headers["x-real-ip"] = client_ip
+
+        # Create a new request with sanitized headers
+        # We can't mutate request.headers directly (immutable), so we use scope
+        scope = request.scope
+        scope = dict(scope)
+        scope["headers"] = [(k.lower().encode(), v.encode()) for k, v in new_headers.items()]
+
+        # Use the modified scope for the rest of the request
+        # Delete _headers to force re-parse (setting to None doesn't work due to hasattr check)
+        if hasattr(request, "_headers"):
+            del request._headers
+        request.scope = scope
+
+        response = await call_next(request)
+        return response
+
+
+class BodyLimitMiddleware(BaseHTTPMiddleware):
+    """Enforce request body and header limits (#231, #315, #417, #418, #419, #449, #517, #518, #629).
+
+    - MAX_REQUEST_BODY_SIZE: reject 413 before buffering full body
+    - MAX_HEADER_COUNT/FIELD/TOTAL: reject 431
+    - Service-level caps: multipart (uploads) vs JSON (default)
+    - Response body streaming with MAX_RESPONSE_BODY_SIZE cap (502/504)
+    - Decompression bomb protection (MAX_DECOMPRESSION_RATIO)
+    """
+
+    def __init__(self, app):
+        super().__init__(app)
+        from app.core.settings import settings
+
+        self.max_request_body = settings.MAX_REQUEST_BODY_SIZE
+        self.max_response_body = settings.MAX_RESPONSE_BODY_SIZE
+        self.max_header_count = settings.MAX_HEADER_COUNT
+        self.max_header_field_size = settings.MAX_HEADER_FIELD_SIZE
+        self.max_header_total_size = settings.MAX_HEADER_TOTAL_SIZE
+        self.max_decompression_ratio = settings.MAX_DECOMPRESSION_RATIO
+
+        # Uploads service uses multipart — larger cap
+        self.max_multipart_body = settings.MAX_REQUEST_BODY_SIZE * 2  # 10MB for multipart
+
+    async def dispatch(self, request: Request, call_next):
+        # Check header limits early (#417, #418, #419)
+        header_count = len(request.headers)
+        if header_count > self.max_header_count:
+            return Response(
+                content=f"Too many headers: {header_count} > {self.max_header_count}",
+                status_code=431,
+                headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+            )
+
+        total_header_size = 0
+        for k, v in request.headers.items():
+            if len(k) > self.max_header_field_size or len(v) > self.max_header_field_size:
+                return Response(
+                    content=f"Header field too large (max {self.max_header_field_size})",
+                    status_code=431,
+                    headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+                )
+            total_header_size += len(k) + len(v)
+            if total_header_size > self.max_header_total_size:
+                return Response(
+                    content=f"Total header size too large (max {self.max_header_total_size})",
+                    status_code=431,
+                    headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+                )
+
+        # Determine body limit based on content type and service
+        content_type = request.headers.get("content-type", "").lower()
+        is_multipart = content_type.startswith("multipart/")
+        service = request.url.path.strip("/").split("/")[0] if request.url.path.strip("/") else ""
+        body_limit = (
+            self.max_multipart_body
+            if (is_multipart or service == "uploads")
+            else self.max_request_body
+        )
+
+        # Read body in chunks, enforcing limit before full buffering (#231, #417)
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                cl = int(content_length)
+                if cl > body_limit:
+                    return Response(
+                        content=f"Request body too large: {cl} > {body_limit}",
+                        status_code=413,
+                        headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+                    )
+            except ValueError:
+                pass  # Invalid content-length, let streaming handle it
+
+        # Stream body with limit enforcement
+        chunks = []
+        total = 0
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > body_limit:
+                return Response(
+                    content=f"Request body exceeds limit: {total} > {body_limit}",
+                    status_code=413,
+                    headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+                )
+            chunks.append(chunk)
+
+        # Decompression bomb check for compressed content
+        if request.headers.get("content-encoding", "").lower() in ("gzip", "deflate", "br"):
+            # Heuristic: if compressed size * ratio > limit, likely bomb
+            compressed_size = total
+            if compressed_size > 0 and compressed_size * self.max_decompression_ratio > body_limit:
+                return Response(
+                    content=(
+                        f"Potential decompression bomb: {compressed_size} * "
+                        f"{self.max_decompression_ratio} > {body_limit}"
+                    ),
+                    status_code=413,
+                    headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+                )
+
+        # Reconstruct request with buffered body
+        body = b"".join(chunks)
+        scope = dict(request.scope)
+        scope["body"] = body
+        request.scope = scope
+        request._body = body  # type: ignore[attr-defined]
+
+        # Process request
+        response = await call_next(request)
+
+        # Stream response body with limit enforcement (#449, #517, #518, #629)
+        if isinstance(response, StreamingResponse):
+            return await self._stream_with_limit(response)
+        elif hasattr(response, "body") and response.body is not None:
+            body_len = len(response.body)
+            if body_len > self.max_response_body:
+                return Response(
+                    content=f"Response body too large: {body_len} > {self.max_response_body}",
+                    status_code=502,
+                    headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+                )
+
+        return response
+
+    async def _stream_with_limit(self, response: StreamingResponse) -> Response:
+        """Stream response body with size limit, return 502 if exceeded."""
+        chunks = []
+        total = 0
+        async for chunk in response.body_iterator:
+            total += len(chunk)
+            if total > self.max_response_body:
+                return Response(
+                    content=f"Response body exceeds limit: {total} > {self.max_response_body}",
+                    status_code=502,
+                    headers={"X-Request-ID": response.headers.get("x-request-id", "")},
+                )
+            chunks.append(chunk)
+
+        body = b"".join(chunks)
+        return Response(
+            content=body,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=response.media_type,
+        )
 
 
 class ServiceRegistry:
@@ -168,39 +496,6 @@ class AuthenticationMiddleware:
         return token_payload
 
 
-class RateLimiter:
-    """Rate limiting middleware."""
-
-    def __init__(self, redis_client: redis.Redis):
-        self.redis = redis_client
-        self.limits = {
-            "auth": 5,  # 5 requests per minute
-            "search": 100,  # 100 requests per minute
-            "default": 1000,  # 1000 requests per minute
-        }
-
-    async def check_rate_limit(self, user_id: str, service: str) -> bool:
-        """Check if user has exceeded rate limit for service.
-
-        Fail-open on Redis errors (unavailable, corrupt counter value): the
-        rate limiter is anti-abuse protection, not an authorization
-        decision, and a Redis outage or restart must not take the whole
-        gateway down (#214). Windows are ephemeral by design.
-        """
-        key = f"rate_limit:{user_id}:{service}"
-        limit = self.limits.get(service, self.limits["default"])
-
-        try:
-            count = int(await self.redis.incr(key))
-            if count == 1:
-                await self.redis.expire(key, 60)  # 1 minute window
-        except Exception:  # noqa: BLE001 - fail open on Redis errors
-            logger.warning("Rate limiter Redis error for %s; allowing request", service)
-            return True
-
-        return count <= limit
-
-
 class LoadBalancer:
     """Simple load balancer for service replicas."""
 
@@ -245,7 +540,7 @@ async def get_optional_user(request: Request) -> dict | None:
     """Optional auth dependency.
 
     Returns the verified token payload when a valid bearer token is present,
-    otherwise None. Never raises — used by the transparent gateway proxy so
+    otherwise None. Never raises - used by the transparent gateway proxy so
     public catalog reads work without a token while authenticated services
     upstream enforce their own auth.
     """

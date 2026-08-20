@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     MAX_HEADER_TOTAL_SIZE: int = 64 * 1024
     MAX_DECOMPRESSION_RATIO: int = 10
 
+    # Per-endpoint rate limits (requests per minute)
+    # Default: 1000/min; stricter for expensive ops
+    RATE_LIMIT_AUTH: int = 5
+    RATE_LIMIT_SEARCH: int = 100
+    RATE_LIMIT_UPLOAD_CREATE: int = 100
+    RATE_LIMIT_UPLOAD_FINALIZE: int = 60
+    RATE_LIMIT_REINDEX: int = 20
+    RATE_LIMIT_DEFAULT: int = 1000
+
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if running in production with default insecure secrets.

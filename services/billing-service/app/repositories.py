@@ -9,14 +9,18 @@ Financial invariants (#191/#220/#428):
     concurrent requests cannot double-apply or regress state.
   - Financial records (purchases, invoices, payouts, refunds) are
     append-only: no repository exposes a delete operation.
+
+Deadlock retry (#631): financial UPDATEs are retried with exponential backoff
+on PostgreSQL deadlock (40P01) and lock_not_available (55P03) errors.
 """
 
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import and_, select, update
-from sqlalchemy.exc import IntegrityError
+import asyncio
+from sqlalchemy import text, and_, select, update
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -35,6 +39,51 @@ from app.models import (
     Subscription,
     WebhookEventStatus,
 )
+
+# ---------------------------------------------------------------------------
+# Deadlock retry helper (#631)
+# ---------------------------------------------------------------------------
+
+_DEADLOCK_CODES = {"40P01", "55P03"}  # deadlock_detected, lock_not_available
+
+
+async def _execute_with_deadlock_retry(
+    session: AsyncSession,
+    stmt,
+    *,
+    max_attempts: int = 3,
+    base_delay: float = 0.05,
+    max_delay: float = 0.5,
+):
+    """Execute a statement with exponential backoff on deadlock/lock errors.
+
+    Retries on PostgreSQL error codes:
+      - 40P01: deadlock_detected
+      - 55P03: lock_not_available (could not obtain lock within timeout)
+
+    Also enforces a per-statement timeout via SET LOCAL statement_timeout
+    to cap transaction duration per #631.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            # Cap statement execution time (ms). Adjust based on workload.
+            await session.execute(text("SET LOCAL statement_timeout = '10s'"))
+            result = await session.execute(stmt)
+            return result
+        except OperationalError as exc:
+            code = getattr(exc.orig, "pgcode", None)
+            if code in _DEADLOCK_CODES and attempt < max_attempts:
+                last_exc = exc
+                delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
+                await asyncio.sleep(delay)
+                await session.rollback()  # reset transaction state
+                continue
+            raise
+        except Exception:
+            raise
+    # Should not reach here (re-raised above), but for type safety:
+    raise last_exc
 
 
 class WebhookEventRepository:
@@ -315,6 +364,25 @@ class CreatorPoolRepository:
         await self.session.flush()
         return entry
 
+    async def redistribute_pool(self, entry_id: UUID, delta: Decimal) -> bool:
+        """Atomically increment redistributed_amount, bounded by pool_amount.
+
+        Uses a guarded UPDATE to prevent read-modify-write race conditions
+        on the Creator Pool balance (#254).
+        """
+        from sqlalchemy import update
+
+        stmt = (
+            update(CreatorPoolEntry)
+            .where(
+                CreatorPoolEntry.id == entry_id,
+                CreatorPoolEntry.redistributed_amount + delta <= CreatorPoolEntry.pool_amount,
+            )
+            .values(redistributed_amount=CreatorPoolEntry.redistributed_amount + delta)
+        )
+        result = await _execute_with_deadlock_retry(self.session, stmt)
+        return bool(result.rowcount)  # type: ignore[attr-defined]
+
 
 class MilestoneRepository:
     """CRUD for Milestone aggregate + tranches."""
@@ -494,5 +562,5 @@ class RefundRepository:
                 status=InvoiceStatus.REFUNDED,
             )
         )
-        result = await self.session.execute(stmt)
+        result = await _execute_with_deadlock_retry(self.session, stmt)
         return bool(result.rowcount)  # type: ignore[attr-defined]

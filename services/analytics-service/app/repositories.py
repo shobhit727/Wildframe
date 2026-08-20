@@ -33,7 +33,12 @@ class EventRepository:
         return event
 
     async def get_by_user(self, user_id: UUID, limit: int = 100) -> list[Event]:
-        stmt = select(Event).where(Event.user_id == user_id).limit(limit)
+        stmt = (
+            select(Event)
+            .where(Event.user_id == user_id)
+            .order_by(Event.created_at.desc(), Event.id.desc())
+            .limit(limit)
+        )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -71,7 +76,7 @@ class ContentViewEventRepository:
         stmt = (
             select(ContentViewEvent)
             .where(ContentViewEvent.content_id == content_id)
-            .order_by(ContentViewEvent.created_at.desc())
+            .order_by(ContentViewEvent.created_at.desc(), ContentViewEvent.id.desc())
             .limit(limit)
         )
         result = await self.session.execute(stmt)
@@ -81,7 +86,7 @@ class ContentViewEventRepository:
         stmt = (
             select(ContentViewEvent)
             .where(ContentViewEvent.viewer_id == viewer_id)
-            .order_by(ContentViewEvent.created_at.desc())
+            .order_by(ContentViewEvent.created_at.desc(), ContentViewEvent.id.desc())
             .limit(limit)
         )
         result = await self.session.execute(stmt)
@@ -121,7 +126,9 @@ class CreatorAnalyticsSnapshotRepository:
         stmt = (
             select(CreatorAnalyticsSnapshot)
             .where(CreatorAnalyticsSnapshot.creator_id == creator_id)
-            .order_by(CreatorAnalyticsSnapshot.period_end.desc())
+            .order_by(
+                CreatorAnalyticsSnapshot.period_end.desc(), CreatorAnalyticsSnapshot.id.desc()
+            )
             .limit(1)
         )
         result = await self.session.execute(stmt)
@@ -139,7 +146,7 @@ class CreatorAnalyticsSnapshotRepository:
                     CreatorAnalyticsSnapshot.period_end <= period_end,
                 )
             )
-            .order_by(CreatorAnalyticsSnapshot.period_start)
+            .order_by(CreatorAnalyticsSnapshot.period_start, CreatorAnalyticsSnapshot.id)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

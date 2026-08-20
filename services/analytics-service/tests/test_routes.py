@@ -37,6 +37,13 @@ def client(auth_user_id):
         "user_id": auth_user_id,
         "role": "user",
     }
+    # Initialize app state and globals for middleware (lifespan not run in tests)
+    import asyncio
+    import app.main as main_module
+
+    main_module._in_flight_lock = asyncio.Lock()
+    main_module._shutdown_event = asyncio.Event()
+    app.state.shutting_down = False
     # NOTE: not used as a context manager — the lifespan raises when there is
     # no healthy database, and tests run without postgres.
     yield TestClient(app, base_url="http://localhost")
@@ -107,6 +114,41 @@ class TestLogEvent:
         response = client.post(
             "/api/v1/analytics/events",
             json={"user_id": "not-a-uuid", "event_type": "playback_started"},
+        )
+
+        assert response.status_code == 422
+
+    def test_log_event_unknown_field_rejected_422(self, client, service):
+        app.dependency_overrides[get_analytics_service] = override(service)
+
+        response = client.post(
+            "/api/v1/analytics/events",
+            json={
+                "user_id": str(uuid4()),
+                "event_type": "playback_started",
+                "unknown_field": "should_fail",
+            },
+        )
+
+        assert response.status_code == 422
+
+    def test_log_event_recursion_depth_rejected_422(self, client, service, auth_user_id):
+        app.dependency_overrides[get_analytics_service] = override(service)
+
+        # Build nested dict with depth 11 (limit is 10)
+        deep_event_data = {}
+        node = deep_event_data
+        for _ in range(11):
+            node["child"] = {}
+            node = node["child"]
+
+        response = client.post(
+            "/api/v1/analytics/events",
+            json={
+                "user_id": str(auth_user_id),
+                "event_type": "playback_started",
+                "event_data": deep_event_data,
+            },
         )
 
         assert response.status_code == 422
@@ -196,13 +238,13 @@ class TestCreatorAnalytics:
         assert response.status_code == 200
         assert response.json()["analytics"] is None
 
-    def test_other_creator_forbidden_403(self, client, service, auth_user_id):
+    def test_other_creator_forbidden_404(self, client, service, auth_user_id):
         app.dependency_overrides[get_analytics_service] = override(service)
         service.get_creator_analytics = AsyncMock()
 
         response = client.get(f"/api/v1/analytics/creators/{uuid4()}")
 
-        assert response.status_code == 403
+        assert response.status_code == 404
         service.get_creator_analytics.assert_not_awaited()
 
     def test_admin_can_read_any_creator(self, client, service, auth_user_id):
@@ -253,7 +295,7 @@ class TestContentPerformance:
         assert response.status_code == 200
         assert response.json()["metrics"] is None
 
-    def test_non_owner_forbidden_403(self, client, service, auth_user_id, monkeypatch):
+    def test_non_owner_forbidden_404(self, client, service, auth_user_id, monkeypatch):
         app.dependency_overrides[get_analytics_service] = override(service)
         monkeypatch.setattr(
             analytics_routes_module, "resolve_content_owner", AsyncMock(return_value=uuid4())
@@ -262,7 +304,7 @@ class TestContentPerformance:
 
         response = client.get(f"/api/v1/analytics/content/{uuid4()}")
 
-        assert response.status_code == 403
+        assert response.status_code == 404
         service.get_content_performance.assert_not_awaited()
 
     def test_unknown_content_404(self, client, service, monkeypatch):
@@ -315,21 +357,22 @@ class TestContentPerformance:
 
 
 class TestIdorProtection:
-    def test_other_user_events_403(self, client, auth_user_id):
+    def test_other_user_events_404(self, client, auth_user_id):
         app.dependency_overrides.pop(analytics_require_self, None)
         app.dependency_overrides[analytics_user_di] = lambda: auth_user_id
         try:
             response = client.get(f"/api/v1/analytics/user-events/{uuid4()}")
         finally:
             app.dependency_overrides[analytics_require_self] = _echo_path_self
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     def test_no_token_rejected_401(self, client):
         app.dependency_overrides.clear()
         response = client.get(f"/api/v1/analytics/user-events/{uuid4()}")
         assert response.status_code == 401
 
-    def test_log_event_for_other_user_403(self, client, auth_user_id):
+    def test_log_event_for_other_user_404(self, client, service, auth_user_id):
+        app.dependency_overrides[get_analytics_service] = override(service)
         response = client.post(
             "/api/v1/analytics/events",
             json={
@@ -338,7 +381,7 @@ class TestIdorProtection:
                 "event_data": {},
             },
         )
-        assert response.status_code == 403
+        assert response.status_code == 404
 
 
 class TestCreatorContentAuth:

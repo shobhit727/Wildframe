@@ -32,6 +32,10 @@ class RecommendationRepository:
     async def create(
         self, user_id: UUID, content_id: UUID, score: float, reason: str = "", algorithm: str = "cf"
     ) -> Recommendation:
+        import math
+
+        if not math.isfinite(score):
+            raise ValueError("score must be a finite number (not NaN or infinity)")
         rec = Recommendation(
             user_id=user_id, content_id=content_id, score=score, reason=reason, algorithm=algorithm
         )

@@ -73,11 +73,14 @@ class PipelineJobRepository:
         return row
 
     async def pending_events(self, limit: int = 100) -> list[OutboxEvent]:
+        # SELECT FOR UPDATE SKIP LOCKED ensures two workers can't claim
+        # the same outbox rows (#295).
         result = await self.session.execute(
             select(OutboxEvent)
             .where(OutboxEvent.status == OutboxEventStatus.PENDING)
             .order_by(OutboxEvent.created_at)
             .limit(limit)
+            .with_for_update(skip_locked=True)
         )
         return list(result.scalars().all())
 

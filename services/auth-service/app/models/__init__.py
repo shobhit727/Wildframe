@@ -106,6 +106,12 @@ class User(Base, BaseModel):
         DateTime(timezone=True),
         nullable=True,
     )
+    # Single-use email verification token JTI (hashed) — consumed on verify
+    email_verification_token_jti: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        index=True,
+    )
 
     # Login tracking
     last_login_at: Mapped[datetime | None] = mapped_column(

@@ -560,6 +560,18 @@ class BillingService:
         )
 
     # -----------------------------------------------------------------------
+    # Transaction management (single commit per operation, #211)
+    # -----------------------------------------------------------------------
+
+    async def commit(self) -> None:
+        """Commit the current transaction."""
+        await self.webhook_events_repo.session.commit()
+
+    async def rollback(self) -> None:
+        """Rollback the current transaction."""
+        await self.webhook_events_repo.session.rollback()
+
+    # -----------------------------------------------------------------------
     # Creator share calculation
     # -----------------------------------------------------------------------
 

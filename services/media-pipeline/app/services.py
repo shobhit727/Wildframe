@@ -190,6 +190,8 @@ class MediaPipelineService:
     _circuit_breaker: dict[str, int] = defaultdict(int)
     # Per-content active job count: content_id -> count
     _content_concurrency: dict[UUID, int] = defaultdict(int)
+    # Per-creator active job count: creator_id -> count (#488/#545)
+    _creator_concurrency: dict[UUID, int] = defaultdict(int)
     # Global active job count
     _global_active_jobs: int = 0
 
@@ -233,7 +235,14 @@ class MediaPipelineService:
                 FFmpegPackager,
                 FFmpegThumbnailGenerator,
             )
-            from app.core.stages import ClamavScanner, StubCDN, StubObjectStorage
+            from app.core.stages import CloudFrontCDN, ClamavScanner, StubCDN, StubObjectStorage
+
+            # Use CloudFront CDN if distribution ID is configured, else stub (#495)
+            cdn = (
+                CloudFrontCDN(distribution_id=settings.CLOUDFRONT_DISTRIBUTION_ID)
+                if settings.CLOUDFRONT_DISTRIBUTION_ID
+                else StubCDN()
+            )
 
             return {
                 "virus_scanner": ClamavScanner(),
@@ -251,10 +260,11 @@ class MediaPipelineService:
                     memory_limit_bytes=settings.PIPELINE_MAX_MEMORY_BYTES,
                 ),
                 "object_storage": StubObjectStorage(),  # S3 adapter TBD
-                "cdn": StubCDN(),
+                "cdn": cdn,
             }
         # Default: stubs
         from app.core.stages import (
+            CloudFrontCDN,
             StubCDN,
             StubMetadataExtractor,
             StubMultiBitrateEncoder,
@@ -264,6 +274,12 @@ class MediaPipelineService:
             StubVirusScanner,
         )
 
+        cdn = (
+            CloudFrontCDN(distribution_id=settings.CLOUDFRONT_DISTRIBUTION_ID)
+            if settings.CLOUDFRONT_DISTRIBUTION_ID
+            else StubCDN()
+        )
+
         return {
             "virus_scanner": StubVirusScanner(),
             "metadata_extractor": StubMetadataExtractor(),
@@ -271,14 +287,16 @@ class MediaPipelineService:
             "encoder": StubMultiBitrateEncoder(),
             "packager": StubPackager(),
             "object_storage": StubObjectStorage(),
-            "cdn": StubCDN(),
+            "cdn": cdn,
         }
 
     # ------------------------------------------------------------------
     # Concurrency / lease helpers.
     # ------------------------------------------------------------------
-    async def _check_concurrency_limits(self, content_id: UUID) -> None:
-        """Enforce global and per-content concurrency limits."""
+    async def _check_concurrency_limits(
+        self, content_id: UUID, creator_id: UUID | None = None
+    ) -> None:
+        """Enforce global, per-content, and per-creator concurrency limits."""
         if settings.PIPELINE_MAX_GLOBAL_JOBS > 0:
             if self._global_active_jobs >= settings.PIPELINE_MAX_GLOBAL_JOBS:
                 raise ConcurrencyLimitExceeded(
@@ -288,6 +306,11 @@ class MediaPipelineService:
             if self._content_concurrency[content_id] >= settings.PIPELINE_MAX_JOBS_PER_CONTENT:
                 raise ConcurrencyLimitExceeded(
                     f"per-content job limit ({settings.PIPELINE_MAX_JOBS_PER_CONTENT}) reached for content {content_id}"
+                )
+        if creator_id is not None and settings.PIPELINE_MAX_JOBS_PER_CREATOR > 0:
+            if self._creator_concurrency[creator_id] >= settings.PIPELINE_MAX_JOBS_PER_CREATOR:
+                raise ConcurrencyLimitExceeded(
+                    f"per-creator job limit ({settings.PIPELINE_MAX_JOBS_PER_CREATOR}) reached for creator {creator_id}"
                 )
 
     async def _acquire_lease(self, job: PipelineJob) -> bool:
@@ -332,13 +355,19 @@ class MediaPipelineService:
             job.leased_at = datetime.now(UTC)  # type: ignore[assignment]
             await self.job_repo.save(job)
 
-    def _increment_concurrency(self, content_id: UUID) -> None:
+    def _increment_concurrency(self, content_id: UUID, creator_id: UUID | None = None) -> None:
         self._global_active_jobs += 1
         self._content_concurrency[content_id] += 1
+        if creator_id is not None:
+            self._creator_concurrency[creator_id] += 1
 
-    def _decrement_concurrency(self, content_id: UUID) -> None:
+    def _decrement_concurrency(self, content_id: UUID, creator_id: UUID | None = None) -> None:
         self._global_active_jobs = max(0, self._global_active_jobs - 1)
         self._content_concurrency[content_id] = max(0, self._content_concurrency[content_id] - 1)
+        if creator_id is not None:
+            self._creator_concurrency[creator_id] = max(
+                0, self._creator_concurrency[creator_id] - 1
+            )
 
     # ------------------------------------------------------------------
     # Circuit breaker helpers.
@@ -413,6 +442,7 @@ class MediaPipelineService:
         storage_key: str,
         context: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
+        creator_id: UUID | None = None,
     ) -> PipelineJob:
         """Create a pending pipeline job for an uploaded piece of content.
 
@@ -435,8 +465,8 @@ class MediaPipelineService:
         if existing_by_upload is not None:
             return existing_by_upload
 
-        # Concurrency limits.
-        await self._check_concurrency_limits(content_id)
+        # Concurrency limits (including per-creator quota #488/#545).
+        await self._check_concurrency_limits(content_id, creator_id)
 
         job = PipelineJob(
             content_id=content_id,
@@ -457,6 +487,9 @@ class MediaPipelineService:
         # Persist ctx without the injected ports (they are re-injected on
         # advance()); port objects are not JSON-serializable.
         job.context = {k: v for k, v in ctx.items() if not _is_port(v)}  # type: ignore[assignment]
+        # Store creator_id in context for per-creator concurrency tracking (#488/#545)
+        if creator_id is not None:
+            job.context["_creator_id"] = str(creator_id)
         await self.job_repo.save(job)
 
         logger.info(
@@ -544,7 +577,9 @@ class MediaPipelineService:
         await self.job_repo.save(job)
 
         # Increment concurrency counters now that we're actively running.
-        self._increment_concurrency(job.content_id)
+        creator_id_str = job.context.get("_creator_id")
+        creator_id = UUID(creator_id_str) if creator_id_str else None
+        self._increment_concurrency(job.content_id, creator_id)
         try:
             for stage_name in self.registry.order:
                 if stage_name in done:
@@ -671,7 +706,9 @@ class MediaPipelineService:
             return job
         finally:
             # Always decrement concurrency and release lease.
-            self._decrement_concurrency(job.content_id)
+            creator_id_str = job.context.get("_creator_id")
+            creator_id = UUID(creator_id_str) if creator_id_str else None
+            self._decrement_concurrency(job.content_id, creator_id)
             await self._release_lease(job)
             # Persist the lease release so the job is immediately resumable.
             await self.job_repo.session.commit()

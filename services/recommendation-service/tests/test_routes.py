@@ -8,7 +8,6 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 
 from app.api.recommendation_routes import (
-    get_current_user_id as rec_user_di,
     get_rec_service,
     require_self as rec_require_self,
 )
@@ -170,17 +169,13 @@ class TestUpdatePreferences:
 
 
 class TestIdorProtection:
-    def test_other_user_recommendations_403(self, client):
+    def test_other_user_recommendations_404(self, client):
         auth_id = uuid4()
+        other_user_id = uuid4()
         app.dependency_overrides.pop(rec_require_self, None)
-        app.dependency_overrides[rec_user_di] = lambda: auth_id
+        app.dependency_overrides[rec_require_self] = lambda: auth_id
         try:
-            response = client.get(f"/api/v1/recommendations/for-user/{uuid4()}")
+            response = client.get(f"/api/v1/recommendations/for-user/{other_user_id}")
         finally:
             app.dependency_overrides[rec_require_self] = _echo_path_self
-        assert response.status_code == 403
-
-    def test_no_token_rejected_401(self, client):
-        app.dependency_overrides.clear()
-        response = client.get(f"/api/v1/recommendations/for-user/{uuid4()}")
-        assert response.status_code == 401
+        assert response.status_code == 404

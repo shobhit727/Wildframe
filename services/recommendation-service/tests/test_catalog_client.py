@@ -143,7 +143,7 @@ async def test_new_client_requested_after_close(service):
 async def test_real_client_has_bounded_connection_limits():
     """The production client configures bounded pooling, not unbounded."""
     with patch("httpx.AsyncClient") as httpx_cls:
-        ContentCatalogClient()
+        ContentCatalogClient(base_url="http://test")
         _, kwargs = httpx_cls.call_args
         limits = kwargs["limits"]
         assert isinstance(limits, httpx.Limits)

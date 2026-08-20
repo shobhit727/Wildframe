@@ -63,6 +63,9 @@ class Settings(BaseSettings):
             )
         return self
 
+    # Issue #469: Metrics endpoint token
+    METRICS_TOKEN: str = ""
+
     class Config:
         env_file = ".env"
 

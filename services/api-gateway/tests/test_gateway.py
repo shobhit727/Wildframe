@@ -10,7 +10,9 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import httpx
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -30,6 +32,8 @@ def client():
         redis_stub = MagicMock()
         redis_stub.ping = AsyncMock(return_value=True)
         app.state.redis_client = redis_stub
+        # Also stub shared client
+        main._shared_client = MagicMock()
         yield c
 
 
@@ -112,7 +116,11 @@ class TestGatewayEndpoints:
         response = client.get("/health")
 
         assert response.status_code == 200
-        assert response.json()["status"] == "healthy"
+        # #628: /health returns status-only
+        assert response.json() == {"status": "ok"}
+        assert "checks" not in response.json()
+        assert "version" not in response.json()
+        assert "service" not in response.json()
 
     def test_gateway_health(self, client):
         response = client.get("/gateway/health")
@@ -159,7 +167,7 @@ class TestGatewayEndpoints:
             app.state.redis_client = None  # unreachable dependency
             response = c.get("/health")
         assert response.status_code == 200
-        assert response.json()["status"] == "healthy"
+        assert response.json() == {"status": "ok"}
         assert "checks" not in response.json()
 
     def test_gateway_ready_succeeds_when_redis_healthy(self, client):
@@ -185,7 +193,7 @@ class TestProxy:
         )
         fake_client = FakeAsyncClient(fake_response)
 
-        with patch("app.api.gateway_routes.httpx.AsyncClient", return_value=fake_client):
+        with patch("app.api.gateway_routes.get_shared_client", return_value=fake_client):
             response = client.get("/content/genres")
 
         assert response.status_code == 200
@@ -199,7 +207,7 @@ class TestProxy:
     def test_proxy_preserves_method_and_headers(self, client):
         fake_client = FakeAsyncClient(make_fake_response())
 
-        with patch("app.api.gateway_routes.httpx.AsyncClient", return_value=fake_client):
+        with patch("app.api.gateway_routes.get_shared_client", return_value=fake_client):
             response = client.post(
                 "/auth/login",
                 json={"email": "a@b.c", "password": "x"},
@@ -209,12 +217,13 @@ class TestProxy:
         assert response.status_code == 200
         call_kwargs = fake_client.request_kwargs
         assert call_kwargs["method"] == "POST"
-        assert call_kwargs["headers"].get("x-request-id") == "req-1"
+        # Authorization header should be forwarded
+        assert call_kwargs["headers"].get("authorization") == "Bearer token123"
 
     def test_proxy_forwards_query_string(self, client):
         fake_client = FakeAsyncClient(make_fake_response())
 
-        with patch("app.api.gateway_routes.httpx.AsyncClient", return_value=fake_client):
+        with patch("app.api.gateway_routes.get_shared_client", return_value=fake_client):
             response = client.get("/content/api/v1/content?content_type=movie&page=1&page_size=5")
 
         assert response.status_code == 200
@@ -227,7 +236,7 @@ class TestProxy:
     def test_proxy_without_query_string_has_no_trailing_question_mark(self, client):
         fake_client = FakeAsyncClient(make_fake_response())
 
-        with patch("app.api.gateway_routes.httpx.AsyncClient", return_value=fake_client):
+        with patch("app.api.gateway_routes.get_shared_client", return_value=fake_client):
             response = client.get("/content/genres")
 
         assert response.status_code == 200
@@ -237,24 +246,26 @@ class TestProxy:
         response = client.get("/nonexistent/users")
 
         assert response.status_code == 404
+        # #466: error includes request_id in detail
+        assert "request_id" in response.json()["detail"]
 
     def test_proxy_upstream_error_returns_502(self, client):
         fake_client = FakeAsyncClient(RuntimeError("connection refused"))
 
-        with patch("app.api.gateway_routes.httpx.AsyncClient", return_value=fake_client):
+        with patch("app.api.gateway_routes.get_shared_client", return_value=fake_client):
             response = client.get("/content/genres")
 
         assert response.status_code == 502
+        assert "request_id" in response.json()["detail"]
 
     def test_proxy_timeout_returns_504(self, client):
-        import httpx
-
         fake_client = FakeAsyncClient(httpx.TimeoutException("timed out"))
 
-        with patch("app.api.gateway_routes.httpx.AsyncClient", return_value=fake_client):
+        with patch("app.api.gateway_routes.get_shared_client", return_value=fake_client):
             response = client.get("/content/genres")
 
         assert response.status_code == 504
+        assert "request_id" in response.json()["detail"]
 
     def test_proxy_rate_limited_returns_429(self, client):
         import app.main as main
@@ -268,7 +279,7 @@ class TestProxy:
             main.rate_limiter = original
 
         assert response.status_code == 429
-        assert response.json()["detail"] == "Rate limit exceeded"
+        assert "request_id" in response.json()["detail"]
 
 
 class TestOptionalUser:
@@ -277,7 +288,6 @@ class TestOptionalUser:
         from datetime import timedelta
 
         import jwt
-        from fastapi import Request
 
         from app.middleware import AuthenticationMiddleware
 
@@ -300,7 +310,6 @@ class TestOptionalUser:
     @pytest.mark.asyncio
     async def test_verify_token_without_exp_returns_none(self):
         import jwt
-        from fastapi import Request
 
         from app.middleware import AuthenticationMiddleware
 
@@ -315,7 +324,6 @@ class TestOptionalUser:
     @pytest.mark.asyncio
     async def test_verify_token_with_wrong_secret_returns_none(self):
         import jwt
-        from fastapi import Request
 
         from app.middleware import AuthenticationMiddleware
 
@@ -329,7 +337,6 @@ class TestOptionalUser:
 
     @pytest.mark.asyncio
     async def test_verify_token_missing_header_returns_none(self):
-        from fastapi import Request
 
         from app.middleware import AuthenticationMiddleware
 
@@ -340,7 +347,6 @@ class TestOptionalUser:
 
     @pytest.mark.asyncio
     async def test_verify_token_garbage_returns_none(self):
-        from fastapi import Request
 
         from app.middleware import AuthenticationMiddleware
 
@@ -355,7 +361,6 @@ class TestOptionalUser:
 class TestAuthenticationMiddleware:
     @pytest.mark.asyncio
     async def test_public_paths_allowed(self):
-        from fastapi import Request
 
         from app.middleware import AuthenticationMiddleware
 
@@ -366,7 +371,7 @@ class TestAuthenticationMiddleware:
 
     @pytest.mark.asyncio
     async def test_public_path_prefix_does_not_bypass_auth(self):
-        from fastapi import HTTPException, Request
+        from fastapi import HTTPException
 
         from app.middleware import AuthenticationMiddleware
 
@@ -380,7 +385,6 @@ class TestAuthenticationMiddleware:
 
     @pytest.mark.asyncio
     async def test_public_child_path_is_allowed(self):
-        from fastapi import Request
 
         from app.middleware import AuthenticationMiddleware
 
@@ -391,7 +395,6 @@ class TestAuthenticationMiddleware:
 
     @pytest.mark.asyncio
     async def test_public_path_with_trailing_slash_is_allowed(self):
-        from fastapi import Request
 
         from app.middleware import AuthenticationMiddleware
 
@@ -402,7 +405,7 @@ class TestAuthenticationMiddleware:
 
     @pytest.mark.asyncio
     async def test_protected_path_without_token_raises_401(self):
-        from fastapi import HTTPException, Request
+        from fastapi import HTTPException
 
         from app.middleware import AuthenticationMiddleware
 
@@ -452,6 +455,43 @@ class TestRateLimiter:
         await limiter.check_rate_limit("user-1", "auth")
 
         redis_mock.expire.assert_awaited_once_with("rate_limit:user-1:auth", 60)
+
+    @pytest.mark.asyncio
+    async def test_upload_finalize_stricter_limit(self):
+        """#237/#268: upload finalize (complete/abort) has stricter limit."""
+        from app.middleware import RateLimiter
+
+        redis_mock = AsyncMock()
+        redis_mock.incr = AsyncMock(return_value=61)  # over 60 limit
+        limiter = RateLimiter(redis_mock)
+
+        # Path ending with /complete should use UPLOAD_FINALIZE limit (60)
+        result = await limiter.check_rate_limit("user-1", "uploads", "/sessions/123/complete")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_reindex_stricter_limit(self):
+        """#237/#268: reindex has stricter limit (20/min)."""
+        from app.middleware import RateLimiter
+
+        redis_mock = AsyncMock()
+        redis_mock.incr = AsyncMock(return_value=21)  # over 20 limit
+        limiter = RateLimiter(redis_mock)
+
+        result = await limiter.check_rate_limit("user-1", "search", "/reindex")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_auth_stricter_limit(self):
+        """#237/#268: auth has stricter limit (5/min)."""
+        from app.middleware import RateLimiter
+
+        redis_mock = AsyncMock()
+        redis_mock.incr = AsyncMock(return_value=6)  # over 5 limit
+        limiter = RateLimiter(redis_mock)
+
+        result = await limiter.check_rate_limit("user-1", "auth", "/login")
+        assert result is False
 
 
 class TestRateLimiterFaultInjection:
@@ -507,3 +547,332 @@ class TestRateLimiterFaultInjection:
         assert keys == ["rate_limit:user-1:auth", "rate_limit:user-2:search"]
         assert all(k.startswith("rate_limit:") for k in keys)
         assert redis_mock.expire.await_count == 2
+
+
+class TestHeaderSanitizer:
+    """#314, #522, #625: Strip/rewrite client-supplied headers at the edge."""
+
+    @pytest.mark.asyncio
+    async def test_strips_x_forwarded_for_and_appends_client_ip(self):
+        from app.middleware import HeaderSanitizerMiddleware
+        from starlette.responses import Response
+
+        mw = HeaderSanitizerMiddleware(app=MagicMock())
+        request = Request(
+            scope={
+                "type": "http",
+                "headers": [
+                    (b"x-forwarded-for", b"1.2.3.4"),
+                    (b"host", b"example.com"),
+                ],
+                "client": ("10.0.0.1", 12345),
+            }
+        )
+
+        async def call_next(req):
+            # Verify headers were rewritten
+            assert req.headers.get("x-forwarded-for") == "1.2.3.4, 10.0.0.1"
+            assert req.headers.get("x-real-ip") == "10.0.0.1"
+            return Response(content=b"ok")
+
+        await mw.dispatch(request, call_next)
+
+    @pytest.mark.asyncio
+    async def test_strips_x_user_headers(self):
+        from app.middleware import HeaderSanitizerMiddleware
+        from starlette.responses import Response
+
+        mw = HeaderSanitizerMiddleware(app=MagicMock())
+        request = Request(
+            scope={
+                "type": "http",
+                "headers": [
+                    (b"x-user-id", b"123"),
+                    (b"x-user-email", b"test@example.com"),
+                    (b"x-user-roles", b"admin"),
+                    (b"host", b"example.com"),
+                ],
+                "client": ("10.0.0.1", 12345),
+            }
+        )
+
+        async def call_next(req):
+            # X-User-* headers should be stripped
+            assert "x-user-id" not in req.headers
+            assert "x-user-email" not in req.headers
+            assert "x-user-roles" not in req.headers
+            return Response(content=b"ok")
+
+        await mw.dispatch(request, call_next)
+
+    @pytest.mark.asyncio
+    async def test_regenerates_correlation_ids(self):
+        from app.middleware import HeaderSanitizerMiddleware
+        from starlette.responses import Response
+
+        mw = HeaderSanitizerMiddleware(app=MagicMock())
+        request = Request(
+            scope={
+                "type": "http",
+                "headers": [
+                    (b"x-correlation-id", b"client-correlation"),
+                    (b"x-request-id", b"client-request"),
+                    (b"host", b"example.com"),
+                ],
+                "client": ("10.0.0.1", 12345),
+            }
+        )
+
+        async def call_next(req):
+            # Client-supplied correlation IDs should be stripped
+            # (they will be regenerated by CorrelationMiddleware later)
+            assert req.headers.get("x-correlation-id") != "client-correlation"
+            assert req.headers.get("x-request-id") != "client-request"
+            return Response(content=b"ok")
+
+        await mw.dispatch(request, call_next)
+
+
+class TestBodyLimitMiddleware:
+    """#231, #315, #417, #418, #419, #449, #517, #518, #629: Body and header limits."""
+
+    @pytest.mark.asyncio
+    async def test_rejects_oversized_json_body(self):
+        from app.middleware import BodyLimitMiddleware
+        from starlette.responses import Response
+
+        # Create middleware with small limit for testing
+        mw = BodyLimitMiddleware(app=MagicMock())
+        mw.max_request_body = 100
+        mw.max_multipart_body = 100
+
+        request = Request(
+            scope={
+                "type": "http",
+                "method": "POST",
+                "path": "/content/test",
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"host", b"example.com"),
+                ],
+                "client": ("10.0.0.1", 12345),
+            }
+        )
+        # Mock stream to return large body
+        large_body = b"x" * 200
+
+        async def mock_stream():
+            yield large_body
+
+        request.stream = mock_stream
+
+        async def call_next(req):
+            return Response(content=b"ok")
+
+        response = await mw.dispatch(request, call_next)
+        assert response.status_code == 413
+        # x-request-id header is added by CorrelationMiddleware (not running in this unit test)
+
+    @pytest.mark.asyncio
+    async def test_allows_multipart_larger_body(self):
+        from app.middleware import BodyLimitMiddleware
+        from starlette.responses import Response
+
+        mw = BodyLimitMiddleware(app=MagicMock())
+        mw.max_request_body = 100
+        mw.max_multipart_body = 1000  # 10x for multipart
+
+        request = Request(
+            scope={
+                "type": "http",
+                "method": "POST",
+                "path": "/uploads/sessions",
+                "headers": [
+                    (b"content-type", b"multipart/form-data; boundary=xxx"),
+                    (b"host", b"example.com"),
+                ],
+                "client": ("10.0.0.1", 12345),
+            }
+        )
+        body = b"x" * 500  # Under multipart limit, over JSON limit
+
+        async def mock_stream():
+            yield body
+
+        request.stream = mock_stream
+
+        async def call_next(req):
+            return Response(content=b"ok")
+
+        response = await mw.dispatch(request, call_next)
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_rejects_too_many_headers(self):
+        from app.middleware import BodyLimitMiddleware
+        from starlette.responses import Response
+
+        mw = BodyLimitMiddleware(app=MagicMock())
+        mw.max_header_count = 5
+
+        headers = [(f"x-header-{i}".encode(), b"value") for i in range(10)]
+        headers.append((b"host", b"example.com"))
+
+        request = Request(
+            scope={
+                "type": "http",
+                "headers": headers,
+                "client": ("10.0.0.1", 12345),
+            }
+        )
+
+        async def call_next(req):
+            return Response(content=b"ok")
+
+        response = await mw.dispatch(request, call_next)
+        assert response.status_code == 431
+
+    @pytest.mark.asyncio
+    async def test_rejects_oversized_header_field(self):
+        from app.middleware import BodyLimitMiddleware
+        from starlette.responses import Response
+
+        mw = BodyLimitMiddleware(app=MagicMock())
+        mw.max_header_field_size = 10
+
+        request = Request(
+            scope={
+                "type": "http",
+                "headers": [
+                    (b"x-large-header", b"x" * 20),
+                    (b"host", b"example.com"),
+                ],
+                "client": ("10.0.0.1", 12345),
+            }
+        )
+
+        async def call_next(req):
+            return Response(content=b"ok")
+
+        response = await mw.dispatch(request, call_next)
+        assert response.status_code == 431
+
+    @pytest.mark.asyncio
+    async def test_rejects_oversized_total_headers(self):
+        from app.middleware import BodyLimitMiddleware
+        from starlette.responses import Response
+
+        mw = BodyLimitMiddleware(app=MagicMock())
+        mw.max_header_total_size = 50
+
+        request = Request(
+            scope={
+                "type": "http",
+                "headers": [
+                    (b"x-header-1", b"x" * 30),
+                    (b"x-header-2", b"x" * 30),
+                    (b"host", b"example.com"),
+                ],
+                "client": ("10.0.0.1", 12345),
+            }
+        )
+
+        async def call_next(req):
+            return Response(content=b"ok")
+
+        response = await mw.dispatch(request, call_next)
+        assert response.status_code == 431
+
+    @pytest.mark.asyncio
+    async def test_decompression_bomb_protection(self):
+        """#417: reject compressed body that would decompress beyond limit."""
+        from app.middleware import BodyLimitMiddleware
+        from starlette.responses import Response
+
+        mw = BodyLimitMiddleware(app=MagicMock())
+        mw.max_request_body = 1000
+        mw.max_decompression_ratio = 10
+
+        request = Request(
+            scope={
+                "type": "http",
+                "method": "POST",
+                "path": "/content/test",
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-encoding", b"gzip"),
+                    (b"host", b"example.com"),
+                ],
+                "client": ("10.0.0.1", 12345),
+            }
+        )
+        # Compressed size 200 * ratio 10 = 2000 > limit 1000
+        body = b"x" * 200
+
+        async def mock_stream():
+            yield body
+
+        request.stream = mock_stream
+
+        async def call_next(req):
+            return Response(content=b"ok")
+
+        response = await mw.dispatch(request, call_next)
+        assert response.status_code == 413
+
+
+class TestSharedClient:
+    """#123: Shared AsyncClient lifespan management."""
+
+    def test_shared_client_lifespan_creates_client_with_limits(self):
+        import asyncio
+        from app.middleware import shared_client_lifespan, get_shared_client
+
+        async def run():
+            async with shared_client_lifespan():
+                client = get_shared_client()
+                assert isinstance(client, httpx.AsyncClient)
+                # Client created successfully with lifespan management
+                # (limit/timeout verification requires httpx internals that vary by version)
+
+        asyncio.run(run())
+
+    def test_get_shared_client_raises_outside_lifespan(self):
+        from app.middleware import get_shared_client
+
+        # Should raise if not initialized
+        import app.middleware as mw
+
+        mw._shared_client = None
+        try:
+            get_shared_client()
+            assert False, "Should have raised RuntimeError"
+        except RuntimeError as e:
+            assert "not initialized" in str(e)
+
+
+class TestGracefulShutdown:
+    """#426: Graceful shutdown - stop accepting, drain in-flight, close client."""
+
+    def test_shutdown_rejects_new_requests(self):
+        import app.main as main
+        from app.main import app
+        from fastapi.testclient import TestClient
+
+        app.dependency_overrides.clear()
+        with TestClient(app, base_url="http://localhost") as c:
+            main.rate_limiter = MagicMock()
+            main.rate_limiter.check_rate_limit = AsyncMock(return_value=True)
+            redis_stub = MagicMock()
+            redis_stub.ping = AsyncMock(return_value=True)
+            app.state.redis_client = redis_stub
+            main._shared_client = MagicMock()
+
+            # Set shutting_down flag
+            app.state.shutting_down = True
+
+            response = c.get("/content/genres")
+
+        assert response.status_code == 503
+        assert "shutting down" in response.text.lower()
+        assert "retry-after" in response.headers

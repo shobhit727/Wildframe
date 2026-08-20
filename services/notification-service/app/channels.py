@@ -9,7 +9,9 @@ ChannelUnavailable and are skipped, not retried.
 import asyncio
 import logging
 import smtplib
+import time
 from email.message import EmailMessage
+from threading import Lock
 
 from app.core.settings import settings
 from app.models import Notification
@@ -65,13 +67,13 @@ class EmailChannel:
         ) as server:
             if settings.SMTP_STARTTLS:
                 server.starttls()
-            if settings.SMTP_USERNAME:
+            if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
                 server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
             server.send_message(message)
 
 
 class PushChannel:
-    """Push delivery requires a provider SDK/credentials; none configured."""
+    """Push notification placeholder."""
 
     name = "push"
 
@@ -79,8 +81,8 @@ class PushChannel:
         raise ChannelUnavailable("push provider not configured")
 
 
-class SmsChannel:
-    """SMS delivery requires a provider SDK/credentials; none configured."""
+class SMSChannel:
+    """SMS notification placeholder."""
 
     name = "sms"
 
@@ -88,11 +90,11 @@ class SmsChannel:
         raise ChannelUnavailable("sms provider not configured")
 
 
-CHANNELS: dict[str, object] = {
+CHANNELS: dict[str, InAppChannel | EmailChannel | PushChannel | SMSChannel] = {
     "in-app": InAppChannel(),
     "email": EmailChannel(),
     "push": PushChannel(),
-    "sms": SmsChannel(),
+    "sms": SMSChannel(),
 }
 
 
@@ -129,3 +131,55 @@ async def deliver_with_retry(
                 await asyncio.sleep(delay)
                 delay *= 2
     raise DeliveryError(f"delivery failed after {attempts} attempts: {last}")
+
+
+# ---------------------------------------------------------------------------
+# Email quota tracker (#319)
+# ---------------------------------------------------------------------------
+
+
+class EmailQuotaTracker:
+    """Thread-safe in-memory daily email quota tracker per provider.
+
+    Not distributed — each worker tracks its own counts. Suitable for
+    single-instance deployments and tests. For multi-instance, replace
+    with Redis-backed implementation.
+    """
+
+    def __init__(self, quotas: dict[str, int] | None = None):
+        self._quotas = quotas or {}
+        self._counts: dict[str, tuple[int, float]] = {}  # provider -> (count, day_ts)
+        self._lock = Lock()
+
+    def _day_bucket(self) -> float:
+        return time.time() // 86400
+
+    def check_and_increment(self, provider: str) -> tuple[bool, int, int]:
+        """Check quota and increment if available.
+
+        Returns (allowed, remaining, limit).
+        """
+        limit = self._quotas.get(provider, 0)
+        if limit <= 0:
+            return True, 0, 0  # unlimited or not configured
+
+        with self._lock:
+            day = self._day_bucket()
+            count, count_day = self._counts.get(provider, (0, 0))
+            if count_day != day:
+                count = 0
+            if count >= limit:
+                return False, 0, limit
+            count += 1
+            self._counts[provider] = (count, day)
+            return True, limit - count, limit
+
+    def get_status(self, provider: str) -> tuple[int, int]:
+        """Get current count and limit for a provider."""
+        limit = self._quotas.get(provider, 0)
+        with self._lock:
+            day = self._day_bucket()
+            count, count_day = self._counts.get(provider, (0, 0))
+            if count_day != day:
+                return 0, limit
+            return count, limit

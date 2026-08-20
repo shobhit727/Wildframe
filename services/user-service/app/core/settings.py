@@ -17,10 +17,6 @@ class Settings(BaseSettings):
     DATABASE_URL: str = (
         "postgresql+asyncpg://wildframe:wildframe_dev_password@localhost:5432/users_db"
     )
-    DATABASE_POOL_SIZE: int = 20
-    DATABASE_MAX_OVERFLOW: int = 0
-    DATABASE_POOL_TIMEOUT: int = 30
-    DATABASE_POOL_RECYCLE: int = 3600
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -35,9 +31,12 @@ class Settings(BaseSettings):
     # Security
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
-    JWT_AUDIENCE: str = "wildframe-api"
-    JWT_EXPIRATION_MINUTES: int = 15
-    PASSWORD_BCRYPT_ROUNDS: int = 12
+    JWT_ISSUER: str = "wildframe-auth"
+
+    # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
+    # connections per service instance to prevent DB exhaustion.
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 5
 
     # CORS
     CORS_ALLOWED_ORIGINS: list[str] = [

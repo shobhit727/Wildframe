@@ -13,7 +13,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes.admin import get_current_admin_id
+from app.api.routes.admin import get_current_admin_id, verify_admin_reauth
 from app.core.database import get_db
 from app.main import app
 
@@ -32,6 +32,7 @@ def fake_service():
 def override_deps(fake_db, fake_service):
     app.dependency_overrides[get_db] = lambda: fake_db
     app.dependency_overrides[get_current_admin_id] = lambda: "admin-1"
+    app.dependency_overrides[verify_admin_reauth] = lambda: "admin-1"
     with patch("app.api.routes.admin.AdminService", return_value=fake_service):
         yield
     app.dependency_overrides.clear()

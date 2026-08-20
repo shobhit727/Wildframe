@@ -35,12 +35,12 @@ class DatabaseManager:
         if self._engine is None:
             pool_class = NullPool if settings.ENVIRONMENT == "development" else QueuePool
 
-            pool_kwargs: dict = {}
-            if settings.ENVIRONMENT != "development":
-                pool_kwargs = {
-                    "pool_size": settings.DB_POOL_SIZE,
-                    "max_overflow": settings.DB_MAX_OVERFLOW,
-                }
+            pool_kwargs: dict = {
+                "pool_size": 5,
+                "max_overflow": 5,
+                "pool_timeout": 30,
+                "pool_recycle": 3600,
+            }
 
             self._engine = create_async_engine(
                 settings.DATABASE_URL,
@@ -49,6 +49,9 @@ class DatabaseManager:
                 pool_pre_ping=True,
                 poolclass=pool_class,
                 **pool_kwargs,
+                connect_args={
+                    "command_timeout": 30,
+                },
             )
         return self._engine
 

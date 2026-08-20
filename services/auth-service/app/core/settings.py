@@ -42,10 +42,12 @@ class Settings(BaseSettings):
 
     # Database Configuration
     DATABASE_URL: str | None = None
-    DATABASE_POOL_SIZE: int = 20
-    DATABASE_MAX_OVERFLOW: int = 10
-    DATABASE_POOL_TIMEOUT: int = 30
-    DATABASE_POOL_RECYCLE: int = 3600
+    # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
+    # connections per service instance to prevent DB exhaustion.
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 5
+
+    # Redis Configuration
 
     # Redis Configuration
     REDIS_URL: str | None = None
@@ -89,6 +91,18 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT_WINDOW: int = 900  # 15 minutes
     REGISTRATION_RATE_LIMIT_ATTEMPTS: int = 3
     REGISTRATION_RATE_LIMIT_WINDOW: int = 3600  # 1 hour
+    # MFA rate limits (#241)
+    MFA_SETUP_RATE_LIMIT_ATTEMPTS: int = 5
+    MFA_SETUP_RATE_LIMIT_WINDOW: int = 3600
+    MFA_VERIFY_RATE_LIMIT_ATTEMPTS: int = 10
+    MFA_VERIFY_RATE_LIMIT_WINDOW: int = 900
+    MFA_DISABLE_RATE_LIMIT_ATTEMPTS: int = 5
+    MFA_DISABLE_RATE_LIMIT_WINDOW: int = 3600
+    MFA_LOGIN_VERIFY_RATE_LIMIT_ATTEMPTS: int = 10
+    MFA_LOGIN_VERIFY_RATE_LIMIT_WINDOW: int = 900
+    # Email verification rate limit (#69/#140)
+    EMAIL_VERIFY_RATE_LIMIT_ATTEMPTS: int = 10
+    EMAIL_VERIFY_RATE_LIMIT_WINDOW: int = 3600
 
     # CORS Configuration
     CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001"]

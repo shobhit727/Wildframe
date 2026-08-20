@@ -21,10 +21,23 @@ MAX_EVENT_LIMIT = 1000
 MAX_EVENT_TYPE_LENGTH = 100
 MAX_EVENT_DATA_BYTES = 10_000
 MAX_CLIENT_EVENT_ID_LENGTH = 200
+MAX_EVENT_DATA_DEPTH = 10
 MAX_DURATION_SECONDS = 24 * 60 * 60  # single playback session cannot exceed a day
 TIMESTAMP_SKEW = timedelta(minutes=5)  # tolerated client clock skew
 ALLOWED_PLAYBACK_QUALITIES = frozenset({"240p", "360p", "480p", "720p", "1080p", "4k"})
 DEDUP_TTL_SECONDS = 86_400
+
+
+def _check_depth(value: Any, depth: int = 0) -> None:
+    """Reject excessively nested event_data to prevent stack exhaustion."""
+    if depth > MAX_EVENT_DATA_DEPTH:
+        raise ValueError(f"event_data nesting depth exceeds {MAX_EVENT_DATA_DEPTH}")
+    if isinstance(value, dict):
+        for v in value.values():
+            _check_depth(v, depth + 1)
+    elif isinstance(value, list):
+        for v in value:
+            _check_depth(v, depth + 1)
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -84,6 +97,7 @@ class AnalyticsService:
             raise ValueError(f"event_type exceeds {MAX_EVENT_TYPE_LENGTH} characters")
         if event_data is not None:
             _check_finite(event_data)
+            _check_depth(event_data)
             if len(json.dumps(event_data, default=str)) > MAX_EVENT_DATA_BYTES:
                 raise ValueError(f"event_data exceeds {MAX_EVENT_DATA_BYTES} bytes")
         if await self._is_duplicate("event", user_id, client_event_id):

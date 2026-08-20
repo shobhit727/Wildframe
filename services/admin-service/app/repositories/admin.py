@@ -46,7 +46,11 @@ class UserModerationRepository:
         query = select(UserModeration).where(UserModeration.is_active == True)
         if status:
             query = query.where(UserModeration.status == status)
-        query = query.order_by(desc(UserModeration.created_at)).limit(limit).offset(offset)
+        query = (
+            query.order_by(desc(UserModeration.created_at), desc(UserModeration.id))
+            .limit(limit)
+            .offset(offset)
+        )
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
@@ -126,7 +130,7 @@ class ContentModerationRepository:
         query = (
             select(ContentModeration)
             .where(and_(ContentModeration.is_active == True, ContentModeration.status == status))
-            .order_by(desc(ContentModeration.flagged_at))
+            .order_by(desc(ContentModeration.flagged_at), desc(ContentModeration.id))
             .limit(limit)
             .offset(offset)
         )
@@ -167,7 +171,7 @@ class SystemAlertRepository:
         query = (
             select(SystemAlert)
             .where(and_(SystemAlert.is_active == True, SystemAlert.acknowledged == False))
-            .order_by(desc(SystemAlert.created_at))
+            .order_by(desc(SystemAlert.created_at), desc(SystemAlert.id))
             .limit(limit)
         )
         result = await self.db.execute(query)
@@ -177,7 +181,7 @@ class SystemAlertRepository:
         query = (
             select(SystemAlert)
             .where(and_(SystemAlert.is_active == True, SystemAlert.severity == severity))
-            .order_by(desc(SystemAlert.created_at))
+            .order_by(desc(SystemAlert.created_at), desc(SystemAlert.id))
             .limit(limit)
         )
         result = await self.db.execute(query)
@@ -279,7 +283,7 @@ class AdminAuditLogRepository:
         query = (
             select(AdminAuditLog)
             .where(AdminAuditLog.admin_id == admin_id)
-            .order_by(desc(AdminAuditLog.created_at))
+            .order_by(desc(AdminAuditLog.created_at), desc(AdminAuditLog.id))
             .limit(limit)
         )
         result = await self.db.execute(query)
@@ -296,7 +300,7 @@ class AdminAuditLogRepository:
                     AdminAuditLog.resource_id == resource_id,
                 )
             )
-            .order_by(desc(AdminAuditLog.created_at))
+            .order_by(desc(AdminAuditLog.created_at), desc(AdminAuditLog.id))
             .limit(limit)
         )
         result = await self.db.execute(query)

@@ -134,6 +134,7 @@ async def start_job(
             upload_session_id=upload_session_id,
             storage_key=request.storage_key,
             idempotency_key=request.idempotency_key,
+            creator_id=current_user,
         )
         job = await service.advance(job.id)  # type: ignore[arg-type]
     except PipelineError as exc:

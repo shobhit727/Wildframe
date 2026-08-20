@@ -91,6 +91,9 @@ async def get_current_user(
 ) -> UUID:
     """Extract and verify current user from JWT token.
 
+    Also verifies the auth_version (av claim) matches the current user version
+    to invalidate tokens on password/role/email change (#79/#81).
+
     Args:
         authorization: Authorization header
         db: Database session
@@ -174,7 +177,7 @@ async def register(
         user = await auth_service.register(request)
         await db.commit()
 
-        # Auto-login: generate tokens for the new user
+        # Auto-login: generate tokens for the new user using service's token_manager
         user_id = user.id
         email = user.email
         orm_user = await UserRepository(db).get_by_id(user_id)
@@ -254,16 +257,6 @@ async def login(
     except HTTPException:
         await db.rollback()
         raise
-    except ValueError as e:
-        await db.rollback()
-        logger.warning(f"Login failed: {e}")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
-    except Exception as e:  # noqa: BLE001
-        await db.rollback()
-        logger.error(f"Login error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error"
-        )
 
 
 @router.post("/mfa/login-verify", response_model=TokenResponse)
@@ -631,6 +624,7 @@ async def resend_verification(
 @router.post("/mfa/setup")
 async def setup_mfa(
     user_id: Annotated[UUID, Depends(get_current_user)],
+    request_obj: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     """Generate a TOTP secret and provisioning URI for the authenticator app.
@@ -638,6 +632,22 @@ async def setup_mfa(
     The secret is encrypted at rest. It is returned exactly once so the
     client can seed the authenticator; re-enabling MFA issues a fresh secret.
     """
+    # Rate limit: per-IP + per-user (#241)
+    client_ip = request_obj.client.host if request_obj.client else "unknown"
+    if not await allow(
+        f"mfa:setup:ip:{client_ip}",
+        max_requests=settings.MFA_SETUP_RATE_LIMIT_ATTEMPTS,
+        window_seconds=settings.MFA_SETUP_RATE_LIMIT_WINDOW,
+    ) or not await allow(
+        f"mfa:setup:user:{user_id}",
+        max_requests=settings.MFA_SETUP_RATE_LIMIT_ATTEMPTS,
+        window_seconds=settings.MFA_SETUP_RATE_LIMIT_WINDOW,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many MFA setup attempts. Try again later.",
+        )
+
     user = await _get_user_locked(db, user_id)
     if user.mfa_enabled:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MFA is already enabled")
@@ -665,9 +675,26 @@ async def setup_mfa(
 async def verify_mfa(
     request: MFAVerifyRequest,
     user_id: Annotated[UUID, Depends(get_current_user)],
+    request_obj: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     """Enable MFA after a correct TOTP code from the just-provisioned secret."""
+    # Rate limit: per-IP + per-user (#241)
+    client_ip = request_obj.client.host if request_obj.client else "unknown"
+    if not await allow(
+        f"mfa:verify:ip:{client_ip}",
+        max_requests=settings.MFA_VERIFY_RATE_LIMIT_ATTEMPTS,
+        window_seconds=settings.MFA_VERIFY_RATE_LIMIT_WINDOW,
+    ) or not await allow(
+        f"mfa:verify:user:{user_id}",
+        max_requests=settings.MFA_VERIFY_RATE_LIMIT_ATTEMPTS,
+        window_seconds=settings.MFA_VERIFY_RATE_LIMIT_WINDOW,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many MFA verification attempts. Try again later.",
+        )
+
     user = await _get_user_locked(db, user_id)
     if user.mfa_enabled:
         return {"message": "MFA already enabled"}
@@ -688,9 +715,26 @@ async def verify_mfa(
 async def disable_mfa(
     request: MFAVerifyRequest,
     user_id: Annotated[UUID, Depends(get_current_user)],
+    request_obj: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     """Disable MFA after a valid TOTP code, clearing the stored secret."""
+    # Rate limit: per-IP + per-user (#241)
+    client_ip = request_obj.client.host if request_obj.client else "unknown"
+    if not await allow(
+        f"mfa:disable:ip:{client_ip}",
+        max_requests=settings.MFA_DISABLE_RATE_LIMIT_ATTEMPTS,
+        window_seconds=settings.MFA_DISABLE_RATE_LIMIT_WINDOW,
+    ) or not await allow(
+        f"mfa:disable:user:{user_id}",
+        max_requests=settings.MFA_DISABLE_RATE_LIMIT_ATTEMPTS,
+        window_seconds=settings.MFA_DISABLE_RATE_LIMIT_WINDOW,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many MFA disable attempts. Try again later.",
+        )
+
     user = await _get_user_locked(db, user_id)
     if not user.mfa_enabled:
         return {"message": "MFA is not enabled"}

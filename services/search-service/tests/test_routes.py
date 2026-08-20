@@ -305,3 +305,120 @@ class TestSearchEndpoints:
         assert response.status_code == 200
         assert response.json() == {"deleted": "content_v1"}
         service.delete_index.assert_awaited_once_with("content_v1")
+
+
+# ----------------------------------------------------------------------
+# Correlation ID in error responses (#466)
+# ----------------------------------------------------------------------
+
+
+class TestCorrelationIdInErrors:
+    """Every error response must include a stable correlation_id."""
+
+    def test_search_invalid_cursor_error_has_correlation_id(self, client, service):
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+
+        response = client.get("/api/v1/search/query", params={"q": "test", "cursor": "invalid"})
+
+        assert response.status_code == 422
+        body = response.json()
+        assert "detail" in body
+        assert "correlation_id" in body["detail"]
+        assert body["detail"]["correlation_id"] == response.headers["X-Correlation-ID"]
+        assert "message" in body["detail"]
+
+    def test_reindex_concurrent_error_has_correlation_id(self, client, service, admin_identity):
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+
+        with (
+            patch(
+                "app.api.search_routes.get_admin_identity",
+                new=AsyncMock(return_value=admin_identity),
+            ),
+            patch.object(search_routes._reindex_lock, "locked", return_value=True),
+        ):
+            response = client.post("/api/v1/search/reindex")
+
+        assert response.status_code == 409
+        body = response.json()
+        assert body["detail"]["correlation_id"] == response.headers["X-Correlation-ID"]
+        assert body["detail"]["message"] == "A reindex job is already running"
+
+    def test_delete_index_requires_confirm_error_has_correlation_id(
+        self, client, service, admin_identity
+    ):
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+
+        with patch(
+            "app.api.search_routes.get_admin_identity", new=AsyncMock(return_value=admin_identity)
+        ):
+            response = client.delete("/api/v1/search/index/content_v1")
+
+        assert response.status_code == 400
+        body = response.json()
+        assert body["detail"]["correlation_id"] == response.headers["X-Correlation-ID"]
+        assert "confirm" in body["detail"]["message"].lower()
+
+    def test_unauthenticated_error_has_correlation_id(self, client, service):
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+
+        # Trigger get_admin_identity 401 by not patching it (it will run real code)
+        # The TestClient runs without auth, so get_required_identity returns None -> 401
+        # But we override get_search_service, so we need to test an endpoint that
+        # calls get_admin_identity directly. Reindex does.
+        response = client.post("/api/v1/search/reindex")
+
+        assert response.status_code == 401
+        body = response.json()
+        assert body["detail"]["correlation_id"] == response.headers["X-Correlation-ID"]
+        assert body["detail"]["message"] == "Authentication required"
+        assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+# ----------------------------------------------------------------------
+# Idempotent DELETE endpoints (#210)
+# ----------------------------------------------------------------------
+
+
+class TestIdempotentDeletes:
+    """Repeat DELETE requests should succeed (200/204), not 404."""
+
+    def test_delete_content_idempotent(self, client, service, admin_identity):
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+
+        with patch(
+            "app.api.search_routes.get_admin_identity", new=AsyncMock(return_value=admin_identity)
+        ):
+            content_id = uuid4()
+
+            # First delete
+            response1 = client.delete(f"/api/v1/search/content/{content_id}")
+            assert response1.status_code == 200
+            assert response1.json() == {"deleted": str(content_id)}
+
+            # Repeat delete - should also succeed
+            response2 = client.delete(f"/api/v1/search/content/{content_id}")
+            assert response2.status_code == 200
+            assert response2.json() == {"deleted": str(content_id)}
+
+    def test_delete_index_idempotent(self, client, service, admin_identity):
+        app.dependency_overrides[get_search_service] = override_get_search_service(service)
+
+        with patch(
+            "app.api.search_routes.get_admin_identity", new=AsyncMock(return_value=admin_identity)
+        ):
+            index_name = "content_v1"
+
+            # First delete
+            response1 = client.delete(
+                f"/api/v1/search/index/{index_name}", params={"confirm": "true"}
+            )
+            assert response1.status_code == 200
+            assert response1.json() == {"deleted": index_name}
+
+            # Repeat delete - should also succeed (idempotent)
+            response2 = client.delete(
+                f"/api/v1/search/index/{index_name}", params={"confirm": "true"}
+            )
+            assert response2.status_code == 200
+            assert response2.json() == {"deleted": index_name}

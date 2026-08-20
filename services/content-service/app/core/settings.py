@@ -30,7 +30,12 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_AUDIENCE: str = "wildframe-api"
-    JWT_EXPIRATION_MINUTES: int = 15
+    JWT_ISSUER: str = "wildframe-auth"
+
+    # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
+    # connections per service instance to prevent DB exhaustion.
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 5
     REFRESH_TOKEN_EXPIRATION_DAYS: int = 7
 
     # CORS
@@ -42,10 +47,6 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = "INFO"
-
-    # Database pool settings
-    DB_POOL_SIZE: int = 20
-    DB_MAX_OVERFLOW: int = 10
 
     # Event bus adapter (memory for dev/test, kafka for production).
     # content-service produces content.published / content.deleted /

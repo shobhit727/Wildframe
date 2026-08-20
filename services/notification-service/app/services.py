@@ -4,7 +4,14 @@ import json
 import logging
 from uuid import UUID
 
-from app.channels import CHANNELS, ChannelUnavailable, DeliveryError, deliver_with_retry
+from app.channels import (
+    CHANNELS,
+    ChannelUnavailable,
+    DeliveryError,
+    deliver_with_retry,
+    EmailQuotaTracker,
+)
+from app.core.settings import settings
 from app.models import NotificationPreference, utcnow_naive
 from app.repositories import NotificationRepository
 from app.templates import sanitize_text
@@ -23,8 +30,13 @@ _CHANNEL_PREF_ATTR = {
 
 
 class NotificationService:
-    def __init__(self, notif_repo: NotificationRepository):
+    def __init__(
+        self,
+        notif_repo: NotificationRepository,
+        quota_tracker: EmailQuotaTracker | None = None,
+    ):
         self.notif_repo = notif_repo
+        self._quota_tracker = quota_tracker or EmailQuotaTracker(settings.EMAIL_DAILY_QUOTA)
 
     async def send_notification(
         self,
@@ -129,6 +141,18 @@ class NotificationService:
             if chan is None:
                 outcomes[name] = "failed: unknown channel"
                 continue
+
+            # Email quota check (#319)
+            if name == "email":
+                provider = "smtp"  # Could be configurable per channel
+                allowed, remaining, limit = self._quota_tracker.check_and_increment(provider)
+                if not allowed:
+                    outcomes[name] = f"failed: daily quota exceeded ({limit})"
+                    logger.warning(
+                        "email quota exceeded for provider %s (limit=%d)", provider, limit
+                    )
+                    continue
+
             recipient = email_address if name == "email" else None
             try:
                 await deliver_with_retry(chan, notif, recipient=recipient, template=template)

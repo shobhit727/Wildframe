@@ -7,10 +7,14 @@ The admin routes in ``creators_routes.py`` are mounted by ``main.py`` and
 covered by ``TestAdminCreatorAuth`` ([#43]).
 """
 
+import os
+
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+
 from datetime import UTC, datetime
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -54,6 +58,12 @@ def auth_user_id():
 def client(auth_user_id):
     app.dependency_overrides.clear()
     app.dependency_overrides[current_user] = lambda: auth_user_id
+    app.state.shutting_down = False
+    # Initialize global locks for the test
+    import app.main as main_module
+
+    main_module._in_flight_lock = asyncio.Lock()
+    main_module._shutdown_event = asyncio.Event()
     yield TestClient(app, base_url="http://localhost")
     app.dependency_overrides.clear()
 

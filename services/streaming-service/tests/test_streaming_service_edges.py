@@ -1,6 +1,7 @@
 """Edge-branch coverage for StreamingService — rollback paths, bandwidth filter,
 progress math, manifest reuse."""
 
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -233,3 +234,141 @@ class TestDownloadBranches:
 
         _, kwargs = service.download_repo.update.await_args
         assert kwargs["progress_percent"] == 25
+
+
+class TestSignedUrlBranches:
+    """Tests for HMAC signed URL generation and verification (#489, #491)."""
+
+    async def test_generate_signed_url(self, service):
+        from app.schemas import SignedPlaybackUrlRequest
+
+        request = SignedPlaybackUrlRequest(session_id=uuid4(), content_id=uuid4(), ttl_seconds=3600)
+        signed_url, expires_at = service.generate_signed_url(request)
+
+        assert "session_id=" in signed_url
+        assert "signature=" in signed_url
+        assert "expires=" in signed_url
+        assert expires_at is not None
+
+    async def test_verify_signed_url_valid(self, service):
+        session_id = uuid4()
+        content_id = uuid4()
+        expires = int((datetime.now(UTC) + timedelta(seconds=3600)).timestamp())
+
+        import hmac
+        import hashlib
+
+        secret = "dev-playback-signing-secret-change-in-production".encode()
+        message = f"{session_id}|{content_id}|{expires}".encode()
+        signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
+
+        result = service.verify_signed_url(session_id, content_id, signature, expires)
+        assert result is True
+
+    async def test_verify_signed_url_invalid_signature(self, service):
+        session_id = uuid4()
+        content_id = uuid4()
+        expires = int((datetime.now(UTC) + timedelta(seconds=3600)).timestamp())
+        signature = "invalid_signature"
+
+        result = service.verify_signed_url(session_id, content_id, signature, expires)
+        assert result is False
+
+    async def test_verify_signed_url_expired(self, service):
+        session_id = uuid4()
+        content_id = uuid4()
+        expires = int((datetime.now(UTC) - timedelta(seconds=10)).timestamp())
+
+        import hmac
+        import hashlib
+
+        secret = "dev-playback-signing-secret-change-in-production".encode()
+        message = f"{session_id}|{content_id}|{expires}".encode()
+        signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
+
+        result = service.verify_signed_url(session_id, content_id, signature, expires)
+        assert result is False
+
+
+class TestSessionValidityBranches:
+    """Tests for session expiry/revocation checks at playback time (#76, #147, #194, #219, #251)."""
+
+    async def test_check_session_valid_for_playback_active(self, service):
+        session = MagicMock()
+        session.user_id = uuid4()
+        session.status = "active"
+        session.expires_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=3600)
+        service.playback_repo.get_by_id = AsyncMock(return_value=session)
+
+        result = await service.check_session_valid_for_playback(session.id, session.user_id)
+        assert result is True
+
+    async def test_check_session_valid_for_playback_expired(self, service):
+        session = MagicMock()
+        session.user_id = uuid4()
+        session.status = "active"
+        session.expires_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=10)
+        service.playback_repo.get_by_id = AsyncMock(return_value=session)
+
+        result = await service.check_session_valid_for_playback(session.id, session.user_id)
+        assert result is False
+
+    async def test_check_session_valid_for_playback_revoked(self, service):
+        session = MagicMock()
+        session.user_id = uuid4()
+        session.status = "completed"
+        session.expires_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=3600)
+        service.playback_repo.get_by_id = AsyncMock(return_value=session)
+
+        result = await service.check_session_valid_for_playback(session.id, session.user_id)
+        assert result is False
+
+    async def test_check_session_valid_for_playback_not_found(self, service):
+        service.playback_repo.get_by_id = AsyncMock(return_value=None)
+
+        result = await service.check_session_valid_for_playback(uuid4(), uuid4())
+        assert result is False
+
+    async def test_check_session_valid_for_playback_wrong_user(self, service):
+        session = MagicMock()
+        session.user_id = uuid4()
+        session.status = "active"
+        session.expires_at = None
+        service.playback_repo.get_by_id = AsyncMock(return_value=session)
+
+        result = await service.check_session_valid_for_playback(session.id, uuid4())
+        assert result is False
+
+
+class TestConcurrencyBranches:
+    """Tests for atomic concurrency enforcement (#281, #490)."""
+
+    async def test_start_playback_session_concurrency_check(self, service, mocker):
+        from app.schemas import PlaybackSessionCreateRequest
+        from fastapi import HTTPException, status
+
+        # Mock the count to exceed limit
+        service.playback_repo.count_active_sessions_locked = AsyncMock(return_value=5)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await service.start_playback_session(
+                PlaybackSessionCreateRequest(user_id=uuid4(), content_id=uuid4(), device_id="d")
+            )
+
+        assert exc_info.value.status_code == status.HTTP_409_CONFLICT
+        assert "Maximum concurrent sessions" in exc_info.value.detail
+
+    async def test_start_playback_session_under_limit(self, service):
+        from app.schemas import PlaybackSessionCreateRequest
+
+        # Mock the count to be under limit
+        service.playback_repo.count_active_sessions_locked = AsyncMock(return_value=2)
+        session = MagicMock()
+        service.playback_repo.create = AsyncMock(return_value=session)
+
+        result = await service.start_playback_session(
+            PlaybackSessionCreateRequest(user_id=uuid4(), content_id=uuid4(), device_id="d")
+        )
+
+        assert result is session
+        service.playback_repo.commit.assert_awaited_once()

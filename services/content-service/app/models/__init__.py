@@ -158,6 +158,7 @@ class Content(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     published_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)  # Soft delete timestamp (#433)
 
     # Relationships
     genres: Mapped[list["Genre"]] = relationship(

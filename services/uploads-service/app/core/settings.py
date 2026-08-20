@@ -24,7 +24,12 @@ class Settings(BaseSettings):
     JWT_EXPIRATION_MINUTES: int = 15
     # Audience claim carried by auth-service-issued tokens; every decode must
     # check it so tokens minted for other audiences are rejected.
-    JWT_AUDIENCE: str = "wildframe-api"
+    JWT_ISSUER: str = "wildframe-auth"
+
+    # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
+    # connections per service instance to prevent DB exhaustion.
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 5
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
@@ -114,7 +119,23 @@ class Settings(BaseSettings):
                 "JWT_SECRET_KEY must be set to a strong random value in production. "
                 "Refusing to start with default insecure secret."
             )
+
+    @model_validator(mode="after")
+    def validate_cors_credentials(self) -> "Settings":
+        """Reject wildcard CORS with credentials in production (#68)."""
+        if (
+            self.ENVIRONMENT == "production"
+            and self.CORS_ALLOWED_ORIGINS == ["*"]
+            and self.CORS_ALLOW_CREDENTIALS
+        ):
+            raise ValueError(
+                "CORS_ALLOWED_ORIGINS cannot be ['*'] with CORS_ALLOW_CREDENTIALS=True in production. "
+                "Use explicit origin list or disable credentials."
+            )
         return self
+
+    # Issue #469: Metrics endpoint token
+    METRICS_TOKEN: str = ""
 
     class Config:
         env_file = ".env"

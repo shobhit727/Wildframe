@@ -1,11 +1,10 @@
 """Analytics service API routes."""
 
-from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
 from jose import JWTError, jwt
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.content_client import (
@@ -20,6 +19,7 @@ from app.repositories import (
     CreatorAnalyticsSnapshotRepository,
     EventRepository,
 )
+from app.schemas import LogEventRequest, RecordViewEventRequest
 from app.services import AnalyticsService
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
@@ -88,8 +88,8 @@ async def require_self(
     if path_user_id is None or str(path_user_id) == str(jwt_user_id):
         return jwt_user_id
     raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="You can only access your own data",
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Not found",
     )
 
 
@@ -100,7 +100,7 @@ async def require_creator_access(
     """Creator analytics are private: creator-self or a privileged role.
 
     A creator may always read their own analytics; ``PRIVILEGED_ROLE``
-    (admin) may read any creator's. Everyone else gets 403 — ordinary
+    (admin) may read any creator's. Everyone else gets 404 — ordinary
     users never inherit creator-scope access.
     """
     creator_id = request.path_params.get("creator_id")
@@ -109,8 +109,8 @@ async def require_creator_access(
     if str(creator_id) == str(claims["user_id"]) or claims["role"] == settings.PRIVILEGED_ROLE:
         return UUID(str(creator_id))
     raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="You can only access your own analytics",
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Not found",
     )
 
 
@@ -123,7 +123,7 @@ async def require_content_access(
     The ownership is resolved server-side from content-service: a
     client-supplied ``creator_id`` is never trusted. Privileged roles may
     read any content; a creator may read only content they own; everyone
-    else gets 403. Fail-closed: if ownership cannot be resolved (content
+    else gets 404. Fail-closed: if ownership cannot be resolved (content
     missing or service unreachable) the request is denied.
     """
     content_id = request.path_params.get("content_id")
@@ -149,8 +149,8 @@ async def require_content_access(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
     if owner != claims["user_id"]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only access your own content analytics",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found",
         )
     return content_id
 
@@ -169,18 +169,19 @@ async def get_analytics_service(
 @router.post("/events", response_model=dict)
 async def log_event(
     current_user: Annotated[UUID, Depends(get_current_user_id)],
-    user_id: UUID = Body(...),
-    event_type: str = Body(...),
-    event_data: dict | None = Body(None),  # noqa: B008
-    content_id: UUID | None = Body(None),  # noqa: B008
+    request: LogEventRequest,
     service: AnalyticsService = Depends(get_analytics_service),  # noqa: B008
 ):
     """Log analytics event."""
-    if user_id != current_user:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="You can only log your own events"
-        )
-    await service.log_event(user_id, event_type, event_data, content_id)
+    if request.user_id != current_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    await service.log_event(
+        request.user_id,
+        request.event_type,
+        request.event_data,
+        request.content_id,
+        request.client_event_id,
+    )
     return {"status": "logged"}
 
 
@@ -198,30 +199,22 @@ async def get_user_events(
 @router.post("/view-events", response_model=dict)
 async def record_view_event(
     current_user: Annotated[UUID, Depends(get_current_user_id)],
-    content_id: UUID = Body(...),
-    viewer_id: UUID = Body(...),
-    watch_duration_seconds: int = Body(0),
-    content_duration_seconds: int = Body(0),
-    completion_pct: float = Body(0.0),
-    playback_quality: str | None = Body(None),
-    started_at: datetime | None = Body(None),  # noqa: B008
-    completed_at: datetime | None = Body(None),  # noqa: B008
+    request: RecordViewEventRequest,
     service: AnalyticsService = Depends(get_analytics_service),  # noqa: B008
 ):
     """Record a content view/playback event."""
-    if viewer_id != current_user:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="You can only record your own views"
-        )
+    if request.viewer_id != current_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     await service.record_view_event(
-        content_id=content_id,
-        viewer_id=viewer_id,
-        watch_duration_seconds=watch_duration_seconds,
-        content_duration_seconds=content_duration_seconds,
-        completion_pct=completion_pct,
-        playback_quality=playback_quality,
-        started_at=started_at,
-        completed_at=completed_at,
+        content_id=request.content_id,
+        viewer_id=request.viewer_id,
+        watch_duration_seconds=request.watch_duration_seconds,
+        content_duration_seconds=request.content_duration_seconds,
+        completion_pct=request.completion_pct,
+        playback_quality=request.playback_quality,
+        started_at=request.started_at,
+        completed_at=request.completed_at,
+        client_event_id=request.client_event_id,
     )
     return {"status": "recorded"}
 
@@ -235,7 +228,7 @@ async def get_creator_analytics(
     """Get analytics for a creator.
 
     Access is creator-self or ``PRIVILEGED_ROLE`` only; other
-    authenticated users receive 403. These metrics are private.
+    authenticated users receive 404. These metrics are private.
     """
     analytics = await service.get_creator_analytics(creator_id)
     if not analytics:

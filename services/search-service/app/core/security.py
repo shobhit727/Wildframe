@@ -9,6 +9,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, Request
 from jose import jwt  # type: ignore[import-untyped]
+from wildframe_observability.logging import correlation_id_var
 
 from app.core.settings import settings
 
@@ -78,7 +79,10 @@ async def get_required_identity(request: Request) -> Identity:
     if identity is None:
         raise HTTPException(
             status_code=401,
-            detail="Authentication required",
+            detail={
+                "message": "Authentication required",
+                "correlation_id": correlation_id_var.get(),
+            },
             headers={"WWW-Authenticate": "Bearer"},
         )
     return identity
@@ -88,10 +92,23 @@ async def get_admin_identity(request: Request) -> Identity:
     """Admin-only dependency for expensive/destructive operations."""
     identity = await get_required_identity(request)
     if not identity.is_admin:
-        raise HTTPException(status_code=403, detail="Administrator privileges required")
+    if not identity.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "Administrator privileges required",
+                "correlation_id": correlation_id_var.get(),
+            },
+        )
     if not identity.role_current:
         raise HTTPException(
-            status_code=403, detail="Administrator privileges required (role version changed)"
+            status_code=403,
+            detail={
+                "message": "Administrator privileges required (role version changed)",
+                "correlation_id": correlation_id_var.get(),
+            },
+        )
+    return identity
         )
     return identity
 

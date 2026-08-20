@@ -8,6 +8,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.settings import settings
+from app.models import CreatorSuspendedError
 from app.repositories import (
     CreatorAccountRepository,
     CreatorPoolBalanceRepository,
@@ -344,14 +345,19 @@ async def accrue_my_payout(
     acct = await service.get_profile(user_id)
     if acct is None:
         raise HTTPException(status_code=404, detail="creator not found")
-    row = await service.accrue_payout(
-        creator_id=acct.id,
-        period_start=payload.period_start,
-        period_end=payload.period_end,
-        view_minutes=payload.view_minutes,
-        earned_cents=payload.earned_cents,
-        stripe_fee_cents=payload.stripe_fee_cents,
-    )
+    if not acct.is_active:
+        raise HTTPException(status_code=403, detail="creator suspended")
+    try:
+        row = await service.accrue_payout(
+            creator_id=acct.id,
+            period_start=payload.period_start,
+            period_end=payload.period_end,
+            view_minutes=payload.view_minutes,
+            earned_cents=payload.earned_cents,
+            stripe_fee_cents=payload.stripe_fee_cents,
+        )
+    except CreatorSuspendedError:
+        raise HTTPException(status_code=403, detail="creator suspended")
     return PayoutLedgerResponse(
         id=row.id,
         creator_id=row.creator_id,

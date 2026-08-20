@@ -1,18 +1,44 @@
+"""Database connection management for Admin Service."""
+
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import QueuePool
 
 from app.core.settings import settings
 
 
 class DatabaseManager:
-    engine = None
+    """Manages database connections and session lifecycle."""
+
+    engine: AsyncEngine | None = None
     session_factory: async_sessionmaker[AsyncSession] | None = None
 
     @classmethod
-    async def init(cls):
-        cls.engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG)
+    async def init(cls) -> None:
+        """Initialize the async engine and session factory."""
+        cls.engine = create_async_engine(
+            settings.DATABASE_URL,
+            echo=settings.DEBUG,
+            future=True,
+            poolclass=QueuePool,
+            pool_size=5,
+            max_overflow=5,
+            pool_timeout=30,
+            pool_recycle=3600,
+            pool_pre_ping=True,
+            connect_args={
+                "command_timeout": 30,
+            },
+        )
         cls.session_factory = async_sessionmaker(
-            cls.engine, class_=AsyncSession, expire_on_commit=False
+            cls.engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
         )
 
     @classmethod

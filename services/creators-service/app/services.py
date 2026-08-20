@@ -1,16 +1,21 @@
 """Creators service business logic."""
 
+import logging
 from datetime import datetime
 from uuid import UUID
 
 from app.core.settings import settings
+from app.models import CreatorSuspendedError
 from app.repositories import (
     CreatorAccountRepository,
     CreatorPoolBalanceRepository,
     EffectiveFloorRepository,
+    InboundEventRepository,
     MilestoneRepository,
     PayoutLedgerRepository,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CreatorService:
@@ -25,12 +30,14 @@ class CreatorService:
         pool_repo: CreatorPoolBalanceRepository,
         milestone_repo: MilestoneRepository,
         ledger_repo: PayoutLedgerRepository,
+        inbound_repo: InboundEventRepository | None = None,
     ):
         self.acct_repo = acct_repo
         self.floor_repo = floor_repo
         self.pool_repo = pool_repo
         self.milestone_repo = milestone_repo
         self.ledger_repo = ledger_repo
+        self.inbound_repo = inbound_repo
 
     # ------------------------------------------------------------------ profile
     async def get_profile(self, user_id: UUID):
@@ -130,6 +137,11 @@ class CreatorService:
         here so a bad fee config fails loudly in tests instead of silently
         cheating creators in production.
         """
+        # Suspended creators cannot accrue payouts.
+        acct = await self.acct_repo.get(creator_id)
+        if acct is None or not acct.is_active:
+            raise CreatorSuspendedError(f"Creator {creator_id} is suspended or does not exist")
+
         floor = await self.floor_repo.get_floor_for_creator(creator_id)
         per_minute = floor.per_minute_amount if floor is not None else 0.0
 
@@ -169,3 +181,37 @@ class CreatorService:
             net_cents=net_cents,
             idempotency_key=idempotency_key,
         )
+
+    # ------------------------------------------------------------- suspension
+    async def process_inbound_suspension(self, event_key: str, payload: dict) -> None:
+        """Process a creator.suspended inbound event: deactivate the creator.
+
+        Idempotent: replaying the same event_key is a no-op.
+        """
+        if self.inbound_repo is None:
+            raise CreatorSuspendedError("inbound event repository not configured")
+        creator_id = UUID(payload["creator_id"])
+        acct = await self.acct_repo.get(creator_id)
+        if acct is None:
+            raise CreatorSuspendedError(f"Creator {creator_id} does not exist")
+        await self.acct_repo.update(acct, is_active=False, kyc_status="suspended")
+        await self.inbound_repo.mark_processed(UUID(event_key))
+
+    async def drain_inbound_events(self, limit: int = 100) -> int:
+        """Process PENDING inbound events (polling consumer for creator.suspended)."""
+        if self.inbound_repo is None:
+            return 0
+        events = await self.inbound_repo.get_pending(limit)
+        processed = 0
+        for event in events:
+            if event.topic != "creator.suspended":
+                await self.inbound_repo.mark_failed(event.id)
+                continue
+            try:
+                await self.process_inbound_suspension(event.event_key, event.payload)
+                processed += 1
+            except Exception:
+                logger.exception("inbound event %s failed; will retry", event.id)
+                await self.inbound_repo.mark_failed(event.id)
+        await self.inbound_repo.session.commit()
+        return processed

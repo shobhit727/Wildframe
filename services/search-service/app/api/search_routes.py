@@ -7,6 +7,7 @@ from uuid import UUID
 from elasticsearch import AsyncElasticsearch
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from wildframe_observability.logging import correlation_id_var
 
 from app.core.database import get_db
 from app.core.security import (
@@ -26,6 +27,15 @@ from app.services import (
 )
 
 router = APIRouter(prefix="/api/v1/search", tags=["search"])
+
+
+def _error(status_code: int, message: str) -> HTTPException:
+    """HTTPException whose detail carries the stable request correlation ID."""
+    return HTTPException(
+        status_code=status_code,
+        detail={"message": message, "correlation_id": correlation_id_var.get()},
+    )
+
 
 # Hard limits enforced at the route layer.
 MAX_SEARCH_LIMIT = 100
@@ -80,7 +90,7 @@ async def search_content(
         try:
             search_after = decode_cursor(cursor, q, content_type, limit)
         except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
+            raise _error(422, str(e))
 
     result = await service.search(user_id, q, content_type, limit, search_after=search_after)
 
@@ -119,20 +129,20 @@ async def reindex(
     await get_admin_identity(request)
 
     if _reindex_lock.locked():
-        raise HTTPException(status_code=409, detail="A reindex job is already running")
+        raise _error(409, "A reindex job is already running")
 
     async with _reindex_lock:
         try:
             catalog = ContentCatalogClient()
             result: ReindexResult = await service.reindex_catalog(catalog)
         except CatalogFetchError as e:
-            raise HTTPException(status_code=502, detail=f"Content service unavailable: {e}") from e
+            raise _error(502, f"Content service unavailable: {e}") from e
         except IndexingError as e:
-            raise HTTPException(status_code=502, detail=f"Bulk indexing failed: {e}") from e
+            raise _error(502, f"Bulk indexing failed: {e}") from e
         except Exception as e:  # noqa: BLE001 - unexpected internal errors
             logger = __import__("logging").getLogger(__name__)
             logger.exception("Reindex failed unexpectedly")
-            raise HTTPException(status_code=500, detail="Reindex failed") from e
+            raise _error(500, "Reindex failed") from e
 
     return {"indexed": result.count, "index": result.index_name, "switched": result.switched}
 
@@ -163,12 +173,9 @@ async def delete_index(
     """
     await get_admin_identity(request)
     if not confirm:
-        raise HTTPException(
-            status_code=400,
-            detail="Deletion requires explicit confirmation: add ?confirm=true",
-        )
+        raise _error(400, "Deletion requires explicit confirmation: add ?confirm=true")
     try:
         await service.delete_index(index_name)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise _error(400, str(e))
     return {"deleted": index_name}

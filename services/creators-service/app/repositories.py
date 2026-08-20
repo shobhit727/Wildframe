@@ -9,7 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import (
     CreatorAccount,
     CreatorPoolBalance,
+    CreatorSuspendedError,
     EffectiveFloor,
+    InboundEvent,
+    InboundEventStatus,
     KYCStatus,
     Milestone,
     MilestoneStatus,
@@ -260,10 +263,19 @@ class PayoutLedgerRepository:
         whether THIS call created the row (to emit billing.payout.accrued) vs.
         observed an already-accrued period. The unique constraint remains the
         last line of defense against races.
+
+        Raises CreatorSuspendedError if the creator is not active.
         """
         existing = await self.get_by_idempotency_key(idempotency_key)
         if existing is not None:
             return existing
+
+        # Check if creator is active before creating ledger row
+        stmt = select(CreatorAccount).where(CreatorAccount.id == creator_id)
+        result = await self.session.execute(stmt)
+        creator = result.scalar_one_or_none()
+        if creator is None or not creator.is_active:
+            raise CreatorSuspendedError(f"Creator {creator_id} is suspended or does not exist")
 
         row = PayoutLedger(
             creator_id=creator_id,
@@ -282,3 +294,46 @@ class PayoutLedgerRepository:
         await self.session.flush()
         await self.session.commit()
         return row
+
+
+class InboundEventRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get_by_event_key(self, event_key: str) -> InboundEvent | None:
+        stmt = select(InboundEvent).where(InboundEvent.event_key == event_key)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def create_pending(self, topic: str, event_key: str, payload: dict) -> InboundEvent:
+        """Create a pending inbound event. Returns existing if event_key already exists."""
+        existing = await self.get_by_event_key(event_key)
+        if existing is not None:
+            return existing
+        row = InboundEvent(topic=topic, event_key=event_key, payload=payload)
+        self.session.add(row)
+        await self.session.flush()
+        return row
+
+    async def mark_processed(self, event_id: UUID) -> None:
+        row = await self.session.get(InboundEvent, event_id)
+        if row is not None:
+            row.status = InboundEventStatus.PROCESSED
+            row.processed_at = datetime.now(UTC)
+            await self.session.flush()
+
+    async def mark_failed(self, event_id: UUID) -> None:
+        row = await self.session.get(InboundEvent, event_id)
+        if row is not None:
+            row.status = InboundEventStatus.FAILED
+            await self.session.flush()
+
+    async def get_pending(self, limit: int = 100) -> list[InboundEvent]:
+        stmt = (
+            select(InboundEvent)
+            .where(InboundEvent.status == InboundEventStatus.PENDING)
+            .order_by(InboundEvent.created_at)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())

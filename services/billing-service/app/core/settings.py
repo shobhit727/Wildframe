@@ -26,13 +26,16 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/billing_db"
 
     # Security
-    JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
-    JWT_ALGORITHM: str = "HS256"
     JWT_AUDIENCE: str = "wildframe-api"
+    JWT_ISSUER: str = "wildframe-auth"
     JWT_EXPIRATION_MINUTES: int = 15
 
+    # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
+    # connections per service instance to prevent DB exhaustion.
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 5
+
     # Redis
-    REDIS_URL: str = "redis://localhost:6379"
 
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -102,7 +105,29 @@ class Settings(BaseSettings):
     def validate_currency(self) -> "Settings":
         """Validate DEFAULT_CURRENCY against ISO-4217 allowlist (#477/#478)."""
         validate_currency(self.DEFAULT_CURRENCY)
+
+    @model_validator(mode="after")
+    def validate_cors_credentials(self) -> "Settings":
+        """Reject wildcard CORS with credentials in production (#68)."""
+        if (
+            self.ENVIRONMENT == "production"
+            and self.CORS_ALLOWED_ORIGINS == ["*"]
+            and self.CORS_ALLOW_CREDENTIALS
+        ):
+            raise ValueError(
+                "CORS_ALLOWED_ORIGINS cannot be ['*'] with CORS_ALLOW_CREDENTIALS=True in production. "
+                "Use explicit origin list or disable credentials."
+            )
         return self
+
+    # Issue #319: Per-provider daily email quota (for notification-service integration)
+    EMAIL_PROVIDER_DAILY_QUOTA: dict[str, int] = {}
+    # Issue #488/#545: Per-creator max concurrent jobs
+    PIPELINE_MAX_JOBS_PER_CREATOR: int = 2
+    # Issue #495: CloudFront distribution ID for CDN invalidation
+    CLOUDFRONT_DISTRIBUTION_ID: str | None = None
+    # Issue #469: Metrics endpoint token
+    METRICS_TOKEN: str = ""
 
     class Config:
         env_file = ".env"
