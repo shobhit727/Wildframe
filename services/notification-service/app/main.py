@@ -91,13 +91,16 @@ def create_app() -> FastAPI:
     # In-flight request tracking for graceful shutdown (#426)
     @app.middleware("http")
     async def track_in_flight(request: Request, call_next):
-        global _in_flight_requests
-        if app.state.shutting_down:
+        global _in_flight_requests, _in_flight_lock
+        if getattr(app.state, "shutting_down", False):
             return JSONResponse(
                 content={"detail": "Service shutting down"},
                 status_code=503,
                 headers={"Retry-After": str(_MAX_DRAIN_SECONDS)},
             )
+        # Initialize lock lazily for test environments without lifespan
+        if _in_flight_lock is None:
+            _in_flight_lock = asyncio.Lock()
         async with _in_flight_lock:
             _in_flight_requests += 1
         try:

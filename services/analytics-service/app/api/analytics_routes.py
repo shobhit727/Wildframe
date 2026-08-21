@@ -175,13 +175,18 @@ async def log_event(
     """Log analytics event."""
     if request.user_id != current_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    await service.log_event(
-        request.user_id,
-        request.event_type,
-        request.event_data,
-        request.content_id,
-        request.client_event_id,
-    )
+    try:
+        await service.log_event(
+            request.user_id,
+            request.event_type,
+            request.event_data,
+            request.content_id,
+            request.client_event_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
     return {"status": "logged"}
 
 

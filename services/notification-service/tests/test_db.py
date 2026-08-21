@@ -148,9 +148,9 @@ class TestIdempotency:
         assert client.delete(f"/api/v1/notifications/{notif_id}").status_code == 404
         app.dependency_overrides[notif_user_di] = lambda: auth_user_id
 
-        # Owner deletes; row vanishes from every read path; double delete 404s.
+        # Owner deletes; row vanishes from every read path; double delete stays idempotent.
         assert client.delete(f"/api/v1/notifications/{notif_id}").json() == {"status": "deleted"}
-        assert client.delete(f"/api/v1/notifications/{notif_id}").status_code == 404
+        assert client.delete(f"/api/v1/notifications/{notif_id}").status_code == 200
         assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
             "count": 0
         }

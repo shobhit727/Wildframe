@@ -290,49 +290,49 @@ class TestRedactSecrets:
 
 
 class TestJSONFormatterRedaction:
-    def test_formatter_redacts_secrets_in_extra(self, caplog):
+    def test_formatter_redacts_secrets_in_extra(self):
+        import io
+        import json as jsonlib
         import logging
 
         logger = get_logger("test.redaction")
         logger.setLevel(logging.DEBUG)
-        handler = logging.StreamHandler()
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
         handler.setFormatter(JSONFormatter(service_name="test"))
         logger.addHandler(handler)
-
-        with caplog.at_level(logging.INFO, logger="test.redaction"):
+        try:
             logger.info(
                 "user login",
                 extra={"password": "secret123", "username": "john", "api_key": "key456"},
             )
+        finally:
+            logger.removeHandler(handler)
 
-        log_records = [r for r in caplog.records if r.name == "test.redaction"]
-        assert len(log_records) == 1
-        import json as jsonlib
-
-        log_data = jsonlib.loads(log_records[0].message)
+        log_data = jsonlib.loads(stream.getvalue())
         assert log_data.get("password") == "***REDACTED***"
         assert log_data.get("api_key") == "***REDACTED***"
         assert log_data.get("username") == "john"
 
-    def test_formatter_redacts_secrets_in_extra_dict(self, caplog):
+    def test_formatter_redacts_secrets_in_extra_dict(self):
+        import io
+        import json as jsonlib
         import logging
 
         logger = get_logger("test.redaction2")
         logger.setLevel(logging.DEBUG)
-        handler = logging.StreamHandler()
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
         handler.setFormatter(JSONFormatter(service_name="test"))
         logger.addHandler(handler)
-
-        with caplog.at_level(logging.INFO, logger="test.redaction2"):
+        try:
             logger.info(
                 "nested data",
                 extra={"user": {"password": "secret123", "name": "john"}},
             )
+        finally:
+            logger.removeHandler(handler)
 
-        log_records = [r for r in caplog.records if r.name == "test.redaction2"]
-        assert len(log_records) == 1
-        import json as jsonlib
-
-        log_data = jsonlib.loads(log_records[0].message)
+        log_data = jsonlib.loads(stream.getvalue())
         assert log_data.get("user", {}).get("password") == "***REDACTED***"
         assert log_data.get("user", {}).get("name") == "john"
