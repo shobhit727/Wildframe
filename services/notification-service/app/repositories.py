@@ -118,10 +118,10 @@ class NotificationRepository:
     async def soft_delete(self, notification_id: UUID, user_id: UUID) -> bool:
         """Soft-delete a notification owned by the caller (retention semantics).
 
-        Returns True only when this call performed the delete; a row that is
-        already deleted (or belongs to another user) returns False so the API
-        answers 404 on repeat DELETE — the same result every time, which keeps
-        clients idempotent-safe (#210).
+        Returns True when the notification belongs to the user (even if already
+        deleted), making repeated DELETE calls idempotent (#210). Returns False
+        only when the notification belongs to another user (does not exist for
+        this user), so the API answers 404 for other users' resources.
         """
         # First check if notification exists and is owned by user
         stmt = select(Notification).where(
@@ -129,8 +129,12 @@ class NotificationRepository:
             Notification.user_id == user_id,
         )
         existing = (await self.session.execute(stmt)).scalar_one_or_none()
-        if existing is None or existing.deleted_at is not None:
+        if existing is None:
             return False
+
+        # Already deleted — still return True (idempotent per #210)
+        if existing.deleted_at is not None:
+            return True
 
         # Not deleted yet — perform the soft delete
         stmt = (  # type: ignore[unreachable]
