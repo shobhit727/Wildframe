@@ -1,9 +1,21 @@
 """Analytics service Pydantic request schemas."""
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.services import MAX_EVENT_DATA_DEPTH
+
+
+def _nesting_depth(value: Any, depth: int = 0) -> int:
+    """Measure the maximum nesting depth of a JSON-ish structure."""
+    if isinstance(value, dict):
+        return max((_nesting_depth(v, depth + 1) for v in value.values()), default=depth)
+    if isinstance(value, list):
+        return max((_nesting_depth(v, depth + 1) for v in value), default=depth)
+    return depth
 
 
 class LogEventRequest(BaseModel):
@@ -16,6 +28,15 @@ class LogEventRequest(BaseModel):
     event_data: dict | None = None
     content_id: UUID | None = None
     client_event_id: str | None = Field(default=None, max_length=200)
+
+    @field_validator("event_data")
+    @classmethod
+    def _reject_deep_nesting(cls, value: dict | None) -> dict | None:
+        if value is not None and _nesting_depth(value) > MAX_EVENT_DATA_DEPTH:
+            raise ValueError(
+                f"event_data nesting depth exceeds {MAX_EVENT_DATA_DEPTH}"
+            )
+        return value
 
 
 class RecordViewEventRequest(BaseModel):

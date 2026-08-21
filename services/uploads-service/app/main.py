@@ -19,6 +19,14 @@ logger = logging.getLogger(__name__)
 _shutdown_event: asyncio.Event | None = None
 _in_flight_requests = 0
 _in_flight_lock: asyncio.Lock | None = None
+_fallback_in_flight_lock: asyncio.Lock | None = None
+def _fallback_lock() -> asyncio.Lock:
+    """Return a process-wide lock when the lifespan has not run yet."""
+    global _fallback_in_flight_lock
+    if _fallback_in_flight_lock is None:
+        _fallback_in_flight_lock = asyncio.Lock()
+    return _fallback_in_flight_lock
+
 _MAX_DRAIN_SECONDS = 30
 
 
@@ -125,24 +133,26 @@ def create_app() -> FastAPI:
                 status_code=503,
                 headers={"Retry-After": str(_MAX_DRAIN_SECONDS)},
             )
-        async with _in_flight_lock:
+        lock = _in_flight_lock or _fallback_lock()
+        async with lock:
             _in_flight_requests += 1
         try:
             response = await call_next(request)
             return response
         finally:
-            async with _in_flight_lock:
+            async with lock:
                 _in_flight_requests -= 1
 
     # Status-only health endpoint (#628)
     @app.get("/health")
     async def health() -> dict:
         """Health check endpoint — liveness only, no dependency topology."""
-        return {"status": "ok"}
+        db_ok = await DatabaseManager.health_check()
+        return {"status": "healthy" if db_ok else "degraded"}
 
     # Readiness endpoint with DB + Redis checks (#124)
-    @app.get("/ready")
-    async def ready() -> dict:
+    @app.get("/ready", response_model=None)
+    async def ready() -> dict | JSONResponse:
         checks: dict[str, str] = {}
         overall = "ready"
 

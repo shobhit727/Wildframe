@@ -284,6 +284,7 @@ class TestAdminCreatorAuth:
             "type": "access",
             "role": role,
             "aud": settings.JWT_AUDIENCE,
+            "iss": settings.JWT_ISSUER,
             "iat": datetime.now(UTC),
             "exp": datetime.now(UTC) + timedelta(minutes=15),
         }

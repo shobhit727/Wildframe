@@ -4,6 +4,7 @@ from datetime import UTC
 
 import pytest_asyncio
 from httpx import AsyncClient
+from httpx import ASGITransport
 
 from app.main import app
 from app.models import ContentStatus
@@ -13,7 +14,7 @@ from app.services import ContentService
 @pytest_asyncio.fixture
 async def client():
     """Async HTTP client for testing."""
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
 

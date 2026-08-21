@@ -1,5 +1,6 @@
 """API routes for Streaming Service."""
 
+import inspect
 from typing import Annotated
 from uuid import UUID
 
@@ -47,6 +48,7 @@ async def get_current_user_id(
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
         )
         # Token-type separation (#221): refresh tokens share the audience but
         # must never be accepted as access tokens.
@@ -68,6 +70,31 @@ async def get_current_user_id(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
         )
+
+
+async def get_current_user_id_or_none(
+    request: Request,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> UUID | None:
+    """Resolve the user id when a bearer token is present; otherwise None.
+
+    Used by signed-URL endpoints (#489, #491) where possession of a valid
+    signature + session id is the credential, so a missing/invalid bearer
+    token must not block the signed path. Honors dependency overrides so
+    route tests can inject a user without minting a token.
+    """
+    override = request.app.dependency_overrides.get(get_current_user_id)
+    if override is not None:
+        try:
+            result = override()
+            value = await result if inspect.isawaitable(result) else result
+            return value if value is None or isinstance(value, UUID) else None
+        except HTTPException:
+            return None
+    try:
+        return await get_current_user_id(authorization)
+    except HTTPException:
+        return None
 
 
 async def require_self(
@@ -209,7 +236,7 @@ async def get_manifest(
 async def get_episode_manifest(
     episode_id: UUID,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
-    current_user: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[UUID | None, Depends(get_current_user_id_or_none)] = None,
     protocol: str = Query(default="hls", pattern="^(hls|dash|smooth_streaming)$"),
     # Signed URL params for token-scoped access (#489, #491)
     session_id: UUID | None = Query(default=None),
@@ -224,7 +251,7 @@ async def get_episode_manifest(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Invalid or expired signed URL",
             )
-        # Verify session is valid for playback
+        # Verify session is valid for playback (user binding via session)
         if not await service.check_session_valid_for_playback(session_id, current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -232,6 +259,11 @@ async def get_episode_manifest(
             )
     else:
         # Regular auth path - could add entitlement check here (#587)
+        if current_user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header",
+            )
         if settings.ENTITLEMENT_CHECK_ENABLED:
             # Light entitlement check - in real impl, check user subscription tier
             # For now, we just ensure user is authenticated (done by get_current_user_id)

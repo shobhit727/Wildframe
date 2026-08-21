@@ -85,7 +85,7 @@ async def _handle_billing_subscription_change(event: DomainEvent) -> None:
         logger.warning("database not initialized; skipping billing eviction")
         return
     async with factory() as session:
-        removed = await RecommendationRepository(session).clear_for_user(user_uuid)
+        removed = await RecommendationRepository(session).clear_for_user(user_uuid)  # type: ignore[func-returns-value]
         await session.commit()
     # Invalidate Redis cache as well (#456)
     await _cache_invalidate(user_uuid)

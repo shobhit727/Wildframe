@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_AUDIENCE: str = "wildframe-api"
+    JWT_ISSUER: str = "wildframe-auth"
     JWT_EXPIRATION_MINUTES: int = 15
 
     # Redis
@@ -57,6 +58,7 @@ class Settings(BaseSettings):
     PIPELINE_MAX_TOTAL_RETRY_TIME_SECONDS: float = 7200.0
     PIPELINE_JOB_LEASE_SECONDS: float = 300.0
     PIPELINE_DISK_QUOTA_BYTES: int = 0  # 0 = unlimited
+    PIPELINE_MAX_GLOBAL_JOBS: int = 0  # 0 = unlimited, #488/#545
     PIPELINE_MAX_JOBS_PER_CONTENT: int = 0  # 0 = unlimited
     PIPELINE_MAX_JOBS_PER_CREATOR: int = 2  # 0 = unlimited, #488/#545
     PIPELINE_CIRCUIT_BREAKER_THRESHOLD: int = 10

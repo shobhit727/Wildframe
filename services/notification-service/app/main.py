@@ -18,6 +18,14 @@ logger = logging.getLogger(__name__)
 _shutdown_event: asyncio.Event | None = None
 _in_flight_requests = 0
 _in_flight_lock: asyncio.Lock | None = None
+_fallback_in_flight_lock: asyncio.Lock | None = None
+def _fallback_lock() -> asyncio.Lock:
+    """Return a process-wide lock when the lifespan has not run yet."""
+    global _fallback_in_flight_lock
+    if _fallback_in_flight_lock is None:
+        _fallback_in_flight_lock = asyncio.Lock()
+    return _fallback_in_flight_lock
+
 _MAX_DRAIN_SECONDS = 30
 
 
@@ -91,23 +99,21 @@ def create_app() -> FastAPI:
     # In-flight request tracking for graceful shutdown (#426)
     @app.middleware("http")
     async def track_in_flight(request: Request, call_next):
-        global _in_flight_requests, _in_flight_lock
+        global _in_flight_requests
         if getattr(app.state, "shutting_down", False):
             return JSONResponse(
                 content={"detail": "Service shutting down"},
                 status_code=503,
                 headers={"Retry-After": str(_MAX_DRAIN_SECONDS)},
             )
-        # Initialize lock lazily for test environments without lifespan
-        if _in_flight_lock is None:
-            _in_flight_lock = asyncio.Lock()
-        async with _in_flight_lock:
+        lock = _in_flight_lock or _fallback_lock()
+        async with lock:
             _in_flight_requests += 1
         try:
             response = await call_next(request)
             return response
         finally:
-            async with _in_flight_lock:
+            async with lock:
                 _in_flight_requests -= 1
 
     # Request body size cap (#210) — reject oversized payloads early
@@ -131,11 +137,12 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health() -> dict:
         """Health check endpoint — liveness only, no dependency topology."""
-        return {"status": "ok"}
+        db_ok = await DatabaseManager.health_check()
+        return {"status": "healthy" if db_ok else "degraded"}
 
     # Readiness endpoint with DB + Redis checks (#124)
-    @app.get("/ready")
-    async def ready() -> dict:
+    @app.get("/ready", response_model=None)
+    async def ready() -> dict | JSONResponse:
         checks: dict[str, str] = {}
         overall = "ready"
 

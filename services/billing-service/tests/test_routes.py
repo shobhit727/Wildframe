@@ -34,6 +34,20 @@ def fake_service():
     service.payout_repo = AsyncMock()
     service.refund_repo = AsyncMock()
     service.webhook_events_repo = AsyncMock()
+    # The real BillingService.commit/rollback delegate to the repo session;
+    # mirror that so webhook transaction-order tests stay meaningful.
+    service.webhook_events_repo.session = MagicMock()
+    service.webhook_events_repo.session.commit = AsyncMock()
+    service.webhook_events_repo.session.rollback = AsyncMock()
+
+    async def _commit():
+        await service.webhook_events_repo.session.commit()
+
+    async def _rollback():
+        await service.webhook_events_repo.session.rollback()
+
+    service.commit = _commit
+    service.rollback = _rollback
     # Configure webhook_events_repo methods for webhook tests
     service.webhook_events_repo.claim = AsyncMock(return_value=True)
     service.webhook_events_repo.commit = AsyncMock()

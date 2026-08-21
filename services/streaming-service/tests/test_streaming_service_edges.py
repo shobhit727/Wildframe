@@ -28,6 +28,7 @@ class TestPlaybackBranches:
         from app.schemas import PlaybackSessionCreateRequest
 
         service.playback_repo.create.side_effect = RuntimeError("boom")
+        service.playback_repo.count_active_sessions_locked = AsyncMock(return_value=0)
 
         with pytest.raises(RuntimeError):
             await service.start_playback_session(

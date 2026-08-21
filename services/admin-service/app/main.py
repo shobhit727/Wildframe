@@ -16,16 +16,15 @@ logger = logging.getLogger(__name__)
 # Graceful shutdown state (#426)
 _shutdown_event: asyncio.Event | None = None
 _in_flight_requests = 0
-_in_flight_lock: asyncio.Lock | None = None
+_in_flight_lock = asyncio.Lock()
 _MAX_DRAIN_SECONDS = 30
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _shutdown_event, _in_flight_lock
+    global _shutdown_event
     # Startup
     _shutdown_event = asyncio.Event()
-    _in_flight_lock = asyncio.Lock()
     app.state.shutting_down = False
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")

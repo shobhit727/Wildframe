@@ -19,23 +19,24 @@ class Settings(BaseSettings):
     """Application settings loaded from environment / .env file."""
 
     SERVICE_NAME: str = "Billing"
-    SERVICE_VERSION: str = "2.0.0"
+    SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/billing_db"
+    REDIS_URL: str = "redis://localhost:6379/0"
 
     # Security
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_EXPIRATION_MINUTES: int = 15
 
     # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
     # connections per service instance to prevent DB exhaustion.
     DATABASE_POOL_SIZE: int = 5
     DATABASE_MAX_OVERFLOW: int = 5
-
-    # Redis
 
     # Logging
     LOG_LEVEL: str = "INFO"

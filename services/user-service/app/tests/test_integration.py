@@ -4,6 +4,7 @@ from uuid import UUID
 
 import pytest_asyncio
 from httpx import AsyncClient
+from httpx import ASGITransport
 
 from app.main import app
 from app.repositories import (
@@ -18,7 +19,7 @@ from app.services import UserService
 @pytest_asyncio.fixture
 async def client():
     """Async HTTP client for testing."""
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
 

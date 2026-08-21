@@ -64,7 +64,7 @@ async def _execute_with_deadlock_retry(
     Also enforces a per-statement timeout via SET LOCAL statement_timeout
     to cap transaction duration per #631.
     """
-    last_exc: Exception | None = None
+    last_exc: BaseException | None = None
     for attempt in range(1, max_attempts + 1):
         try:
             # Cap statement execution time (ms). Adjust based on workload.
@@ -80,10 +80,13 @@ async def _execute_with_deadlock_retry(
                 await session.rollback()  # reset transaction state
                 continue
             raise
-        except Exception:
+        except BaseException as exc:
+            last_exc = exc
             raise
     # Should not reach here (re-raised above), but for type safety:
-    raise last_exc
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("Unexpected state in _execute_with_deadlock_retry")
 
 
 class WebhookEventRepository:
@@ -381,7 +384,7 @@ class CreatorPoolRepository:
             .values(redistributed_amount=CreatorPoolEntry.redistributed_amount + delta)
         )
         result = await _execute_with_deadlock_retry(self.session, stmt)
-        return bool(result.rowcount)  # type: ignore[attr-defined]
+        return bool(result.rowcount)
 
 
 class MilestoneRepository:
@@ -563,4 +566,4 @@ class RefundRepository:
             )
         )
         result = await _execute_with_deadlock_retry(self.session, stmt)
-        return bool(result.rowcount)  # type: ignore[attr-defined]
+        return bool(result.rowcount)

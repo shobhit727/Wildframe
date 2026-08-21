@@ -100,6 +100,7 @@ class TestPipelineAuth:
         token = jose_jwt.encode(
             {
                 "sub": str(uuid4()),
+                "iss": settings.JWT_ISSUER,
                 "exp": datetime.now(timezone.utc) - timedelta(minutes=1),
             },
             settings.JWT_SECRET_KEY,

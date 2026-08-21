@@ -69,6 +69,7 @@ class TestPlaybackSessions:
         from app.schemas import PlaybackSessionCreateRequest
 
         mock_repositories["playback_repo"].create.return_value = MagicMock()
+        mock_repositories["playback_repo"].count_active_sessions_locked.return_value = 0
 
         request = PlaybackSessionCreateRequest(
             user_id=user_id, content_id=content_id, device_id="dev-1"

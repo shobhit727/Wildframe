@@ -163,15 +163,17 @@ class StreamingService:
 
         return hmac.compare_digest(signature, expected_signature)
 
-    async def check_session_valid_for_playback(self, session_id: UUID, user_id: UUID) -> bool:
+    async def check_session_valid_for_playback(self, session_id: UUID, user_id: UUID | None) -> bool:
         """Check if session is valid for playback (not expired, not revoked).
 
         Implements expiry/revocation checks at playback time (#76, #147, #194, #219, #251).
+        ``user_id`` may be None on the signed-URL path (#489, #491): the signature
+        proves possession of the session, so only status/expiry are enforced.
         """
         session = await self.playback_repo.get_by_id(session_id)
         if not session:
             return False
-        if session.user_id != user_id:
+        if user_id is not None and session.user_id != user_id:
             return False
         if session.status != PlaybackSessionStatus.ACTIVE:
             return False

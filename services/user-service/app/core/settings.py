@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_ISSUER: str = "wildframe-auth"
+    JWT_AUDIENCE: str = "wildframe-api"
+    JWT_EXPIRATION_MINUTES: int = 15
+    PASSWORD_BCRYPT_ROUNDS: int = 12
 
     # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
     # connections per service instance to prevent DB exhaustion.

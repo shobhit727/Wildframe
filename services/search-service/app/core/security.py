@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import HTTPException, Request
-from jose import jwt  # type: ignore[import-untyped]
+from jose import jwt
 from wildframe_observability.logging import correlation_id_var
 
 from app.core.settings import settings
@@ -51,6 +51,7 @@ def verify_token(request: Request) -> Identity | None:
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
             options={"require": ["exp"]},
         )
         # Token-type separation (#221): refresh tokens are not access tokens.

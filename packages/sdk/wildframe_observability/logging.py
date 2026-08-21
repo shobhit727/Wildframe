@@ -86,6 +86,13 @@ REDACT_FIELDS: frozenset[str] = frozenset(
 )
 
 
+def _is_sensitive_field(key: str) -> bool:
+    """Return True if the field name (case-insensitive) is a secret field."""
+    normalized = key.lower().replace("-", "").replace("_", "")
+    redacted = {f.replace("-", "").replace("_", "") for f in REDACT_FIELDS}
+    return normalized in redacted
+
+
 def _redact_secrets(value: Any, depth: int = 0) -> Any:
     """Recursively redact secret field values in dicts and lists.
 
@@ -216,10 +223,11 @@ class JSONFormatter(logging.Formatter):
                     v = _redact_secrets(v)
                     log_entry[_sanitize_for_log(k)] = _sanitize_for_log(v)
                 continue
-            # Redact secret fields by key, then sanitize for log injection.
-            normalized_key = key.lower().replace("-", "").replace("_", "")
-            redacted_keys = {f.replace("-", "").replace("_", "") for f in REDACT_FIELDS}
-            value = "***REDACTED***" if normalized_key in redacted_keys else _redact_secrets(value)
+            # Redact secret fields based on key name, then sanitize for log injection.
+            if _is_sensitive_field(key):
+                value = "***REDACTED***"
+            else:
+                value = _redact_secrets(value)
             log_entry[_sanitize_for_log(key)] = _sanitize_for_log(value)
 
         # Also promote well-known extra attributes (idempotent with above).

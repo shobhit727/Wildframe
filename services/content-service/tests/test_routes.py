@@ -238,6 +238,7 @@ class TestWriteAuthz:
             "sub": str(uuid4()),
             "type": "access",
             "aud": settings.JWT_AUDIENCE,
+            "iss": settings.JWT_ISSUER,
             "iat": now,
             "exp": now + 900,
             "arv": arv,

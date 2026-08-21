@@ -617,7 +617,8 @@ class TestManifestAuth:
 
     def test_get_episode_manifest_with_valid_signed_url(self, client, fake_service):
         """Signed URL bypasses auth but validates signature (#489, #491)."""
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(streaming_user_di, None)
+        app.dependency_overrides.pop(streaming_require_self, None)
         episode_id = uuid4()
         session_id = uuid4()
         content_id = episode_id  # episode_id used as content_id in URL
@@ -643,7 +644,8 @@ class TestManifestAuth:
         assert response.status_code == 200
 
     def test_get_episode_manifest_rejects_invalid_signature(self, client, fake_service):
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(streaming_user_di, None)
+        app.dependency_overrides.pop(streaming_require_self, None)
         fake_service.verify_signed_url = lambda s, c, sig, exp: False
         response = client.get(
             f"/api/v1/episodes/{uuid4()}/manifest",
@@ -656,7 +658,8 @@ class TestManifestAuth:
         assert response.status_code == 403
 
     def test_get_episode_manifest_rejects_expired_url(self, client, fake_service):
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(streaming_user_di, None)
+        app.dependency_overrides.pop(streaming_require_self, None)
         expires = int((datetime.now(UTC) - timedelta(seconds=10)).timestamp())
         fake_service.verify_signed_url = lambda s, c, sig, exp: exp > datetime.now(UTC).timestamp()
         response = client.get(
@@ -666,7 +669,8 @@ class TestManifestAuth:
         assert response.status_code == 403
 
     def test_get_episode_manifest_rejects_revoked_session(self, client, fake_service):
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(streaming_user_di, None)
+        app.dependency_overrides.pop(streaming_require_self, None)
         fake_service.verify_signed_url = lambda s, c, sig, exp: True
         fake_service.check_session_valid_for_playback = AsyncMock(return_value=False)
         response = client.get(
@@ -751,6 +755,13 @@ class TestSignedPlaybackUrl:
 class TestSessionExpiry:
     """Tests for session expiry and revocation checks (#76, #147, #194, #219, #251)."""
 
+    def _real_service(self, fake_service):
+        from app.services import StreamingService
+
+        svc = StreamingService(MagicMock())
+        svc.playback_repo = fake_service.playback_repo
+        return svc
+
     def test_check_session_valid_for_playback_expired_returns_false(self, fake_service):
         import asyncio
 
@@ -759,7 +770,9 @@ class TestSessionExpiry:
         fake_service.playback_repo.get_by_id = AsyncMock(return_value=session)
 
         result = asyncio.run(
-            fake_service.check_session_valid_for_playback(session.id, session.user_id)
+            self._real_service(fake_service).check_session_valid_for_playback(
+                session.id, session.user_id
+            )
         )
         assert result is False
 
@@ -771,7 +784,9 @@ class TestSessionExpiry:
         fake_service.playback_repo.get_by_id = AsyncMock(return_value=session)
 
         result = asyncio.run(
-            fake_service.check_session_valid_for_playback(session.id, session.user_id)
+            self._real_service(fake_service).check_session_valid_for_playback(
+                session.id, session.user_id
+            )
         )
         assert result is False
 
@@ -783,6 +798,8 @@ class TestSessionExpiry:
         fake_service.playback_repo.get_by_id = AsyncMock(return_value=session)
 
         result = asyncio.run(
-            fake_service.check_session_valid_for_playback(session.id, session.user_id)
+            self._real_service(fake_service).check_session_valid_for_playback(
+                session.id, session.user_id
+            )
         )
         assert result is True

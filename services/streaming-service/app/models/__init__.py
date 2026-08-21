@@ -4,7 +4,7 @@ Manages playback sessions, video manifests, transcoding, and delivery.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 
 from sqlalchemy import (
@@ -115,6 +115,14 @@ class PlaybackSession(Base):
         Index("ix_playback_session_device", "user_id", "device_id"),
         Index("ix_playback_session_status", "status"),
     )
+
+    @property
+    def expires_at(self) -> datetime | None:
+        """Session expiry computed from started_at + session TTL (2 hours)."""
+        started = getattr(self, "started_at", None)
+        if started is not None:
+            return started + timedelta(hours=2)  # type: ignore[no-any-return]
+        return None
 
 
 class VideoManifest(Base):

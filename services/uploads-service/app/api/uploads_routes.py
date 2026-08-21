@@ -13,7 +13,7 @@ Endpoints:
 from typing import Annotated
 from uuid import UUID
 
-from jose import jwt  # type: ignore[import-untyped]
+from jose import jwt, JWTError
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status as http_status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +42,7 @@ async def get_current_user_id(
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
         )
         # Token-type separation (#221): refresh tokens share the audience but
         # must never be accepted as access tokens.
@@ -50,7 +51,7 @@ async def get_current_user_id(
                 status_code=http_status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token type",
             )
-    except jwt.JWTError:
+    except jwt.JWTError:  # type: ignore[attr-defined]
         raise HTTPException(status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:

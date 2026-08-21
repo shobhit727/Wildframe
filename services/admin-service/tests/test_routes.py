@@ -122,6 +122,7 @@ def make_stats():
 
 class TestAuth:
     def test_moderate_user_requires_admin_token(self, client):
+        app.dependency_overrides.pop(verify_admin_reauth, None)
         app.dependency_overrides.pop(get_current_admin_id, None)
         try:
             response = client.post(
@@ -129,6 +130,7 @@ class TestAuth:
                 json={"user_id": str(uuid4()), "status": "suspended"},
             )
         finally:
+            app.dependency_overrides[verify_admin_reauth] = lambda: "admin-1"
             app.dependency_overrides[get_current_admin_id] = lambda: "admin-1"
 
         assert response.status_code == 401
@@ -145,6 +147,7 @@ class TestAuth:
                 "sub": str(uuid4()),
                 "role": "user",
                 "type": "access",
+                "iss": settings.JWT_ISSUER,
                 "exp": datetime.now(UTC) + timedelta(minutes=5),
             },
             settings.JWT_SECRET_KEY,
@@ -174,6 +177,7 @@ class TestAuth:
                 "role": "admin",
                 "type": "access",
                 "arv": 0,
+                "iss": settings.JWT_ISSUER,
                 "exp": datetime.now(UTC) + timedelta(minutes=5),
             },
             settings.JWT_SECRET_KEY,
@@ -198,6 +202,7 @@ class TestAuth:
                 "sub": str(uuid4()),
                 "role": "admin",
                 "type": "access",
+                "iss": settings.JWT_ISSUER,
                 "exp": datetime.now(UTC) + timedelta(minutes=5),
             },
             settings.JWT_SECRET_KEY,

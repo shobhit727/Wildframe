@@ -19,17 +19,16 @@ logger = logging.getLogger(__name__)
 # Graceful shutdown state (#426)
 _shutdown_event: asyncio.Event | None = None
 _in_flight_requests = 0
-_in_flight_lock: asyncio.Lock | None = None
+_in_flight_lock = asyncio.Lock()
 _MAX_DRAIN_SECONDS = 30
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage FastAPI application lifespan."""
-    global _shutdown_event, _in_flight_lock
+    global _shutdown_event
     # Startup
     _shutdown_event = asyncio.Event()
-    _in_flight_lock = asyncio.Lock()
     app.state.shutting_down = False
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
@@ -117,8 +116,8 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     # Readiness endpoint with DB + Redis checks (#124)
-    @app.get("/ready")
-    async def ready() -> dict:
+    @app.get("/ready", response_model=None)
+    async def ready() -> dict | JSONResponse:
         checks: dict[str, str] = {}
         overall = "ready"
 

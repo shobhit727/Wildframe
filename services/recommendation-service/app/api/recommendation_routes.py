@@ -31,6 +31,7 @@ async def get_current_user_id(
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
         )
         # Token-type separation (#221): refresh tokens share the audience but
         # must never be accepted as access tokens.
@@ -58,13 +59,17 @@ async def require_self(
     jwt_user_id: Annotated[UUID, Depends(get_current_user_id)],
     request: Request,
 ) -> UUID:
-    """Ensure the path user_id matches the authenticated user."""
+    """Ensure the path user_id matches the authenticated user.
+
+    Returns 404 (not 403) on mismatch so other users' existence is never
+    disclosed (#435/#622).
+    """
     path_user_id = request.path_params.get("user_id")
     if path_user_id is None or str(path_user_id) == str(jwt_user_id):
         return jwt_user_id
     raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="You can only access your own data",
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Not found",
     )
 
 
@@ -77,10 +82,19 @@ async def get_rec_service(
 @router.get("/for-user/{user_id}")
 async def get_recommendations(
     user_id: Annotated[UUID, Depends(require_self)],
+    request: Request,
     service: RecommendationService = Depends(get_rec_service),  # noqa: B008
     limit: Annotated[int, Query(ge=1, le=settings.MAX_RECOMMENDATION_LIMIT)] = 20,
 ):
     """Get personalized recommendations."""
+    # Defense in depth: the resolved identity must equal the path user even
+    # if the require_self dependency is bypassed (#435).
+    path_user_id = request.path_params.get("user_id")
+    if path_user_id is None or str(path_user_id) != str(user_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found",
+        )
     recommendations = await service.get_recommendations(user_id, limit)
     return {"recommendations": recommendations, "total": len(recommendations)}
 

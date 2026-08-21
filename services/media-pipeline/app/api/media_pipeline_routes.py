@@ -13,8 +13,8 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
-from jose import jwt  # type: ignore[import-untyped]
-from jose.exceptions import JWTError  # type: ignore[import-untyped]
+from jose import jwt
+from jose.exceptions import JWTError
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +50,7 @@ async def get_current_user_id(
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
         )
         # Token-type separation (#221): refresh tokens share the audience but
         # must never be accepted as access tokens.

@@ -312,9 +312,9 @@ class ContentRepository(BaseRepository):
         """Soft delete content by setting deleted_at timestamp (#433)."""
         from datetime import datetime
 
-        content = await self.get_by_id(content_id, include_deleted=True)
+        content = await self.get_by_id(content_id)
         if content:
-            content.deleted_at = datetime.utcnow()
+            content.deleted_at = datetime.utcnow()  # type: ignore[assignment]
             await self.flush()
             return True
         return False

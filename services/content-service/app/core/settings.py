@@ -19,7 +19,6 @@ class Settings(BaseSettings):
     SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
-
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/content_db"
 

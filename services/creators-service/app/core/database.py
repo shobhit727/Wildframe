@@ -25,7 +25,7 @@ class DatabaseManager:
         """Initialize database."""
         # Use NullPool for SQLite (in-memory tests), QueuePool for PostgreSQL
         if settings.DATABASE_URL.startswith("sqlite"):
-            poolclass = NullPool
+            poolclass: type[NullPool | QueuePool] = NullPool
             pool_kwargs = {}
         else:
             poolclass = QueuePool

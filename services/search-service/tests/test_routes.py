@@ -226,6 +226,7 @@ class TestSearchEndpoints:
                 "sub": str(uuid4()),
                 "type": "access",
                 "aud": settings.JWT_AUDIENCE,
+                "iss": settings.JWT_ISSUER,
                 "role": "admin",
                 "arv": 0,
                 "iat": now,

@@ -301,15 +301,14 @@ class TestJSONFormatterRedaction:
         handler = logging.StreamHandler(stream)
         handler.setFormatter(JSONFormatter(service_name="test"))
         logger.addHandler(handler)
-        try:
-            logger.info(
-                "user login",
-                extra={"password": "secret123", "username": "john", "api_key": "key456"},
-            )
-        finally:
-            logger.removeHandler(handler)
 
-        log_data = jsonlib.loads(stream.getvalue())
+        logger.info(
+            "user login",
+            extra={"password": "secret123", "username": "john", "api_key": "key456"},
+        )
+
+        log_output = stream.getvalue().strip()
+        log_data = jsonlib.loads(log_output)
         assert log_data.get("password") == "***REDACTED***"
         assert log_data.get("api_key") == "***REDACTED***"
         assert log_data.get("username") == "john"
@@ -325,14 +324,13 @@ class TestJSONFormatterRedaction:
         handler = logging.StreamHandler(stream)
         handler.setFormatter(JSONFormatter(service_name="test"))
         logger.addHandler(handler)
-        try:
-            logger.info(
-                "nested data",
-                extra={"user": {"password": "secret123", "name": "john"}},
-            )
-        finally:
-            logger.removeHandler(handler)
 
-        log_data = jsonlib.loads(stream.getvalue())
+        logger.info(
+            "nested data",
+            extra={"user": {"password": "secret123", "name": "john"}},
+        )
+
+        log_output = stream.getvalue().strip()
+        log_data = jsonlib.loads(log_output)
         assert log_data.get("user", {}).get("password") == "***REDACTED***"
         assert log_data.get("user", {}).get("name") == "john"

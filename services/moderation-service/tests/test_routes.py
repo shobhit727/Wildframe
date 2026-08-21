@@ -27,6 +27,7 @@ def make_token(*, sub: str, role: str, token_type: str = "access", arv: int = 0)
             "role": role,
             "type": token_type,
             "aud": settings.JWT_AUDIENCE,
+            "iss": settings.JWT_ISSUER,
             "arv": arv,
         },
         settings.JWT_SECRET_KEY,

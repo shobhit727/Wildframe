@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Graceful shutdown state (#426)
 _shutdown_event: asyncio.Event | None = None
 _in_flight_requests = 0
-_in_flight_lock: asyncio.Lock | None = None
+_in_flight_lock = asyncio.Lock()
 _MAX_DRAIN_SECONDS = 30
 # Inbound event consumer
 _inbound_consumer_task: asyncio.Task | None = None
@@ -41,11 +41,11 @@ async def _drain_inbound_events_worker() -> None:
             async for db in get_db():
                 inbound_repo = InboundEventRepository(db)
                 service = CreatorService(
-                    acct_repo=None,  # Will be created below
-                    floor_repo=None,
-                    pool_repo=None,
-                    milestone_repo=None,
-                    ledger_repo=None,
+                    acct_repo=None,  # type: ignore[arg-type]
+                    floor_repo=None,  # type: ignore[arg-type]
+                    pool_repo=None,  # type: ignore[arg-type]
+                    milestone_repo=None,  # type: ignore[arg-type]
+                    ledger_repo=None,  # type: ignore[arg-type]
                     inbound_repo=inbound_repo,
                 )
                 # We need the other repos - create them
@@ -75,10 +75,9 @@ async def _drain_inbound_events_worker() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage FastAPI application lifespan."""
-    global _shutdown_event, _in_flight_lock, _inbound_consumer_task
+    global _shutdown_event, _inbound_consumer_task
     # Startup
     _shutdown_event = asyncio.Event()
-    _in_flight_lock = asyncio.Lock()
     app.state.shutting_down = False
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
@@ -178,8 +177,8 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     # Readiness endpoint with DB + Redis checks (#124)
-    @app.get("/ready")
-    async def ready() -> dict:
+    @app.get("/ready", response_model=None)
+    async def ready() -> dict | JSONResponse:
         checks: dict[str, str] = {}
         overall = "ready"
 

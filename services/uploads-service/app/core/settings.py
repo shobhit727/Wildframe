@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # Audience claim carried by auth-service-issued tokens; every decode must
     # check it so tokens minted for other audiences are rejected.
     JWT_ISSUER: str = "wildframe-auth"
+    JWT_AUDIENCE: str = "wildframe-api"
 
     # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
     # connections per service instance to prevent DB exhaustion.

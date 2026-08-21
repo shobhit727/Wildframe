@@ -131,8 +131,8 @@ def create_app() -> FastAPI:
             "database": "ok" if db_ok else "unavailable",
         }
 
-    @app.get("/ready")
-    async def ready() -> dict:
+    @app.get("/ready", response_model=None)
+    async def ready() -> dict | JSONResponse:
         checks: dict[str, str] = {}
         overall = "ready"
 
