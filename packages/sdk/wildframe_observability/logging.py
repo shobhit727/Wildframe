@@ -216,8 +216,10 @@ class JSONFormatter(logging.Formatter):
                     v = _redact_secrets(v)
                     log_entry[_sanitize_for_log(k)] = _sanitize_for_log(v)
                 continue
-            # Redact secret fields, then sanitize for log injection.
-            value = _redact_secrets(value)
+            # Redact secret fields by key, then sanitize for log injection.
+            normalized_key = key.lower().replace("-", "").replace("_", "")
+            redacted_keys = {f.replace("-", "").replace("_", "") for f in REDACT_FIELDS}
+            value = "***REDACTED***" if normalized_key in redacted_keys else _redact_secrets(value)
             log_entry[_sanitize_for_log(key)] = _sanitize_for_log(value)
 
         # Also promote well-known extra attributes (idempotent with above).

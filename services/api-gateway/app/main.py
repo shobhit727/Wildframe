@@ -172,7 +172,7 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def track_in_flight(request: Request, call_next):
         global _in_flight_requests
-        if app.state.shutting_down:
+        if getattr(app.state, "shutting_down", False):
             return Response(
                 content="Service shutting down",
                 status_code=503,
