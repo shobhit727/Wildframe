@@ -758,6 +758,76 @@ class TestBodyLimitMiddleware:
         assert response.status_code == 431
 
     @pytest.mark.asyncio
+    async def test_rejects_duplicate_authorization_header(self):
+        """#520: duplicated security headers are rejected, not comma-merged."""
+        from app.middleware import BodyLimitMiddleware
+        from starlette.responses import Response
+
+        mw = BodyLimitMiddleware(app=MagicMock())
+        # Keep the size/count limits out of the way.
+        mw.max_header_count = 100
+        mw.max_header_field_size = 10_000
+        mw.max_header_total_size = 1_000_000
+
+        request = Request(
+            scope={
+                "type": "http",
+                "headers": [
+                    (b"host", b"example.com"),
+                    (b"authorization", b"Bearer aaa"),
+                    (b"authorization", b"Bearer bbb"),
+                ],
+                "client": ("10.0.0.1", 12345),
+            }
+        )
+
+        async def call_next(req):
+            return Response(content=b"ok")
+
+        response = await mw.dispatch(request, call_next)
+        assert response.status_code == 400
+        assert b"authorization" in response.body
+
+    @pytest.mark.asyncio
+    async def test_allows_single_security_headers(self):
+        """#520: one occurrence of each sensitive header passes."""
+        from app.middleware import BodyLimitMiddleware
+        from starlette.responses import Response
+
+        mw = BodyLimitMiddleware(app=MagicMock())
+        mw.max_header_count = 100
+        mw.max_header_field_size = 10_000
+        mw.max_header_total_size = 1_000_000
+
+        request = Request(
+            scope={
+                "type": "http",
+                "headers": [
+                    (b"host", b"example.com"),
+                    (b"authorization", b"Bearer token"),
+                    (b"x-request-id", b"req-1"),
+                    (b"content-length", b"2"),
+                ],
+                "client": ("10.0.0.1", 12345),
+                "method": "POST",
+                "path": "/content/api/v1/content",
+                "query_string": b"",
+            }
+        )
+
+        async def empty_stream():
+            if False:
+                yield b""
+
+        request.stream = empty_stream
+
+        async def call_next(req):
+            return Response(content=b"ok")
+
+        response = await mw.dispatch(request, call_next)
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
     async def test_rejects_oversized_total_headers(self):
         from app.middleware import BodyLimitMiddleware
         from starlette.responses import Response

@@ -27,6 +27,20 @@ _CONTROL_TRANSLATION = str.maketrans({c: "?" for c in _CONTROL_CHARS})
 # servers; the client would otherwise get the gateway's own responses).
 _PROXY_AGENT_HEADERS = frozenset({"host", "content-length"})
 
+# Headers whose duplicate occurrences would create auth/routing ambiguity
+# (#520): they are rejected outright rather than comma-merged by h11.
+_SECURITY_SENSITIVE_HEADERS = frozenset(
+    {
+        b"authorization",
+        b"cookie",
+        b"x-request-id",
+        b"x-correlation-id",
+        b"x-forwarded-for",
+        b"x-forwarded-proto",
+        b"x-user-id",
+    }
+)
+
 # Client-supplied headers to strip/rewrite at the edge (#314, #522, #625).
 # X-Forwarded-For / X-Real-IP are replaced with trusted values.
 # X-User-* identity headers are dropped entirely.
@@ -285,6 +299,21 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                     status_code=431,
                     headers={"X-Request-ID": request.headers.get("x-request-id", "")},
                 )
+
+        # Duplicate security-sensitive headers must be rejected, not merged
+        # (#520): downstream layers may parse a different occurrence than the
+        # one the gateway authorized. ASGI exposes duplicates in raw headers.
+        _seen: dict[bytes, int] = {}
+        for raw_k, _ in request.headers.raw:
+            lowered = raw_k.lower()
+            if lowered in _SECURITY_SENSITIVE_HEADERS:
+                _seen[lowered] = _seen.get(lowered, 0) + 1
+                if _seen[lowered] > 1:
+                    return Response(
+                        content=f"Duplicate header not allowed: {lowered.decode('latin-1')}",
+                        status_code=400,
+                        headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+                    )
 
         # Determine body limit based on content type and service
         content_type = request.headers.get("content-type", "").lower()

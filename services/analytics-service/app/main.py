@@ -152,6 +152,24 @@ def create_app() -> FastAPI:
     app.include_router(analytics_router)
 
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
+
+    # Request body size cap (#517): reject oversized payloads before parsing.
+    MAX_BODY_SIZE = 1048576  # bytes
+
+    @app.middleware("http")
+    async def limit_body_size(request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > MAX_BODY_SIZE:
+                    return JSONResponse(
+                        content={"detail": "Request body too large"},
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    )
+            except ValueError:
+                pass
+        return await call_next(request)
+
     wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
 
     # Gate /metrics behind admin token (#469)

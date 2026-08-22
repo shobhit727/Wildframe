@@ -23,6 +23,30 @@ logger = logging.getLogger(__name__)
 CONTENT_INDEX = "content"
 CONTENT_INDEX_PREFIX = "content_v"
 
+# Hard cap for any single outbound response body from content-service (#311):
+# a compromised/oversized upstream must not exhaust worker memory.
+MAX_UPSTREAM_BODY_BYTES = 64 * 1024 * 1024  # 64 MB
+
+
+async def _bounded_json(resp: httpx.Response) -> list | dict:
+    """Parse a JSON response body with a hard size ceiling (#311)."""
+    length = resp.headers.get("content-length")
+    if length and length.isdigit() and int(length) > MAX_UPSTREAM_BODY_BYTES:
+        raise CatalogFetchError(
+            f"upstream response too large: {length} > {MAX_UPSTREAM_BODY_BYTES}"
+        )
+    body = await resp.aread()
+    if len(body) > MAX_UPSTREAM_BODY_BYTES:
+        raise CatalogFetchError(f"upstream response too large: {len(body)} bytes")
+    import json as _json
+
+    try:
+        parsed: list | dict = _json.loads(body)
+        return parsed
+    except Exception as e:
+        raise CatalogFetchError(f"malformed upstream JSON: {e}") from e
+
+
 # Elasticsearch index mapping: searchable text + filterable keywords.
 # IMPORTANT: keep in sync with incremental indexing (index_content).
 CONTENT_INDEX_MAPPING = {
@@ -90,7 +114,9 @@ class ContentCatalogClient:
                 raise CatalogFetchError(f"catalog list failed: {e}") from e
 
             try:
-                batch = resp.json()
+                batch = await _bounded_json(resp)
+            except CatalogFetchError:
+                raise
             except Exception as e:  # JSONDecodeError, etc.
                 raise CatalogFetchError(f"malformed catalog response: {e}") from e
 
@@ -118,9 +144,14 @@ class ContentCatalogClient:
         except (httpx.HTTPError, httpx.TimeoutException) as e:
             raise CatalogFetchError(f"detail fetch for {content_id} failed: {e}") from e
         try:
-            return resp.json()  # type: ignore[no-any-return]
+            parsed = await _bounded_json(resp)
+        except CatalogFetchError:
+            raise
         except Exception as e:  # JSONDecodeError, etc.
             raise CatalogFetchError(f"malformed detail for {content_id}: {e}") from e
+        if not isinstance(parsed, dict):
+            raise CatalogFetchError(f"detail for {content_id} is not a JSON object")
+        return parsed
 
     async def aclose(self) -> None:
         await self.client.aclose()

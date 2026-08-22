@@ -2,7 +2,8 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
 from wildframe_observability.wire import wire_observability
 
 from app.api.moderation_routes import router as moderation_router
@@ -88,6 +89,24 @@ def create_app() -> FastAPI:
     app.include_router(moderation_router)
 
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
+
+    # Request body size cap (#517): reject oversized payloads before parsing.
+    MAX_BODY_SIZE = 1048576  # bytes
+
+    @app.middleware("http")
+    async def limit_body_size(request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > MAX_BODY_SIZE:
+                    return JSONResponse(
+                        content={"detail": "Request body too large"},
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    )
+            except ValueError:
+                pass
+        return await call_next(request)
+
     wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
 
     return app
