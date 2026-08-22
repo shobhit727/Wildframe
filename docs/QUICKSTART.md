@@ -106,6 +106,33 @@ npm run dev
 
 Open https://localhost:3000.
 
+> The dev server uses the repo's self-signed certificate
+> (`apps/web/certificates/localhost.pem`, SANs: localhost, loopback,
+> 192.168.1.14). Accept the browser warning, or trust the cert. The API base
+> URL defaults to `https://localhost:8000` (Caddy → gateway); override with
+> `NEXT_PUBLIC_API_URL` when testing from another device.
+
+---
+
+## 5b. Demo Data
+
+There is no migration framework — create tables and seed demo content with:
+
+```bash
+python scripts/init_schemas.py     # Base.metadata.create_all per service
+python scripts/seed_demo.py        # genres, movies, series, SVOD sub, admin user
+```
+
+Log in at `https://localhost:3000/login`:
+
+| Field | Value |
+|---|---|
+| Email | `demo@wildframe.com` |
+| Password | `DemoPass123!` |
+
+The demo user carries the `admin` role (via `ADMIN_EMAILS` in the dev compose),
+so `/admin` is accessible.
+
 ---
 
 ## 6. Run the Test Suite

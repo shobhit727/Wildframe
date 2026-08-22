@@ -37,16 +37,23 @@ function AdminGate({ children }: { children: ReactNode }) {
   const isAdmin = useIsAdmin();
   const router = useRouter();
   const authed = isAuthenticated.isAuthenticated;
+  // Role is only known after /me hydration completes; redirecting earlier
+  // bounced freshly-authenticated admins to /account on hard navigation.
+  const roleKnown = isAuthenticated.user !== null || !isAuthenticated.isLoading;
 
   useEffect(() => {
+    // Wait for session hydration before deciding — acting early sent
+    // freshly-authenticated admins through /login (middleware bounces them
+    // to /browse) or /account.
+    if (!roleKnown) return;
     if (!authed) {
       router.replace('/login');
       return;
     }
-    if (authed && !isAdmin) {
+    if (!isAdmin) {
       router.replace('/account');
     }
-  }, [authed, isAdmin, router]);
+  }, [authed, isAdmin, roleKnown, router]);
 
   if (!authed) {
     return (

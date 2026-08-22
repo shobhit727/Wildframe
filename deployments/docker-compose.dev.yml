@@ -226,7 +226,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/auth_db
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/0
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ADMIN_EMAILS: demo@wildframe.com
@@ -260,7 +260,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/users_db
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/1
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -290,7 +290,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/admin_db
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/3
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -320,7 +320,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/content_db
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/2
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EVENT_PUBLISHER: kafka
@@ -350,7 +350,9 @@ services:
       dockerfile: services/api-gateway/Dockerfile
       target: development
     environment:
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      # Dev-friendly auth burst limit (prod default stays 5/min)
+      RATE_LIMIT_AUTH: '60'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       AUTH_SERVICE_URL: http://auth-service:8000
       USER_SERVICE_URL: http://user-service:8000
       CONTENT_SERVICE_URL: http://content-service:8000
@@ -379,7 +381,7 @@ services:
       dockerfile: services/streaming-service/Dockerfile
       target: development
     environment:
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/streaming_db
       REDIS_URL: redis://redis:6379/4
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
@@ -407,7 +409,7 @@ services:
       ELASTICSEARCH_URL: http://elasticsearch:9200
       REDIS_URL: redis://redis:6379/5
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/search_db
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EVENT_PUBLISHER: kafka
       LOG_LEVEL: DEBUG
@@ -432,7 +434,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/recommendation_db
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       CONTENT_SERVICE_URL: http://content-service:8000
       REDIS_URL: redis://redis:6379/6
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
@@ -459,7 +461,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/billing_db
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/7
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -484,7 +486,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/analytics_db
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/8
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CONTENT_SERVICE_URL: http://content-service:8000
@@ -510,7 +512,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/notification_db
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/9
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -535,7 +537,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/creators_db
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/11
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -562,7 +564,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/moderation_db
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/12
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -589,7 +591,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/uploads_db
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/13
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -616,7 +618,7 @@ services:
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/media_db
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://192.168.1.14:3000"]'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/10
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG

@@ -6,7 +6,9 @@
 	tls /etc/caddy/certs/localhost.pem /etc/caddy/certs/localhost-key.pem
 }
 
-https://localhost:8000 {
+# Catch-all HTTPS on :8000 — matches localhost AND LAN IPs (which send no
+# SNI), so containerized browsers and devices can reach the gateway.
+https://:8000 {
 	import tls
 	reverse_proxy api-gateway:8000
 }

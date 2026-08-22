@@ -15,6 +15,7 @@ import httpx
 # Host-facing ports are TLS-only via Caddy (AGENTS.md); go through the
 # gateway and skip self-signed verification for local seeding.
 GATEWAY = "https://localhost:8000"
+DEMO_USER_ID = "e4019888-fc5b-4264-9952-39c44f869686"  # demo@wildframe.com
 AUTH = f"{GATEWAY}/auth"      # gateway routes by first path segment
 CONTENT = f"{GATEWAY}/content"
 
@@ -72,6 +73,36 @@ SHOWS = [
 ]
 
 
+def seed_subscription_and_moderation(user_id: str, token: str) -> None:
+    """Give the demo user an SVOD subscription and an active moderation row.
+
+    The billing page renders the plan grid either way, but a subscription makes
+    it show "currently on SVOD"; admin Users lists only rows from admin_db's
+    user_moderations, so seed one to make that table non-empty.
+    """
+    import httpx as _hx
+
+    gw = GATEWAY  # https://localhost:8000
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        r = _hx.post(f"{gw}/billing/api/v1/billing/subscribe/{user_id}",
+                     json={"tier": "svod"}, headers=headers, verify=False, timeout=15)
+        print("subscribe:", r.status_code)
+    except Exception as exc:  # noqa: BLE001
+        print("subscribe skipped:", exc)
+    try:
+        r = _hx.post(
+            f"{gw}/admin/api/v1/admin/users/moderate",
+            json={"user_id": user_id, "status": "active", "reason": "seed"},
+            headers={**headers, "X-Admin-Reauth": token},
+            verify=False,
+            timeout=15,
+        )
+        print("moderate:", r.status_code)
+    except Exception as exc:  # noqa: BLE001
+        print("moderate skipped:", exc)
+
+
 def main() -> None:
     print(f"{BOLD}Seeding Wildframe demo data{END}")
 
@@ -79,6 +110,7 @@ def main() -> None:
         register_user(client)
         token = login(client)
         client = auth_client(client, token)
+        seed_subscription_and_moderation(DEMO_USER_ID, token)
 
         genres = seed_genres(client)
         ok(f"{len(genres)} genres ready")
@@ -130,7 +162,7 @@ def main() -> None:
                 ok(f"  Season {s_no} ({ep_count} episodes)")
 
         print(
-            f"\n{BOLD}Done.{END}  Log in at http://localhost:3000/login with "
+            f"\n{BOLD}Done.{END}  Log in at https://localhost:3000/login with "
             f"{DEMO_EMAIL} / {DEMO_PASSWORD}"
         )
 

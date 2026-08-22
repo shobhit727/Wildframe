@@ -97,21 +97,27 @@ class PlaybackSessionRepository(BaseRepository):
         return session
 
     async def count_active_sessions_locked(self, user_id: UUID) -> int:
-        """Count active sessions for user with row-level lock (SELECT FOR UPDATE).
+        """Count active sessions for user under a per-user advisory lock.
 
-        Used for atomic concurrency enforcement (#281, #490).
+        Used for atomic concurrency enforcement (#281, #490). Postgres forbids
+        FOR UPDATE with aggregates, so serialize concurrent starts with a
+        transaction-scoped advisory lock keyed on the user UUID instead; the
+        count itself needs no row locks.
         """
-        from sqlalchemy import func
+        from sqlalchemy import func, text
+
+        await self.session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"playback-session:{user_id}"},
+        )
 
         result = await self.session.execute(
-            select(func.count(PlaybackSession.id))
-            .where(
+            select(func.count(PlaybackSession.id)).where(
                 and_(
                     PlaybackSession.user_id == user_id,
                     PlaybackSession.status == PlaybackSessionStatus.ACTIVE,
                 )
             )
-            .with_for_update()
         )
         return result.scalar_one()
 
