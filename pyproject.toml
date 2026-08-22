@@ -161,6 +161,13 @@ strict_optional = true
 module = "tests.*"
 ignore_errors = true
 
+# Test modules packaged under the app package (services/<svc>/app/tests/)
+# are excluded from type checking like top-level tests; their dependencies
+# (e.g. httpx ASGI transports) differ in stub strictness across versions.
+[[tool.mypy.overrides]]
+module = "app.tests.*"
+ignore_errors = true
+
 [tool.pytest.ini_options]
 testpaths = ["services/*/tests", "packages/*/tests"]
 asyncio_mode = "auto"
