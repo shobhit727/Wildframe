@@ -828,6 +828,79 @@ class TestBodyLimitMiddleware:
         assert response.status_code == 200
 
     @pytest.mark.asyncio
+    async def test_authenticated_responses_are_private_no_store(self):
+        """#526: responses to Authorization-bearing GETs are not shareable."""
+        from app.middleware import BodyLimitMiddleware
+        from starlette.responses import Response
+
+        mw = BodyLimitMiddleware(app=MagicMock())
+        mw.max_header_count = 100
+        mw.max_header_field_size = 10_000
+        mw.max_header_total_size = 1_000_000
+
+        headers = [
+            (b"host", b"example.com"),
+            (b"authorization", b"Bearer token"),
+        ]
+        scope = {
+            "type": "http",
+            "headers": headers,
+            "client": ("10.0.0.1", 12345),
+            "method": "GET",
+            "path": "/user-service/api/v1/users/me",
+            "query_string": b"",
+        }
+        if hasattr(Request, "__call__"):
+            pass
+
+        request = Request(scope=scope)
+
+        async def empty_stream():
+            if False:
+                yield b""
+
+        request.stream = empty_stream
+
+        async def call_next(req):
+            return Response(content=b'{"email":"a@b.c"}')
+
+        response = await mw.dispatch(request, call_next)
+        assert response.headers["cache-control"] == "private, no-store"
+
+    @pytest.mark.asyncio
+    async def test_anonymous_responses_keep_default_caching(self):
+        """#526: no Authorization header -> no cache stamping."""
+        from app.middleware import BodyLimitMiddleware
+        from starlette.responses import Response
+
+        mw = BodyLimitMiddleware(app=MagicMock())
+        mw.max_header_count = 100
+        mw.max_header_field_size = 10_000
+        mw.max_header_total_size = 1_000_000
+
+        request = Request(
+            scope={
+                "type": "http",
+                "headers": [(b"host", b"example.com")],
+                "client": ("10.0.0.1", 12345),
+                "method": "GET",
+                "path": "/content/api/v1/content",
+                "query_string": b"",
+            }
+        )
+
+        async def call_next(req):
+            return Response(content=b"[]")
+
+        async def empty_stream():
+            if False:
+                yield b""
+
+        request.stream = empty_stream
+        response = await mw.dispatch(request, call_next)
+        assert "cache-control" not in response.headers
+
+    @pytest.mark.asyncio
     async def test_rejects_oversized_total_headers(self):
         from app.middleware import BodyLimitMiddleware
         from starlette.responses import Response

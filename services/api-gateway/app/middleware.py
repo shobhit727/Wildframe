@@ -376,6 +376,15 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
         # Process request
         response = await call_next(request)
 
+        # Authenticated responses are personalizable — never shared-cacheable
+        # (#526): stamp private/no-store so CDNs and browsers cannot retain
+        # one user's data for another.
+        try:
+            if request.headers.get("authorization"):
+                response.headers["Cache-Control"] = "private, no-store"
+        except Exception:  # noqa: BLE001 - header stamping must never break proxying
+            pass
+
         # Stream response body with limit enforcement (#449, #517, #518, #629)
         if isinstance(response, StreamingResponse):
             return await self._stream_with_limit(response)
