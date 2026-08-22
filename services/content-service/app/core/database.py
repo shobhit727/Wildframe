@@ -49,6 +49,11 @@ class DatabaseManager:
                 **pool_kwargs,
                 connect_args={
                     "command_timeout": 30,
+                    "server_settings": {
+                        "statement_timeout": "10000",  # 10s cap (#429)
+                        "lock_timeout": "5000",  # bounded lock waits (#430)
+                        "idle_in_transaction_session_timeout": "30000",
+                    },
                 },
             )
         return self._engine

@@ -51,7 +51,7 @@ class RecommendationRepository:
         stmt = (
             select(Recommendation)
             .where(Recommendation.user_id == user_id)
-            .order_by(desc(Recommendation.score))
+            .order_by(desc(Recommendation.score), Recommendation.id.desc())
             .limit(limit)
         )
         result = await self.session.execute(stmt)
@@ -62,7 +62,7 @@ class RecommendationRepository:
         stmt = (
             select(Recommendation.created_at)
             .where(Recommendation.user_id == user_id)
-            .order_by(desc(Recommendation.created_at))
+            .order_by(desc(Recommendation.created_at), Recommendation.id.desc())
             .limit(1)
         )
         result = await self.session.execute(stmt)

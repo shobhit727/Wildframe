@@ -427,7 +427,7 @@ class SeasonRepository(BaseRepository):
         result = await self.session.execute(
             select(Season)
             .where(Season.content_id == content_id)
-            .order_by(Season.season_number)
+            .order_by(Season.season_number.asc(), Season.id.asc())
             .options(selectinload(Season.episodes))
         )
         return result.scalars().unique().all()
@@ -493,7 +493,9 @@ class EpisodeRepository(BaseRepository):
     async def get_season_episodes(self, season_id: UUID) -> Sequence[Episode]:
         """Get all episodes in a season."""
         result = await self.session.execute(
-            select(Episode).where(Episode.season_id == season_id).order_by(Episode.episode_number)
+            select(Episode)
+            .where(Episode.season_id == season_id)
+            .order_by(Episode.episode_number.asc(), Episode.id.asc())
         )
         return list(result.scalars().all())
 
@@ -555,7 +557,7 @@ class ContentRatingRepository(BaseRepository):
         result = await self.session.execute(
             select(ContentRating)
             .where(ContentRating.content_id == content_id)
-            .order_by(ContentRating.created_at.desc())
+            .order_by(ContentRating.created_at.desc(), ContentRating.id.desc())
         )
         return list(result.scalars().all())
 
@@ -588,7 +590,9 @@ class ContentRecommendationRepository(BaseRepository):
         result = await self.session.execute(
             select(ContentRecommendation)
             .where(ContentRecommendation.content_id == content_id)
-            .order_by(ContentRecommendation.similarity_score.desc())
+            .order_by(
+                ContentRecommendation.similarity_score.desc(), ContentRecommendation.id.desc()
+            )
             .limit(limit)
         )
         return list(result.scalars().all())

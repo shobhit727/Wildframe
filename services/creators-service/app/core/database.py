@@ -43,7 +43,16 @@ class DatabaseManager:
             future=True,
             poolclass=poolclass,
             connect_args=(
-                {"command_timeout": 30} if not settings.DATABASE_URL.startswith("sqlite") else {}
+                {
+                    "command_timeout": 30,
+                    "server_settings": {
+                        "statement_timeout": "10000",  # 10s cap (#429)
+                        "lock_timeout": "5000",  # bounded lock waits (#430)
+                        "idle_in_transaction_session_timeout": "30000",
+                    },
+                }
+                if not settings.DATABASE_URL.startswith("sqlite")
+                else {}
             ),
             **pool_kwargs,
         )

@@ -78,7 +78,7 @@ class PipelineJobRepository:
         result = await self.session.execute(
             select(OutboxEvent)
             .where(OutboxEvent.status == OutboxEventStatus.PENDING)
-            .order_by(OutboxEvent.created_at)
+            .order_by(OutboxEvent.created_at.asc(), OutboxEvent.id.asc())
             .limit(limit)
             .with_for_update(skip_locked=True)
         )
@@ -107,7 +107,7 @@ class PipelineStageLogRepository:
         result = await self.session.execute(
             select(PipelineStageLog)
             .where(PipelineStageLog.job_id == job_id)
-            .order_by(PipelineStageLog.created_at)
+            .order_by(PipelineStageLog.created_at.asc(), PipelineStageLog.id.asc())
         )
         return list(result.scalars().all())
 

@@ -206,7 +206,7 @@ class TranscodingJobRepository(BaseRepository):
         result = await self.session.execute(
             select(TranscodingJob)
             .where(TranscodingJob.status == TranscodingStatus.PENDING)
-            .order_by(desc(TranscodingJob.priority))
+            .order_by(desc(TranscodingJob.priority), TranscodingJob.id.desc())
             .limit(limit)
         )
         return result.scalars().all()

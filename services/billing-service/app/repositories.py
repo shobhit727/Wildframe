@@ -313,14 +313,18 @@ class InvoiceRepository:
         stmt = (
             select(Invoice)
             .where(Invoice.user_id == user_id)
-            .order_by(Invoice.issued_at.desc())
+            .order_by(Invoice.issued_at.desc(), Invoice.id.desc())
             .limit(1)
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_by_user(self, user_id: UUID) -> list[Invoice]:
-        stmt = select(Invoice).where(Invoice.user_id == user_id).order_by(Invoice.issued_at.desc())
+        stmt = (
+            select(Invoice)
+            .where(Invoice.user_id == user_id)
+            .order_by(Invoice.issued_at.desc(), Invoice.id.desc())
+        )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -486,7 +490,7 @@ class PayoutLedgerRepository:
         stmt = (
             select(PayoutLedger)
             .where(PayoutLedger.creator_id == creator_id)
-            .order_by(PayoutLedger.cycle_end.desc())
+            .order_by(PayoutLedger.cycle_end.desc(), PayoutLedger.id.desc())
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

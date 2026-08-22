@@ -125,7 +125,7 @@ class UserDeviceRepository(BaseRepository):
         stmt = select(UserDevice).where(UserDevice.user_id == user_id)
         if active_only:
             stmt = stmt.where(UserDevice.is_active == True)
-        stmt = stmt.order_by(UserDevice.last_active_at.desc())
+        stmt = stmt.order_by(UserDevice.last_active_at.desc(), UserDevice.id.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

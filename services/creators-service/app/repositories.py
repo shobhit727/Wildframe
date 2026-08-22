@@ -76,7 +76,7 @@ class EffectiveFloorRepository:
         stmt = (
             select(EffectiveFloor)
             .where(EffectiveFloor.creator_id == creator_id)
-            .order_by(EffectiveFloor.effective_from.desc())
+            .order_by(EffectiveFloor.effective_from.desc(), EffectiveFloor.id.desc())
         )
         result = await self.session.execute(stmt)
         return result.scalars().first()
@@ -332,7 +332,7 @@ class InboundEventRepository:
         stmt = (
             select(InboundEvent)
             .where(InboundEvent.status == InboundEventStatus.PENDING)
-            .order_by(InboundEvent.created_at)
+            .order_by(InboundEvent.created_at.asc(), InboundEvent.id.asc())
             .limit(limit)
         )
         result = await self.session.execute(stmt)

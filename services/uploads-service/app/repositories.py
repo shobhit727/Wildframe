@@ -44,7 +44,7 @@ class UploadChunkRepository:
         result = await self.session.execute(
             select(UploadSession)
             .where(UploadSession.creator_id == creator_id)
-            .order_by(UploadSession.created_at.desc())
+            .order_by(UploadSession.created_at.desc(), UploadSession.id.desc())
             .limit(limit)
         )
         return list(result.scalars().all())
@@ -91,7 +91,7 @@ class UploadChunkRepository:
         result = await self.session.execute(
             select(OutboxEvent)
             .where(OutboxEvent.status == OutboxEventStatus.PENDING)
-            .order_by(OutboxEvent.created_at)
+            .order_by(OutboxEvent.created_at.asc(), OutboxEvent.id.asc())
             .limit(limit)
         )
         return list(result.scalars().all())

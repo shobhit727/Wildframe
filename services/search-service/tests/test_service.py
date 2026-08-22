@@ -86,6 +86,44 @@ class TestSearchService:
         query_repo.create.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_search_user_input_cannot_inject_wildcard_or_regexp_clauses(
+        self, es_mock, service
+    ):
+        """#582: wildcard metacharacters in user input must stay plain text.
+
+        The service builds multi_match queries only; a hostile query such as
+        ``*`` or ``a* OR b`` must never surface as wildcard/regexp/fuzzy
+        clauses that force expensive scans.
+        """
+        es_mock.search = AsyncMock(return_value={"hits": {"hits": []}})
+
+        for hostile in ("*", "?", "a*", "*:*", "title:~2", "(?i).*"):
+            es_mock.search.reset_mock()
+            result = await service.search(user_id=None, query=hostile)
+            assert isinstance(result, SearchResult)
+
+            body = es_mock.search.await_args.kwargs["body"]
+            serialized = str(body)
+            for clause in ("wildcard", "regexp", "query_string", "prefix", "fuzzy"):
+                assert clause not in serialized, f"query {hostile!r} produced a {clause} clause"
+            # Input is carried verbatim inside multi_match (analyzed as text).
+            assert body["query"]["bool"]["must"][0]["multi_match"]["query"] == hostile
+
+    @pytest.mark.asyncio
+    async def test_search_always_scopes_to_published(self, es_mock, service):
+        """#587: the published-only authorization filter is present on every
+        search, including cursor-paginated follow-ups."""
+        es_mock.search = AsyncMock(return_value={"hits": {"hits": []}})
+
+        await service.search(user_id=None, query="x")
+        body = es_mock.search.await_args.kwargs["body"]
+        assert {"term": {"status": "published"}} in body["query"]["bool"]["filter"]
+
+        await service.search(user_id=None, query="x", search_after=[5.0, "abc"])
+        body = es_mock.search.await_args.kwargs["body"]
+        assert {"term": {"status": "published"}} in body["query"]["bool"]["filter"]
+
+    @pytest.mark.asyncio
     async def test_search_tolerates_es_failure(self, es_mock, service):
         es_mock.search = AsyncMock(side_effect=ConnectionError("es down"))
 

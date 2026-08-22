@@ -51,7 +51,7 @@ class ContentFlagRepository:
         result = await self.session.execute(
             select(ContentFlag)
             .where(ContentFlag.status == "pending")
-            .order_by(ContentFlag.created_at.asc())
+            .order_by(ContentFlag.created_at.asc(), ContentFlag.id.asc())
             .limit(limit)
         )
         return list(result.scalars().all())
@@ -74,7 +74,7 @@ class ContentFlagRepository:
         result = await self.session.execute(
             select(OutboxEvent)
             .where(OutboxEvent.status == OutboxEventStatus.PENDING)
-            .order_by(OutboxEvent.created_at)
+            .order_by(OutboxEvent.created_at.asc(), OutboxEvent.id.asc())
             .limit(limit)
         )
         return list(result.scalars().all())
@@ -102,7 +102,7 @@ class ModerationDecisionRepository:
         result = await self.session.execute(
             select(ModerationDecision)
             .where(ModerationDecision.flag_id == flag_id)
-            .order_by(ModerationDecision.created_at.asc())
+            .order_by(ModerationDecision.created_at.asc(), ModerationDecision.id.asc())
         )
         return list(result.scalars().all())
 
@@ -133,7 +133,7 @@ class CreatorStrikeRepository:
                     CreatorStrike.expires_at > now,
                 ),
             )
-            .order_by(CreatorStrike.created_at.desc())
+            .order_by(CreatorStrike.created_at.desc(), CreatorStrike.id.desc())
         )
         return list(result.scalars().all())
 
@@ -157,7 +157,7 @@ class CreatorStrikeRepository:
                     CreatorStrike.expires_at > now,
                 ),
             )
-            .order_by(CreatorStrike.created_at.desc())
+            .order_by(CreatorStrike.created_at.desc(), CreatorStrike.id.desc())
             .with_for_update()
         )
         return list(result.scalars().all())
@@ -172,6 +172,6 @@ class CreatorStrikeRepository:
         result = await self.session.execute(
             select(CreatorStrike)
             .where(CreatorStrike.creator_id == creator_id)
-            .order_by(CreatorStrike.created_at.desc())
+            .order_by(CreatorStrike.created_at.desc(), CreatorStrike.id.desc())
         )
         return list(result.scalars().all())

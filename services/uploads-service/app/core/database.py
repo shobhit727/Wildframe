@@ -22,7 +22,35 @@ class DatabaseManager:
     @classmethod
     async def init(cls) -> None:
         """Initialize database."""
-        cls.engine = create_async_engine(settings.DATABASE_URL, echo=False, future=True)
+        # Pool budget (#64/#427/#296) and server-side timeouts (#429/#430):
+        # NullPool for SQLite (in-memory tests), capped QueuePool + asyncpg
+        # statement/lock timeouts for PostgreSQL.
+        if settings.DATABASE_URL.startswith("sqlite"):
+            pool_kwargs: dict = {}
+            connect_args: dict = {}
+        else:
+            pool_kwargs = {
+                "pool_size": 5,
+                "max_overflow": 5,
+                "pool_timeout": 30,
+                "pool_recycle": 3600,
+                "pool_pre_ping": True,
+            }
+            connect_args = {
+                "command_timeout": 30,
+                "server_settings": {
+                    "statement_timeout": "10000",
+                    "lock_timeout": "5000",
+                    "idle_in_transaction_session_timeout": "30000",
+                },
+            }
+        cls.engine = create_async_engine(
+            settings.DATABASE_URL,
+            echo=False,
+            future=True,
+            connect_args=connect_args,
+            **pool_kwargs,
+        )
         cls.session_factory = async_sessionmaker(
             cls.engine, class_=AsyncSession, expire_on_commit=False
         )

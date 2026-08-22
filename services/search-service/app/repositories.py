@@ -23,7 +23,7 @@ class SearchQueryRepository:
         stmt = (
             select(SearchQuery)
             .where(SearchQuery.user_id == user_id)
-            .order_by(desc(SearchQuery.created_at))
+            .order_by(desc(SearchQuery.created_at), SearchQuery.id.desc())
             .limit(limit)
         )
         result = await self.session.execute(stmt)

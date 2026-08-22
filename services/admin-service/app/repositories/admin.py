@@ -33,7 +33,7 @@ class UserModerationRepository:
         query = (
             select(UserModeration)
             .where(UserModeration.user_id == user_id)
-            .order_by(desc(UserModeration.created_at))
+            .order_by(desc(UserModeration.created_at), UserModeration.id.desc())
         )
         if for_update:
             query = query.with_for_update()
@@ -101,7 +101,7 @@ class ContentModerationRepository:
         query = (
             select(ContentModeration)
             .where(ContentModeration.content_id == content_id)
-            .order_by(desc(ContentModeration.created_at))
+            .order_by(desc(ContentModeration.created_at), ContentModeration.id.desc())
         )
         if for_update:
             query = query.with_for_update()
@@ -120,7 +120,7 @@ class ContentModerationRepository:
                     ContentModeration.status == "flagged",
                 )
             )
-            .order_by(desc(ContentModeration.created_at))
+            .order_by(desc(ContentModeration.created_at), ContentModeration.id.desc())
         )
         return result.scalars().first()
 
