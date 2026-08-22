@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from wildframe_observability.wire import wire_observability
@@ -186,6 +187,15 @@ def create_app() -> FastAPI:
         finally:
             async with _in_flight_lock:
                 _in_flight_requests -= 1
+
+    # Opaque 500 handler (#557) — never leak exception internals.
+    @app.exception_handler(Exception)
+    async def general_exception_handler(request: Request, exc: Exception):
+        logger.exception("Unhandled exception: %s", exc)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"status_code": 500, "message": "Internal server error"},
+        )
 
     return app
 
