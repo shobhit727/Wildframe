@@ -45,7 +45,13 @@ class Settings(BaseSettings):
     DELIVERY_RETRY_BASE_DELAY: float = 0.1
 
     # CORS
-    CORS_ALLOWED_ORIGINS: list[str] = ["*"]
+    # Explicit allow-list (#68): wildcard origins paired with credentials are
+    # rejected by browsers and invite CSRF; production must override with the
+    # real frontend origin(s).
+    CORS_ALLOWED_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "https://localhost:3000",
+    ]
     CORS_ALLOW_CREDENTIALS: bool = True
 
     @model_validator(mode="after")
