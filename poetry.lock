@@ -110,24 +110,22 @@ files = [
 
 [[package]]
 name = "anyio"
-version = "3.7.1"
-description = "High level compatibility layer for multiple asynchronous event loop implementations"
+version = "4.14.2"
+description = "High-level concurrency and networking framework on top of asyncio or Trio"
 optional = false
-python-versions = ">=3.7"
+python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "anyio-3.7.1-py3-none-any.whl", hash = "sha256:91dee416e570e92c64041bd18b900d1d6fa78dff7048769ce5ac5ddad004fbb5"},
-    {file = "anyio-3.7.1.tar.gz", hash = "sha256:44a3c9aba0f5defa43261a8b3efb97891f2bd7d804e0e1f56419befa1adfc780"},
+    {file = "anyio-4.14.2-py3-none-any.whl", hash = "sha256:9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494"},
+    {file = "anyio-4.14.2.tar.gz", hash = "sha256:cfa139f3ed1a23ee8f88a145ddb5ac7605b8bbfd8592baacd7ce3d8bb4313c7f"},
 ]
 
 [package.dependencies]
 idna = ">=2.8"
-sniffio = ">=1.1"
+typing_extensions = {version = ">=4.5", markers = "python_version < \"3.13\""}
 
 [package.extras]
-doc = ["Sphinx", "packaging", "sphinx-autodoc-typehints (>=1.2.0)", "sphinx-rtd-theme (>=1.2.2)", "sphinxcontrib-jquery"]
-test = ["anyio[trio]", "coverage[toml] (>=4.5)", "hypothesis (>=4.0)", "mock (>=4) ; python_version < \"3.8\"", "psutil (>=5.9)", "pytest (>=7.0)", "pytest-mock (>=3.6.1)", "trustme", "uvloop (>=0.17) ; python_version < \"3.12\" and platform_python_implementation == \"CPython\" and platform_system != \"Windows\""]
-trio = ["trio (<0.22)"]
+trio = ["trio (>=0.32.0)"]
 
 [[package]]
 name = "asgiref"
@@ -3623,4 +3621,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.16"
-content-hash = "a023d805723dfdcadd870e3d71ef0478ea73e7b2ab9ca845b98eb35b90a9816a"
+content-hash = "d3d780a09b20da03af0801c542daba909d7228ab8f92a8984e97fc011957510e"
