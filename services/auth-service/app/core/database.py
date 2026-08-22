@@ -44,12 +44,16 @@ class DatabaseManager:
             is_sqlite = database_url.startswith("sqlite")
             pool_class = NullPool if is_sqlite else None
 
-            pool_kwargs: dict = {} if is_sqlite else {
-                "pool_size": 5,
-                "max_overflow": 5,
-                "pool_timeout": 30,
-                "pool_recycle": 3600,
-            }
+            pool_kwargs: dict = (
+                {}
+                if is_sqlite
+                else {
+                    "pool_size": 5,
+                    "max_overflow": 5,
+                    "pool_timeout": 30,
+                    "pool_recycle": 3600,
+                }
+            )
 
             connect_args: dict = (
                 {"timeout": 10}

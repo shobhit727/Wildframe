@@ -67,7 +67,8 @@ def create_app() -> FastAPI:
     app.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=(
-            ["*"] if settings.ENVIRONMENT != "production"
+            ["*"]
+            if settings.ENVIRONMENT != "production"
             else ["localhost", "127.0.0.1", "*.wildframe.com"]
         ),
     )
