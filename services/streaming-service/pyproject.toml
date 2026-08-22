@@ -28,6 +28,7 @@ setuptools = ">=84,<86"
 cryptography = ">=41.0.7,<51.0.0"
 
 [tool.poetry.group.dev.dependencies]
+types-python-jose = "^3.3.4"
 mypy = "^1.7.0"
 aiosqlite = "^0.19.0"
 pytest = ">=7.4.3,<10.0.0"
