@@ -5,6 +5,10 @@ const nextConfig = {
   // skip the lint gate during build so missing rule defs don't fail it.
   eslint: { ignoreDuringBuilds: true },
 
+  // Allow LAN-IP access to dev assets (containerized browsers / device testing).
+  // Dev-only setting; production builds are unaffected.
+  allowedDevOrigins: ["localhost", "192.168.1.14"],
+
   images: {
     remotePatterns: [
       {

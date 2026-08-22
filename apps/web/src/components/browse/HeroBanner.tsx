@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Content } from '@/types';
 import { useState, useEffect } from 'react';
+import { PosterArt } from '@/components/common/PosterArt';
 
 interface HeroBannerProps {
   items: Content[];
@@ -28,19 +29,17 @@ export function HeroBanner({ items }: HeroBannerProps) {
 
   return (
     <section className="relative w-full h-[56vw] max-h-[760px] min-h-[380px] bg-black">
-      {/* Placeholder loading surface (no artwork) */}
-      <div className="absolute inset-0 shimmer" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,#1f1f1f,#141414_70%)]" />
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4 select-none">
-          <svg className="w-10 h-10 text-gray-700" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-          <span className="uppercase text-xs tracking-[0.3em] text-gray-700 font-semibold">
-            Wildframe Original
-          </span>
+      {/* Generated backdrop art, cross-fading between featured titles */}
+      {items.slice(0, 5).map((item, i) => (
+        <div
+          key={item.id}
+          className={`absolute inset-0 transition-opacity duration-1000 ${
+            i === activeIndex ? 'opacity-100' : 'opacity-0'
+          }`}
+        >
+          <PosterArt seed={`${item.id}:${item.title}`} title={item.title} variant="backdrop" />
         </div>
-      </div>
+      ))}
 
       {/* Netflix billboard gradients */}
       <div className="absolute inset-0 billboard-gradient" />

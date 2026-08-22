@@ -11,6 +11,12 @@ https://localhost:8000 {
 	reverse_proxy api-gateway:8000
 }
 
+# Plain-HTTP entry for local tooling that cannot trust the self-signed cert
+# (e.g. containerized browsers). Dev only.
+http://localhost:8080, http://:8080 {
+	reverse_proxy api-gateway:8000
+}
+
 https://localhost:8001 {
 	import tls
 	reverse_proxy auth-service:8000

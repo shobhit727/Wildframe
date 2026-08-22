@@ -169,7 +169,7 @@ export default function WatchPage() {
 
       {/* Video Player */}
       <div className="relative w-full mt-4">
-        <VideoPlayer contentId={contentId} sessionId={sessionId} src={streamUrl || undefined} />
+        <VideoPlayer contentId={contentId} sessionId={sessionId} src={streamUrl || undefined} title={content?.title} />
         {streamUrl === DEMO_HLS_URL && (
           <div className="absolute bottom-16 left-4 bg-black/70 text-xs text-gray-300 px-3 py-1.5 border border-white/10">
             Preview stream — no packaged media for this title yet.

@@ -105,7 +105,7 @@ export default function BrowsePage() {
             )}
 
             {/* Rows overlay the billboard bottom */}
-            <div className="relative z-10 -mt-24 space-y-10 pb-16">
+            <div className="relative z-10 -mt-10 space-y-10 pb-16">
               {/* Trending Row */}
               <Row title="Trending Now" items={trending} variant="backdrop" />
 

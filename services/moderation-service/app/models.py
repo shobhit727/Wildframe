@@ -195,9 +195,10 @@ class CreatorStrike(Base):
     __tablename__ = "creator_strikes"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    # Application-level reference to creators_service.creator_accounts —
+    # a DB-level FK cannot exist across service databases (#434-adjacent).
     creator_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("creator_accounts.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

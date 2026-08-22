@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Content } from '@/types';
+import { PosterArt } from '@/components/common/PosterArt';
 
 interface MediaCardProps {
   content: Content;
@@ -17,20 +18,13 @@ export function MediaCard({ content, variant = 'poster', showProgress, showCapti
   return (
     <Link href={`/watch/${content.id}`} className="group block rounded-md focus-visible:ring-2 focus-visible:ring-[#e50914]">
       <div
-        className={`wf-lift relative overflow-hidden rounded-md bg-[#1f1f1f] ${
+        className={`wf-lift relative overflow-hidden rounded-md bg-[#141414] ring-1 ring-white/10 transition-shadow duration-200 group-hover:shadow-[0_18px_50px_rgba(0,0,0,0.55)] group-hover:ring-white/25 ${
           isPoster ? 'aspect-[2/3]' : 'aspect-video'
         }`}
       >
-        {/* Placeholder remains useful until real artwork delivery is connected. */}
-        <div className="absolute inset-0 flex items-center justify-center shimmer">
-          <div className="flex flex-col items-center gap-2">
-            <svg className="h-5 w-5 text-gray-700" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-            <span className="px-3 text-[9px] font-semibold uppercase tracking-widest text-gray-700">
-              {content.type === 'movie' ? 'Film' : 'Series'}
-            </span>
-          </div>
+        {/* Generated artwork: deterministic per title, no remote assets needed. */}
+        <div className="absolute inset-0 transition-transform duration-300 ease-out group-hover:scale-[1.04]">
+          <PosterArt seed={`${content.id}:${content.title}`} title={content.title} variant={variant} />
         </div>
 
         {/* Hover overlay gives desktop users quick metadata without covering the artwork at rest. */}
@@ -52,6 +46,11 @@ export function MediaCard({ content, variant = 'poster', showProgress, showCapti
             </span>
           </div>
         </div>
+
+        {/* Type badge stays visible at rest so rows scan quickly. */}
+        <span className="absolute right-2 top-2 rounded bg-black/55 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-white/80 backdrop-blur-sm">
+          {content.type === 'movie' ? 'Film' : 'Series'}
+        </span>
 
         {/* Progress remains visible even when the card is not hovered. */}
         {showProgress !== undefined && showProgress > 0 && (

@@ -12,8 +12,11 @@ Posters/backdrops use picsum.photos placeholder images so the UI renders.
 
 import httpx
 
-AUTH = "http://localhost:8001"
-CONTENT = "http://localhost:8003"
+# Host-facing ports are TLS-only via Caddy (AGENTS.md); go through the
+# gateway and skip self-signed verification for local seeding.
+GATEWAY = "https://localhost:8000"
+AUTH = f"{GATEWAY}/auth"      # gateway routes by first path segment
+CONTENT = f"{GATEWAY}/content"
 
 DEMO_EMAIL = "demo@wildframe.com"
 DEMO_PASSWORD = "DemoPass123!"
@@ -72,11 +75,13 @@ SHOWS = [
 def main() -> None:
     print(f"{BOLD}Seeding Wildframe demo data{END}")
 
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=30, verify=False) as client:
+        register_user(client)
+        token = login(client)
+        client = auth_client(client, token)
+
         genres = seed_genres(client)
         ok(f"{len(genres)} genres ready")
-
-        register_user(client)
 
         g = {name.lower(): gd for name, gd in genres.items()}
         for title, slug, desc, dur in MOVIES:
@@ -153,6 +158,25 @@ def seed_genres(client: httpx.Client) -> dict[str, dict]:
         if r.status_code in (200, 201):
             existing[slug] = r.json()
     return existing
+
+
+def login(client: httpx.Client) -> str | None:
+    """Login as the demo user and return the access token (admin-capable)."""
+    r = client.post(
+        f"{AUTH}/api/v1/auth/login",
+        json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD},
+    )
+    if r.status_code == 200:
+        return r.json().get("access_token")
+    warn(f"login failed: {r.status_code} {r.text[:120]}")
+    return None
+
+
+def auth_client(client: httpx.Client, token: str | None) -> httpx.Client:
+    """Return a client with the admin bearer attached (or plain client)."""
+    if token:
+        client.headers["Authorization"] = f"Bearer {token}"
+    return client
 
 
 def register_user(client: httpx.Client) -> None:
