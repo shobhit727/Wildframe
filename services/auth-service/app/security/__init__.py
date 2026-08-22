@@ -27,6 +27,47 @@ def _jwt_secret() -> str:
     return secret
 
 
+def _overlap_secrets() -> list[str]:
+    """Previous signing keys still accepted during a bounded rotation (#138/#442).
+
+    Configured as a comma-separated ``JWT_PREVIOUS_SECRETS``; empty by default.
+    Emergency revocation = remove the compromised key from this list (config
+    redeploy), which immediately invalidates tokens minted with it.
+    """
+    raw = getattr(settings, "JWT_PREVIOUS_SECRETS", "") or ""
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def _decode_with_key_overlap(token: str, token_type: str) -> dict:
+    """Decode trying the current key first, then overlap keys (#138/#442).
+
+    During rotation, tokens minted with the previous key must keep verifying
+    for the bounded overlap window; after retirement (secret removed from
+    config) they fail like any forgery.
+    """
+    candidates = [_jwt_secret(), *_overlap_secrets()]
+    last_error: Exception | None = None
+    for secret in candidates:
+        try:
+            payload = jwt.decode(
+                token,
+                secret,
+                algorithms=[settings.JWT_ALGORITHM],
+                issuer=settings.JWT_ISSUER,
+                audience=settings.JWT_AUDIENCE,
+                options={"leeway": settings.JWT_LEEWAY_SECONDS},
+            )
+        except JWTError as e:
+            last_error = e
+            continue
+        if payload.get("type") != token_type:
+            logger.warning(f"Invalid token type: expected {token_type}")
+            raise JWTError(f"Invalid token type: expected {token_type}")
+        return payload
+    assert last_error is not None
+    raise last_error
+
+
 PASSWORD_MAX_LENGTH: int = 128
 
 #: Common/breached passwords rejected at registration (#164). A small static
@@ -186,6 +227,7 @@ class TokenManager:
             payload,
             _jwt_secret(),
             algorithm=settings.JWT_ALGORITHM,
+            headers={"kid": settings.JWT_KEY_ID},
         )
         return token
 
@@ -217,6 +259,7 @@ class TokenManager:
             payload,
             _jwt_secret(),
             algorithm=settings.JWT_ALGORITHM,
+            headers={"kid": settings.JWT_KEY_ID},
         )
         return token
 
@@ -299,19 +342,7 @@ class TokenManager:
             dict | None: Decoded token payload, or None if invalid/expired
         """
         try:
-            payload = jwt.decode(
-                token,
-                _jwt_secret(),
-                algorithms=[settings.JWT_ALGORITHM],
-                issuer=settings.JWT_ISSUER,
-                audience=settings.JWT_AUDIENCE,
-                options={"leeway": settings.JWT_LEEWAY_SECONDS},
-            )
-
-            if payload.get("type") != token_type:
-                logger.warning(f"Invalid token type: expected {token_type}")
-                raise JWTError(f"Invalid token type: expected {token_type}")
-
+            payload = _decode_with_key_overlap(token, token_type)
             return payload
 
         except ExpiredSignatureError:

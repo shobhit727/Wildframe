@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     JWT_ISSUER: str = "wildframe-auth"
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_LEEWAY_SECONDS: int = 60
+    # Key rotation (#138/#442): kid stamped into minted tokens; previous
+    # secrets (comma-separated) stay verifiable for a bounded overlap window.
+    # Emergency revocation = remove the secret from this list and redeploy.
+    JWT_KEY_ID: str = "k1"
+    JWT_PREVIOUS_SECRETS: str = ""
     JWT_EXPIRATION_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRATION_DAYS: int = 7
     TOKEN_BLACKLIST_ENABLED: bool = True

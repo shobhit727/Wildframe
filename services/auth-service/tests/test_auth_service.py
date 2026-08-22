@@ -116,7 +116,6 @@ class TestTokenManager:
         """Test access token creation."""
         user_id = str(uuid4())
         token = TokenManager.create_access_token(user_id, "test@example.com")
-
         assert token is not None
         assert len(token) > 0
 
@@ -158,6 +157,50 @@ class TestTokenManager:
         # Same token should produce same hash
         assert hash1 == hash2
         assert hash1 != token
+
+    def test_minted_tokens_carry_kid_header(self):
+        """#138: minted tokens advertise the active key id via kid."""
+        from jose import jwt as _jwt
+
+        from app.core.settings import settings
+
+        token = TokenManager.create_access_token(str(uuid4()), "kid@example.com")
+        header = _jwt.get_unverified_header(token)
+        assert header.get("kid") == settings.JWT_KEY_ID
+
+    def test_overlap_secret_verifies_during_rotation(self, monkeypatch):
+        """#138/#442: tokens signed with the previous key keep verifying for
+        the overlap window; after retirement they are rejected."""
+        import bcrypt  # noqa: F401  (ensure security module fully imported)
+        from app.core.settings import settings
+
+        user_id = str(uuid4())
+        old_secret = "previous-rotation-secret"
+        now = datetime.now(UTC)
+        payload = {
+            "sub": user_id,
+            "user_id": user_id,
+            "type": "access",
+            "iat": now,
+            "exp": now + timedelta(minutes=5),
+            "iss": settings.JWT_ISSUER,
+            "aud": settings.JWT_AUDIENCE,
+        }
+        from jose import jwt as _jwt
+
+        old_token = _jwt.encode(payload, old_secret, algorithm=settings.JWT_ALGORITHM)
+
+        # Without overlap configured: rejected.
+        assert TokenManager.verify_token(old_token) is None
+
+        # Overlap configured: accepted.
+        monkeypatch.setattr(settings, "JWT_PREVIOUS_SECRETS", old_secret)
+        decoded = TokenManager.verify_token(old_token)
+        assert decoded is not None and decoded["sub"] == user_id
+
+        # Retired (overlap removed): rejected again.
+        monkeypatch.setattr(settings, "JWT_PREVIOUS_SECRETS", "")
+        assert TokenManager.verify_token(old_token) is None
 
 
 @pytest.mark.asyncio

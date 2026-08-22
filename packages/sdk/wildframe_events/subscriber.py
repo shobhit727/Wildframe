@@ -78,6 +78,29 @@ logger = logging.getLogger(__name__)
 # Type alias: a handler is an async callable that takes a DomainEvent.
 EventHandler = Callable[[DomainEvent], Any]
 
+
+async def _run_with_event_correlation(event: DomainEvent, handler: EventHandler) -> None:
+    """Run ``handler`` with the event's correlation ID in the log context (#462).
+
+    Produce side auto-populates correlation_id from the request contextvar;
+    the consume side must reinject it so worker logs and any events emitted
+    from handlers stay correlated across asynchronous boundaries.
+    """
+    try:
+        from wildframe_observability.logging import set_correlation_id
+
+        corr = (getattr(event, "correlation_id", "") or "").strip()
+        if corr:
+            set_correlation_id(corr)
+            try:
+                await handler(event)
+            finally:
+                set_correlation_id("")
+            return
+    except ImportError:  # observability SDK optional
+        pass
+    await handler(event)
+
 #: Cap on the exponential retry backoff (ms) — bounded even for large
 #: ``max_retries`` values.
 MAX_RETRY_BACKOFF_MS = 60_000
@@ -202,7 +225,7 @@ class InMemoryEventSubscriber(EventSubscriber):
         handlers = self._handlers.get(event.topic, [])
         for handler in handlers:
             try:
-                await handler(event)
+                await _run_with_event_correlation(event, handler)
             except Exception:
                 logger.exception(
                     "handler failed for topic=%s event_id=%s",
@@ -411,7 +434,7 @@ class KafkaEventSubscriber(EventSubscriber):
             while True:
                 attempt += 1
                 try:
-                    await handler(event)
+                    await _run_with_event_correlation(event, handler)
                     break
                 except PermanentFailure as exc:
                     logger.error(

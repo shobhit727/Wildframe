@@ -116,3 +116,37 @@ class TestHandlersE2E:
         for event in events:
             await subscriber.deliver(event)
         assert [e.key for e in received] == [f"k{i}" for i in range(5)]
+
+
+class TestCorrelationPropagation:
+    """#462: handlers run with the event's correlation ID in log context."""
+
+    async def test_deliver_reinjects_correlation_id(self, subscriber):
+        from wildframe_observability.logging import get_correlation_id
+
+        seen = {}
+
+        async def handler(event):
+            seen["corr"] = get_correlation_id()
+
+        await subscriber.subscribe(Topic.CONTENT_UPLOADED, handler)
+        event = make_event()
+        object.__setattr__(event, "correlation_id", "corr-123")
+        await subscriber.deliver(event)
+        assert seen["corr"] == "corr-123"
+        # Context is reset afterwards so unrelated work isn't misattributed.
+        assert get_correlation_id() == ""
+
+    async def test_deliver_without_correlation_leaves_context_empty(self, subscriber):
+        from wildframe_observability.logging import get_correlation_id
+
+        seen = {}
+
+        async def handler(event):
+            seen["corr"] = get_correlation_id()
+
+        await subscriber.subscribe(Topic.CONTENT_UPLOADED, handler)
+        event = make_event()
+        object.__setattr__(event, "correlation_id", "")
+        await subscriber.deliver(event)
+        assert seen["corr"] in ("", None)
