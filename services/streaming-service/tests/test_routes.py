@@ -730,9 +730,7 @@ class TestManifestAuth:
         def realish_verify(s, c, sig, exp):
             msg = f"{s}|{c}|{exp}".encode()
             expected = hmac.new(secret, msg, hashlib.sha256).hexdigest()
-            return (
-                exp > datetime.now(UTC).timestamp() and hmac.compare_digest(sig, expected)
-            )
+            return exp > datetime.now(UTC).timestamp() and hmac.compare_digest(sig, expected)
 
         fake_service.verify_signed_url = realish_verify
         fake_service.check_session_valid_for_playback = AsyncMock(return_value=True)
