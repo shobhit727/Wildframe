@@ -58,6 +58,11 @@ class StorageError(Exception):
     """Object-storage failure (missing object, size/content-type mismatch)."""
 
 
+def _raise_storage_error(message: str) -> str:
+    """Narrow a Optional storage return by raising instead (#105 follow-up)."""
+    raise StorageError(message)
+
+
 def storage_key_for(session_id: str, chunk_index: int | None) -> str:
     """Derive the storage key for a session chunk (or the final object).
 
@@ -314,7 +319,11 @@ class S3StoragePort(StoragePort):
                         Bucket=self.bucket, Key=final_key, ContentType=mime
                     )["UploadId"],
                 )
-                self._upload_ids[session_id] = upload_id  # type: ignore[assignment]
+                self._upload_ids[session_id] = (
+                    upload_id
+                    if upload_id is not None
+                    else _raise_storage_error("S3 create_multipart_upload returned no UploadId")
+                )
             url = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: self._client.generate_presigned_url(
