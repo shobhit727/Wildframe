@@ -31,12 +31,15 @@ _shutdown_event: asyncio.Event | None = None
 _in_flight_requests = 0
 _in_flight_lock: asyncio.Lock | None = None
 _fallback_in_flight_lock: asyncio.Lock | None = None
+
+
 def _fallback_lock() -> asyncio.Lock:
     """Return a process-wide lock when the lifespan has not run yet."""
     global _fallback_in_flight_lock
     if _fallback_in_flight_lock is None:
         _fallback_in_flight_lock = asyncio.Lock()
     return _fallback_in_flight_lock
+
 
 _MAX_DRAIN_SECONDS = 30
 

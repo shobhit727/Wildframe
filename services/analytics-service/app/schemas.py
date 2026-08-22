@@ -33,9 +33,7 @@ class LogEventRequest(BaseModel):
     @classmethod
     def _reject_deep_nesting(cls, value: dict | None) -> dict | None:
         if value is not None and _nesting_depth(value) > MAX_EVENT_DATA_DEPTH:
-            raise ValueError(
-                f"event_data nesting depth exceeds {MAX_EVENT_DATA_DEPTH}"
-            )
+            raise ValueError(f"event_data nesting depth exceeds {MAX_EVENT_DATA_DEPTH}")
         return value
 
 
