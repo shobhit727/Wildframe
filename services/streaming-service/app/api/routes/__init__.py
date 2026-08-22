@@ -6,6 +6,7 @@ from uuid import UUID
 
 import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import db_manager
@@ -272,7 +273,13 @@ async def get_episode_manifest(
     manifest = await service.get_manifest_for_episode(episode_id, protocol)
     if not manifest:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manifest not found")
-    return manifest
+    # Authorized media must not be cached by shared intermediaries: a cached
+    # copy would keep serving after session revocation until CDN TTL expires
+    # (#528/#526). Private + no-store keeps CDNs and browsers honest.
+    return JSONResponse(
+        content=VideoManifestResponse.model_validate(manifest).model_dump(mode="json"),
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 # Transcoding job endpoints

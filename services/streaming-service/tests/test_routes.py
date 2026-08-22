@@ -683,6 +683,80 @@ class TestManifestAuth:
         )
         assert response.status_code == 403
 
+    def test_manifest_response_is_private_no_store(self, client, fake_service):
+        """#528/#526: authorized manifests must not be cached by intermediaries."""
+        app.dependency_overrides.pop(streaming_user_di, None)
+        app.dependency_overrides.pop(streaming_require_self, None)
+        fake_service.verify_signed_url = lambda s, c, sig, exp: True
+        fake_service.check_session_valid_for_playback = AsyncMock(return_value=True)
+        fake_service.get_manifest_for_episode = AsyncMock(return_value=make_manifest())
+        response = client.get(
+            f"/api/v1/episodes/{uuid4()}/manifest",
+            params={
+                "session_id": str(uuid4()),
+                "signature": "sig",
+                "expires": int((datetime.now(UTC) + timedelta(seconds=3600)).timestamp()),
+            },
+        )
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "private, no-store"
+
+    def test_range_header_does_not_bypass_signature_check(self, client, fake_service):
+        """#530: a Range header must not skip signed-URL/entitlement checks."""
+        app.dependency_overrides.pop(streaming_user_di, None)
+        app.dependency_overrides.pop(streaming_require_self, None)
+        fake_service.verify_signed_url = lambda s, c, sig, exp: False
+        response = client.get(
+            f"/api/v1/episodes/{uuid4()}/manifest",
+            headers={"Range": "bytes=0-1023"},
+            params={
+                "session_id": str(uuid4()),
+                "signature": "forged",
+                "expires": int((datetime.now(UTC) + timedelta(seconds=3600)).timestamp()),
+            },
+        )
+        assert response.status_code == 403
+
+    def test_signature_is_bound_to_requested_asset(self, client, fake_service):
+        """#531: a signature minted for content A fails for content B."""
+        import hashlib
+        import hmac
+
+        app.dependency_overrides.pop(streaming_user_di, None)
+        app.dependency_overrides.pop(streaming_require_self, None)
+
+        secret = "dev-playback-signing-secret-change-in-production".encode()
+
+        def realish_verify(s, c, sig, exp):
+            msg = f"{s}|{c}|{exp}".encode()
+            expected = hmac.new(secret, msg, hashlib.sha256).hexdigest()
+            return (
+                exp > datetime.now(UTC).timestamp() and hmac.compare_digest(sig, expected)
+            )
+
+        fake_service.verify_signed_url = realish_verify
+        fake_service.check_session_valid_for_playback = AsyncMock(return_value=True)
+
+        session_id = uuid4()
+        signed_for = uuid4()
+        expires = int((datetime.now(UTC) + timedelta(seconds=3600)).timestamp())
+        good_sig = hmac.new(
+            secret, f"{session_id}|{signed_for}|{expires}".encode(), hashlib.sha256
+        ).hexdigest()
+
+        # Same signature replayed against a different episode -> 403.
+        other_episode = uuid4()
+        assert other_episode != signed_for
+        response = client.get(
+            f"/api/v1/episodes/{other_episode}/manifest",
+            params={
+                "session_id": str(session_id),
+                "signature": good_sig,
+                "expires": expires,
+            },
+        )
+        assert response.status_code == 403
+
 
 class TestConcurrencyLimit:
     """Tests for max concurrent sessions enforcement (#281, #490)."""
