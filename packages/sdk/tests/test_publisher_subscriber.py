@@ -137,8 +137,11 @@ class TestCorrelationPropagation:
         # Context is reset afterwards so unrelated work isn't misattributed.
         assert get_correlation_id() == ""
 
-    async def test_deliver_without_correlation_leaves_context_empty(self, subscriber):
-        from wildframe_observability.logging import get_correlation_id
+    async def test_deliver_without_correlation_leaves_context_untouched(self, subscriber):
+        from wildframe_observability.logging import (
+            get_correlation_id,
+            set_correlation_id,
+        )
 
         seen = {}
 
@@ -146,7 +149,11 @@ class TestCorrelationPropagation:
             seen["corr"] = get_correlation_id()
 
         await subscriber.subscribe(Topic.CONTENT_UPLOADED, handler)
+        # Pre-existing context must pass through to the handler unchanged.
+        set_correlation_id("pre-existing")
         event = make_event()
         object.__setattr__(event, "correlation_id", "")
         await subscriber.deliver(event)
-        assert seen["corr"] in ("", None)
+        assert seen["corr"] == "pre-existing"
+        assert get_correlation_id() == "pre-existing"
+        set_correlation_id("")
