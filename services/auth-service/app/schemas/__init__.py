@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from app.security import COMMON_PASSWORDS
+
 
 class TokenResponse(BaseModel):
     """JWT token response.
@@ -72,6 +74,10 @@ class UserRegisterRequest(BaseModel):
             raise ValueError("Password must contain digit")
         if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
             raise ValueError("Password must contain special character")
+        if v.strip().casefold() in COMMON_PASSWORDS:
+            # Operationally dangerous credentials (#164): top breach-list
+            # entries even when they satisfy the complexity classes.
+            raise ValueError("Password is too common")
         return v
 
     model_config = ConfigDict(
@@ -183,6 +189,10 @@ class ChangePasswordRequest(BaseModel):
             raise ValueError("Password must contain digit")
         if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
             raise ValueError("Password must contain special character")
+        if v.strip().casefold() in COMMON_PASSWORDS:
+            # Operationally dangerous credentials (#164): top breach-list
+            # entries even when they satisfy the complexity classes.
+            raise ValueError("Password is too common")
         return v
 
 

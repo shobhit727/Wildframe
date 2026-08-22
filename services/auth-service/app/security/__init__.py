@@ -29,6 +29,40 @@ def _jwt_secret() -> str:
 
 PASSWORD_MAX_LENGTH: int = 128
 
+#: Common/breached passwords rejected at registration (#164). A small static
+#: denylist — no external breach-API dependency in the request path.
+COMMON_PASSWORDS: frozenset[str] = frozenset(
+    {
+        "password",
+        "password1",
+        "password123",
+        "passw0rd",
+        "qwerty123",
+        "letmein1",
+        "welcome1",
+        "admin123",
+        "iloveyou1",
+        "abc12345",
+        "p@ssw0rd",
+        "12345678",
+        "123456789",
+        "1234567890",
+    }
+)
+
+
+def normalize_email(email: str) -> str:
+    """Canonical form for identity comparison (#161).
+
+    NFC normalization keeps visually identical Unicode forms (e.g. combining
+    accents vs. precomposed) from becoming separate principals; casefold
+    makes the local/domain parts compare case-insensitively like the DB's
+    citext-style usage elsewhere.
+    """
+    import unicodedata
+
+    return unicodedata.normalize("NFC", email).strip().casefold()
+
 
 def _encode_password(password: str) -> bytes:
     """Validate password length and encode for bcrypt.
@@ -52,6 +86,8 @@ def role_for_email(email: str | None) -> str:
 class PasswordManager:
     """Manages password hashing and verification."""
 
+    _dummy_hash: str | None = None
+
     @staticmethod
     def hash_password(password: str) -> str:
         """Hash a password using bcrypt.
@@ -64,6 +100,19 @@ class PasswordManager:
         """
         salt = bcrypt.gensalt(rounds=settings.PASSWORD_BCRYPT_ROUNDS)
         return bcrypt.hashpw(_encode_password(password), salt).decode("utf-8")
+
+    @classmethod
+    def dummy_hash(cls) -> str:
+        """A throwaway bcrypt hash used to equalize login timing (#163/#436).
+
+        Verifying against this when the account does not exist costs the same
+        bcrypt work as a real check, so unknown-user and wrong-password paths
+        are timing-indistinguishable. Computed once, lazily.
+        """
+        if cls._dummy_hash is None:
+            salt = bcrypt.gensalt(rounds=settings.PASSWORD_BCRYPT_ROUNDS)
+            cls._dummy_hash = bcrypt.hashpw(b"timing-equalizer-dummy", salt).decode("utf-8")
+        return cls._dummy_hash
 
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -83,6 +132,19 @@ class PasswordManager:
             )
         except (ValueError, TypeError):
             return False
+
+    @staticmethod
+    def needs_rehash(hashed_password: str) -> bool:
+        """True when the stored hash's cost factor is below the configured one (#437).
+
+        Enables transparent upgrade-on-login without weakening verification.
+        Malformed hashes report False (they fail verification anyway).
+        """
+        try:
+            rounds = int(hashed_password.split("$")[2])
+        except (IndexError, ValueError):
+            return False
+        return rounds < settings.PASSWORD_BCRYPT_ROUNDS
 
 
 class TokenManager:

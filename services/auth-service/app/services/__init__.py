@@ -99,6 +99,10 @@ class AuthService:
 
         if not user:
             logger.warning(f"Login failed: user not found: {request.email}")
+            # Timing equalization (#163/#436): burn the same bcrypt work as a
+            # real verification so unknown-user is not distinguishable from
+            # wrong-password by response latency.
+            self.password_manager.verify_password(request.password, PasswordManager.dummy_hash())
             await self.audit_repo.create(
                 user_id=UUID(int=0),  # Unknown user
                 status="failed",
@@ -152,6 +156,21 @@ class AuthService:
 
         # Reset login attempts on successful login
         await self.user_repo.reset_login_attempts(user.id)
+
+        # Transparent hash upgrade (#437): if the stored bcrypt cost factor is
+        # below the configured work factor, rehash now that the password is
+        # verified. Verification itself was never weakened.
+        if self.password_manager.needs_rehash(user.password_hash):
+            user = await self.user_repo.update(
+                user.id,
+                password_hash=self.password_manager.hash_password(request.password),
+            )
+            assert user is not None  # known to exist (fetched earlier this call)
+            logger.info(
+                "upgraded password hash cost factor on login",
+                extra={"user_id": str(user.id)},
+            )
+
         user = await self.user_repo.update(user.id, last_login_at=datetime.now(UTC))
         assert user is not None  # known to exist (fetched earlier this call)
         await self.user_repo.commit()

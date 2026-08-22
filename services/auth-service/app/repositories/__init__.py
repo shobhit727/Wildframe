@@ -5,6 +5,7 @@ from datetime import UTC
 from uuid import UUID
 
 from app.models import LoginAudit, RefreshToken, TokenBlacklist, User
+from app.security import normalize_email
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,7 +37,7 @@ class UserRepository(BaseRepository):
     async def create(self, email: str, password_hash: str, **kwargs) -> User:
         """Create new user."""
         try:
-            user = User(email=email, password_hash=password_hash, **kwargs)
+            user = User(email=normalize_email(email), password_hash=password_hash, **kwargs)
             self.session.add(user)
             await self.flush()
             logger.info(f"Created user: {email}", extra={"user_id": str(user.id)})
@@ -47,9 +48,9 @@ class UserRepository(BaseRepository):
             raise
 
     async def get_by_email(self, email: str) -> User | None:
-        """Get user by email."""
+        """Get user by email (NFC-normalized + casefolded, #161)."""
         # Inactive (disabled/soft-deleted) accounts can never authenticate.
-        stmt = select(User).where(User.email == email, User.is_active.is_(True))
+        stmt = select(User).where(User.email == normalize_email(email), User.is_active.is_(True))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
