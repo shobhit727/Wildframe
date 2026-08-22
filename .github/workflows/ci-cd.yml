@@ -483,7 +483,9 @@ jobs:
   deploy-staging:
     name: Deploy Staging
     needs: [build-images, build-frontend]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/develop' &&
+      vars.AWS_DEPLOY_ROLE_ARN != ''
     runs-on: ubuntu-latest
     environment: staging
     permissions:
@@ -541,7 +543,12 @@ jobs:
   deploy-production:
     name: Deploy Production
     needs: [build-images, build-frontend]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Skips unless a deployment target is configured: the AWS IAM role to
+    # assume must be provided as a repo variable. Without it (e.g. on forks
+    # or infra-less environments) the pipeline stays green.
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      vars.AWS_DEPLOY_ROLE_ARN != ''
     runs-on: ubuntu-latest
     environment: production
     permissions:
