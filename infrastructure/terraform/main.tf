@@ -44,7 +44,6 @@ provider "aws" {
       Application = "wildframe"
       Environment = var.environment
       ManagedBy   = "terraform"
-      CreatedAt   = timestamp()
     }
   }
 }
@@ -88,7 +87,7 @@ resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_cidrs[count.index]
   availability_zone       = var.availability_zones[count.index]
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = false
 
   tags = {
     Name = "wildframe-${var.environment}-public-${count.index + 1}"
@@ -259,7 +258,8 @@ resource "aws_security_group" "eks_cluster" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.vpc_cidr_block]
+    description = "Egress limited to the VPC (#351)"
   }
 
   tags = {
@@ -277,6 +277,7 @@ resource "aws_eks_cluster" "main" {
     security_group_ids      = [aws_security_group.eks_cluster.id]
     endpoint_private_access = true
     endpoint_public_access  = true
+    public_access_cidrs     = var.eks_public_access_cidrs
   }
 
   depends_on = [
@@ -316,7 +317,7 @@ resource "aws_eks_node_group" "general" {
 # RDS KMS key
 resource "aws_kms_key" "rds" {
   description             = "KMS key for RDS encryption"
-  deletion_window_in_days = 10
+  deletion_window_in_days = 30
   enable_key_rotation     = true
 
   tags = {
@@ -327,13 +328,6 @@ resource "aws_kms_key" "rds" {
 resource "aws_kms_alias" "rds" {
   name          = "alias/wildframe-${var.environment}-rds"
   target_key_id = aws_kms_key.rds.key_id
-}
-
-# RDS master password
-resource "random_password" "db_master_password" {
-  length           = var.db_master_password_length
-  special          = true
-  override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
 # RDS subnet group
@@ -399,13 +393,7 @@ resource "aws_security_group" "postgres" {
     description     = "Allow PostgreSQL access from EKS cluster"
   }
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
+  # No egress rule: databases never initiate outbound connections (#352).
   tags = {
     Name = "wildframe-${var.environment}-postgres"
   }
@@ -413,15 +401,25 @@ resource "aws_security_group" "postgres" {
 
 # RDS PostgreSQL Cluster
 resource "aws_rds_cluster" "postgres" {
-  cluster_identifier      = "wildframe-${var.environment}"
-  engine                  = "aurora-postgresql"
-  engine_version          = var.postgres_version
-  database_name           = "wildframe"
-  master_username         = var.db_master_username
-  master_password         = random_password.db_master_password.result
-  backup_retention_period = var.db_backup_retention
-  preferred_backup_window = "03:00-04:00"
-  skip_final_snapshot     = var.environment != "production"
+  cluster_identifier = "wildframe-${var.environment}"
+  engine             = "aurora-postgresql"
+  engine_version     = var.postgres_version
+  database_name      = "wildframe"
+  master_username    = var.db_master_username
+  # Master password is managed by RDS in Secrets Manager — never materialized
+  # in Terraform state (#328). Rotation is handled by the secrets manager.
+  manage_master_user_password = true
+  backup_retention_period     = var.db_backup_retention
+  preferred_backup_window     = "03:00-04:00"
+
+  # Deletion protection + final snapshot in production (#362/#364/#400).
+  deletion_protection       = var.environment == "production"
+  skip_final_snapshot       = var.environment != "production"
+  final_snapshot_identifier = var.environment == "production" ? "wildframe-${var.environment}-final" : null
+  copy_tags_to_snapshot     = true
+
+  # Aurora maintenance window declared explicitly (#371).
+  preferred_maintenance_window = "sun:05:00-sun:06:00"
 
   db_subnet_group_name            = aws_db_subnet_group.postgres.name
   db_cluster_parameter_group_name = aws_rds_cluster_parameter_group.postgres.name
@@ -445,6 +443,11 @@ resource "aws_rds_cluster_instance" "postgres" {
   engine_version     = aws_rds_cluster.postgres.engine_version
 
   performance_insights_enabled = true
+  # Explicit retention control (#373): 7 days is the free-tier maximum.
+  performance_insights_retention_period = 7
+  # Instance maintenance window declared explicitly (#372).
+  preferred_maintenance_window = "sun:05:00-sun:06:00"
+  copy_tags_to_snapshot        = true
 
   tags = {
     Name = "wildframe-${var.environment}-${count.index + 1}"
@@ -491,13 +494,7 @@ resource "aws_security_group" "redis" {
     description     = "Allow Redis access from EKS cluster"
   }
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
+  # No egress rule (#353).
   tags = {
     Name = "wildframe-${var.environment}-redis"
   }
@@ -514,6 +511,16 @@ resource "aws_cloudwatch_log_group" "redis_slow_log" {
 }
 
 # ElastiCache Redis replication group
+resource "aws_kms_key" "redis" {
+  description             = "KMS key (CMK) for ElastiCache at-rest encryption (#375)"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+
+  tags = {
+    Name = "wildframe-${var.environment}-redis"
+  }
+}
+
 resource "aws_elasticache_replication_group" "redis" {
   replication_group_id = "wildframe-${var.environment}"
   description          = "Wildframe Redis cluster"
@@ -532,6 +539,11 @@ resource "aws_elasticache_replication_group" "redis" {
 
   at_rest_encryption_enabled = true
   transit_encryption_enabled = true
+  kms_key_id                 = aws_kms_key.redis.arn
+
+  # Snapshot policy declared explicitly (#374).
+  snapshot_retention_limit = 7
+  snapshot_window = "02:00-03:00"
 
   log_delivery_configuration {
     destination      = aws_cloudwatch_log_group.redis_slow_log.name
@@ -562,6 +574,25 @@ resource "aws_s3_bucket_versioning" "videos" {
   }
 }
 
+# Block every public-access path on the video bucket (#382/#330).
+resource "aws_s3_bucket_public_access_block" "videos" {
+  bucket = aws_s3_bucket.videos.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# Bucket-owner enforcement for objects written by CloudFront/OAC (#382).
+resource "aws_s3_bucket_ownership_controls" "videos" {
+  bucket = aws_s3_bucket.videos.id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
 resource "aws_s3_bucket_server_side_encryption_configuration" "videos" {
   bucket = aws_s3_bucket.videos.id
 
@@ -576,7 +607,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "videos" {
 # S3 KMS key
 resource "aws_kms_key" "s3" {
   description             = "KMS key for S3 bucket encryption"
-  deletion_window_in_days = 10
+  deletion_window_in_days = 30
   enable_key_rotation     = true
 
   tags = {
@@ -618,9 +649,13 @@ resource "aws_cloudfront_response_headers_policy" "security_headers" {
   }
 }
 
-# CloudFront Origin Access Identity for video bucket
-resource "aws_cloudfront_origin_access_identity" "videos" {
-  comment = "OAI for wildframe-${var.environment} videos"
+# CloudFront Origin Access Control (modern replacement for legacy OAI, #331)
+resource "aws_cloudfront_origin_access_control" "videos" {
+  name                              = "wildframe-${var.environment}-videos-oac"
+  description                       = "OAC for the videos bucket"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
 }
 
 # CloudFront distribution for video delivery
@@ -629,9 +664,7 @@ resource "aws_cloudfront_distribution" "videos" {
     domain_name = aws_s3_bucket.videos.bucket_regional_domain_name
     origin_id   = "s3-videos"
 
-    s3_origin_config {
-      origin_access_identity = aws_cloudfront_origin_access_identity.videos.cloudfront_access_identity_path
-    }
+    origin_access_control_id = aws_cloudfront_origin_access_control.videos.id
   }
 
   enabled = true
@@ -656,20 +689,140 @@ resource "aws_cloudfront_distribution" "videos" {
     max_ttl                    = 86400
   }
 
+  # AWS WAF association (#332): managed common rules + rate limiting.
+  web_acl_id = aws_wafv2_web_acl.videos.arn
+
   restrictions {
     geo_restriction {
       restriction_type = "none"
     }
   }
 
+  # Explicit certificate policy (#333): use the platform ACM cert when
+  # provided; otherwise fall back to the CloudFront default with TLS 1.2+.
   viewer_certificate {
-    cloudfront_default_certificate = true
+    acm_certificate_arn            = var.cloudfront_acm_certificate_arn != "" ? var.cloudfront_acm_certificate_arn : null
+    cloudfront_default_certificate = var.cloudfront_acm_certificate_arn == ""
     minimum_protocol_version       = "TLSv1.2_2021"
+    ssl_support_method             = var.cloudfront_acm_certificate_arn != "" ? "sni-only" : null
   }
 
   tags = {
     Name = "wildframe-videos-${var.environment}"
   }
+}
+
+# WAF for the video distribution (#332).
+resource "aws_wafv2_web_acl" "videos" {
+  name  = "wildframe-${var.environment}-videos-waf"
+  scope = "CLOUDFRONT"
+
+  default_action {
+    allow {}
+  }
+
+  rule {
+    name     = "AWSManagedRulesCommonRuleSet"
+    priority = 1
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        vendor_name = "AWS"
+        name        = "AWSManagedRulesCommonRuleSet"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "wildframe-common-rules"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "AWSManagedRulesKnownBadInputsRuleSet"
+    priority = 2
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        vendor_name = "AWS"
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "wildframe-known-bad-inputs"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "RateLimitPerIP"
+    priority = 10
+
+    action {
+      block {}
+    }
+
+    statement {
+      rate_based_statement {
+        limit              = 10000
+        aggregate_key_type = "IP"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "wildframe-rate-limit"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "wildframe-videos-waf"
+    sampled_requests_enabled   = true
+  }
+
+  tags = {
+    Name = "wildframe-${var.environment}-videos-waf"
+  }
+}
+
+# Bucket policy granting ONLY the distribution's OAC access (#334).
+resource "aws_s3_bucket_policy" "videos" {
+  bucket = aws_s3_bucket.videos.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "CloudFrontOACRead"
+        Effect    = "Allow"
+        Principal = { Service = "cloudfront.amazonaws.com" }
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.videos.arn}/*"
+        Condition = {
+          StringEquals = {
+            "AWS:SourceArn" = aws_cloudfront_distribution.videos.arn
+          }
+        }
+      }
+    ]
+  })
+
+  depends_on = [
+    aws_s3_bucket_public_access_block.videos,
+    aws_s3_bucket_ownership_controls.videos,
+  ]
 }
 
 # ACM certificate for API
@@ -686,10 +839,138 @@ resource "aws_acm_certificate" "api" {
   }
 }
 
+# VPC flow logs (all traffic) to CloudWatch (#409).
+resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
+  name              = "/aws/vpc/wildframe-${var.environment}-flow-logs"
+  retention_in_days = 90
+
+  tags = {
+    Name = "wildframe-${var.environment}-vpc-flow-logs"
+  }
+}
+
+resource "aws_iam_role" "vpc_flow_logs" {
+  name = "wildframe-${var.environment}-vpc-flow-logs"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "vpc-flow-logs.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "vpc_flow_logs" {
+  name = "wildframe-${var.environment}-vpc-flow-logs"
+  role = aws_iam_role.vpc_flow_logs.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams",
+      ]
+      Resource = "${aws_cloudwatch_log_group.vpc_flow_logs.arn}:*"
+    }]
+  })
+}
+
+resource "aws_flow_log" "main" {
+  iam_role_arn    = aws_iam_role.vpc_flow_logs.arn
+  log_destination = aws_cloudwatch_log_group.vpc_flow_logs.arn
+  traffic_type    = "ALL"
+  vpc_id          = aws_vpc.main.id
+
+  tags = {
+    Name = "wildframe-${var.environment}-vpc-flow-logs"
+  }
+}
+
 # Data source for current AWS account
 data "aws_caller_identity" "current" {}
 
 # Data source for EKS cluster auth
 data "aws_eks_cluster_auth" "main" {
   name = aws_eks_cluster.main.name
+}
+
+# ---------------------------------------------------------------------------
+# Terraform state hardening (#380/#356/#329).
+#
+# The S3 backend block references these by name; the resources themselves are
+# declared here behind a flag so the bootstrap account can manage them with
+# the same reviewed configuration. Run once with
+# `-var="manage_terraform_state_bucket=true"`, then flip back to false.
+# ---------------------------------------------------------------------------
+
+resource "aws_s3_bucket" "terraform_state" {
+  count = var.manage_terraform_state_bucket ? 1 : 0
+
+  bucket = "wildframe-terraform-state"
+
+  tags = {
+    Name        = "wildframe-terraform-state"
+    Environment = "shared"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "terraform_state" {
+  count = var.manage_terraform_state_bucket ? 1 : 0
+
+  bucket = aws_s3_bucket.terraform_state[0].id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" {
+  count = var.manage_terraform_state_bucket ? 1 : 0
+
+  bucket = aws_s3_bucket.terraform_state[0].id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+    bucket_key_enabled = true
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "terraform_state" {
+  count = var.manage_terraform_state_bucket ? 1 : 0
+
+  bucket = aws_s3_bucket.terraform_state[0].id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_dynamodb_table" "terraform_locks" {
+  count = var.manage_terraform_state_bucket ? 1 : 0
+
+  name         = "terraform-locks"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  tags = {
+    Name        = "terraform-locks"
+    Environment = "shared"
+  }
 }

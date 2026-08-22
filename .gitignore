@@ -164,3 +164,6 @@ Thumbs.db
 htmlcov/
 .coverage
 netflix_backend/
+
+# Terraform working dir (provider binaries)
+infrastructure/terraform/.terraform/

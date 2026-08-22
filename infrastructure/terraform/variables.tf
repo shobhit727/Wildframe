@@ -88,15 +88,20 @@ variable "db_master_username" {
 }
 
 variable "db_backup_retention" {
-  description = "RDS backup retention period in days"
+  description = "RDS backup retention period in days (production minimum: 7)"
   type        = number
   default     = 30
+
+  validation {
+    condition     = var.db_backup_retention >= 7
+    error_message = "Backup retention must be at least 7 days (#361)."
+  }
 }
 
 variable "postgres_version" {
-  description = "PostgreSQL engine version"
+  description = "Aurora PostgreSQL engine version (keep on a supported major)"
   type        = string
-  default     = "14.9"
+  default     = "15.6"
 }
 
 variable "redis_node_type" {
@@ -145,6 +150,27 @@ variable "db_master_password_length" {
   description = "Length of the generated RDS master password"
   type        = number
   default     = 32
+}
+
+variable "eks_public_access_cidrs" {
+  description = <<-EOT
+    CIDRs allowed to reach the EKS public endpoint (#355/#326/#327).
+    No default on purpose: operators must set this consciously (e.g. corporate
+    egress ranges). Use ["0.0.0.0/0"] only for throwaway sandboxes.
+  EOT
+  type        = list(string)
+}
+
+variable "cloudfront_acm_certificate_arn" {
+  description = "ACM certificate ARN (us-east-1) for the video distribution; empty = CloudFront default cert (#333)"
+  type        = string
+  default     = ""
+}
+
+variable "manage_terraform_state_bucket" {
+  description = "Set true once (bootstrap) to declare hardened state bucket + lock table (#380/#356/#329)"
+  type        = bool
+  default     = false
 }
 
 variable "tags" {
