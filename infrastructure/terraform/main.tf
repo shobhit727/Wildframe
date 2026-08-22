@@ -248,6 +248,22 @@ resource "aws_iam_role_policy_attachment" "eks_ecr_read_only_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+# KMS key for EKS secret envelope encryption (#389).
+resource "aws_kms_key" "eks_secrets" {
+  description             = "Cluster secrets encryption at rest"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+
+  tags = {
+    Name = "wildframe-${var.environment}-eks-secrets"
+  }
+}
+
+resource "aws_kms_alias" "eks_secrets" {
+  name          = "alias/wildframe-${var.environment}-eks-secrets"
+  target_key_id = aws_kms_key.eks_secrets.key_id
+}
+
 # EKS Cluster security group
 resource "aws_security_group" "eks_cluster" {
   name        = "wildframe-${var.environment}-eks-cluster"
@@ -278,6 +294,16 @@ resource "aws_eks_cluster" "main" {
     endpoint_private_access = true
     endpoint_public_access  = true
     public_access_cidrs     = var.eks_public_access_cidrs
+  }
+
+  # Envelope-encrypt Kubernetes Secrets with a customer-managed key (#389);
+  # external secret management (ExternalSecrets/SM) remains the policy for
+  # application credentials — this covers anything that still lands in etcd.
+  encryption_config {
+    resources = ["secrets"]
+    provider {
+      key_arn = aws_kms_key.eks_secrets.arn
+    }
   }
 
   depends_on = [
@@ -543,7 +569,7 @@ resource "aws_elasticache_replication_group" "redis" {
 
   # Snapshot policy declared explicitly (#374).
   snapshot_retention_limit = 7
-  snapshot_window = "02:00-03:00"
+  snapshot_window          = "02:00-03:00"
 
   log_delivery_configuration {
     destination      = aws_cloudwatch_log_group.redis_slow_log.name

@@ -2,7 +2,10 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/shobhit727/wildframe
-  tag: latest
+  # Immutable tag only (#340/#341): never 'latest'. CI builds/pushes
+  # per-service images tagged with the commit SHA and the release semver;
+  # deployments must reference one of those.
+  tag: "1.0.0"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
