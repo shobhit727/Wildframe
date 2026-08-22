@@ -366,7 +366,12 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
         chunks: list[bytes] = []
         total = 0
         async for chunk in response.body_iterator:
-            chunk_bytes = chunk if isinstance(chunk, bytes) else chunk.encode() if isinstance(chunk, str) else bytes(chunk)
+            if isinstance(chunk, bytes):
+                chunk_bytes = chunk
+            elif isinstance(chunk, str):
+                chunk_bytes = chunk.encode()
+            else:
+                chunk_bytes = bytes(chunk)
             total += len(chunk_bytes)
             if total > self.max_response_body:
                 return Response(

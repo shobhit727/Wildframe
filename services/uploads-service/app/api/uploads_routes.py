@@ -13,7 +13,7 @@ Endpoints:
 from typing import Annotated
 from uuid import UUID
 
-from jose import jwt, JWTError
+from jose import jwt
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status as http_status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
