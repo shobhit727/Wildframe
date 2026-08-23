@@ -29,10 +29,15 @@ export default function SignupPage() {
     }
     if (!password) {
       newErrors.password = 'Password is required';
-    } else if (password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
-    } else if (!REGEX.PASSWORD.test(password)) {
-      newErrors.password = 'Password must include uppercase, lowercase, a number and a special character';
+    } else if (password.length < 12) {
+      // Mirrors the backend's NIST 800-63B policy: length is the primary
+      // signal; composition classes are not individually required.
+      newErrors.password = 'Password must be at least 12 characters';
+    } else {
+      const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(password)).length;
+      if (classes < 2) {
+        newErrors.password = 'Password must mix at least two of: letters, numbers, symbols';
+      }
     }
     if (password !== confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
