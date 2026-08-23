@@ -18,7 +18,11 @@ import type {
   VideoManifest,
 } from '@/types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://localhost:8000';
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  // Derive from the current host so localhost and LAN-IP access both work
+  // without per-device config (the dev cert carries both SANs).
+  (typeof window !== 'undefined' ? `https://${window.location.hostname}:8000` : 'https://localhost:8000');
 
 // A public HLS test stream used when the platform has no packaged media for
 // the title yet (media-pipeline currently emits stub manifests only). The

@@ -88,6 +88,18 @@ COMMON_PASSWORDS: frozenset[str] = frozenset(
         "12345678",
         "123456789",
         "1234567890",
+        # 12+ char entries that still belong on the denylist now that the
+        # minimum length is 12 (NIST-style policy).
+        "password1234",
+        "password12345",
+        "qwerty123456",
+        "1q2w3e4r5t6y",
+        "aaaaaaaaaaaa",
+        "123412341234",
+        "abcdabcdabcd",
+        "letmein12345",
+        "welcomewelco",
+        "administrator1",
     }
 )
 

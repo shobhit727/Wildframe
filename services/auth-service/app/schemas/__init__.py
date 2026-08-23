@@ -39,6 +39,28 @@ class TokenResponse(BaseModel):
     )
 
 
+def validate_password_strength(v: str) -> str:
+    """NIST 800-63B style password rules shared by all password fields.
+
+    Length is the primary strength signal; mandatory composition classes are
+    deliberately not enforced because they reject strong generated
+    passphrases like "correct-horse-battery-staple-42!". A two-class minimum
+    blocks single-class passwords and the breach-list check blocks common
+    credentials (#164).
+    """
+    if len(v) < 12:
+        raise ValueError("Password must be at least 12 characters")
+    classes = sum(
+        bool(re.search(pat, v))
+        for pat in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^A-Za-z0-9]")
+    )
+    if classes < 2:
+        raise ValueError("Password must use at least two character types")
+    if v.strip().casefold() in COMMON_PASSWORDS:
+        raise ValueError("Password is too common")
+    return v
+
+
 class UserRegisterRequest(BaseModel):
     """User registration request.
 
@@ -50,35 +72,15 @@ class UserRegisterRequest(BaseModel):
     """
 
     email: EmailStr
-    password: str = Field(..., min_length=8, max_length=128)
+    password: str = Field(..., min_length=12, max_length=128)
     first_name: str | None = Field(None, max_length=100)
     last_name: str | None = Field(None, max_length=100)
 
     @field_validator("password")
     @classmethod
     def validate_password(cls, v: str) -> str:
-        """Validate password strength.
-
-        Args:
-            v: Password to validate
-
-        Returns:
-            str: Validated password
-
-        Raises:
-            ValueError: If password doesn't meet requirements
-        """
-        if not re.search(r"[A-Z]", v):
-            raise ValueError("Password must contain uppercase letter")
-        if not re.search(r"[0-9]", v):
-            raise ValueError("Password must contain digit")
-        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
-            raise ValueError("Password must contain special character")
-        if v.strip().casefold() in COMMON_PASSWORDS:
-            # Operationally dangerous credentials (#164): top breach-list
-            # entries even when they satisfy the complexity classes.
-            raise ValueError("Password is too common")
-        return v
+        """Validate via shared NIST-style rules."""
+        return validate_password_strength(v)
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -177,23 +179,13 @@ class ChangePasswordRequest(BaseModel):
     """
 
     current_password: str
-    new_password: str = Field(..., min_length=8, max_length=128)
+    new_password: str = Field(..., min_length=12, max_length=128)
 
     @field_validator("new_password")
     @classmethod
     def validate_password(cls, v: str) -> str:
-        """Validate password strength."""
-        if not re.search(r"[A-Z]", v):
-            raise ValueError("Password must contain uppercase letter")
-        if not re.search(r"[0-9]", v):
-            raise ValueError("Password must contain digit")
-        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
-            raise ValueError("Password must contain special character")
-        if v.strip().casefold() in COMMON_PASSWORDS:
-            # Operationally dangerous credentials (#164): top breach-list
-            # entries even when they satisfy the complexity classes.
-            raise ValueError("Password is too common")
-        return v
+        """Validate via shared NIST-style rules."""
+        return validate_password_strength(v)
 
 
 class VerifyEmailRequest(BaseModel):
