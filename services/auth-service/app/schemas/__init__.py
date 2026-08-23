@@ -51,8 +51,7 @@ def validate_password_strength(v: str) -> str:
     if len(v) < 12:
         raise ValueError("Password must be at least 12 characters")
     classes = sum(
-        bool(re.search(pat, v))
-        for pat in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^A-Za-z0-9]")
+        bool(re.search(pat, v)) for pat in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^A-Za-z0-9]")
     )
     if classes < 2:
         raise ValueError("Password must use at least two character types")
