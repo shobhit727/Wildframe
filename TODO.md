@@ -58,3 +58,30 @@ Update it as work lands; do not let it drift from reality.
 - [ ] Watch page: package a real demo HLS asset so the player plays instead of the Retry surface.
 - [ ] Next 16 deprecations: rename `middleware.ts` → `proxy.ts`; drop dead `eslint` key from next.config.
 - [ ] Root landing page right half is empty — consider PosterArt collage backdrop.
+
+---
+
+## Production-readiness checklist (what stands between dev and prod)
+
+### P0 — hard blockers (no prod without these)
+1. **Real AWS account + Terraform apply** — VPC/EKS/RDS/ElastiCache/S3+Cloudflare; isolated state backend & locking (#413); KMS key-policy separation (#414); CloudTrail org coverage (#415); GuardDuty (#410); ECR scan-on-push + base-image patching (#412); S3 media versioning/recovery (#411).
+2. **Secrets management** — every dev default rotated (`dev-secret-key`, `wildframe_dev_password`, demo creds removed); JWT secret from KMS/Secrets Manager with rotation runbook; Stripe live keys + webhook signature enforcement.
+3. **Migrations** — repo has none. Baseline Alembic (or blessed SQL runbooks) + expand/contract policy (#577/#578) before first schema change in prod.
+4. **Domain/TLS/CORS** — real certs (ACM/CF), `CORS_ALLOWED_ORIGINS` set to real origins only, `TrustedHostMiddleware` production list (code already gates on `ENVIRONMENT=production`), cookies `Secure` (web already keys off NODE_ENV).
+5. **Backups & DR** — RDS automated backups + PITR, restore drill actually executed, S3 lifecycle/versioning verified.
+6. **Observability wired to real destinations** — persistent Grafana/Loki volumes or S3-backed Loki, alert routes to on-call, Jaeger retention; tamper-resistant logs (#416).
+7. **Email deliverability** — SPF/DKIM/DMARC for the sending domain (#408) if notification-service sends.
+
+### P1 — security hardening before public traffic
+8. Refresh-token family theft detection + bounded retention (#597/#440).
+9. Service-to-service authn/expiry scopes (#444/#445) and Kafka ACLs (#550/#551), DLQ retention (#553).
+10. Proxy parsing consistency / smuggling hardening (#521/#522), cookie scope minimization (#525).
+11. Repo controls: branch protection + required reviews (#401), CODEOWNERS on sensitive paths (#402), secret scanning + push protection (#403).
+12. Immutable, provenance-attested image references in manifests (#395); Swagger/ReDoc disabled or authed in prod (#468).
+
+### P2 — confidence
+13. Load test the streaming path (concurrency limits sized against `MAX_ACTIVE_SESSIONS`), CDN invalidation coordinated with deploys (#495).
+14. Staging environment deployed by the CI pipeline with a post-deploy smoke suite (the integration suite already exists — point it at staging).
+15. Runbooks: rotate JWT secret, revoke user tokens at scale (auth_version bump), restore-from-backup, Kafka partition lag triage.
+
+**Rule of thumb:** P0 = money/data loss or full compromise; P1 = targeted attack surface; P2 = operational confidence. Ship nothing while any P0 is unchecked.
