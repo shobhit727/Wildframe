@@ -348,8 +348,10 @@ class TestConcurrencyBranches:
         from app.schemas import PlaybackSessionCreateRequest
         from fastapi import HTTPException, status
 
-        # Mock the count to exceed limit
+        # Mock the count to exceed limit AND no oldest session to retire ->
+        # the defensive 409 branch (newest-device-wins normally replaces it).
         service.playback_repo.count_active_sessions_locked = AsyncMock(return_value=5)
+        service.playback_repo.get_oldest_active = AsyncMock(return_value=None)
 
         with pytest.raises(HTTPException) as exc_info:
             await service.start_playback_session(
@@ -358,6 +360,23 @@ class TestConcurrencyBranches:
 
         assert exc_info.value.status_code == status.HTTP_409_CONFLICT
         assert "Maximum concurrent sessions" in exc_info.value.detail
+
+    async def test_start_playback_session_replaces_oldest(self, service):
+        from app.schemas import PlaybackSessionCreateRequest
+
+        service.playback_repo.count_active_sessions_locked = AsyncMock(return_value=5)
+        oldest = MagicMock()
+        service.playback_repo.get_oldest_active = AsyncMock(return_value=oldest)
+        service.playback_repo.mark_completed = AsyncMock(return_value=oldest)
+        session = MagicMock()
+        service.playback_repo.create = AsyncMock(return_value=session)
+
+        result = await service.start_playback_session(
+            PlaybackSessionCreateRequest(user_id=uuid4(), content_id=uuid4(), device_id="d")
+        )
+
+        assert result is session
+        service.playback_repo.mark_completed.assert_awaited_once_with(oldest.id)
 
     async def test_start_playback_session_under_limit(self, service):
         from app.schemas import PlaybackSessionCreateRequest

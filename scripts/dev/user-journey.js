@@ -101,7 +101,9 @@ const SHOT = (n) => `.tmp/ux/${n}.png`; // relative to repo root
     await page.goto(BASE + '/browse', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(1500);
     await page.locator('button[aria-label="Profile menu"]').click();
-    await page.locator('[role="menuitem"]:has-text("Sign Out")').click();
+    const item = page.locator('[role="menuitem"]:has-text("Sign Out")');
+    await item.waitFor({ state: 'visible', timeout: 10000 });
+    await item.click();
     await page.waitForURL(/login/, { timeout: 15000 });
     await page.screenshot({ path: SHOT('09-logout') });
   });

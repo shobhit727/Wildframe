@@ -142,6 +142,21 @@ class PlaybackSessionRepository(BaseRepository):
         )
         return result.scalar_one()
 
+    async def get_oldest_active(self, user_id: UUID) -> PlaybackSession | None:
+        """Oldest ACTIVE session for the user (newest-device-wins policy)."""
+        result = await self.session.execute(
+            select(PlaybackSession)
+            .where(
+                and_(
+                    PlaybackSession.user_id == user_id,
+                    PlaybackSession.status == PlaybackSessionStatus.ACTIVE,
+                )
+            )
+            .order_by(PlaybackSession.last_activity_at.asc(), PlaybackSession.id.asc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
     async def mark_completed(self, session_id: UUID) -> PlaybackSession | None:
         """Mark session as completed."""
         from datetime import datetime
