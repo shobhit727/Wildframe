@@ -65,7 +65,7 @@ class StreamingService:
                         status_code=status.HTTP_409_CONFLICT,
                         detail=f"Maximum concurrent sessions ({settings.MAX_ACTIVE_SESSIONS}) reached",
                     )
-                await self.playback_repo.mark_completed(oldest.id)
+                await self.playback_repo.mark_completed(UUID(str(oldest.id)))
 
             # Also enforce max_concurrent_streams from subscription tier if available
             # This would come from user-service; for now we use the global setting
