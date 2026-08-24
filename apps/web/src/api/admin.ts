@@ -25,8 +25,9 @@ export interface ListParams {
 import axios from 'axios';
 import { getAccessToken } from './client';
 
-const baseURL =
-  process.env.NEXT_PUBLIC_API_URL || 'https://localhost:8000';
+// Same host-derived base as the main client so LAN-IP browsing does not
+// send admin calls to localhost (CORS failure).
+import { API_BASE_URL as baseURL } from './client';
 
 function authHeaders() {
   const token = getAccessToken();

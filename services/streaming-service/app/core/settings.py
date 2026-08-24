@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     SERVER_PORT: int = 8004
     # Concurrency limits (#281, #490)
     MAX_ACTIVE_SESSIONS: int = 5
+    # ACTIVE sessions idle longer than this are reaped on next start (#490):
+    # crashed players otherwise hold slots forever and 409-lock the user out.
+    PLAYBACK_SESSION_IDLE_TIMEOUT_MINUTES: int = 90
     # Signed playback URLs (#489, #491)
     PLAYBACK_URL_SIGNING_SECRET: str = "dev-playback-signing-secret-change-in-production"
     PLAYBACK_URL_TTL_SECONDS: int = 3600

@@ -18,7 +18,7 @@ import type {
   VideoManifest,
 } from '@/types';
 
-const API_BASE_URL =
+export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   // Derive from the current host so localhost and LAN-IP access both work
   // without per-device config (the dev cert carries both SANs).

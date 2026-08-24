@@ -104,11 +104,30 @@ class PlaybackSessionRepository(BaseRepository):
         transaction-scoped advisory lock keyed on the user UUID instead; the
         count itself needs no row locks.
         """
-        from sqlalchemy import func, text
+        from datetime import datetime, timedelta
+
+        from sqlalchemy import func, text, update
 
         await self.session.execute(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
             {"key": f"playback-session:{user_id}"},
+        )
+
+        # Reap idle ACTIVE sessions (crashed/closed players never sent /end)
+        # so they do not permanently consume concurrency slots (#490).
+        from app.core.settings import settings as svc_settings
+
+        cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(
+            minutes=svc_settings.PLAYBACK_SESSION_IDLE_TIMEOUT_MINUTES
+        )
+        await self.session.execute(
+            update(PlaybackSession)
+            .where(
+                PlaybackSession.user_id == user_id,
+                PlaybackSession.status == PlaybackSessionStatus.ACTIVE,
+                PlaybackSession.last_activity_at < cutoff,
+            )
+            .values(status=PlaybackSessionStatus.ENDED, ended_at=datetime.now(UTC).replace(tzinfo=None))
         )
 
         result = await self.session.execute(
