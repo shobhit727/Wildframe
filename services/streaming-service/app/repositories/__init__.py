@@ -128,7 +128,8 @@ class PlaybackSessionRepository(BaseRepository):
                 PlaybackSession.last_activity_at < cutoff,
             )
             .values(
-                status=PlaybackSessionStatus.COMPLETED, ended_at=datetime.now(UTC).replace(tzinfo=None)
+                status=PlaybackSessionStatus.COMPLETED,
+                ended_at=datetime.now(UTC).replace(tzinfo=None),
             )
         )
 
