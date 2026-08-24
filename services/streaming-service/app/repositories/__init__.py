@@ -127,7 +127,9 @@ class PlaybackSessionRepository(BaseRepository):
                 PlaybackSession.status == PlaybackSessionStatus.ACTIVE,
                 PlaybackSession.last_activity_at < cutoff,
             )
-            .values(status=PlaybackSessionStatus.ENDED, ended_at=datetime.now(UTC).replace(tzinfo=None))
+            .values(
+                status=PlaybackSessionStatus.ENDED, ended_at=datetime.now(UTC).replace(tzinfo=None)
+            )
         )
 
         result = await self.session.execute(
