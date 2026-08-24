@@ -163,7 +163,7 @@ def main() -> None:
 
         print(
             f"\n{BOLD}Done.{END}  Log in at https://localhost:3000/login with "
-            f"{DEMO_EMAIL} / {DEMO_PASSWORD}"
+            f"{DEMO_EMAIL} (password: see DEMO_PASSWORD in scripts/seed_demo.py)"
         )
 
 
