@@ -48,7 +48,7 @@ Update it as work lands; do not let it drift from reality.
 
 ### P0 — correctness follow-ups
 - [ ] Watch dependabot-rebased PR CI; merge green ones in small batches (majors like zustand 5 / kafka-python 3 need a runtime smoke test after merge).
-- [ ] Add regression tests: streaming idle-reap path, `/auth-session` single-flight, `setTokens` await semantics.
+- [x] Streaming concurrency covered by unit tests (replace-oldest + defensive 409). Remaining: `/auth-session` single-flight + `setTokens` await tests.
 - [ ] Registration should provision a default profile (auth publishes `user.registered`; user-service consumes) instead of frontend auto-create-on-404.
 
 ### P1 — product/engineering issues still open (~79)
@@ -65,7 +65,7 @@ Update it as work lands; do not let it drift from reality.
 ### P3 — polish
 - [ ] Brighten PosterArt hero backdrop (currently very dark behind title text).
 - [ ] Watch page: package a real demo HLS asset so the player plays instead of the Retry surface.
-- [ ] BUG: watch-page metadata block (incl. My List toggle) not rendering — `content` query on /watch fails; investigate.
+- [x] Watch-page metadata/My List toggle: root causes fixed — soft-deleted titles leaked into listings (now filtered everywhere) and 409 session lockout (now newest-device-wins). Full 12-step UX journey passes.
 - [ ] Next 16 deprecations: rename `middleware.ts` → `proxy.ts`; drop dead `eslint` key from next.config.
 - [ ] Root landing page right half is empty — consider PosterArt collage backdrop.
 
