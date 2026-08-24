@@ -45,3 +45,16 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
+
+  # Dev-only browser toolkit: playwright is pinned to match the local
+  # browser cache; do not open bump PRs for it.
+  - package-ecosystem: "npm"
+    directory: "/scripts/dev"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    ignore:
+      - dependency-name: "playwright"
+    labels:
+      - "dependencies"
+      - "javascript"
