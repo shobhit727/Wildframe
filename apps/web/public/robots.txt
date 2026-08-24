@@ -1,0 +1,22 @@
+User-agent: *
+# Private surfaces — never index account, admin, or API paths.
+Disallow: /admin
+Disallow: /account
+Disallow: /billing
+Disallow: /my-list
+Disallow: /watch
+Disallow: /creator
+Disallow: /api/
+Allow: /
+
+# Crawl politeness for AI/scraper bots that respect robots.txt.
+User-agent: GPTBot
+Disallow: /admin
+Disallow: /account
+Disallow: /billing
+Disallow: /my-list
+Disallow: /watch
+Disallow: /creator
+Disallow: /api/
+
+Sitemap: https://wildframe.com/sitemap.xml

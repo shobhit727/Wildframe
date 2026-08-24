@@ -35,11 +35,20 @@ Update it as work lands; do not let it drift from reality.
 
 ---
 
+### Landed since the checklist above (Aug 24)
+- [x] Playback 409 lockout fixed for real: idle ACTIVE sessions reaped on next start (`PLAYBACK_SESSION_IDLE_TIMEOUT_MINUTES`, default 90) inside the advisory lock.
+- [x] Admin API base now host-derived (LAN browsing no longer CORS-fails on /admin).
+- [x] Signup: client validation matches NIST backend policy (12+ chars, two classes); strong passphrases accepted end-to-end.
+- [x] Compose: `restart: unless-stopped` on all 28 services + health-gated depends_on — rebooted hosts self-heal; kafka healthcheck given 15s/90s headroom.
+- [x] `apps/web/public/robots.txt` (private paths disallowed) — serving 200.
+- [x] `docs/GO_LIVE.md` — exact runbook for the AWS/DNS/Stripe steps only the owner can do.
+- [x] `scripts/dev/` — reusable browser journey, auth matrix, screenshot crawler, security probe (pinned playwright, env-parameterized, README).
+
 ## Open / next up (prioritized)
 
 ### P0 — correctness follow-ups
 - [ ] Watch dependabot-rebased PR CI; merge green ones in small batches (majors like zustand 5 / kafka-python 3 need a runtime smoke test after merge).
-- [ ] Add regression tests: streaming advisory-lock path (concurrent starts ≤ MAX_ACTIVE_SESSIONS), `/auth-session` single-flight, `setTokens` await semantics.
+- [ ] Add regression tests: streaming idle-reap path, `/auth-session` single-flight, `setTokens` await semantics.
 - [ ] Registration should provision a default profile (auth publishes `user.registered`; user-service consumes) instead of frontend auto-create-on-404.
 
 ### P1 — product/engineering issues still open (~79)
@@ -56,6 +65,7 @@ Update it as work lands; do not let it drift from reality.
 ### P3 — polish
 - [ ] Brighten PosterArt hero backdrop (currently very dark behind title text).
 - [ ] Watch page: package a real demo HLS asset so the player plays instead of the Retry surface.
+- [ ] BUG: watch-page metadata block (incl. My List toggle) not rendering — `content` query on /watch fails; investigate.
 - [ ] Next 16 deprecations: rename `middleware.ts` → `proxy.ts`; drop dead `eslint` key from next.config.
 - [ ] Root landing page right half is empty — consider PosterArt collage backdrop.
 

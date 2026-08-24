@@ -1,5 +1,6 @@
 services:
   postgres:
+    restart: unless-stopped
     image: postgres:15-alpine
     environment:
       POSTGRES_DB: wildframe_db
@@ -20,6 +21,7 @@ services:
     networks:
     - wildframe-network
   redis:
+    restart: unless-stopped
     image: redis:7-alpine
     ports:
     - 6379:6379
@@ -37,6 +39,7 @@ services:
     networks:
     - wildframe-network
   kafka:
+    restart: unless-stopped
     image: confluentinc/cp-kafka:7.5.0
     depends_on:
       zookeeper:
@@ -67,6 +70,7 @@ services:
     networks:
     - wildframe-network
   zookeeper:
+    restart: unless-stopped
     image: confluentinc/cp-zookeeper:7.5.0
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
@@ -90,6 +94,7 @@ services:
     networks:
     - wildframe-network
   elasticsearch:
+    restart: unless-stopped
     image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
     environment:
     - discovery.type=single-node
@@ -110,6 +115,7 @@ services:
     networks:
     - wildframe-network
   prometheus:
+    restart: unless-stopped
     image: prom/prometheus:latest
     volumes:
     - ../infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
@@ -121,6 +127,7 @@ services:
     networks:
     - wildframe-network
   grafana:
+    restart: unless-stopped
     image: grafana/grafana:latest
     ports:
     - 3001:3000
@@ -141,6 +148,7 @@ services:
     networks:
     - wildframe-network
   pgadmin:
+    restart: unless-stopped
     image: dpage/pgadmin4:latest
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@example.com
@@ -148,10 +156,12 @@ services:
       PROXY_X_FOR_COUNT: '1'
       PROXY_X_PROTO_COUNT: '1'
     depends_on:
-    - postgres
+      postgres:
+        condition: service_healthy
     networks:
     - wildframe-network
   caddy:
+    restart: unless-stopped
     image: caddy:2
     ports:
     - 8000:8000
@@ -200,6 +210,7 @@ services:
     networks:
     - wildframe-network
   loki:
+    restart: unless-stopped
     image: grafana/loki:latest
     volumes:
     - ../infrastructure/loki/loki-config.yml:/etc/loki/local-config.yaml
@@ -209,6 +220,7 @@ services:
     networks:
     - wildframe-network
   jaeger:
+    restart: unless-stopped
     image: jaegertracing/all-in-one:latest
     ports:
     - 14268:14268
@@ -220,6 +232,7 @@ services:
     networks:
     - wildframe-network
   auth-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/auth-service/Dockerfile
@@ -254,6 +267,7 @@ services:
     networks:
     - wildframe-network
   user-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/user-service/Dockerfile
@@ -284,6 +298,7 @@ services:
     networks:
     - wildframe-network
   admin-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/admin-service/Dockerfile
@@ -314,6 +329,7 @@ services:
     networks:
     - wildframe-network
   content-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/content-service/Dockerfile
@@ -345,6 +361,7 @@ services:
     networks:
     - wildframe-network
   api-gateway:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/api-gateway/Dockerfile
@@ -376,6 +393,7 @@ services:
     networks:
     - wildframe-network
   streaming-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/streaming-service/Dockerfile
@@ -401,6 +419,7 @@ services:
     networks:
     - wildframe-network
   search-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/search-service/Dockerfile
@@ -428,6 +447,7 @@ services:
     networks:
     - wildframe-network
   recommendation-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/recommendation-service/Dockerfile
@@ -455,6 +475,7 @@ services:
     networks:
     - wildframe-network
   billing-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/billing-service/Dockerfile
@@ -480,6 +501,7 @@ services:
     networks:
     - wildframe-network
   analytics-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/analytics-service/Dockerfile
@@ -506,6 +528,7 @@ services:
     networks:
     - wildframe-network
   notification-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/notification-service/Dockerfile
@@ -531,6 +554,7 @@ services:
     networks:
     - wildframe-network
   creators-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/creators-service/Dockerfile
@@ -558,6 +582,7 @@ services:
     networks:
     - wildframe-network
   moderation-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/moderation-service/Dockerfile
@@ -585,6 +610,7 @@ services:
     networks:
     - wildframe-network
   uploads-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/uploads-service/Dockerfile
@@ -612,6 +638,7 @@ services:
     networks:
     - wildframe-network
   media-pipeline:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/media-pipeline/Dockerfile
@@ -637,23 +664,27 @@ services:
     networks:
     - wildframe-network
   postgres-exporter:
+    restart: unless-stopped
     image: prometheuscommunity/postgres-exporter:latest
     environment:
       DATA_SOURCE_NAME: postgresql://wildframe:wildframe_dev_password@postgres:5432/wildframe_db?sslmode=disable
     ports:
     - 9187:9187
     depends_on:
-    - postgres
+      postgres:
+        condition: service_healthy
     networks:
     - wildframe-network
   redis-exporter:
+    restart: unless-stopped
     image: oliver006/redis_exporter:latest
     environment:
       REDIS_ADDR: redis:6379
     ports:
     - 9121:9121
     depends_on:
-    - redis
+      redis:
+        condition: service_healthy
     networks:
     - wildframe-network
 volumes:
