@@ -3,7 +3,7 @@ progress math, manifest reuse."""
 
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from app.services import StreamingService
@@ -376,7 +376,7 @@ class TestConcurrencyBranches:
         )
 
         assert result is session
-        service.playback_repo.mark_completed.assert_awaited_once_with(oldest.id)
+        service.playback_repo.mark_completed.assert_awaited_once_with(UUID(str(oldest.id)))
 
     async def test_start_playback_session_under_limit(self, service):
         from app.schemas import PlaybackSessionCreateRequest
