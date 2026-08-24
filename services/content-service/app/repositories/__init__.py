@@ -7,6 +7,7 @@ import logging
 from typing import Sequence
 from uuid import UUID
 
+from sqlalchemy import ColumnElement
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -219,7 +220,7 @@ class ContentRepository(BaseRepository):
         stmt = select(Content).options(selectinload(Content.genres))
 
         # Soft-deleted content must never appear in the catalog (#433).
-        conditions = [Content.deleted_at.is_(None)]
+        conditions: list[ColumnElement[bool]] = [Content.deleted_at.is_(None)]
         if content_type:
             conditions.append(Content.content_type == ContentType(content_type))
         if status:
