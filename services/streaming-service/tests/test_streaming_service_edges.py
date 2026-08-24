@@ -365,7 +365,8 @@ class TestConcurrencyBranches:
         from app.schemas import PlaybackSessionCreateRequest
 
         service.playback_repo.count_active_sessions_locked = AsyncMock(return_value=5)
-        oldest = MagicMock()
+        oldest_id = uuid4()
+        oldest = MagicMock(id=oldest_id)
         service.playback_repo.get_oldest_active = AsyncMock(return_value=oldest)
         service.playback_repo.mark_completed = AsyncMock(return_value=oldest)
         session = MagicMock()
@@ -376,7 +377,7 @@ class TestConcurrencyBranches:
         )
 
         assert result is session
-        service.playback_repo.mark_completed.assert_awaited_once_with(UUID(str(oldest.id)))
+        service.playback_repo.mark_completed.assert_awaited_once_with(oldest_id)
 
     async def test_start_playback_session_under_limit(self, service):
         from app.schemas import PlaybackSessionCreateRequest
