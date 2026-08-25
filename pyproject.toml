@@ -45,7 +45,7 @@ redis = ">=5,<9"
 
 # Kafka
 kafka-python = ">=2,<4"
-aiokafka = "^0.10.0"
+aiokafka = ">=0.10,<0.15"
 protobuf = ">=5.29.6,<8"
 
 # Search
