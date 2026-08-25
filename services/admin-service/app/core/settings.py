@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
     LOG_LEVEL: str = "INFO"
+
+    # Event bus: "memory" (default, no-op + log) or "kafka".
+    EVENT_PUBLISHER: str = "memory"
+    KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
     # When True, the first X-Forwarded-For hop is trusted for audit IPs.
     # Keep False unless this service only sits behind a trusted proxy.
     TRUST_PROXY: bool = False

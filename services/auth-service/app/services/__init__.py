@@ -128,6 +128,15 @@ class AuthService:
                 detail="Account temporarily locked due to too many failed attempts",
             )
 
+        # Moderation enforcement (#admin-suspend): a suspended/banned account
+        # is deactivated by the user.moderated consumer and rejected here.
+        if not user.is_active:
+            logger.warning(f"Login failed: account suspended: {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account suspended",
+            )
+
         # Verify password
         if not self.password_manager.verify_password(request.password, user.password_hash):
             logger.warning(f"Login failed: invalid password: {user.email}")
@@ -323,6 +332,14 @@ class AuthService:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found",
+            )
+
+        # Suspended/banned accounts cannot mint new tokens either.
+        if not user.is_active:
+            logger.warning(f"Token refresh failed: account suspended: {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account suspended",
             )
 
         # Get stored refresh token

@@ -54,7 +54,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     logger.info("All startup checks passed")
 
+    # Consume user.moderated events so suspensions/bans are enforced at the
+    # login boundary (admin-service publishes; this applies is_active).
+    import asyncio
+
+    from app.core.database import DatabaseManager
+    from app.core.event_consumer import run_user_moderation_consumer
+
+    consumer_task = asyncio.create_task(
+        run_user_moderation_consumer(DatabaseManager.get_session_factory)
+    )
+
     yield
+
+    consumer_task.cancel()
+    logger.info(f"Shutting down {settings.SERVICE_NAME}")
 
     # Shutdown
     logger.info(f"Shutting down {settings.SERVICE_NAME}")

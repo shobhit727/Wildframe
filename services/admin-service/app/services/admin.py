@@ -1,3 +1,5 @@
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secrets import is_sensitive_config_key, mask_value
@@ -15,6 +17,9 @@ MAX_LIST_LIMIT = 1000
 
 def _clamp_limit(limit: int, maximum: int = MAX_LIST_LIMIT) -> int:
     return max(0, min(limit, maximum))
+
+
+logger = logging.getLogger(__name__)
 
 
 class AdminService:
@@ -43,6 +48,28 @@ class AdminService:
         await self.audit_repo.create(
             moderated_by, f"user_moderation_{status}", "user", user_id, reason, ip_address
         )
+
+        # Notify auth-service so suspension/ban is enforced at the login
+        # boundary (admin_db and auth_db are separate by design). Publishing
+        # failures must not roll back the moderation itself.
+        from datetime import UTC, datetime
+
+        from app.core.events import get_event_publisher, user_moderated_event
+
+        try:
+            await get_event_publisher().publish(
+                user_moderated_event(
+                    user_id,
+                    status,
+                    moderated_by,
+                    moderation.moderated_at.isoformat()
+                    if moderation.moderated_at
+                    else datetime.now(UTC).isoformat(),
+                )
+            )
+        except Exception:  # noqa: BLE001 - delivery retried on next moderation
+            logger.exception("failed to publish user.moderated for %s", user_id)
+
         return self._serialize_user_moderation(moderation)
 
     @staticmethod
