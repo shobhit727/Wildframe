@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
 
+    # Kafka (for event publishing)
+    KAFKA_BOOTSTRAP_SERVERS: str = "kafka:29092"
+
     # Logging
     LOG_LEVEL: str = "INFO"
 
