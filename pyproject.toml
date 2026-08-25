@@ -44,7 +44,7 @@ psycopg2-binary = "^2.9.0"
 redis = ">=5,<9"
 
 # Kafka
-kafka-python = "^2.0.0"
+kafka-python = ">=2,<4"
 aiokafka = "^0.10.0"
 protobuf = ">=5.29.6,<8"
 
