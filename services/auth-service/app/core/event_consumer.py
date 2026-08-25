@@ -21,7 +21,7 @@ USER_MODERATED_TOPIC = "user.moderated"
 
 async def _apply_moderation(session_factory, user_id: str, status: str) -> None:
     """Set users.is_active according to the moderation status."""
-    from sqlalchemy import select, update
+    from sqlalchemy import update
 
     from app.models import User
 

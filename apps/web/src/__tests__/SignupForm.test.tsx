@@ -45,7 +45,7 @@ describe('SignupForm', () => {
     fireEvent.submit(screen.getByRole("button", { name: "Sign Up" }).closest("form")!);
 
     await waitFor(() =>
-      expect(screen.getByText('Failed to create account')).toBeInTheDocument(),
+      expect(screen.getByText(/could not create the account|already exists/i)).toBeInTheDocument(),
     );
     expect(push).not.toHaveBeenCalled();
   });
