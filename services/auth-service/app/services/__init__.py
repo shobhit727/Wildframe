@@ -87,9 +87,7 @@ class AuthService:
             from app.core.events import get_event_publisher, user_registered_event
 
             try:
-                await get_event_publisher().publish(
-                    user_registered_event(str(user.id), user.email)
-                )
+                await get_event_publisher().publish(user_registered_event(str(user.id), user.email))
             except Exception:  # noqa: BLE001
                 logger.exception("failed to publish user.registered for %s", user.email)
 
