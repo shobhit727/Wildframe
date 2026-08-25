@@ -87,17 +87,17 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Trusted host middleware
+    # Trusted host middleware — wildcard outside production so LAN-IP access
+    # (e.g. containerized browsers hitting http://<host-ip>:8080) works in
+    # dev; production pins the real hostnames via TRUSTED_HOSTS.
+    trusted = (
+        ["*"]
+        if settings.ENVIRONMENT != "production"
+        else getattr(settings, "TRUSTED_HOSTS", ["localhost", "*.wildframe.com"])
+    )
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=[
-            "localhost",
-            "127.0.0.1",
-            "*.wildframe.com",
-            "test",
-            "testserver",
-            "testclient",
-        ],
+        allowed_hosts=trusted,
     )
 
     # Custom middleware for request tracing

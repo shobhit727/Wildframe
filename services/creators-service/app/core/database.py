@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import NullPool, QueuePool
+from sqlalchemy.pool import NullPool
 
 from app.core.settings import settings
 
@@ -23,12 +23,11 @@ class DatabaseManager:
     @classmethod
     async def init(cls) -> None:
         """Initialize database."""
-        # Use NullPool for SQLite (in-memory tests), QueuePool for PostgreSQL
+        # NullPool for SQLite (in-memory tests); PostgreSQL lets SQLAlchemy
+        # pick its async-adapted queue pool (see create_async_engine below).
         if settings.DATABASE_URL.startswith("sqlite"):
-            poolclass: type[NullPool | QueuePool] = NullPool
             pool_kwargs = {}
         else:
-            poolclass = QueuePool
             pool_kwargs = {
                 "pool_size": 5,
                 "max_overflow": 5,
@@ -41,7 +40,10 @@ class DatabaseManager:
             settings.DATABASE_URL,
             echo=False,
             future=True,
-            poolclass=poolclass,
+            # NullPool only for SQLite; for PostgreSQL omit poolclass so
+            # SQLAlchemy selects its async-adapted queue pool automatically
+            # (the sync QueuePool class is rejected by async engines).
+            **({"poolclass": NullPool} if settings.DATABASE_URL.startswith("sqlite") else {}),
             connect_args=(
                 {
                     "command_timeout": 30,

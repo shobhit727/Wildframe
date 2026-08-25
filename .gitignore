@@ -167,3 +167,7 @@ netflix_backend/
 
 # Terraform working dir (provider binaries)
 infrastructure/terraform/.terraform/
+
+# Local scratch space for agent tooling (screenshots, test scripts, logs)
+.tmp/
+.opencode/

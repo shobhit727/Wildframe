@@ -1,0 +1,14 @@
+{
+  "name": "wildframe-dev-scripts",
+  "private": true,
+  "description": "Browser/E2E and security probe scripts for local verification. Not shipped, not used by CI.",
+  "scripts": {
+    "journey": "node user-journey.js",
+    "auth": "node auth-e2e.js",
+    "shots": "node shoot-all.js",
+    "probe": "bash hack.sh"
+  },
+  "dependencies": {
+    "playwright": "^1.55.1"
+  }
+}

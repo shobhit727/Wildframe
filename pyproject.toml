@@ -37,16 +37,16 @@ pydantic-settings = "^2.0.0"
 # Database
 sqlalchemy = "^2.0.0"
 alembic = "^1.12.0"
-asyncpg = "^0.30.0"
+asyncpg = ">=0.30,<0.32"
 psycopg2-binary = "^2.9.0"
 
 # Redis
 redis = ">=5,<9"
 
 # Kafka
-kafka-python = "^2.0.0"
-aiokafka = "^0.10.0"
-protobuf = ">=5.29.6,<6"
+kafka-python = ">=2,<4"
+aiokafka = ">=0.10,<0.15"
+protobuf = ">=5.29.6,<8"
 
 # Search
 elasticsearch = ">=8.10,<10.0"
@@ -54,7 +54,7 @@ elasticsearch = ">=8.10,<10.0"
 # Authentication & Security
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 passlib = {extras = ["bcrypt"], version = "^1.7.0"}
-python-multipart = ">=0.0.6,<0.0.32"
+python-multipart = ">=0.0.6,<0.0.33"
 python-keycloak = ">=3.8,<8.0"
 
 # Observability
@@ -65,7 +65,7 @@ opentelemetry-instrumentation-fastapi = "^0.41b0"
 opentelemetry-instrumentation-sqlalchemy = "^0.41b0"
 opentelemetry-instrumentation-redis = "^0.41b0"
 prometheus-client = ">=0.18,<0.27"
-python-json-logger = "^2.0.0"
+python-json-logger = ">=2,<5"
 
 # Utils
 httpx = ">=0.25,<0.29"
@@ -84,8 +84,8 @@ faker = "^20.0.0"
 # Code quality
 black = ">=23.11,<27.0"
 isort = "^5.12.0"
-pylint = "^3.0.0"
-mypy = "^1.7.0"
+pylint = ">=3,<5"
+mypy = ">=1.7,<3.0"
 flake8 = ">=6.1,<8.0"
 
 # API

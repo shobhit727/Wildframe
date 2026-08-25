@@ -97,23 +97,66 @@ class PlaybackSessionRepository(BaseRepository):
         return session
 
     async def count_active_sessions_locked(self, user_id: UUID) -> int:
-        """Count active sessions for user with row-level lock (SELECT FOR UPDATE).
+        """Count active sessions for user under a per-user advisory lock.
 
-        Used for atomic concurrency enforcement (#281, #490).
+        Used for atomic concurrency enforcement (#281, #490). Postgres forbids
+        FOR UPDATE with aggregates, so serialize concurrent starts with a
+        transaction-scoped advisory lock keyed on the user UUID instead; the
+        count itself needs no row locks.
         """
-        from sqlalchemy import func
+        from datetime import datetime, timedelta
+
+        from sqlalchemy import func, text, update
+
+        await self.session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"playback-session:{user_id}"},
+        )
+
+        # Reap idle ACTIVE sessions (crashed/closed players never sent /end)
+        # so they do not permanently consume concurrency slots (#490).
+        from app.core.settings import settings as svc_settings
+
+        cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(
+            minutes=svc_settings.PLAYBACK_SESSION_IDLE_TIMEOUT_MINUTES
+        )
+        await self.session.execute(
+            update(PlaybackSession)
+            .where(
+                PlaybackSession.user_id == user_id,
+                PlaybackSession.status == PlaybackSessionStatus.ACTIVE,
+                PlaybackSession.last_activity_at < cutoff,
+            )
+            .values(
+                status=PlaybackSessionStatus.COMPLETED,
+                ended_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+        )
 
         result = await self.session.execute(
-            select(func.count(PlaybackSession.id))
+            select(func.count(PlaybackSession.id)).where(
+                and_(
+                    PlaybackSession.user_id == user_id,
+                    PlaybackSession.status == PlaybackSessionStatus.ACTIVE,
+                )
+            )
+        )
+        return result.scalar_one()
+
+    async def get_oldest_active(self, user_id: UUID) -> PlaybackSession | None:
+        """Oldest ACTIVE session for the user (newest-device-wins policy)."""
+        result = await self.session.execute(
+            select(PlaybackSession)
             .where(
                 and_(
                     PlaybackSession.user_id == user_id,
                     PlaybackSession.status == PlaybackSessionStatus.ACTIVE,
                 )
             )
-            .with_for_update()
+            .order_by(PlaybackSession.last_activity_at.asc(), PlaybackSession.id.asc())
+            .limit(1)
         )
-        return result.scalar_one()
+        return result.scalar_one_or_none()
 
     async def mark_completed(self, session_id: UUID) -> PlaybackSession | None:
         """Mark session as completed."""

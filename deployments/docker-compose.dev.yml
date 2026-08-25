@@ -1,5 +1,6 @@
 services:
   postgres:
+    restart: unless-stopped
     image: postgres:15-alpine
     environment:
       POSTGRES_DB: wildframe_db
@@ -20,6 +21,7 @@ services:
     networks:
     - wildframe-network
   redis:
+    restart: unless-stopped
     image: redis:7-alpine
     ports:
     - 6379:6379
@@ -37,6 +39,7 @@ services:
     networks:
     - wildframe-network
   kafka:
+    restart: unless-stopped
     image: confluentinc/cp-kafka:7.5.0
     depends_on:
       zookeeper:
@@ -60,13 +63,14 @@ services:
       - kafka-broker-api-versions
       - --bootstrap-server
       - localhost:29092
-      interval: 10s
-      timeout: 5s
+      interval: 15s
+      timeout: 15s
       retries: 10
-      start_period: 30s
+      start_period: 90s
     networks:
     - wildframe-network
   zookeeper:
+    restart: unless-stopped
     image: confluentinc/cp-zookeeper:7.5.0
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
@@ -90,6 +94,7 @@ services:
     networks:
     - wildframe-network
   elasticsearch:
+    restart: unless-stopped
     image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
     environment:
     - discovery.type=single-node
@@ -110,6 +115,7 @@ services:
     networks:
     - wildframe-network
   prometheus:
+    restart: unless-stopped
     image: prom/prometheus:latest
     volumes:
     - ../infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
@@ -121,6 +127,7 @@ services:
     networks:
     - wildframe-network
   grafana:
+    restart: unless-stopped
     image: grafana/grafana:latest
     ports:
     - 3001:3000
@@ -141,6 +148,7 @@ services:
     networks:
     - wildframe-network
   pgadmin:
+    restart: unless-stopped
     image: dpage/pgadmin4:latest
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@example.com
@@ -148,10 +156,12 @@ services:
       PROXY_X_FOR_COUNT: '1'
       PROXY_X_PROTO_COUNT: '1'
     depends_on:
-    - postgres
+      postgres:
+        condition: service_healthy
     networks:
     - wildframe-network
   caddy:
+    restart: unless-stopped
     image: caddy:2
     ports:
     - 8000:8000
@@ -169,6 +179,7 @@ services:
     - 8012:8012
     - 8013:8013
     - 8014:8014
+    - 8080:8080
     - 5050:5050
     - 9090:9090
     - 3100:3100
@@ -199,6 +210,7 @@ services:
     networks:
     - wildframe-network
   loki:
+    restart: unless-stopped
     image: grafana/loki:latest
     volumes:
     - ../infrastructure/loki/loki-config.yml:/etc/loki/local-config.yaml
@@ -208,6 +220,7 @@ services:
     networks:
     - wildframe-network
   jaeger:
+    restart: unless-stopped
     image: jaegertracing/all-in-one:latest
     ports:
     - 14268:14268
@@ -219,12 +232,14 @@ services:
     networks:
     - wildframe-network
   auth-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/auth-service/Dockerfile
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/auth_db
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/0
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       ADMIN_EMAILS: demo@wildframe.com
@@ -252,12 +267,14 @@ services:
     networks:
     - wildframe-network
   user-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/user-service/Dockerfile
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/users_db
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/1
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -281,12 +298,14 @@ services:
     networks:
     - wildframe-network
   admin-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/admin-service/Dockerfile
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/admin_db
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/3
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -310,12 +329,14 @@ services:
     networks:
     - wildframe-network
   content-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/content-service/Dockerfile
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/content_db
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/2
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EVENT_PUBLISHER: kafka
@@ -340,11 +361,15 @@ services:
     networks:
     - wildframe-network
   api-gateway:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/api-gateway/Dockerfile
       target: development
     environment:
+      # Dev-friendly auth burst limit (prod default stays 5/min)
+      RATE_LIMIT_AUTH: '60'
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       AUTH_SERVICE_URL: http://auth-service:8000
       USER_SERVICE_URL: http://user-service:8000
       CONTENT_SERVICE_URL: http://content-service:8000
@@ -368,11 +393,13 @@ services:
     networks:
     - wildframe-network
   streaming-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/streaming-service/Dockerfile
       target: development
     environment:
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/streaming_db
       REDIS_URL: redis://redis:6379/4
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
@@ -392,6 +419,7 @@ services:
     networks:
     - wildframe-network
   search-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/search-service/Dockerfile
@@ -400,6 +428,7 @@ services:
       ELASTICSEARCH_URL: http://elasticsearch:9200
       REDIS_URL: redis://redis:6379/5
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/search_db
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EVENT_PUBLISHER: kafka
       LOG_LEVEL: DEBUG
@@ -418,12 +447,14 @@ services:
     networks:
     - wildframe-network
   recommendation-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/recommendation-service/Dockerfile
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/recommendation_db
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       CONTENT_SERVICE_URL: http://content-service:8000
       REDIS_URL: redis://redis:6379/6
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
@@ -444,12 +475,14 @@ services:
     networks:
     - wildframe-network
   billing-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/billing-service/Dockerfile
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/billing_db
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/7
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -468,12 +501,14 @@ services:
     networks:
     - wildframe-network
   analytics-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/analytics-service/Dockerfile
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/analytics_db
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/8
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       CONTENT_SERVICE_URL: http://content-service:8000
@@ -493,12 +528,14 @@ services:
     networks:
     - wildframe-network
   notification-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/notification-service/Dockerfile
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/notification_db
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/9
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -517,12 +554,14 @@ services:
     networks:
     - wildframe-network
   creators-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/creators-service/Dockerfile
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/creators_db
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/11
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -543,12 +582,14 @@ services:
     networks:
     - wildframe-network
   moderation-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/moderation-service/Dockerfile
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/moderation_db
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/12
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -569,12 +610,14 @@ services:
     networks:
     - wildframe-network
   uploads-service:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/uploads-service/Dockerfile
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/uploads_db
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/13
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -595,12 +638,14 @@ services:
     networks:
     - wildframe-network
   media-pipeline:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: services/media-pipeline/Dockerfile
       target: development
     environment:
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/media_db
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/10
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
@@ -619,23 +664,27 @@ services:
     networks:
     - wildframe-network
   postgres-exporter:
+    restart: unless-stopped
     image: prometheuscommunity/postgres-exporter:latest
     environment:
       DATA_SOURCE_NAME: postgresql://wildframe:wildframe_dev_password@postgres:5432/wildframe_db?sslmode=disable
     ports:
     - 9187:9187
     depends_on:
-    - postgres
+      postgres:
+        condition: service_healthy
     networks:
     - wildframe-network
   redis-exporter:
+    restart: unless-stopped
     image: oliver006/redis_exporter:latest
     environment:
       REDIS_ADDR: redis:6379
     ports:
     - 9121:9121
     depends_on:
-    - redis
+      redis:
+        condition: service_healthy
     networks:
     - wildframe-network
 volumes:

@@ -110,20 +110,24 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   setToken: (token: string | null) => set({ token }),
 
   hydrate: async () => {
+    // Mark hydration in progress so role guards (AdminGate) wait for /me
+    // instead of bouncing admins before the user object loads.
+    set({ isLoading: true });
     let token = getAccessToken();
     if (!token) {
       token = await apiClient.refreshAccessToken();
       if (!token) {
-        set({ user: null, token: null, isAuthenticated: false });
+        set({ user: null, token: null, isAuthenticated: false, isLoading: false });
         return;
       }
     }
     set({ token, isAuthenticated: true });
     try {
       const user = await apiClient.getMe();
-      set({ user });
+      set({ user, isLoading: false });
     } catch {
       // Token invalid/expired — the interceptor will handle the next 401.
+      set({ isLoading: false });
     }
   },
 

@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool, QueuePool
+from sqlalchemy.pool import NullPool
 
 from app.core.settings import settings
 
@@ -30,31 +30,44 @@ class DatabaseManager:
     def get_engine(self):
         """Get or create database engine."""
         if self._engine is None:
-            # Use NullPool for development, QueuePool for production
-            pool_class = NullPool if settings.ENVIRONMENT == "development" else QueuePool
+            # Pool class follows the driver: NullPool only for SQLite test
+            # engines; PostgreSQL always gets a capped QueuePool so live dev
+            # is pooled too.
+            is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+            pool_class = NullPool if is_sqlite else None
 
-            pool_kwargs: dict = {
-                "pool_size": 5,
-                "max_overflow": 5,
-                "pool_timeout": 30,
-                "pool_recycle": 3600,
-            }
+            pool_kwargs: dict = (
+                {}
+                if is_sqlite
+                else {
+                    "pool_size": 5,
+                    "max_overflow": 5,
+                    "pool_timeout": 30,
+                    "pool_recycle": 3600,
+                }
+            )
 
-            self._engine = create_async_engine(
-                settings.DATABASE_URL,
-                echo=settings.DEBUG,
-                future=True,
-                pool_pre_ping=True,
-                poolclass=pool_class,
-                **pool_kwargs,
-                connect_args={
+            connect_args: dict = (
+                {}
+                if is_sqlite
+                else {
                     "command_timeout": 30,
                     "server_settings": {
                         "statement_timeout": "10000",  # 10s cap (#429)
                         "lock_timeout": "5000",  # bounded lock waits (#430)
                         "idle_in_transaction_session_timeout": "30000",
                     },
-                },
+                }
+            )
+
+            self._engine = create_async_engine(
+                settings.DATABASE_URL,
+                echo=settings.DEBUG,
+                future=True,
+                **({"poolclass": pool_class} if pool_class else {}),
+                pool_pre_ping=not is_sqlite,
+                **pool_kwargs,
+                connect_args=connect_args,
             )
         return self._engine
 

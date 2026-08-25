@@ -167,6 +167,11 @@ This gives us: caching, retry, devtools, and the ability to mutate the cache aft
 ## Styling
 
 - **TailwindCSS 4** with CSS-variable design tokens (see `tailwind.config.ts`).
+  - v4 wiring: `postcss.config.mjs` loads `@tailwindcss/postcss`, and
+    `src/app/globals.css` starts with `@import "tailwindcss";` +
+    `@config "../../tailwind.config.ts";` (the legacy `@tailwind base/components/utilities`
+    directives are no-ops under v4 and leave the site unstyled).
+  - The v3 config still requires `@tailwindcss/forms` and `@tailwindcss/typography`.
 - **shadcn-style primitives** (Radix UI under the hood) in `src/components/ui/`.
 - **clsx** for conditional class names.
 - No inline styles, no CSS modules, no styled-components.
@@ -178,7 +183,18 @@ Theme is driven by `next-themes` and exposed via CSS variables so dark mode is a
 ## Auth & Sessions
 
 - Access tokens live in **memory** (Zustand). Never `localStorage`.
-- Refresh tokens live in an **HttpOnly cookie** set by the auth service.
+- Refresh tokens live in an **HttpOnly cookie** (`wf_refresh`) written by the
+  Next route `src/app/auth-session/route.ts` (not by the auth service
+  directly). That route also performs refresh: it is single-flight per cookie
+  value because auth-service rotates refresh tokens on every use — two
+  concurrent refreshes would burn the token and log the user out.
+- Login/register/MFA **await** the cookie write (`setTokens`) before any
+  navigation; a fire-and-forget POST raced `router.push` and left hard
+  navigations unauthenticated.
+- `src/app/providers.tsx` blocks rendering until the first session check
+  resolves; page-level guards read `isAuthenticated` on mount and would
+  otherwise bounce freshly-authenticated users (AdminGate → /login →
+  middleware → /browse).
 - `src/middleware.ts` redirects unauthenticated requests away from `/account`, `/billing`, `/my-list`, and `/watch`.
 - The Axios client automatically refreshes on 401 once per request, then surfaces the error.
 

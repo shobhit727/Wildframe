@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import NullPool, QueuePool
+from sqlalchemy.pool import NullPool
 
 from app.core.settings import settings
 
@@ -28,25 +28,42 @@ class DatabaseManager:
     def get_engine(cls) -> AsyncEngine:
         """Get or create async SQLAlchemy engine."""
         if cls._engine is None:
-            pool_class = NullPool if settings.ENVIRONMENT == "development" else QueuePool
+            # Pool class follows the driver: NullPool only for SQLite test
+            # engines; PostgreSQL is always pooled, including live dev.
+            is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+            pool_class = NullPool if is_sqlite else None
 
-            pool_kwargs: dict = {
-                "pool_size": 5,
-                "max_overflow": 5,
-                "pool_timeout": 30,
-                "pool_recycle": 3600,
-            }
+            pool_kwargs: dict = (
+                {}
+                if is_sqlite
+                else {
+                    "pool_size": 5,
+                    "max_overflow": 5,
+                    "pool_timeout": 30,
+                    "pool_recycle": 3600,
+                }
+            )
+
+            connect_args: dict = (
+                {"timeout": 10}
+                if is_sqlite
+                else {
+                    "command_timeout": 30,
+                    "server_settings": {
+                        "statement_timeout": "10000",  # 10s cap (#429)
+                        "lock_timeout": "5000",  # bounded lock waits (#430)
+                        "idle_in_transaction_session_timeout": "30000",
+                    },
+                }
+            )
 
             cls._engine = create_async_engine(
                 settings.DATABASE_URL,
                 echo=settings.DEBUG,
-                poolclass=pool_class,
-                pool_pre_ping=True,
+                **({"poolclass": pool_class} if pool_class else {}),
+                pool_pre_ping=not is_sqlite,
                 **pool_kwargs,
-                connect_args={
-                    "timeout": 10,
-                    "command_timeout": 30,
-                },
+                connect_args=connect_args,
             )
         return cls._engine
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useUser } from '@/hooks';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
@@ -53,17 +53,22 @@ export default function AccountPage() {
     enabled: !!userId,
   });
 
-  useEffect(() => {
-    if (user)
-      setFormData((p) => ({
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        bio: p.bio || profile?.bio || '',
-        phone_number: p.phone_number || profile?.phone_number || '',
-        country: p.country || profile?.country || '',
-      }));
-  }, [user, profile]);
+  // Adjust form state when server data arrives — done during render (the
+  // React-endorsed "adjust state when props change" pattern) so the new
+  // state is committed without an extra effect-driven render pass.
+  const [syncedKey, setSyncedKey] = useState<string | null>(null);
+  const syncKey = user ? `${user.id}:${profile?.id ?? 'none'}` : null;
+  if (user && syncKey && syncKey !== syncedKey) {
+    setSyncedKey(syncKey);
+    setFormData((p) => ({
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      bio: p.bio || profile?.bio || '',
+      phone_number: p.phone_number || profile?.phone_number || '',
+      country: p.country || profile?.country || '',
+    }));
+  }
 
   const { data: subscription, isLoading: subLoading } = useQuery({
     queryKey: ['billing-subscription', userId],

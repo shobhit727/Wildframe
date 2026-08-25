@@ -56,10 +56,16 @@ class StreamingService:
             # Atomic check: count active sessions with row lock
             active_count = await self.playback_repo.count_active_sessions_locked(request.user_id)
             if active_count >= settings.MAX_ACTIVE_SESSIONS:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Maximum concurrent sessions ({settings.MAX_ACTIVE_SESSIONS}) reached",
-                )
+                # Newest-device-wins (#490): end the OLDEST active session so a
+                # crashed/closed client can never permanently lock the user out.
+                # The advisory lock above keeps this race-free.
+                oldest = await self.playback_repo.get_oldest_active(request.user_id)
+                if oldest is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Maximum concurrent sessions ({settings.MAX_ACTIVE_SESSIONS}) reached",
+                    )
+                await self.playback_repo.mark_completed(UUID(str(oldest.id)))
 
             # Also enforce max_concurrent_streams from subscription tier if available
             # This would come from user-service; for now we use the global setting

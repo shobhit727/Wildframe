@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiClient } from '@/api/client';
 
+import { PosterArt } from '@/components/common/PosterArt';
+
 interface VideoPlayerProps {
   contentId: string;
   sessionId: string;
@@ -11,7 +13,14 @@ interface VideoPlayerProps {
   onEnded?: () => void;
 }
 
-export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnded }: VideoPlayerProps) {
+export function VideoPlayer({
+  contentId,
+  sessionId,
+  src,
+  srcType = 'hls',
+  onEnded,
+  title = '',
+}: VideoPlayerProps & { title?: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<unknown>(null);
   const cancelledRef = useRef(false);
@@ -193,6 +202,11 @@ export function VideoPlayer({ contentId, sessionId, src, srcType = 'hls', onEnde
         controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 1500);
       }}
     >
+      {/* Generated key-art sits behind the stream so the surface is never
+          dead black before playback or on load failure. */}
+      <div className="absolute inset-0">
+        <PosterArt seed={`${contentId}:${title}`} title={title || contentId} variant="backdrop" />
+      </div>
       <video
         ref={videoRef}
         className="w-full h-full object-contain"

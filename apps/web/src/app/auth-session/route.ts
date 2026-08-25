@@ -46,7 +46,14 @@ export async function POST(request: NextRequest) {
  * Use the HttpOnly refresh cookie to obtain a fresh access token from the auth service.
  * Called on page load (hydrate) and by the axios 401 interceptor.
  * Returns { access_token, refresh_token? } on success; 401 if no session or refresh failed.
+ *
+ * The backend rotates refresh tokens on every use (single-use). Concurrent
+ * GETs carrying the same cookie would otherwise burn the token twice — the
+ * second call fails and clears the session. Single-flight per cookie value
+ * collapses concurrent calls onto one upstream refresh.
  */
+const inflightRefreshes = new Map<string, Promise<{ status: number; body: unknown; setCookie: string | null }>>();
+
 export async function GET() {
   const cookieStore = await cookies();
   const raw = cookieStore.get(REFRESH_COOKIE)?.value;
@@ -54,26 +61,45 @@ export async function GET() {
     return NextResponse.json({ error: 'no_session' }, { status: 401 });
   }
 
+  const existing = inflightRefreshes.get(raw);
+  if (existing) {
+    const result = await existing;
+    return buildRefreshResponse(result);
+  }
+
+  const task = doRefresh(raw).finally(() => inflightRefreshes.delete(raw));
+  inflightRefreshes.set(raw, task);
+  return buildRefreshResponse(await task);
+}
+
+function buildRefreshResponse(result: { status: number; body: unknown; setCookie: string | null }) {
+  const res = NextResponse.json(result.body as Record<string, unknown>, { status: result.status });
+  if (result.setCookie) res.headers.set('Set-Cookie', result.setCookie);
+  return res;
+}
+
+async function doRefresh(raw: string): Promise<{ status: number; body: unknown; setCookie: string | null }> {
   let refreshToken: string;
   try {
     refreshToken = decodeURIComponent(raw);
   } catch {
-    return NextResponse.json({ error: 'invalid_cookie' }, { status: 401 });
+    return { status: 401, body: { error: 'invalid_cookie' }, setCookie: null };
   }
 
   try {
-    const response = await fetch(REFRESH_ENDPOINT, {
+    const response = await secureFetch(REFRESH_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
-      cache: 'no-store',
     });
 
     if (!response.ok) {
       // Clear stale cookie
-      const res = NextResponse.json({ error: 'refresh_failed' }, { status: 401 });
-      res.headers.set('Set-Cookie', `${REFRESH_COOKIE}=; ${cookieHeader(0)}`);
-      return res;
+      return {
+        status: 401,
+        body: { error: 'refresh_failed' },
+        setCookie: `${REFRESH_COOKIE}=; ${cookieHeader(0)}`,
+      };
     }
 
     const data = (await response.json()) as {
@@ -83,22 +109,23 @@ export async function GET() {
 
     const accessToken = data?.access_token;
     if (typeof accessToken !== 'string' || !accessToken) {
-      return NextResponse.json({ error: 'invalid_refresh_response' }, { status: 502 });
+      return { status: 502, body: { error: 'invalid_refresh_response' }, setCookie: null };
     }
 
-    const res = NextResponse.json({
+    const body: Record<string, unknown> = {
       access_token: accessToken,
       refresh_token: typeof data?.refresh_token === 'string' ? data.refresh_token : null,
-    });
+    };
 
     // Rotate refresh token if the backend issued a new one
+    let setCookie: string | null = null;
     if (typeof data?.refresh_token === 'string' && data.refresh_token) {
-      res.headers.set('Set-Cookie', `${REFRESH_COOKIE}=${encodeURIComponent(data.refresh_token)}; ${cookieHeader(COOKIE_MAX_AGE)}`);
+      setCookie = `${REFRESH_COOKIE}=${encodeURIComponent(data.refresh_token)}; ${cookieHeader(COOKIE_MAX_AGE)}`;
     }
-    return res;
+    return { status: 200, body, setCookie };
   } catch {
     // Auth service unreachable
-    return NextResponse.json({ error: 'auth_unreachable' }, { status: 502 });
+    return { status: 502, body: { error: 'auth_unreachable' }, setCookie: null };
   }
 }
 
@@ -110,4 +137,47 @@ export async function DELETE() {
   const res = NextResponse.json({ ok: true });
   res.headers.set('Set-Cookie', `${REFRESH_COOKIE}=; ${cookieHeader(0)}`);
   return res;
+}
+
+/**
+ * HTTPS fetch that trusts the project's self-signed dev certificate.
+ *
+ * Next's bundled fetch ignores NODE_EXTRA_CA_CERTS in its server worker, so
+ * server-side calls to the TLS gateway fail verification. When the dev cert
+ * exists we do a raw node:https request with an explicit CA; otherwise this
+ * is a plain fetch (production, publicly-trusted certs).
+ */
+async function secureFetch(
+  url: string,
+  init: { method: string; headers: Record<string, string>; body: string },
+): Promise<Response> {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const certPath = path.join(process.cwd(), 'certificates', 'localhost.pem');
+  if (!fs.existsSync(certPath)) {
+    return fetch(url, { ...init, cache: 'no-store' });
+  }
+  const https = await import('node:https');
+  const ca = fs.readFileSync(certPath, 'utf8');
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      url,
+      {
+        method: init.method,
+        headers: { ...init.headers, 'Content-Length': String(Buffer.byteLength(init.body)) },
+        ca,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          resolve(new Response(text, { status: res.statusCode ?? 502 }));
+        });
+      },
+    );
+    req.on('error', reject);
+    req.write(init.body);
+    req.end();
+  });
 }

@@ -18,7 +18,11 @@ import type {
   VideoManifest,
 } from '@/types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://localhost:8000';
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  // Derive from the current host so localhost and LAN-IP access both work
+  // without per-device config (the dev cert carries both SANs).
+  (typeof window !== 'undefined' ? `https://${window.location.hostname}:8000` : 'https://localhost:8000');
 
 // A public HLS test stream used when the platform has no packaged media for
 // the title yet (media-pipeline currently emits stub manifests only). The
@@ -98,11 +102,17 @@ async function persistRefreshToken(token: string): Promise<void> {
   }
 }
 
-export function setTokens(tokens: AuthTokens): void {
+/**
+ * Persist tokens after login/register/MFA. Awaits the HttpOnly-cookie write so
+ * an immediate client-side navigation cannot abort the request before the
+ * browser commits the cookie (previously a fire-and-forget POST raced
+ * router.push, leaving middleware to bounce hard navigations to /login).
+ */
+export async function setTokens(tokens: AuthTokens): Promise<void> {
   accessToken = tokens.access_token;
   if (tokens.refresh_token) {
     refreshToken = tokens.refresh_token;
-    void persistRefreshToken(tokens.refresh_token);
+    await persistRefreshToken(tokens.refresh_token);
   }
   sweepLegacyTokenStorage();
 }
@@ -265,7 +275,7 @@ class APIClient {
       first_name: firstName,
       last_name: lastName,
     });
-    setTokens(data as AuthTokens);
+    await setTokens(data as AuthTokens);
     return data as AuthTokens;
   }
 
@@ -274,7 +284,7 @@ class APIClient {
     if ((data as { requires_mfa?: boolean }).requires_mfa) {
       return data as { requires_mfa: true; mfa_challenge: string; expires_in: number };
     }
-    setTokens(data as AuthTokens);
+    await setTokens(data as AuthTokens);
     return data as AuthTokens;
   }
 
@@ -283,7 +293,7 @@ class APIClient {
       mfa_challenge: mfaChallenge,
       code,
     });
-    setTokens(data as AuthTokens);
+    await setTokens(data as AuthTokens);
     return data as AuthTokens;
   }
 

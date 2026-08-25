@@ -84,6 +84,27 @@ Start the development stack:
 docker compose -f deployments/docker-compose.dev.yml up -d
 ```
 
+Then bootstrap schemas and demo data (there is no migration framework —
+tables are created from the SQLAlchemy models):
+
+```bash
+# Create all tables for the 14 app services (idempotent).
+python scripts/init_schemas.py
+
+# Seed genres, movies, series, an SVOD subscription and a demo admin user.
+python scripts/seed_demo.py
+# → log in at https://localhost:3000/login with demo@wildframe.com / DemoPass123!
+```
+
+Everything is TLS on the host: the Caddy proxy terminates HTTPS for every
+service port (`https://localhost:8000` = gateway, `:8001` auth, …) and the
+Next.js dev server serves `https://localhost:3000` with the repo's
+self-signed cert (`apps/web/certificates/`). The cert carries SANs for
+`localhost`, loopback and `192.168.1.14`, so phones/devices on the LAN can
+hit `https://192.168.1.14:<port>` directly; a plain-HTTP mirror of the
+gateway also exists at `http://localhost:8080` for tooling that cannot
+trust self-signed certs.
+
 For service-specific development, see `docs/DEVELOPMENT.md` and `docs/QUICKSTART.md`.
 
 ## Testing

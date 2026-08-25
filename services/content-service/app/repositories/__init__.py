@@ -7,6 +7,7 @@ import logging
 from typing import Sequence
 from uuid import UUID
 
+from sqlalchemy import ColumnElement
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -218,7 +219,8 @@ class ContentRepository(BaseRepository):
         """Get paginated content with optional type/status/genre filters."""
         stmt = select(Content).options(selectinload(Content.genres))
 
-        conditions: list = []
+        # Soft-deleted content must never appear in the catalog (#433).
+        conditions: list[ColumnElement[bool]] = [Content.deleted_at.is_(None)]
         if content_type:
             conditions.append(Content.content_type == ContentType(content_type))
         if status:
@@ -244,7 +246,9 @@ class ContentRepository(BaseRepository):
             select(Content)
             .where(
                 and_(
-                    Content.content_type == content_type, Content.status == ContentStatus.PUBLISHED
+                    Content.content_type == content_type,
+                    Content.status == ContentStatus.PUBLISHED,
+                    Content.deleted_at.is_(None),
                 )
             )
             .options(selectinload(Content.genres))
@@ -256,7 +260,13 @@ class ContentRepository(BaseRepository):
         result = await self.session.execute(
             select(Content)
             .join(Content.genres)
-            .where(and_(Genre.id == genre_id, Content.status == ContentStatus.PUBLISHED))
+            .where(
+                and_(
+                    Genre.id == genre_id,
+                    Content.status == ContentStatus.PUBLISHED,
+                    Content.deleted_at.is_(None),
+                )
+            )
             .options(selectinload(Content.genres))
         )
         return result.scalars().unique().all()
@@ -268,6 +278,7 @@ class ContentRepository(BaseRepository):
             .where(
                 and_(
                     Content.status == ContentStatus.PUBLISHED,
+                    Content.deleted_at.is_(None),
                     or_(Content.title.ilike(f"%{query}%"), Content.description.ilike(f"%{query}%")),
                 )
             )
@@ -280,7 +291,12 @@ class ContentRepository(BaseRepository):
         result = await self.session.execute(
             select(Content)
             .options(selectinload(Content.genres))
-            .where(Content.status == ContentStatus.PUBLISHED)
+            .where(
+                and_(
+                    Content.status == ContentStatus.PUBLISHED,
+                    Content.deleted_at.is_(None),
+                )
+            )
             .order_by(Content.audience_score.desc(), Content.total_votes.desc(), Content.id.desc())
             .limit(limit)
         )
@@ -290,7 +306,11 @@ class ContentRepository(BaseRepository):
         """Get premium content."""
         result = await self.session.execute(
             select(Content).where(
-                and_(Content.is_premium == True, Content.status == ContentStatus.PUBLISHED)
+                and_(
+                    Content.is_premium == True,  # noqa: E712
+                    Content.status == ContentStatus.PUBLISHED,
+                    Content.deleted_at.is_(None),
+                )
             )
         )
         return list(result.scalars().all())
