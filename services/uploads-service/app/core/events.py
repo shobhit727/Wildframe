@@ -193,7 +193,6 @@ def _build_publisher() -> EventPublisher:
 
     if settings.EVENT_PUBLISHER == "kafka":
         return KafkaEventPublisher(
-            bootstrap_servers=settings.REDIS_URL  # placeholder; a real deploy
-            # would expose a dedicated KAFKA_BOOTSTRAP_SERVERS setting.
+            bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,  # type: ignore[arg-type],
         )
     return InMemoryEventPublisher()

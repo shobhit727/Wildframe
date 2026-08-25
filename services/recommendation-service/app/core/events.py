@@ -111,12 +111,12 @@ def get_event_subscriber() -> EventSubscriber:
             except Exception:
                 logger.exception("failed to build Redis dedup store; dedup disabled")
             _subscriber = KafkaEventSubscriber(
-                bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,  # type: ignore[arg-type]
                 group_id=settings.KAFKA_CONSUMER_GROUP,
                 client_id=settings.KAFKA_CONSUMER_GROUP,
                 dedup_store=dedup_store,
                 dlq_publisher=KafkaEventPublisher(
-                    bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                    bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,  # type: ignore[arg-type]
                     client_id=f"{settings.KAFKA_CONSUMER_GROUP}-dlq",
                 ),
             )

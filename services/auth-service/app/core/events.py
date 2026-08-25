@@ -30,9 +30,9 @@ def get_event_publisher() -> EventPublisher:
     if _publisher is None:
         if settings.EVENT_PUBLISHER == "kafka":
             _publisher = KafkaEventPublisher(
-                bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,  # type: ignore[arg-type]
                 client_id="auth-service",
-            )
+            )  # type: ignore[arg-type]
             logger.info("event publisher: kafka (%s)", settings.KAFKA_BOOTSTRAP_SERVERS)
         else:
             _publisher = InMemoryEventPublisher()
