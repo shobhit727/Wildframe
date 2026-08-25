@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     from app.core.event_consumer import run_user_moderation_consumer
 
     consumer_task = asyncio.create_task(
-        run_user_moderation_consumer(DatabaseManager.get_session_factory)
+        run_user_moderation_consumer(DatabaseManager.get_session_factory())
     )
 
     yield
