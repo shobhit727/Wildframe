@@ -2736,14 +2736,14 @@ test = ["pytest", "pytest-cov"]
 
 [[package]]
 name = "python-json-logger"
-version = "2.0.7"
-description = "A python library adding a json log formatter"
+version = "4.2.0"
+description = "JSON Log Formatter for the Python Logging Package"
 optional = false
-python-versions = ">=3.6"
+python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "python-json-logger-2.0.7.tar.gz", hash = "sha256:23e7ec02d34237c5aa1e29a070193a4ea87583bb4e7f8fd06d3de8264c4b2e1c"},
-    {file = "python_json_logger-2.0.7-py3-none-any.whl", hash = "sha256:f380b826a991ebbe3de4d897aeec42760035ac760345e57b812938dc8b35e2bd"},
+    {file = "python_json_logger-4.2.0-py3-none-any.whl", hash = "sha256:158a52126fcd6869e09574d2b66272666f3dc8f468c62637ef9a1fa883719cb9"},
+    {file = "python_json_logger-4.2.0.tar.gz", hash = "sha256:e371ebe22ec01e289850102091a2b1f6fc9e655c7f1f5f29073936756c290afa"},
 ]
 
 [[package]]
@@ -3696,4 +3696,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.16"
-content-hash = "f09961e98c88049b65209e5971c9f5bd4e8803ce640ac94767027d4fc0f0b94b"
+content-hash = "05168cd391b3730ee6b28649bfc5c87a64c900e02a205a4f68a24c34d889d4f4"
