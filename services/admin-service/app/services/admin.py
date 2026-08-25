@@ -1,5 +1,7 @@
 import logging
 
+from datetime import UTC, datetime
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secrets import is_sensitive_config_key, mask_value
@@ -38,7 +40,26 @@ class AdminService:
         existing = await self.user_repo.get_by_user_id(user_id)
         if existing is not None and existing.status == status:
             # Idempotent: the same decision already stands — do not rewrite the
-            # row or duplicate the audit trail.
+            # row or duplicate the audit trail. Still (re)publish the event:
+            # the downstream enforcer (auth-service) may not have applied the
+            # earlier one (e.g. it was down).
+            from app.core.events import get_event_publisher, user_moderated_event
+
+            try:
+                await get_event_publisher().publish(
+                    user_moderated_event(
+                        user_id,
+                        status,
+                        moderated_by,
+                        (
+                            existing.moderated_at.isoformat()
+                            if existing.moderated_at
+                            else datetime.now(UTC).isoformat()
+                        ),
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to republish user.moderated for %s", user_id)
             return self._serialize_user_moderation(existing)
 
         moderation = await self.user_repo.update_status(user_id, status, reason, moderated_by)
@@ -52,8 +73,6 @@ class AdminService:
         # Notify auth-service so suspension/ban is enforced at the login
         # boundary (admin_db and auth_db are separate by design). Publishing
         # failures must not roll back the moderation itself.
-        from datetime import UTC, datetime
-
         from app.core.events import get_event_publisher, user_moderated_event
 
         try:
