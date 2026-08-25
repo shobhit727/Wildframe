@@ -54,7 +54,7 @@ elasticsearch = ">=8.10,<10.0"
 # Authentication & Security
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 passlib = {extras = ["bcrypt"], version = "^1.7.0"}
-python-multipart = ">=0.0.6,<0.0.32"
+python-multipart = ">=0.0.6,<0.0.33"
 python-keycloak = ">=3.8,<8.0"
 
 # Observability
