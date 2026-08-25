@@ -46,7 +46,7 @@ redis = ">=5,<9"
 # Kafka
 kafka-python = "^2.0.0"
 aiokafka = "^0.10.0"
-protobuf = ">=5.29.6,<6"
+protobuf = ">=5.29.6,<8"
 
 # Search
 elasticsearch = ">=8.10,<10.0"
