@@ -61,7 +61,9 @@ async def run_user_moderation_consumer(session_factory) -> None:
             try:
                 import json
 
-                payload = json.loads(msg.value.decode("utf-8"))
+                event = json.loads(msg.value.decode("utf-8"))
+                # SDK envelope: {event_id, topic, payload: {...}, ...}
+                payload = event.get("payload", event)
                 await _apply_moderation(session_factory, payload["user_id"], payload["status"])
             except Exception:  # noqa: BLE001 - never kill the consumer loop
                 logger.exception("failed to apply user.moderated message")
