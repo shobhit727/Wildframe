@@ -24,6 +24,10 @@ Pipeline event contract (media-pipeline producer):
 
 import json
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aiokafka import AIOKafkaProducer
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -108,7 +112,7 @@ class KafkaEventPublisher(EventPublisher):
     def __init__(self, bootstrap_servers: str, client_id: str = "media-pipeline") -> None:
         self.bootstrap_servers = bootstrap_servers
         self.client_id = client_id
-        self._producer = None
+        self._producer: "AIOKafkaProducer | None" = None
 
     async def _get_producer(self):
         if self._producer is None:
@@ -140,7 +144,7 @@ class KafkaEventPublisher(EventPublisher):
     async def close(self) -> None:
         if self._producer is not None:
             await self._producer.stop()  # type: ignore[unreachable]
-            self._producer = None
+            self._producer: "AIOKafkaProducer | None" = None
 
 
 # ---------------------------------------------------------------------------
