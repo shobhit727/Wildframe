@@ -49,7 +49,11 @@ async def _handle_content_gone(event: DomainEvent, action: str) -> None:
         return
     from app.api.search_routes import es_client
 
-    async with DatabaseManager.session_factory() as session:  # type: ignore[misc]
+    factory = DatabaseManager.session_factory
+    if factory is None:
+        await DatabaseManager.init()
+        factory = DatabaseManager.session_factory
+    async with factory() as session:
         service = SearchService(
             es_client(), SearchQueryRepository(session), SearchIndexRepository(session)
         )
