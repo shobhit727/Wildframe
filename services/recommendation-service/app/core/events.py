@@ -90,10 +90,9 @@ async def _handle_billing_subscription_change(event: DomainEvent) -> None:
     # Invalidate Redis cache as well (#456)
     await _cache_invalidate(user_uuid)
     logger.info(
-        "billing event %s for user %s -> cleared %s recommendations",
+        "billing event %s for user %s -> cleared recommendations",
         event.topic,
         user_id,
-        removed,
     )
 
 
