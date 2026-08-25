@@ -67,7 +67,6 @@ def create_app() -> FastAPI:
         name="static",
     )
 
-
     # Health check endpoint
     @app.get("/health", tags=["Health"], response_model=HealthCheckResponse)
     async def health_check() -> HealthCheckResponse:
