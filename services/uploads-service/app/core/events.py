@@ -193,6 +193,6 @@ def _build_publisher() -> EventPublisher:
 
     if settings.EVENT_PUBLISHER == "kafka":
         return KafkaEventPublisher(
-            bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,  # type: ignore[arg-type],
+            bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,  # type: ignore[arg-type]
         )
     return InMemoryEventPublisher()
