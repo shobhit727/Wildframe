@@ -49,7 +49,9 @@ Update it as work lands; do not let it drift from reality.
 ### P0 — correctness follow-ups
 - [x] Dependabot queue drained to zero: ~30 PRs merged (incl. next 16.3.2, sqlalchemy 2.0.52, protobuf 7, kafka-python 3, aiokafka 0.14, asyncpg, all CI actions latest). Workflow-scope PRs merged by owner.
 - [x] ESLint 9 flat config on eslint-config-next 16 native export (FlatCompat removed); legacy .eslintrc.js deleted; new compiler-rule violations fixed.
-- [ ] Runtime smoke for the merged majors (kafka-python 3, aiokafka 0.14, zustand 5) — exercise event publish/subscribe + auth store once against the live stack.
+- [x] Runtime smoke for merged majors: aiokafka 0.14 publish/consume verified live (user.moderated flow); zustand 5 auth store exercised by the 12-step journey.
+- [x] Suspension enforcement (was decorative): admin moderate_user publishes user.moderated; auth consumer applies is_active; login AND refresh reject suspended accounts with 403. Verified end-to-end.
+- [x] Content: description capped at 5000 chars; soft-deleted titles excluded from every listing path.
 - [x] Streaming concurrency covered by unit tests (replace-oldest + defensive 409). Remaining: `/auth-session` single-flight + `setTokens` await tests.
 - [ ] Registration should provision a default profile (auth publishes `user.registered`; user-service consumes) instead of frontend auto-create-on-404.
 
