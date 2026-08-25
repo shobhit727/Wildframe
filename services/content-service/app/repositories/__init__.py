@@ -218,7 +218,7 @@ class ContentRepository(BaseRepository):
         """Get paginated content with optional type/status/genre filters."""
         stmt = select(Content).options(selectinload(Content.genres))
 
-        conditions = []
+        conditions: list = []
         if content_type:
             conditions.append(Content.content_type == ContentType(content_type))
         if status:
