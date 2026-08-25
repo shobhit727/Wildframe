@@ -345,8 +345,8 @@ class TestTopicACL:
 
         topics = all_topics()
         dlqs = all_dlq_topics()
-        assert len(topics) == 23
-        assert len(dlqs) == 23
+        assert len(topics) == 24
+        assert len(dlqs) == 24
         for t in topics:
             assert t + ".dlq" in dlqs
 

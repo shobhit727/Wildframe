@@ -174,6 +174,11 @@ class Topic:
     #: Idempotency key: ``decision:{decision_id}``
     MODERATION_DECISION_MADE = "moderation.decision_made"
 
+    #: A new user registered. Producer: auth-service. Consumers: user-service
+    #:   (provisions the default profile), notification-service (welcome).
+    #: Idempotency key: ``registered:{user_id}``
+    USER_REGISTERED = "user.registered"
+
     #: A user account's moderation status changed (suspend/ban/activate).
     #: Producer: admin-service. Consumers: auth-service (enforces at login).
     #: Idempotency key: ``moderated:{user_id}:{status}:{moderated_at}``
@@ -345,6 +350,12 @@ TOPIC_METADATA = {
             "content-service",
         ],
         "idempotency_key_pattern": "decision:{decision_id}",
+        "retry_strategy": "exponential_backoff(max_attempts=3)",
+    },
+    Topic.USER_REGISTERED: {
+        "producer": "auth-service",
+        "consumers": ["user-service", "notification-service"],
+        "idempotency_key_pattern": "registered:{user_id}",
         "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
     Topic.USER_MODERATED: {

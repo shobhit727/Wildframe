@@ -115,6 +115,9 @@ class Settings(BaseSettings):
 
     # Observability Configuration
     LOG_LEVEL: str = "INFO"
+
+    # Event bus: "memory" (default) or "kafka" (composed stack).
+    EVENT_PUBLISHER: str = "memory"
     JAEGER_ENABLED: bool = False
     JAEGER_AGENT_HOST: str = "localhost"
     JAEGER_AGENT_PORT: int = 6831

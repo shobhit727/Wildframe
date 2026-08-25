@@ -80,6 +80,19 @@ class AuthService:
             )
             await self.user_repo.commit()
             logger.info(f"User registered: {request.email}")
+
+            # Fan out so user-service provisions the default profile and
+            # notification-service can welcome the user. Publishing failures
+            # must not roll back the registration.
+            from app.core.events import get_event_publisher, user_registered_event
+
+            try:
+                await get_event_publisher().publish(
+                    user_registered_event(str(user.id), user.email)
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to publish user.registered for %s", user.email)
+
             return UserResponse.from_orm(user)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Registration error: {e!s}")

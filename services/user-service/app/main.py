@@ -37,8 +37,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     logger.info("All startup checks passed")
 
+    # Provision default profiles for freshly registered accounts
+    # (auth-service publishes user.registered; this applies it).
+    import asyncio
+
+    from app.core.event_consumer import run_user_registered_consumer
+
+    consumer_task = asyncio.create_task(
+        run_user_registered_consumer(DatabaseManager.get_session_factory())
+    )
+
     yield
 
+    consumer_task.cancel()
     # Shutdown
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
     await DatabaseManager.close()
