@@ -47,7 +47,9 @@ Update it as work lands; do not let it drift from reality.
 ## Open / next up (prioritized)
 
 ### P0 — correctness follow-ups
-- [ ] Watch dependabot-rebased PR CI; merge green ones in small batches (majors like zustand 5 / kafka-python 3 need a runtime smoke test after merge).
+- [x] Dependabot queue drained to zero: ~30 PRs merged (incl. next 16.3.2, sqlalchemy 2.0.52, protobuf 7, kafka-python 3, aiokafka 0.14, asyncpg, all CI actions latest). Workflow-scope PRs merged by owner.
+- [x] ESLint 9 flat config on eslint-config-next 16 native export (FlatCompat removed); legacy .eslintrc.js deleted; new compiler-rule violations fixed.
+- [ ] Runtime smoke for the merged majors (kafka-python 3, aiokafka 0.14, zustand 5) — exercise event publish/subscribe + auth store once against the live stack.
 - [x] Streaming concurrency covered by unit tests (replace-oldest + defensive 409). Remaining: `/auth-session` single-flight + `setTokens` await tests.
 - [ ] Registration should provision a default profile (auth publishes `user.registered`; user-service consumes) instead of frontend auto-create-on-404.
 
