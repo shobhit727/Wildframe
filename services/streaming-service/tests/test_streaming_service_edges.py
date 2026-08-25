@@ -1,8 +1,8 @@
 """Edge-branch coverage for StreamingService — rollback paths, bandwidth filter,
 progress math, manifest reuse."""
 
-from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
