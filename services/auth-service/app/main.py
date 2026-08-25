@@ -58,7 +58,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # login boundary (admin-service publishes; this applies is_active).
     import asyncio
 
-    from app.core.database import DatabaseManager
     from app.core.event_consumer import run_user_moderation_consumer
 
     consumer_task = asyncio.create_task(

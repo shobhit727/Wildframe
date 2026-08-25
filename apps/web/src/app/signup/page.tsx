@@ -55,7 +55,11 @@ export default function SignupPage() {
       toast.success('Account created! Please sign in.');
       router.push('/login');
     } catch (error) {
-      const msg = getApiErrorMessage(error, 'An account with this email may already exist.', 'Email already registered');
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      const msg =
+        status === 409
+          ? 'An account with this email already exists. Try signing in.'
+          : getApiErrorMessage(error, 'Could not create the account. Please try again.');
       setErrors({ email: msg });
       toast.error(msg);
     }

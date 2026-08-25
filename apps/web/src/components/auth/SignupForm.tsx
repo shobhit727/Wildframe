@@ -25,7 +25,11 @@ export function SignupForm() {
       toast.success('Welcome to Wildframe!');
       router.push('/browse');
     } catch (error) {
-      const msg = getApiErrorMessage(error, 'Failed to create account', 'Email already registered');
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      const msg =
+        status === 409
+          ? 'An account with this email already exists. Try signing in.'
+          : getApiErrorMessage(error, 'Could not create the account. Please try again.');
       setErrors({ email: msg });
       toast.error(msg);
     }
