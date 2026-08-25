@@ -2761,14 +2761,14 @@ requests-toolbelt = ">=0.6.0"
 
 [[package]]
 name = "python-multipart"
-version = "0.0.31"
+version = "0.0.32"
 description = "A streaming multipart parser for Python"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "python_multipart-0.0.31-py3-none-any.whl", hash = "sha256:8408153d68a9773291fc1da39a8b85a50044bddbabd2dd72e9229776b7b15e28"},
-    {file = "python_multipart-0.0.31.tar.gz", hash = "sha256:fc631183bb13e56db3158a4909908dfb2e23565286744e798241e63750e5d680"},
+    {file = "python_multipart-0.0.32-py3-none-any.whl", hash = "sha256:ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23"},
+    {file = "python_multipart-0.0.32.tar.gz", hash = "sha256:be54b7f3fa167bb83e4fcd936b887b708f4e57fe75911c02aebf53efaf8d938e"},
 ]
 
 [[package]]
@@ -3689,4 +3689,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.16"
-content-hash = "97b3b68c3d8a45f9a1ef4f861bc31824cf22b097ab6c898dee88c35d95d9fb04"
+content-hash = "6703836282a456f51c2f1c23a054603efd3a53a03b25271f3ee940960991d5a2"
