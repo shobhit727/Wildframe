@@ -361,6 +361,36 @@ class TestConcurrencyBranches:
         assert exc_info.value.status_code == status.HTTP_409_CONFLICT
         assert "Maximum concurrent sessions" in exc_info.value.detail
 
+    async def test_start_playback_session_reaps_idle_sessions(self, service, mocker):
+        """ACTIVE sessions idle beyond the timeout are reaped before counting
+        (#490): a crashed client must not hold a slot for the full window."""
+        from datetime import datetime, timedelta
+
+
+        executed = []
+
+        async def fake_execute(stmt, *params):
+            executed.append(stmt)
+            result = MagicMock()
+            result.scalar_one.return_value = 0
+            result.rowcount = 2
+            return result
+
+        mocker.patch.object(service.session, "execute", side_effect=fake_execute)
+
+        from app.repositories import PlaybackSessionRepository
+
+        repo = PlaybackSessionRepository(service.session)
+        result = await repo.count_active_sessions_locked(uuid4())
+
+        assert result == 0
+        # First execute = advisory lock; second = the reap UPDATE.
+        assert len(executed) == 3  # lock + reap UPDATE + count SELECT
+        compiled = str(executed[1])
+        assert "UPDATE playback_session" in compiled
+        assert "last_activity_at" in compiled
+        assert "ended_at" in compiled  # reaped sessions get an end timestamp
+
     async def test_start_playback_session_replaces_oldest(self, service):
         from app.schemas import PlaybackSessionCreateRequest
 
