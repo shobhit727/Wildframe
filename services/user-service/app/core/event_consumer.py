@@ -21,10 +21,21 @@ async def _provision_profile(session_factory, user_id: str) -> None:
     """Create the default profile row for a freshly registered user."""
     from uuid import UUID
 
+    from app.repositories import (
+        UserProfileRepository,
+        UserDeviceRepository,
+        UserPreferenceRepository,
+        UserSubscriptionProfileRepository,
+    )
     from app.services import UserService
 
     async with session_factory() as session:
-        service = UserService(session)
+        service = UserService(
+            UserProfileRepository(session),
+            UserDeviceRepository(session),
+            UserPreferenceRepository(session),
+            UserSubscriptionProfileRepository(session),
+        )
         try:
             await service.create_user_profile(UUID(user_id))
         except Exception as e:  # noqa: BLE001 - duplicate profile is fine
@@ -39,7 +50,7 @@ async def run_user_registered_consumer(session_factory) -> None:
     """Long-running consumer task. Exits quietly when Kafka is unreachable."""
     bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
     try:
-        from aiokafka import AIOKafkaConsumer  # type: ignore[import-untyped]
+        from aiokafka import AIOKafkaConsumer
     except ImportError:  # pragma: no cover
         logger.warning("aiokafka not installed; user.registered consumer disabled")
         return
