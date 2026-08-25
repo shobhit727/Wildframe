@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from wildframe_observability.wire import wire_observability
 
 from app.api.routes import router as api_router
@@ -58,6 +59,14 @@ def create_app() -> FastAPI:
 
     # Include API routes with /api/v1 prefix
     app.include_router(api_router)
+
+    # Self-hosted demo HLS asset so the player plays without external streams.
+    app.mount(
+        "/static",
+        StaticFiles(directory="app/static"),
+        name="static",
+    )
+
 
     # Health check endpoint
     @app.get("/health", tags=["Health"], response_model=HealthCheckResponse)

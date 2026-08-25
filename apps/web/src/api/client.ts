@@ -27,7 +27,9 @@ export const API_BASE_URL =
 // A public HLS test stream used when the platform has no packaged media for
 // the title yet (media-pipeline currently emits stub manifests only). The
 // real manifest is preferred whenever it exists.
-export const DEMO_HLS_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+// Self-hosted demo asset served by streaming-service through the gateway —
+// no external stream dependency, works on localhost and LAN hosts alike.
+export const DEMO_HLS_URL = `${API_BASE_URL}/streaming/static/demo/hls/master.m3u8`;
 
 const ACCESS_KEY = 'accessToken';
 const REFRESH_KEY = 'refreshToken';

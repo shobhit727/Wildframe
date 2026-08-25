@@ -41,3 +41,11 @@ npm run probe                       # API-level security checks
 
 Demo credentials come from `scripts/seed_demo.py`
 (`demo@wildframe.com` / `DemoPass123!`).
+
+## Headless codec limitation
+
+Playwright's bundled Chromium ships **without proprietary codecs** (H.264/AAC),
+so the demo HLS stream cannot decode in these tests — you'll see
+`bufferAddCodecError` / `manifestIncompatibleCodecsError`. That is a test-browser
+limitation, not an app bug: real Chrome/Edge/Firefox/Safari play the asset fine
+(verified: manifest + segments serve 200, hls.js attaches the MSE buffer).
