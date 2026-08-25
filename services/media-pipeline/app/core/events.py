@@ -120,7 +120,7 @@ class KafkaEventPublisher(EventPublisher):
                 value_serializer=lambda v: json.dumps(v).encode("utf-8"),
                 key_serializer=lambda k: k.encode("utf-8") if k else None,
             )
-            await self._producer.start()  # type: ignore[attr-defined]
+            await self._producer.start()
         return self._producer
 
     async def publish(self, event: Event) -> None:
