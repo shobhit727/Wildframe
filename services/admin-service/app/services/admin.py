@@ -62,9 +62,11 @@ class AdminService:
                     user_id,
                     status,
                     moderated_by,
-                    moderation.moderated_at.isoformat()
-                    if moderation.moderated_at
-                    else datetime.now(UTC).isoformat(),
+                    (
+                        moderation.moderated_at.isoformat()
+                        if moderation.moderated_at
+                        else datetime.now(UTC).isoformat()
+                    ),
                 )
             )
         except Exception:  # noqa: BLE001 - delivery retried on next moderation
