@@ -170,7 +170,7 @@ ignore_errors = true
 
 # aiokafka has no stubs; silence missing-import errors
 [[tool.mypy.overrides]]
-module = "aiokafka"
+module = "aiokafka.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
