@@ -38,7 +38,7 @@ export default function WatchPage() {
   const [selectedEpisode, setSelectedEpisode] = useState<{ id: string; number: number } | null>(null);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(true);
-  const [inMyList, setInMyList] = useState(false);
+  const [inMyList, setInMyList] = useState(() => isInMyList(contentId));
 
   // Fetch content details
   const { data: contentData } = useQuery({
@@ -67,10 +67,8 @@ export default function WatchPage() {
   useEffect(() => {
     if (!isAuthenticated) {
       router.push('/login');
-      return;
     }
-    setInMyList(isInMyList(contentId));
-  }, [contentId, isAuthenticated, router]);
+  }, [isAuthenticated, router]);
 
   // Start a real playback session against streaming-service.
   useEffect(() => {

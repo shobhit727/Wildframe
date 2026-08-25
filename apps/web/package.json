@@ -37,7 +37,7 @@
     "zustand": "^4.4.0"
   },
   "devDependencies": {
-    "@next/eslint-plugin-next": "^15.0.0",
+    "@next/eslint-plugin-next": "^16.3.2",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/forms": "^0.5.11",
     "@tailwindcss/postcss": "^4.3.3",
@@ -54,7 +54,7 @@
     "@vitest/ui": "^4.1.10",
     "autoprefixer": "^10.4.0",
     "eslint": "^9.8.0",
-    "eslint-config-next": "^15.0.0",
+    "eslint-config-next": "^16.3.2",
     "eslint-plugin-jsx-a11y": "^6.8.0",
     "jsdom": "^23.0.0",
     "postcss": "^8.5.25",
