@@ -283,7 +283,7 @@ class KafkaEventSubscriber(EventSubscriber):
         ``stop()``. Commit happens per message, only after all handlers
         completed — in-flight work is never acknowledged.
         """
-        from aiokafka import AIOKafkaConsumer  # type: ignore[import-untyped]
+        from aiokafka import AIOKafkaConsumer
 
         if self._consumer is not None:  # type: ignore[unreachable]
             return  # Already started.  # type: ignore[unreachable]
