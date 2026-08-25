@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildCspHeader, generateNonce } from '@/utils/csp';
 
-export function middleware(request: NextRequest) {
+export default function proxy(request: NextRequest) {
   // Runtime CSP enforcement (web audit finding #2): the strict policy builder
   // existed but was never attached. Set it on every response; in production
   // use a per-request nonce that Next.js applies to its own bootstrap scripts

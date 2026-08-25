@@ -1,10 +1,6 @@
 type WebpackConfig = any;
 
 const nextConfig = {
-  // isn't installed in this environment. Type-checking (tsc) still runs in CI;
-  // skip the lint gate during build so missing rule defs don't fail it.
-  eslint: { ignoreDuringBuilds: true },
-
   // Allow local and LAN-IP access to dev assets (containerized browsers / device testing).
   // Dev-only setting; production builds are unaffected.
   allowedDevOrigins: ["localhost", "127.0.0.1", "::1", "192.168.1.14"],
