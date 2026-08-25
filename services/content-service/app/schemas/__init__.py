@@ -225,7 +225,8 @@ class ContentCreateRequest(BaseModel):
 
     title: str = Field(..., min_length=1, max_length=255)
     slug: str = Field(..., min_length=1, max_length=255)
-    description: str = Field(..., min_length=1)
+    # Bounded so one row cannot bloat catalog list responses (#629 family).
+    description: str = Field(..., min_length=1, max_length=5000)
     content_type: str = Field(..., pattern="^(movie|series|documentary)$")
     release_date: datetime | None = None
     duration_minutes: int | None = Field(None, ge=1)
