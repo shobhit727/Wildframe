@@ -163,7 +163,7 @@ class KafkaEventPublisher(EventPublisher):
     async def close(self) -> None:
         if self._producer is not None:
             await self._producer.stop()
-            self._producer: "AIOKafkaProducer | None" = None
+            self._producer = None
 
 
 # ---------------------------------------------------------------------------
