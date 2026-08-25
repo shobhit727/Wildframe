@@ -53,6 +53,7 @@ async def _handle_content_gone(event: DomainEvent, action: str) -> None:
     if factory is None:
         await DatabaseManager.init()
         factory = DatabaseManager.session_factory
+    assert factory is not None, "DatabaseManager.session_factory not initialized"
     async with factory() as session:
         service = SearchService(
             es_client(), SearchQueryRepository(session), SearchIndexRepository(session)
