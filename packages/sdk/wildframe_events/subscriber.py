@@ -101,6 +101,7 @@ async def _run_with_event_correlation(event: DomainEvent, handler: EventHandler)
         pass
     await handler(event)
 
+
 #: Cap on the exponential retry backoff (ms) — bounded even for large
 #: ``max_retries`` values.
 MAX_RETRY_BACKOFF_MS = 60_000
