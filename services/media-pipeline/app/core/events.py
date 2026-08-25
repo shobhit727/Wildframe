@@ -173,5 +173,5 @@ def _build_publisher() -> EventPublisher:
     from app.core.settings import settings
 
     if settings.EVENT_PUBLISHER == "kafka":
-        return KafkaEventPublisher(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS)  # type: ignore[arg-type]
+        return KafkaEventPublisher(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS)
     return InMemoryEventPublisher()
