@@ -459,7 +459,7 @@ class TestRecommendations:
 
 class TestSpecialQueries:
     async def test_animation_style(self, service):
-        from app.models import ContentStatus, AnimationStyle
+        from app.models import AnimationStyle
 
         service.content_repo.get_by_animation_style.return_value = [MagicMock()]
 
