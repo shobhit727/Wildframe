@@ -364,9 +364,7 @@ class TestConcurrencyBranches:
     async def test_start_playback_session_reaps_idle_sessions(self, service, mocker):
         """ACTIVE sessions idle beyond the timeout are reaped before counting
         (#490): a crashed client must not hold a slot for the full window."""
-
         executed = []
-
         async def fake_execute(stmt, *params):
             executed.append(stmt)
             result = MagicMock()
