@@ -16,7 +16,6 @@ from conftest import (
     decode_jwt,
     ip_keyed,
     register_user,
-    unique_email,
 )
 
 pytestmark = pytest.mark.integration

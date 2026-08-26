@@ -16,7 +16,6 @@ import pytest
 
 from conftest import (
     ANALYTICS_SERVICE,
-    AUTH_SERVICE,
     CONTENT_SERVICE,
     CREATORS_SERVICE,
     STREAMING_SERVICE,

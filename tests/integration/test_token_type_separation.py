@@ -22,7 +22,6 @@ from conftest import (
     CONTENT_SERVICE,
     STREAMING_SERVICE,
     auth_headers,
-    ip_keyed,
     register_user,
 )
 

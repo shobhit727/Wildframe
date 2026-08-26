@@ -24,7 +24,6 @@ from conftest import (
     AUTH_SERVICE,
     CONTENT_SERVICE,
     GATEWAY_URL,
-    _pace_ip_keyed,
     auth_headers,
     decode_jwt,
     ip_keyed,

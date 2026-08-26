@@ -6,7 +6,6 @@ sys.path.insert(0, '/home/phoenix/Desktop/wildframe/services/user-service')
 try:
     from app.schemas import (
         UserProfileUpdateRequest,
-        UserProfileResponse,
         UserDeviceResponse,
         UserPreferenceResponse
     )

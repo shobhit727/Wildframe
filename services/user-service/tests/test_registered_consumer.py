@@ -4,7 +4,6 @@ Fresh accounts 404'd on /account until the frontend auto-created a profile;
 the consumer now provisions it at the source.
 """
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
