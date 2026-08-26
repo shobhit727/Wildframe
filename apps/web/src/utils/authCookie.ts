@@ -24,7 +24,9 @@ export function buildRefreshCookieHeader(opts: RefreshCookieOptions): string {
 }
 
 /** Cookie name for the refresh token. */
-export const REFRESH_COOKIE_NAME = 'wf_refresh';
+// __Host- prefix: browser enforces Secure + Path=/ + no Domain — the
+// strongest cookie scoping available (audit #525).
+export const REFRESH_COOKIE_NAME = '__Host-wf_refresh';
 
 /** Default max age: 30 days. */
 export const REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;

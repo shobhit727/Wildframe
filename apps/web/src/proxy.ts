@@ -18,9 +18,9 @@ export default function proxy(request: NextRequest) {
   }
 
 
-  // The auth session is tracked via the HttpOnly 'wf_refresh' cookie set
+  // The auth session is tracked via the HttpOnly '__Host-wf_refresh' cookie set
   // by /auth-session. Presence of this cookie indicates a valid session.
-  const token = request.cookies.get('wf_refresh')?.value;
+  const token = request.cookies.get('__Host-wf_refresh')?.value;
   const { pathname } = request.nextUrl;
 
   // Protect dashboard routes

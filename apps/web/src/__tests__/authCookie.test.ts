@@ -7,7 +7,7 @@ import {
 
 describe('Auth cookie builder', () => {
   it('exports constants', () => {
-    expect(REFRESH_COOKIE_NAME).toBe('wf_refresh');
+    expect(REFRESH_COOKIE_NAME).toBe('__Host-wf_refresh');
     expect(REFRESH_COOKIE_MAX_AGE).toBe(60 * 60 * 24 * 30); // 30 days
   });
 

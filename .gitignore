@@ -169,5 +169,5 @@ netflix_backend/
 infrastructure/terraform/.terraform/
 
 # Local scratch space for agent tooling (screenshots, test scripts, logs)
-.tmp/
+tmp/
 .opencode/

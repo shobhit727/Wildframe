@@ -2,21 +2,10 @@ import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://localhost:8000';
-const REFRESH_COOKIE = 'wf_refresh';
-const REFRESH_ENDPOINT = `${API_BASE_URL}/auth/api/v1/auth/refresh`;
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+import { buildRefreshCookieHeader, REFRESH_COOKIE_MAX_AGE, REFRESH_COOKIE_NAME as REFRESH_COOKIE } from '@/utils/authCookie';
 
-function cookieHeader(maxAge: number): string {
-  const isProd = process.env.NODE_ENV === 'production';
-  const attrs = [
-    'Path=/',
-    `Max-Age=${maxAge}`,
-    'HttpOnly',
-    'SameSite=Strict',
-  ];
-  if (isProd) attrs.push('Secure');
-  return attrs.join('; ');
-}
+const COOKIE_MAX_AGE = REFRESH_COOKIE_MAX_AGE;
+const REFRESH_ENDPOINT = `${API_BASE_URL}/auth/api/v1/auth/refresh`;
 
 /**
  * POST /auth-session
@@ -37,7 +26,7 @@ export async function POST(request: NextRequest) {
   }
 
   const res = NextResponse.json({ ok: true });
-  res.headers.set('Set-Cookie', `${REFRESH_COOKIE}=${encodeURIComponent(token)}; ${cookieHeader(COOKIE_MAX_AGE)}`);
+  res.headers.set('Set-Cookie', `${REFRESH_COOKIE}=${encodeURIComponent(token)}; ${buildRefreshCookieHeader({ maxAge: COOKIE_MAX_AGE })}`);
   return res;
 }
 
@@ -98,7 +87,7 @@ async function doRefresh(raw: string): Promise<{ status: number; body: unknown; 
       return {
         status: 401,
         body: { error: 'refresh_failed' },
-        setCookie: `${REFRESH_COOKIE}=; ${cookieHeader(0)}`,
+        setCookie: `${REFRESH_COOKIE}=; ${buildRefreshCookieHeader({ maxAge: 0 })}`,
       };
     }
 
@@ -120,7 +109,7 @@ async function doRefresh(raw: string): Promise<{ status: number; body: unknown; 
     // Rotate refresh token if the backend issued a new one
     let setCookie: string | null = null;
     if (typeof data?.refresh_token === 'string' && data.refresh_token) {
-      setCookie = `${REFRESH_COOKIE}=${encodeURIComponent(data.refresh_token)}; ${cookieHeader(COOKIE_MAX_AGE)}`;
+      setCookie = `${REFRESH_COOKIE}=${encodeURIComponent(data.refresh_token)}; ${buildRefreshCookieHeader({ maxAge: COOKIE_MAX_AGE })}`;
     }
     return { status: 200, body, setCookie };
   } catch {
@@ -135,7 +124,7 @@ async function doRefresh(raw: string): Promise<{ status: number; body: unknown; 
  */
 export async function DELETE() {
   const res = NextResponse.json({ ok: true });
-  res.headers.set('Set-Cookie', `${REFRESH_COOKIE}=; ${cookieHeader(0)}`);
+  res.headers.set('Set-Cookie', `${REFRESH_COOKIE}=; ${buildRefreshCookieHeader({ maxAge: 0 })}`);
   return res;
 }
 
