@@ -171,3 +171,4 @@ infrastructure/terraform/.terraform/
 # Local scratch space for agent tooling (screenshots, test scripts, logs)
 tmp/
 .opencode/
+scripts/dev/.tmp/
