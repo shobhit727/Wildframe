@@ -52,6 +52,7 @@ Update it as work lands; do not let it drift from reality.
 - [x] Runtime smoke for merged majors: aiokafka 0.14 publish/consume verified live (user.moderated flow); zustand 5 auth store exercised by the 12-step journey.
 - [x] Suspension enforcement (was decorative): admin moderate_user publishes user.moderated; auth consumer applies is_active; login AND refresh reject suspended accounts with 403. Verified end-to-end.
 - [x] Content: description capped at 5000 chars; soft-deleted titles excluded from every listing path.
+- [x] Search freshness: content.published/unpublished/deleted events now drive incremental ES indexing (was: only startup warm-up + manual reindex); fixed upsert's ON CONFLICT passing the default callable instead of calling it.
 - [x] Streaming concurrency covered by unit tests (replace-oldest + defensive 409). Remaining: `/auth-session` single-flight + `setTokens` await tests.
 - [ ] Registration should provision a default profile (auth publishes `user.registered`; user-service consumes) instead of frontend auto-create-on-404.
 
