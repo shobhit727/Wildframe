@@ -44,6 +44,14 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
 
+    # Bounded retention on DLQ topics (#553) — best-effort, never blocks.
+    if settings.EVENT_PUBLISHER == "kafka":
+        from wildframe_events.dlq_retention import apply_dlq_retention
+
+        asyncio.create_task(
+            apply_dlq_retention(settings.KAFKA_BOOTSTRAP_SERVERS, settings.SERVICE_NAME)
+        )
+
     # Verify database connectivity
     db_healthy = await DatabaseManager.health_check()
     if not db_healthy:

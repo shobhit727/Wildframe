@@ -32,6 +32,14 @@ async def lifespan(app: FastAPI):
     _shutdown_event = asyncio.Event()
     _in_flight_lock = asyncio.Lock()
     app.state.shutting_down = False
+
+    # Bounded retention on DLQ topics (#553) — best-effort, never blocks.
+    if settings.EVENT_PUBLISHER == "kafka":
+        from wildframe_events.dlq_retention import apply_dlq_retention
+
+        asyncio.create_task(
+            apply_dlq_retention(settings.KAFKA_BOOTSTRAP_SERVERS, settings.SERVICE_NAME)
+        )
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
 
