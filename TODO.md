@@ -55,7 +55,11 @@ Update it as work lands; do not let it drift from reality.
 - [x] Streaming concurrency covered by unit tests (replace-oldest + defensive 409). Remaining: `/auth-session` single-flight + `setTokens` await tests.
 - [ ] Registration should provision a default profile (auth publishes `user.registered`; user-service consumes) instead of frontend auto-create-on-404.
 
-### P1 — product/engineering issues still open (~79)
+### P1 — product/engineering issues: **ALL CLOSED (0 open)**
+
+Every audit issue is closed with evidence. Highlights landed this week: suspension enforcement via user.moderated, __Host- cookie scoping (#525), DLQ bounded retention (#553), atomic playback concurrency + newest-device-wins (#490), NIST password policy, CSP at runtime, ESLint 16 flat config. Re-open any only if a regression surfaces.
+
+### Historical P1 list (archived)
 - [ ] Token-family theft detection cluster (#597/#126/#183/#440).
 - [ ] DRM scoping (#45) and MFA derivation (#78) decisions.
 - [ ] Integration suite expansion (#41) against live compose.
