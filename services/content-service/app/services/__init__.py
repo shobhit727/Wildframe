@@ -249,10 +249,21 @@ class ContentService:
 
             content = await self.content_repo.update(content_id, **update_data)
             await self.content_repo.commit()
-            if content is not None and content.status != ContentStatus.PUBLISHED:
-                from app.core.events import content_unpublished_event, get_event_publisher
+            if content is not None:
+                from app.core.events import (
+                    content_published_event,
+                    content_unpublished_event,
+                    get_event_publisher,
+                )
 
-                await get_event_publisher().publish(content_unpublished_event(str(content_id)))
+                if content.status == ContentStatus.PUBLISHED:
+                    await get_event_publisher().publish(
+                        content_published_event(str(content_id))
+                    )
+                else:
+                    await get_event_publisher().publish(
+                        content_unpublished_event(str(content_id))
+                    )
             return content
         except Exception as e:
             await self.content_repo.rollback()

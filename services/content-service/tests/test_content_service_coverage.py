@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from app.models import ContentStatus
 from app.services import ContentService
 
 pytestmark = pytest.mark.asyncio
@@ -247,12 +248,13 @@ class TestContentLifecycle:
             lambda: type("Spy", (), {"publish": _spy_publish})(),
         )
         published_content = MagicMock()
-        published_content.status = "published"
+        published_content.status = ContentStatus.PUBLISHED
         service.content_repo.update.return_value = published_content
 
         await service.publish_content(uuid4(), ContentPublishRequest(status="published"))
 
-        assert published == []
+        assert len(published) == 1
+        assert getattr(published[0].topic, "value", published[0].topic) == "content.published"
 
     async def test_update_content_not_found_returns_none(self, service):
         from app.schemas import ContentUpdateRequest
@@ -457,7 +459,7 @@ class TestRecommendations:
 
 class TestSpecialQueries:
     async def test_animation_style(self, service):
-        from app.models import AnimationStyle
+        from app.models import ContentStatus, AnimationStyle
 
         service.content_repo.get_by_animation_style.return_value = [MagicMock()]
 

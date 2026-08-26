@@ -57,6 +57,16 @@ def content_deleted_event(content_id: str) -> DomainEvent:
     )
 
 
+def content_published_event(content_id: str) -> DomainEvent:
+    """Event for a title going live (idempotency key: published:{content_id})."""
+    return DomainEvent(
+        topic=Topic.CONTENT_PUBLISHED,
+        key=f"published:{content_id}",
+        payload={"content_id": content_id},
+        producer="content-service",
+    )
+
+
 def content_unpublished_event(content_id: str) -> DomainEvent:
     """Event for unpublishing/archiving content (idempotency key: unpublished:{content_id})."""
     return DomainEvent(

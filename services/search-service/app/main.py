@@ -38,6 +38,12 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment: {settings.ENVIRONMENT}")
 
     # Bounded retention on DLQ topics (#553) — best-effort, never blocks.
+    # Incremental index sync: content.published/deleted/unpublished (#96).
+    from app.core.event_consumer import run_content_sync_consumer
+    from app.api.search_routes import es_client
+
+    consumer_task = asyncio.create_task(run_content_sync_consumer(es_client()))
+
     if settings.EVENT_PUBLISHER == "kafka":
         from wildframe_events.dlq_retention import apply_dlq_retention
 
@@ -61,6 +67,8 @@ async def lifespan(app: FastAPI):
     logger.info("All startup checks passed")
 
     yield
+
+    consumer_task.cancel()
 
     # Shutdown
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
