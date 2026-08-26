@@ -73,7 +73,7 @@ class SearchIndexRepository:
                     "release_year": release_year,
                     "rating": int(rating) if rating is not None else None,
                     "updated_at": (
-                        SearchIndex.updated_at.default.arg  # type: ignore[union-attr]
+                        SearchIndex.updated_at.default.arg()  # type: ignore[union-attr]
                         if callable(SearchIndex.updated_at.default.arg)  # type: ignore[union-attr]
                         else None
                     ),
