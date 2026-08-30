@@ -39,7 +39,11 @@ async def _handle(catalog, search_service, event: dict) -> None:
             title=doc.get("title", ""),
             description=doc.get("description", ""),
             content_type=doc.get("content_type", "movie"),
-            **{k: v for k, v in doc.items() if k not in ("title", "description", "content_type", "id")},
+            **{
+                k: v
+                for k, v in doc.items()
+                if k not in ("title", "description", "content_type", "id")
+            },
         )
         logger.info("indexed published content %s", content_id)
     elif topic in ("content.deleted", "content.unpublished"):

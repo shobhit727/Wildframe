@@ -257,13 +257,9 @@ class ContentService:
                 )
 
                 if content.status == ContentStatus.PUBLISHED:
-                    await get_event_publisher().publish(
-                        content_published_event(str(content_id))
-                    )
+                    await get_event_publisher().publish(content_published_event(str(content_id)))
                 else:
-                    await get_event_publisher().publish(
-                        content_unpublished_event(str(content_id))
-                    )
+                    await get_event_publisher().publish(content_unpublished_event(str(content_id)))
             return content
         except Exception as e:
             await self.content_repo.rollback()

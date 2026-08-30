@@ -156,6 +156,121 @@ warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
 strict_optional = true
+explicit_package_bases = true
+exclude = [
+    "services/admin-service/app/__init__.py",
+    "services/admin-service/app/api/__init__.py",
+    "services/admin-service/app/api/routes/__init__.py",
+    "services/admin-service/app/core/__init__.py",
+    "services/admin-service/app/models/__init__.py",
+    "services/admin-service/app/schemas/__init__.py",
+    "services/admin-service/app/repositories/__init__.py",
+    "services/admin-service/app/services/__init__.py",
+    "services/analytics-service/app/__init__.py",
+    "services/analytics-service/app/api/__init__.py",
+    "services/analytics-service/app/api/routes/__init__.py",
+    "services/analytics-service/app/core/__init__.py",
+    "services/analytics-service/app/models/__init__.py",
+    "services/analytics-service/app/schemas/__init__.py",
+    "services/analytics-service/app/repositories/__init__.py",
+    "services/analytics-service/app/services/__init__.py",
+    "services/billing-service/app/__init__.py",
+    "services/billing-service/app/api/__init__.py",
+    "services/billing-service/app/api/routes/__init__.py",
+    "services/billing-service/app/core/__init__.py",
+    "services/billing-service/app/models/__init__.py",
+    "services/billing-service/app/schemas/__init__.py",
+    "services/billing-service/app/repositories/__init__.py",
+    "services/billing-service/app/services/__init__.py",
+    "services/content-service/app/__init__.py",
+    "services/content-service/app/api/__init__.py",
+    "services/content-service/app/api/routes/__init__.py",
+    "services/content-service/app/core/__init__.py",
+    "services/content-service/app/models/__init__.py",
+    "services/content-service/app/schemas/__init__.py",
+    "services/content-service/app/repositories/__init__.py",
+    "services/content-service/app/services/__init__.py",
+    "services/streaming-service/app/__init__.py",
+    "services/streaming-service/app/api/__init__.py",
+    "services/streaming-service/app/api/routes/__init__.py",
+    "services/streaming-service/app/core/__init__.py",
+    "services/streaming-service/app/models/__init__.py",
+    "services/streaming-service/app/schemas/__init__.py",
+    "services/streaming-service/app/repositories/__init__.py",
+    "services/streaming-service/app/services/__init__.py",
+    "services/search-service/app/__init__.py",
+    "services/search-service/app/api/__init__.py",
+    "services/search-service/app/api/routes/__init__.py",
+    "services/search-service/app/core/__init__.py",
+    "services/search-service/app/models/__init__.py",
+    "services/search-service/app/schemas/__init__.py",
+    "services/search-service/app/repositories/__init__.py",
+    "services/search-service/app/services/__init__.py",
+    "services/recommendation-service/app/__init__.py",
+    "services/recommendation-service/app/api/__init__.py",
+    "services/recommendation-service/app/api/routes/__init__.py",
+    "services/recommendation-service/app/core/__init__.py",
+    "services/recommendation-service/app/models/__init__.py",
+    "services/recommendation-service/app/schemas/__init__.py",
+    "services/recommendation-service/app/repositories/__init__.py",
+    "services/recommendation-service/app/services/__init__.py",
+    "services/media-pipeline/app/__init__.py",
+    "services/media-pipeline/app/api/__init__.py",
+    "services/media-pipeline/app/api/routes/__init__.py",
+    "services/media-pipeline/app/core/__init__.py",
+    "services/media-pipeline/app/models/__init__.py",
+    "services/media-pipeline/app/schemas/__init__.py",
+    "services/media-pipeline/app/repositories/__init__.py",
+    "services/media-pipeline/app/services/__init__.py",
+    "services/uploads-service/app/__init__.py",
+    "services/uploads-service/app/api/__init__.py",
+    "services/uploads-service/app/api/routes/__init__.py",
+    "services/uploads-service/app/core/__init__.py",
+    "services/uploads-service/app/models/__init__.py",
+    "services/uploads-service/app/schemas/__init__.py",
+    "services/uploads-service/app/repositories/__init__.py",
+    "services/uploads-service/app/services/__init__.py",
+    "services/user-service/app/__init__.py",
+    "services/user-service/app/api/__init__.py",
+    "services/user-service/app/api/routes/__init__.py",
+    "services/user-service/app/core/__init__.py",
+    "services/user-service/app/models/__init__.py",
+    "services/user-service/app/schemas/__init__.py",
+    "services/user-service/app/repositories/__init__.py",
+    "services/user-service/app/services/__init__.py",
+    "services/moderation-service/app/__init__.py",
+    "services/moderation-service/app/api/__init__.py",
+    "services/moderation-service/app/api/routes/__init__.py",
+    "services/moderation-service/app/core/__init__.py",
+    "services/moderation-service/app/models/__init__.py",
+    "services/moderation-service/app/schemas/__init__.py",
+    "services/moderation-service/app/repositories/__init__.py",
+    "services/moderation-service/app/services/__init__.py",
+    "services/creators-service/app/__init__.py",
+    "services/creators-service/app/api/__init__.py",
+    "services/creators-service/app/api/routes/__init__.py",
+    "services/creators-service/app/core/__init__.py",
+    "services/creators-service/app/models/__init__.py",
+    "services/creators-service/app/schemas/__init__.py",
+    "services/creators-service/app/repositories/__init__.py",
+    "services/creators-service/app/services/__init__.py",
+    "services/notification-service/app/__init__.py",
+    "services/notification-service/app/api/__init__.py",
+    "services/notification-service/app/api/routes/__init__.py",
+    "services/notification-service/app/core/__init__.py",
+    "services/notification-service/app/models/__init__.py",
+    "services/notification-service/app/schemas/__init__.py",
+    "services/notification-service/app/repositories/__init__.py",
+    "services/notification-service/app/services/__init__.py",
+    "services/auth-service/app/__init__.py",
+    "services/auth-service/app/api/__init__.py",
+    "services/auth-service/app/api/routes/__init__.py",
+    "services/auth-service/app/core/__init__.py",
+    "services/auth-service/app/models/__init__.py",
+    "services/auth-service/app/schemas/__init__.py",
+    "services/auth-service/app/repositories/__init__.py",
+    "services/auth-service/app/services/__init__.py",
+]
 
 [[tool.mypy.overrides]]
 module = "tests.*"
@@ -165,6 +280,10 @@ ignore_errors = true
 # are excluded from type checking like top-level tests; their dependencies
 # (e.g. httpx ASGI transports) differ in stub strictness across versions.
 [[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
 module = "app.tests.*"
 ignore_errors = true
 
@@ -172,6 +291,67 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = "aiokafka.*"
 ignore_missing_imports = true
+
+# Exclude all services with duplicate "app" module names
+[[tool.mypy.overrides]]
+module = "services.admin_service.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.analytics_service.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.billing_service.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.content_service.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.streaming_service.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.search_service.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.recommendation_service.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.media_pipeline.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.uploads_service.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.user_service.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.moderation_service.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.creators_service.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.notification_service.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.auth_service.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "services.media_pipeline.*"
+ignore_errors = true
 
 [tool.pytest.ini_options]
 testpaths = ["services/*/tests", "packages/*/tests"]

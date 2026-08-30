@@ -67,7 +67,10 @@ async def apply_dlq_retention(bootstrap_servers: str, client_id: str) -> int:
             except Exception:  # noqa: BLE001 - per-topic best effort
                 logger.warning("could not set retention on %s", t)
         logger.info(
-            "DLQ retention applied: %d topics at %d ms (%s)", configured, DLQ_RETENTION_MS, bootstrap_servers
+            "DLQ retention applied: %d topics at %d ms (%s)",
+            configured,
+            DLQ_RETENTION_MS,
+            bootstrap_servers,
         )
         return configured
     except Exception:  # noqa: BLE001 - never block startup
