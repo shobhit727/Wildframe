@@ -66,10 +66,12 @@ async def run_content_sync_consumer(es_client) -> None:
     from app.repositories import SearchIndexRepository, SearchQueryRepository
     from app.services import ContentCatalogClient, SearchService
 
+    factory = DatabaseManager.session_factory
+    assert factory is not None, "DatabaseManager.session_factory not initialized"
     search_service = SearchService(
         es_client=es_client,
-        query_repo=SearchQueryRepository(DatabaseManager.session_factory()),
-        index_repo=SearchIndexRepository(DatabaseManager.session_factory()),
+        query_repo=SearchQueryRepository(factory()),
+        index_repo=SearchIndexRepository(factory()),
     )
     catalog = ContentCatalogClient()
 
