@@ -57,7 +57,7 @@ async def run_content_sync_consumer(es_client) -> None:
     """Long-running consumer task. Exits quietly when Kafka is unreachable."""
     bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
     try:
-        from aiokafka import AIOKafkaConsumer  # type: ignore[import-untyped]
+        from aiokafka import AIOKafkaConsumer
     except ImportError:  # pragma: no cover
         logger.warning("aiokafka not installed; content sync consumer disabled")
         return
@@ -100,4 +100,5 @@ async def run_content_sync_consumer(es_client) -> None:
             await consumer.stop()
         except Exception:  # noqa: BLE001
             pass
-        await catalog.aclose()
+        if catalog is not None:
+            await catalog.aclose()
