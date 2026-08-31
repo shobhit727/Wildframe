@@ -29,6 +29,7 @@ python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 pyjwt = "^2.8.0"
 httpx = "^0.25.0"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
+wildframe-compliance = {path = "../../packages/sdk/wildframe_compliance", develop = true}
 prometheus-client = "^0.18.0"
 
 [tool.poetry.group.dev.dependencies]

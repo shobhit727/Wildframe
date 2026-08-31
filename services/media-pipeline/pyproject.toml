@@ -29,6 +29,7 @@ python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 httpx = "^0.25.0"
 prometheus-client = "^0.18.0"
 aiokafka = "^0.10.0"
+wildframe-compliance = {path = "../../packages/sdk/wildframe_compliance", develop = true}
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
 
 [tool.poetry.group.dev.dependencies]
