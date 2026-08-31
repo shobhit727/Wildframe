@@ -21,12 +21,8 @@ packages = [{include = "wildframe_compliance"}]
 python = ">=3.11,<3.16"
 pydantic = "^2.4.0"
 pydantic-settings = "^2.0.0"
-
-[tool.poetry.extras]
-publisher = [
-    "wildframe-events @ ../wildframe_events",
-    "wildframe-observability @ ../wildframe_observability",
-]
+wildframe-events = {path = "../wildframe_events", develop = true}
+wildframe-observability = {path = "../wildframe_observability", develop = true}
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.4,<10.0"
