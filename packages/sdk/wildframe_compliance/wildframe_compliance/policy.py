@@ -276,9 +276,7 @@ _POLICY_REGISTRY: dict[Jurisdiction, type[CompliancePolicy]] = {
 }
 
 
-def get_policy_for_jurisdiction(
-    jurisdiction: Jurisdiction, **overrides: Any
-) -> CompliancePolicy:
+def get_policy_for_jurisdiction(jurisdiction: Jurisdiction, **overrides: Any) -> CompliancePolicy:
     """Get the appropriate policy for a jurisdiction.
 
     Args:
@@ -296,7 +294,7 @@ def get_policy_for_jurisdiction(
             policy_class = _POLICY_REGISTRY[parent]
         else:
             policy_class = GlobalBaselinePolicy
-    
+
     policy = policy_class(**overrides)
 
     # Apply parent jurisdiction policies if applicable (hierarchical)
@@ -313,7 +311,4 @@ def get_policy_for_jurisdiction(
 
 def get_all_policies(**overrides: Any) -> dict[Jurisdiction, CompliancePolicy]:
     """Get all registered policies with optional overrides."""
-    return {
-        j: get_policy_for_jurisdiction(j, **overrides)
-        for j in _POLICY_REGISTRY
-    }
+    return {j: get_policy_for_jurisdiction(j, **overrides) for j in _POLICY_REGISTRY}

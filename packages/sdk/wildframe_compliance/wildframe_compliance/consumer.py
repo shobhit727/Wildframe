@@ -35,11 +35,15 @@ class PolicyChangeHandler:
             event_data = domain_event.payload
             policy_event = CompliancePolicyEvent.from_dict(event_data)
 
-            logger.info(f"Received compliance event: {policy_event.event_type.value} for {policy_event.jurisdiction.value}")
+            logger.info(
+                f"Received compliance event: {policy_event.event_type.value} for {policy_event.jurisdiction.value}"
+            )
 
             # Update local cache if relevant
-            if policy_event.jurisdiction == self.settings.compliance_jurisdiction or \
-               policy_event.jurisdiction in self.settings.compliance_additional_jurisdictions:
+            if (
+                policy_event.jurisdiction == self.settings.compliance_jurisdiction
+                or policy_event.jurisdiction in self.settings.compliance_additional_jurisdictions
+            ):
                 await self._update_local_cache(policy_event)
 
             # Call custom handler if provided
@@ -53,7 +57,9 @@ class PolicyChangeHandler:
         """Update local policy cache with new policy."""
         # In a real implementation, this would update a local cache or database
         # For now, we just log the update
-        logger.info(f"Updated policy cache for {event.jurisdiction.value} to version {event.policy_version}")
+        logger.info(
+            f"Updated policy cache for {event.jurisdiction.value} to version {event.policy_version}"
+        )
 
 
 class PolicyChangeConsumer:
@@ -75,6 +81,7 @@ class PolicyChangeConsumer:
             return
 
         from wildframe_events import KafkaEventSubscriber
+
         self._subscriber = KafkaEventSubscriber(
             bootstrap_servers=self.settings.KAFKA_BOOTSTRAP_SERVERS,
             group_id=f"{self.settings.SERVICE_NAME}-compliance-consumer",

@@ -120,7 +120,9 @@ class ComplianceSettingsMixin(BaseSettings):
                 elif isinstance(primary_val, int) and isinstance(additional_val, int):
                     # For age, retention, etc. - more restrictive varies
                     if "age" in key.lower() or "minor" in key.lower():
-                        merged[key] = max(primary_val, additional_val)  # Higher age = more restrictive
+                        merged[key] = max(
+                            primary_val, additional_val
+                        )  # Higher age = more restrictive
                     elif "retention" in key.lower() or "hours" in key.lower():
                         merged[key] = min(primary_val, additional_val)  # Shorter = more restrictive
                     else:

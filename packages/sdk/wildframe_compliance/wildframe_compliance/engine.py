@@ -111,12 +111,20 @@ class PolicyEngine:
 
         # Check age
         if user_age is not None and user_age < policy.consent_minor_age:
-            if policy.verifiable_parental_consent if hasattr(policy, "verifiable_parental_consent") else False:
+            if (
+                policy.verifiable_parental_consent
+                if hasattr(policy, "verifiable_parental_consent")
+                else False
+            ):
                 required_actions.append("obtain_verifiable_parental_consent")
-                reasons.append(f"User is {user_age}, below age of consent ({policy.consent_minor_age})")
+                reasons.append(
+                    f"User is {user_age}, below age of consent ({policy.consent_minor_age})"
+                )
             else:
                 required_actions.append("obtain_parental_consent")
-                reasons.append(f"User is {user_age}, below age of consent ({policy.consent_minor_age})")
+                reasons.append(
+                    f"User is {user_age}, below age of consent ({policy.consent_minor_age})"
+                )
 
         # Check granularity
         if policy.consent_granular and not consent_granular:
@@ -211,7 +219,9 @@ class PolicyEngine:
         if retention_days is not None and retention_days > max_retention:
             retention_check_passed = False
             required_actions.append("reduce_retention_period")
-            reasons.append(f"Retention ({retention_days} days) exceeds maximum ({max_retention} days)")
+            reasons.append(
+                f"Retention ({retention_days} days) exceeds maximum ({max_retention} days)"
+            )
 
         can_execute = len(required_actions) == 0 and retention_check_passed
 
@@ -279,9 +289,14 @@ class PolicyEngine:
 
         # India DPDP: Central government approval
         if source_jurisdiction == Jurisdiction.IN:
-            if hasattr(source_policy, "central_govt_approval_required") and source_policy.central_govt_approval_required:
+            if (
+                hasattr(source_policy, "central_govt_approval_required")
+                and source_policy.central_govt_approval_required
+            ):
                 required_actions.append("obtain_central_govt_approval")
-                reasons.append("DPDP requires central government approval for cross-border transfers")
+                reasons.append(
+                    "DPDP requires central government approval for cross-border transfers"
+                )
 
         allowed = len(required_actions) == 0
 

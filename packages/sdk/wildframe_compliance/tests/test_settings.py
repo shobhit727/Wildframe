@@ -33,7 +33,10 @@ class TestSettingsMixin:
         class TestSettings(ComplianceSettingsMixin):
             SERVICE_NAME: str = "test-service"
             compliance_jurisdiction: Jurisdiction = Jurisdiction.US
-            compliance_additional_jurisdictions: list[Jurisdiction] = [Jurisdiction.US_CA, Jurisdiction.IN]
+            compliance_additional_jurisdictions: list[Jurisdiction] = [
+                Jurisdiction.US_CA,
+                Jurisdiction.IN,
+            ]
 
         settings = TestSettings()
         assert settings.compliance_jurisdiction == Jurisdiction.US
@@ -43,7 +46,10 @@ class TestSettingsMixin:
     def test_policy_overrides(self):
         class TestSettings(ComplianceSettingsMixin):
             SERVICE_NAME: str = "test-service"
-            compliance_policy_overrides: dict = {"dpo_required": False, "breach_notification_hours": 48}
+            compliance_policy_overrides: dict = {
+                "dpo_required": False,
+                "breach_notification_hours": 48,
+            }
 
         settings = TestSettings()
         assert settings.compliance_policy_overrides["dpo_required"] is False

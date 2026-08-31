@@ -60,7 +60,11 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
 
     # Compliance: Uploads service handles global content uploads
     compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
-    compliance_additional_jurisdictions: list[Jurisdiction] = [Jurisdiction.EU, Jurisdiction.US, Jurisdiction.IN]
+    compliance_additional_jurisdictions: list[Jurisdiction] = [
+        Jurisdiction.EU,
+        Jurisdiction.US,
+        Jurisdiction.IN,
+    ]
     compliance_dpo_email: str = "dpo@wildframe.com"
     compliance_grievance_officer_email: str = "grievance@wildframe.com"
     compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]

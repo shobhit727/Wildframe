@@ -40,11 +40,21 @@ class TestJurisdiction:
     def test_jurisdiction_parent_hierarchy(self):
         # State jurisdictions should have US as parent
         state_jurisdictions = [
-            Jurisdiction.US_CA, Jurisdiction.US_VA, Jurisdiction.US_CO,
-            Jurisdiction.US_CT, Jurisdiction.US_UT, Jurisdiction.US_TX,
-            Jurisdiction.US_OR, Jurisdiction.US_MT, Jurisdiction.US_DE,
-            Jurisdiction.US_NH, Jurisdiction.US_NJ, Jurisdiction.US_MN,
-            Jurisdiction.US_MD, Jurisdiction.US_NE, Jurisdiction.US_RI,
+            Jurisdiction.US_CA,
+            Jurisdiction.US_VA,
+            Jurisdiction.US_CO,
+            Jurisdiction.US_CT,
+            Jurisdiction.US_UT,
+            Jurisdiction.US_TX,
+            Jurisdiction.US_OR,
+            Jurisdiction.US_MT,
+            Jurisdiction.US_DE,
+            Jurisdiction.US_NH,
+            Jurisdiction.US_NJ,
+            Jurisdiction.US_MN,
+            Jurisdiction.US_MD,
+            Jurisdiction.US_NE,
+            Jurisdiction.US_RI,
             Jurisdiction.US_KY,
         ]
         for state in state_jurisdictions:

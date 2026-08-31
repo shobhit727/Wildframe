@@ -29,6 +29,7 @@ class PolicyChangeProducer:
         """Start the event publisher."""
         if self._publisher is None:
             from wildframe_events import KafkaEventPublisher
+
             self._publisher = KafkaEventPublisher(
                 bootstrap_servers=self.settings.KAFKA_BOOTSTRAP_SERVERS,
             )
@@ -65,6 +66,7 @@ class PolicyChangeProducer:
         jurisdiction = getattr(policy, "jurisdiction", None)
         if isinstance(jurisdiction, str):
             from wildframe_compliance.jurisdiction import Jurisdiction
+
             jurisdiction = Jurisdiction(jurisdiction)
 
         event = CompliancePolicyEvent(
@@ -88,10 +90,14 @@ class PolicyChangeProducer:
         )
 
         await self._publisher.publish(domain_event)
-        logger.info(f"Published {event_type.value} for {event.jurisdiction.value} v{event.policy_version}")
+        logger.info(
+            f"Published {event_type.value} for {event.jurisdiction.value} v{event.policy_version}"
+        )
 
 
-async def create_policy_change_producer(settings: ComplianceSettingsMixin) -> "PolicyChangeProducer":
+async def create_policy_change_producer(
+    settings: ComplianceSettingsMixin,
+) -> "PolicyChangeProducer":
     """Factory function to create and start a policy change producer."""
     producer = PolicyChangeProducer(settings)
     await producer.start()

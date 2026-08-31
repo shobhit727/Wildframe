@@ -92,7 +92,9 @@ class ComplianceMetrics:
             violation_type=violation_type,
         ).inc()
 
-    def record_event_published(self, event_type: ComplianceEventType, jurisdiction: Jurisdiction, success: bool) -> None:
+    def record_event_published(
+        self, event_type: ComplianceEventType, jurisdiction: Jurisdiction, success: bool
+    ) -> None:
         """Record a published compliance event."""
         COMPLIANCE_EVENTS_PUBLISHED.labels(
             event_type=event_type.value,
@@ -100,7 +102,9 @@ class ComplianceMetrics:
             result="success" if success else "failed",
         ).inc()
 
-    def record_event_consumed(self, event_type: ComplianceEventType, jurisdiction: Jurisdiction, success: bool) -> None:
+    def record_event_consumed(
+        self, event_type: ComplianceEventType, jurisdiction: Jurisdiction, success: bool
+    ) -> None:
         """Record a consumed compliance event."""
         COMPLIANCE_EVENTS_CONSUMED.labels(
             event_type=event_type.value,
@@ -223,6 +227,7 @@ class ComplianceLogger:
 
 def compliance_metrics(metrics: ComplianceMetrics, operation: str, jurisdiction: Jurisdiction):
     """Decorator to automatically record compliance evaluation metrics."""
+
     def decorator(func):
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
@@ -237,7 +242,9 @@ def compliance_metrics(metrics: ComplianceMetrics, operation: str, jurisdiction:
                 duration = time.time() - start
                 metrics.record_evaluation(operation, jurisdiction, False, duration)
                 raise
+
         return async_wrapper
+
     return decorator
 
 
@@ -271,7 +278,9 @@ async def compliance_health_check(
 
         if metrics:
             metrics.set_health(settings.SERVICE_NAME, healthy)
-            metrics.set_policy_version(settings.compliance_jurisdiction, settings.get_compliance_policy().version)
+            metrics.set_policy_version(
+                settings.compliance_jurisdiction, settings.get_compliance_policy().version
+            )
 
         return {
             "healthy": healthy,
