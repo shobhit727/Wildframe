@@ -12,7 +12,6 @@ from wildframe_compliance.events import (
     COMPLIANCE_POLICY_TOPIC,
 )
 from wildframe_compliance.jurisdiction import Jurisdiction
-from wildframe_compliance.policy import CompliancePolicy
 from wildframe_compliance.settings import ComplianceSettingsMixin
 
 logger = logging.getLogger(__name__)
@@ -65,7 +64,6 @@ class PolicyChangeProducer:
         # Extract policy attributes
         jurisdiction = getattr(policy, "jurisdiction", None)
         if isinstance(jurisdiction, str):
-            from wildframe_compliance.jurisdiction import Jurisdiction
 
             jurisdiction = Jurisdiction(jurisdiction)
 

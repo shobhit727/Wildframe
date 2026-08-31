@@ -1,7 +1,6 @@
 """Policy evaluation engine for runtime compliance checks."""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
 from wildframe_compliance.jurisdiction import Jurisdiction
@@ -254,7 +253,7 @@ class PolicyEngine:
         if isinstance(target_jurisdiction, str):
             target_jurisdiction = Jurisdiction(target_jurisdiction)
         source_policy = self._get_policy(source_jurisdiction)
-        target_policy = self._get_policy(target_jurisdiction)
+        _ = self._get_policy(target_jurisdiction)  # validated but not used in current logic
 
         required_actions = []
         reasons = []

@@ -11,7 +11,6 @@ from prometheus_client import Counter, Histogram, Gauge, CollectorRegistry
 from wildframe_compliance.events import ComplianceEventType
 from wildframe_compliance.jurisdiction import Jurisdiction
 from wildframe_compliance.settings import ComplianceSettingsMixin
-from wildframe_compliance.policy import CompliancePolicy
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +237,7 @@ def compliance_metrics(metrics: ComplianceMetrics, operation: str, jurisdiction:
                 allowed = getattr(result, "allowed", True)
                 metrics.record_evaluation(operation, jurisdiction, allowed, duration)
                 return result
-            except Exception as e:
+            except Exception:
                 duration = time.time() - start
                 metrics.record_evaluation(operation, jurisdiction, False, duration)
                 raise

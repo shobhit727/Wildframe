@@ -1,18 +1,14 @@
 """Policy change event consumer for services."""
 
-import asyncio
 import logging
 from typing import Any, Callable
 
-from wildframe_events import DomainEvent, EventSubscriber
+from wildframe_events import DomainEvent
 from wildframe_compliance.events import (
     CompliancePolicyEvent,
     COMPLIANCE_POLICY_TOPIC,
-    ComplianceEventType,
 )
-from wildframe_compliance.jurisdiction import Jurisdiction
 from wildframe_compliance.settings import ComplianceSettingsMixin
-from wildframe_compliance.policy import get_policy_for_jurisdiction
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,5 @@
 """Tests for compliance settings mixin."""
 
-import pytest
-
 from wildframe_compliance.jurisdiction import Jurisdiction
 from wildframe_compliance.settings import ComplianceSettingsMixin
 

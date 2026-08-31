@@ -1,10 +1,9 @@
 """Compliance policy definitions for each jurisdiction."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from wildframe_compliance.jurisdiction import Jurisdiction
 

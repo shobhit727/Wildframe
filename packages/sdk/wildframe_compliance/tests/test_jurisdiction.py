@@ -1,7 +1,5 @@
 """Tests for jurisdiction enum."""
 
-import pytest
-
 from wildframe_compliance.jurisdiction import Jurisdiction
 
 

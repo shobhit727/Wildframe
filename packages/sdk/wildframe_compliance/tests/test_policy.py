@@ -1,7 +1,5 @@
 """Tests for compliance policies."""
 
-import pytest
-
 from wildframe_compliance.jurisdiction import Jurisdiction
 from wildframe_compliance.policy import (
     GDPRPolicy,
