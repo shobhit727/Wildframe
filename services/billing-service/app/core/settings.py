@@ -13,9 +13,11 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 from app.core.money import validate_currency
+from wildframe_compliance.jurisdiction import Jurisdiction
+from wildframe_compliance.settings import ComplianceSettingsMixin
 
 
-class Settings(BaseSettings):
+class Settings(ComplianceSettingsMixin, BaseSettings):
     """Application settings loaded from environment / .env file."""
 
     SERVICE_NAME: str = "Billing"
@@ -54,6 +56,13 @@ class Settings(BaseSettings):
     # Server
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8008
+
+    # Compliance: Billing service handles global financial data
+    compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
+    compliance_additional_jurisdictions: list[Jurisdiction] = [Jurisdiction.EU, Jurisdiction.US, Jurisdiction.IN]
+    compliance_dpo_email: str = "dpo@wildframe.com"
+    compliance_grievance_officer_email: str = "grievance@wildframe.com"
+    compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
 
     # -----------------------------------------------------------------------
     # Sustenance Engine parameters (§2 + §3 of PRODUCT_VISION.md)

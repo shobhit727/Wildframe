@@ -3,8 +3,11 @@
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
+from wildframe_compliance.jurisdiction import Jurisdiction
+from wildframe_compliance.settings import ComplianceSettingsMixin
 
-class Settings(BaseSettings):
+
+class Settings(ComplianceSettingsMixin, BaseSettings):
     """Application settings."""
 
     SERVICE_NAME: str = "Recommendation"
@@ -15,7 +18,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/recommendation_db"
 
     # Content catalog
-    CONTENT_SERVICE_URL: str = "http://content-service:8000"
+    CONTENT_SERVICE_URL: str = "http://content-service:8003"
     CONTENT_CATALOG_TIMEOUT_SECONDS: float = 10.0
     CONTENT_CATALOG_MAX_CONNECTIONS: int = 20
     CONTENT_CATALOG_MAX_KEEPALIVE: int = 10
@@ -55,6 +58,17 @@ class Settings(BaseSettings):
         "https://localhost:3000",
     ]
     CORS_ALLOW_CREDENTIALS: bool = True
+
+    # Server
+    SERVER_HOST: str = "0.0.0.0"
+    SERVER_PORT: int = 8007
+
+    # Compliance: Recommendation service processes global user behavior
+    compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
+    compliance_additional_jurisdictions: list[Jurisdiction] = [Jurisdiction.EU, Jurisdiction.US, Jurisdiction.IN]
+    compliance_dpo_email: str = "dpo@wildframe.com"
+    compliance_grievance_officer_email: str = "grievance@wildframe.com"
+    compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

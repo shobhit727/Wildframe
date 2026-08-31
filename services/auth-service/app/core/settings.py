@@ -8,6 +8,9 @@ from functools import lru_cache
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
+from wildframe_compliance.jurisdiction import Jurisdiction
+from wildframe_compliance.settings import ComplianceSettingsMixin
+
 DEV_ENVIRONMENTS = {"", "development", "test"}
 
 # Convenient local-development defaults. Never applied in production; those
@@ -31,7 +34,7 @@ KNOWN_INSECURE_JWT_SECRETS = (
 )
 
 
-class Settings(BaseSettings):
+class Settings(ComplianceSettingsMixin, BaseSettings):
     """Application settings loaded from environment variables."""
 
     # Service Configuration
@@ -46,8 +49,6 @@ class Settings(BaseSettings):
     # connections per service instance to prevent DB exhaustion.
     DATABASE_POOL_SIZE: int = 5
     DATABASE_MAX_OVERFLOW: int = 5
-
-    # Redis Configuration
 
     # Redis Configuration
     REDIS_URL: str | None = None
@@ -115,6 +116,17 @@ class Settings(BaseSettings):
 
     # Observability Configuration
     LOG_LEVEL: str = "INFO"
+
+    # Server
+    SERVER_HOST: str = "0.0.0.0"
+    SERVER_PORT: int = 8001
+
+    # Compliance: Auth service handles global user data
+    compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
+    compliance_additional_jurisdictions: list[Jurisdiction] = [Jurisdiction.EU, Jurisdiction.US, Jurisdiction.IN]
+    compliance_dpo_email: str = "dpo@wildframe.com"
+    compliance_grievance_officer_email: str = "grievance@wildframe.com"
+    compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
 
     # Event bus: "memory" (default) or "kafka" (composed stack).
     EVENT_PUBLISHER: str = "memory"

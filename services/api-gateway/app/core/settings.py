@@ -3,8 +3,11 @@
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
+from wildframe_compliance.jurisdiction import Jurisdiction
+from wildframe_compliance.settings import ComplianceSettingsMixin
 
-class Settings(BaseSettings):
+
+class Settings(ComplianceSettingsMixin, BaseSettings):
     """Application settings."""
 
     SERVICE_NAME: str = "Api Gateway"
@@ -22,6 +25,17 @@ class Settings(BaseSettings):
 
     # Logging
     LOG_LEVEL: str = "INFO"
+
+    # Server
+    SERVER_HOST: str = "0.0.0.0"
+    SERVER_PORT: int = 8000
+
+    # Compliance: API Gateway is global entry point
+    compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
+    compliance_additional_jurisdictions: list[Jurisdiction] = [Jurisdiction.EU, Jurisdiction.US, Jurisdiction.IN]
+    compliance_dpo_email: str = "dpo@wildframe.com"
+    compliance_grievance_officer_email: str = "grievance@wildframe.com"
+    compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
 
     # CORS
     # Explicit allow-list (#68): wildcard origins paired with credentials are

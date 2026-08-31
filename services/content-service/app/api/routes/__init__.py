@@ -6,9 +6,9 @@ Provides REST endpoints for content management operations.
 from typing import Annotated
 from uuid import UUID
 
-import jwt
+from jose import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from jwt.exceptions import PyJWTError
+from jose.exceptions import JWTError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -111,7 +111,7 @@ async def _require_identity(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token type",
             )
-    except PyJWTError:
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",

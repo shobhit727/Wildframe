@@ -3,8 +3,11 @@
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
+from wildframe_compliance.jurisdiction import Jurisdiction
+from wildframe_compliance.settings import ComplianceSettingsMixin
 
-class Settings(BaseSettings):
+
+class Settings(ComplianceSettingsMixin, BaseSettings):
     """Application settings."""
 
     SERVICE_NAME: str = "Search"
@@ -39,7 +42,7 @@ class Settings(BaseSettings):
     ELASTICSEARCH_URL: str = "http://elasticsearch:9200"
 
     # Content service (catalog backfill for indexing)
-    CONTENT_SERVICE_URL: str = "http://content-service:8000"
+    CONTENT_SERVICE_URL: str = "http://content-service:8003"
 
     # Admin role version (#81/#101): bump in lockstep with ADMIN_EMAILS
     # changes so already-issued admin tokens (arv < this) are rejected.
@@ -57,6 +60,17 @@ class Settings(BaseSettings):
         "https://localhost:3000",
     ]
     CORS_ALLOW_CREDENTIALS: bool = True
+
+    # Server
+    SERVER_HOST: str = "0.0.0.0"
+    SERVER_PORT: int = 8005
+
+    # Compliance: Search service indexes global content
+    compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
+    compliance_additional_jurisdictions: list[Jurisdiction] = [Jurisdiction.EU, Jurisdiction.US, Jurisdiction.IN]
+    compliance_dpo_email: str = "dpo@wildframe.com"
+    compliance_grievance_officer_email: str = "grievance@wildframe.com"
+    compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

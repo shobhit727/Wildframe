@@ -8,7 +8,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
-import jwt
+from jose import jwt
 
 from app.core.settings import settings
 
@@ -85,7 +85,7 @@ class TokenManager:
         except jwt.ExpiredSignatureError:
             logger.debug("Token expired")
             return None
-        except jwt.InvalidTokenError as e:
+        except jwt.JWTError as e:
             logger.warning(f"Invalid token: {e}")
             return None
 

@@ -3,8 +3,11 @@ from functools import lru_cache
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
+from wildframe_compliance.jurisdiction import Jurisdiction
+from wildframe_compliance.settings import ComplianceSettingsMixin
 
-class Settings(BaseSettings):
+
+class Settings(ComplianceSettingsMixin, BaseSettings):
     # Admin role version (#81/#101): bump in lockstep with auth-service
     # ADMIN_EMAILS changes so already-issued admin tokens (arv < this)
     # are rejected at this service's admin boundary.
@@ -22,6 +25,13 @@ class Settings(BaseSettings):
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
     LOG_LEVEL: str = "INFO"
+
+    # Compliance: Admin service has global admin access
+    compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
+    compliance_additional_jurisdictions: list[Jurisdiction] = [Jurisdiction.EU, Jurisdiction.US, Jurisdiction.IN]
+    compliance_dpo_email: str = "dpo@wildframe.com"
+    compliance_grievance_officer_email: str = "grievance@wildframe.com"
+    compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
 
     # Event bus: "memory" (default, no-op + log) or "kafka".
     EVENT_PUBLISHER: str = "memory"

@@ -2,8 +2,11 @@
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from wildframe_compliance.jurisdiction import Jurisdiction
+from wildframe_compliance.settings import ComplianceSettingsMixin
 
-class Settings(BaseSettings):
+
+class Settings(ComplianceSettingsMixin, BaseSettings):
     """Application settings."""
 
     model_config = SettingsConfigDict(env_file=".env")
@@ -39,6 +42,17 @@ class Settings(BaseSettings):
         "https://localhost:3000",
     ]
     CORS_ALLOW_CREDENTIALS: bool = True
+
+    # Server
+    SERVER_HOST: str = "0.0.0.0"
+    SERVER_PORT: int = 8011
+
+    # Compliance: Media pipeline processes global content
+    compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
+    compliance_additional_jurisdictions: list[Jurisdiction] = [Jurisdiction.EU, Jurisdiction.US, Jurisdiction.IN]
+    compliance_dpo_email: str = "dpo@wildframe.com"
+    compliance_grievance_officer_email: str = "grievance@wildframe.com"
+    compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
 
     # Event bus: "memory" (default, no-op + log) or "kafka".
     EVENT_PUBLISHER: str = "memory"

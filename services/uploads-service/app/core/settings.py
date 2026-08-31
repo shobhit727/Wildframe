@@ -3,8 +3,11 @@
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
+from wildframe_compliance.jurisdiction import Jurisdiction
+from wildframe_compliance.settings import ComplianceSettingsMixin
 
-class Settings(BaseSettings):
+
+class Settings(ComplianceSettingsMixin, BaseSettings):
     """Application settings.
 
     Twelve-factor: every value has a safe dev default and is overridable via
@@ -50,6 +53,17 @@ class Settings(BaseSettings):
         "https://localhost:3000",
     ]
     CORS_ALLOW_CREDENTIALS: bool = True
+
+    # Server
+    SERVER_HOST: str = "0.0.0.0"
+    SERVER_PORT: int = 8014
+
+    # Compliance: Uploads service handles global content uploads
+    compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
+    compliance_additional_jurisdictions: list[Jurisdiction] = [Jurisdiction.EU, Jurisdiction.US, Jurisdiction.IN]
+    compliance_dpo_email: str = "dpo@wildframe.com"
+    compliance_grievance_officer_email: str = "grievance@wildframe.com"
+    compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
 
     # Upload tuning
     # Default chunk size in bytes (5 MiB is the S3 multi-part minimum; 5 MiB keeps

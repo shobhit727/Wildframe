@@ -1,5 +1,5 @@
 from http import HTTPStatus as http_status
-import jwt
+from jose import jwt
 from app.core.settings import settings
 from jose import JWTError
 

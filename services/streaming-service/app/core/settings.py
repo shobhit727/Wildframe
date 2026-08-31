@@ -3,8 +3,11 @@
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
+from wildframe_compliance.jurisdiction import Jurisdiction
+from wildframe_compliance.settings import ComplianceSettingsMixin
 
-class Settings(BaseSettings):
+
+class Settings(ComplianceSettingsMixin, BaseSettings):
     """Application settings."""
 
     SERVICE_NAME: str = "streaming-service"
@@ -28,6 +31,12 @@ class Settings(BaseSettings):
     CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8004
+    # Compliance: Streaming service handles global playback data
+    compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
+    compliance_additional_jurisdictions: list[Jurisdiction] = [Jurisdiction.EU, Jurisdiction.US, Jurisdiction.IN]
+    compliance_dpo_email: str = "dpo@wildframe.com"
+    compliance_grievance_officer_email: str = "grievance@wildframe.com"
+    compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
     # Concurrency limits (#281, #490)
     MAX_ACTIVE_SESSIONS: int = 5
     # ACTIVE sessions idle longer than this are reaped on next start (#490):

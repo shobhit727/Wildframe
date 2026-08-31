@@ -3,8 +3,11 @@
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
+from wildframe_compliance.jurisdiction import Jurisdiction
+from wildframe_compliance.settings import ComplianceSettingsMixin
 
-class Settings(BaseSettings):
+
+class Settings(ComplianceSettingsMixin, BaseSettings):
     """Application settings."""
 
     SERVICE_NAME: str = "Analytics"
@@ -30,7 +33,7 @@ class Settings(BaseSettings):
 
     # Content ownership resolution (creator dashboard / content performance).
     # Set to http://content-service:8000 inside the docker network.
-    CONTENT_SERVICE_URL: str = "http://localhost:8003"
+    CONTENT_SERVICE_URL: str = "http://content-service:8003"
     CONTENT_SERVICE_TIMEOUT_SECONDS: float = 3.0
     CONTENT_SERVICE_MAX_CONNECTIONS: int = 10
 
@@ -49,6 +52,17 @@ class Settings(BaseSettings):
         "https://localhost:3000",
     ]
     CORS_ALLOW_CREDENTIALS: bool = True
+
+    # Server
+    SERVER_HOST: str = "0.0.0.0"
+    SERVER_PORT: int = 8009
+
+    # Compliance: Analytics service processes global user data
+    compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
+    compliance_additional_jurisdictions: list[Jurisdiction] = [Jurisdiction.EU, Jurisdiction.US, Jurisdiction.IN]
+    compliance_dpo_email: str = "dpo@wildframe.com"
+    compliance_grievance_officer_email: str = "grievance@wildframe.com"
+    compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
