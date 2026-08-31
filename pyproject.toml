@@ -156,7 +156,8 @@ warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
 strict_optional = true
-explicit_package_bases = true
+# explicit_package_bases = true
+# mypy exclusions handled via --exclude flag
 exclude = [
     "services/admin-service/app/__init__.py",
     "services/admin-service/app/api/__init__.py",

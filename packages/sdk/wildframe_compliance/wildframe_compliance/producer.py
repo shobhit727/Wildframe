@@ -64,8 +64,9 @@ class PolicyChangeProducer:
         # Extract policy attributes
         jurisdiction = getattr(policy, "jurisdiction", None)
         if isinstance(jurisdiction, str):
-
             jurisdiction = Jurisdiction(jurisdiction)
+        elif jurisdiction is None:
+            raise ValueError("Policy must have a jurisdiction attribute")
 
         event = CompliancePolicyEvent(
             event_type=event_type,

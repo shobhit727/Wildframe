@@ -38,4 +38,5 @@ __all__ = [
     "KafkaEventPublisher",
     "EventSubscriber",
     "InMemoryEventSubscriber",
+    "KafkaEventSubscriber",
 ]

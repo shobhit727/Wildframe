@@ -184,7 +184,7 @@ class KafkaEventPublisher(EventPublisher):
                 kwargs["retries"] = self.max_retries
                 kwargs["retry_backoff_ms"] = self.retry_backoff_ms
             self._producer = AIOKafkaProducer(**kwargs)
-            await self._producer.start()  # type: ignore[attr-defined]
+            await self._producer.start()
         return self._producer
 
     async def publish(self, event: DomainEvent) -> None:
@@ -212,5 +212,5 @@ class KafkaEventPublisher(EventPublisher):
     async def close(self) -> None:
         """Stop the Kafka producer."""
         if self._producer is not None:
-            await self._producer.stop()  # type: ignore[unreachable]
+            await self._producer.stop()
             self._producer = None

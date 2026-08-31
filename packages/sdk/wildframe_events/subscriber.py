@@ -58,6 +58,10 @@ import logging
 import random
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aiokafka import AIOKafkaConsumer
 from typing import Any, Callable, Dict, List, Optional
 
 from wildframe_events.event import (
@@ -267,10 +271,16 @@ class KafkaEventSubscriber(EventSubscriber):
         self.dedup_ttl_seconds = dedup_ttl_seconds
         self.dlq_publisher = dlq_publisher
         self._handlers: Dict[str, List[EventHandler]] = {}
-        self._consumer = None
+        self._consumer: Optional["AIOKafkaConsumer"] = None
         self._task: Optional[asyncio.Task] = None
         self._lazy_dlq_publisher: Optional[EventPublisher] = None
         self._reconnect_attempt = 0
+
+    @property
+    def _consumer_or_raise(self) -> "AIOKafkaConsumer":
+        """Get consumer, asserting it's not None."""
+        assert self._consumer is not None, "Consumer not started"
+        return self._consumer  # type: ignore[return-value]
 
     async def subscribe(self, topic: str, handler: EventHandler) -> None:
         self._handlers.setdefault(topic, []).append(handler)
@@ -285,8 +295,8 @@ class KafkaEventSubscriber(EventSubscriber):
         """
         from aiokafka import AIOKafkaConsumer
 
-        if self._consumer is not None:  # type: ignore[unreachable]
-            return  # Already started.  # type: ignore[unreachable]
+        if self._consumer_or_raise is not None:
+            return  # Already started.
         topics = list(self._handlers.keys())
         if not topics:
             raise ValueError("subscribe() at least one topic before start()")
@@ -299,7 +309,7 @@ class KafkaEventSubscriber(EventSubscriber):
             auto_offset_reset="earliest",
             max_partition_fetch_bytes=self.max_payload_bytes + 8192,
         )
-        await self._consumer.start()  # type: ignore[attr-defined]
+        await self._consumer_or_raise.start()  # type: ignore[attr-defined]
         self._reconnect_attempt = 0
         self._task = asyncio.create_task(self._run(), name=f"wildframe-subscriber-{self.group_id}")
 
@@ -307,7 +317,7 @@ class KafkaEventSubscriber(EventSubscriber):
         """Poll loop. Reconnects with bounded backoff on consumer errors."""
         while True:
             try:
-                async for message in self._consumer:  # type: ignore[attr-defined]
+                async for message in self._consumer_or_raise:
                     await self._process_message(message)
             except asyncio.CancelledError:
                 raise
@@ -332,7 +342,7 @@ class KafkaEventSubscriber(EventSubscriber):
         old = self._consumer
         self._consumer = None
         if old is not None:
-            try:  # type: ignore[unreachable]
+            try:
                 await old.stop()
             except Exception:  # noqa: BLE001 - best-effort teardown
                 pass
@@ -345,7 +355,7 @@ class KafkaEventSubscriber(EventSubscriber):
             auto_offset_reset="earliest",
             max_partition_fetch_bytes=self.max_payload_bytes + 8192,
         )
-        await self._consumer.start()  # type: ignore[attr-defined]
+        await self._consumer_or_raise.start()  # type: ignore[attr-defined]
 
     def _dedup_keys(self, event: DomainEvent) -> List[str]:
         """Dedup keys for an event: globally-unique event_id, plus the
@@ -419,8 +429,8 @@ class KafkaEventSubscriber(EventSubscriber):
         await self._commit(message)
 
     async def _commit(self, message: Any) -> None:
-        if self._consumer is not None:
-            await self._consumer.commit()  # type: ignore[unreachable]
+        if self._consumer_or_raise is not None:
+            await self._consumer_or_raise.commit()
 
     async def _dispatch(self, event: DomainEvent) -> None:
         """Dispatch an event to ALL registered handlers with retry + DLQ.
@@ -595,9 +605,9 @@ class KafkaEventSubscriber(EventSubscriber):
             except (asyncio.CancelledError, Exception):
                 pass
             self._task = None
-        if self._consumer is not None:
-            try:  # type: ignore[unreachable]
-                await self._consumer.stop()
+        if self._consumer_or_raise is not None:
+            try:
+                await self._consumer_or_raise.stop()
             except Exception:  # noqa: BLE001 - best-effort teardown
                 pass
             self._consumer = None
@@ -651,3 +661,14 @@ except Exception:  # prometheus_client optional — degrade to no-op counters
     _DLQ_TOTAL = _CounterProxy()  # type: ignore[assignment]
     _DUPLICATES_TOTAL = _CounterProxy()  # type: ignore[assignment]
     _PROCESSED_TOTAL = _CounterProxy()  # type: ignore[assignment]
+
+__all__ = [
+    "EventSubscriber",
+    "InMemoryEventSubscriber",
+    "KafkaEventSubscriber",
+    "KafkaEventPublisher",
+    "DeduplicationStore",
+    "InMemoryDeduplicationStore",
+    "RedisDeduplicationStore",
+    "PermanentFailure",
+]
