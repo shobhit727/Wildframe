@@ -182,7 +182,7 @@ jobs:
 
       - name: Cache service virtualenv
         id: poetry-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: services/${{ matrix.service }}/.venv
           key: venv-v3-${{ env.PYTHON_VERSION }}-${{ runner.os }}-${{ matrix.service }}-${{ hashFiles(format('services/{0}/poetry.lock', matrix.service), format('services/{0}/pyproject.toml', matrix.service)) }}
