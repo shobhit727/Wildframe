@@ -33,6 +33,7 @@ python-json-logger = "^2.0.0"
 python-dotenv = "^1.0.0"
 httpx = "^0.25.0"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
+wildframe-compliance = {path = "../../packages/sdk/wildframe_compliance", develop = true}
 opentelemetry-api = "^1.20.0"
 opentelemetry-sdk = "^1.20.0"
 opentelemetry-exporter-jaeger = "^1.20.0"
