@@ -292,7 +292,7 @@ resource "aws_eks_cluster" "main" {
     subnet_ids              = local.private_subnet_ids
     security_group_ids      = [aws_security_group.eks_cluster.id]
     endpoint_private_access = true
-    endpoint_public_access  = true
+    endpoint_public_access  = false
     public_access_cidrs     = var.eks_public_access_cidrs
   }
 
