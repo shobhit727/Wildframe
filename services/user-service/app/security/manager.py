@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 import bcrypt
 from jose import jwt
+from jose.exceptions import ExpiredSignatureError, JWTError
 
 from app.core.settings import settings
 
@@ -82,10 +83,10 @@ class TokenManager:
 
             return payload
 
-        except jwt.ExpiredSignatureError:
+        except ExpiredSignatureError:
             logger.debug("Token expired")
             return None
-        except jwt.JWTError as e:
+        except JWTError as e:
             logger.warning(f"Invalid token: {e}")
             return None
 
