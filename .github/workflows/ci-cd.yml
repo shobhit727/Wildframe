@@ -234,7 +234,7 @@ jobs:
 
       - name: Print slowest tests
         if: always()
-        run: PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest packages/sdk/wildframe_events/tests packages/sdk/wildframe_observability/tests --asyncio-mode=auto --durations=20 -q
+        run: PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest -c pyproject.toml packages/sdk/tests/ --asyncio-mode=auto --durations=20 -q
 
   backend-route-contract:
     name: Frontend/backend route contract (#44)
