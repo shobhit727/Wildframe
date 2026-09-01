@@ -232,10 +232,6 @@ jobs:
           pip install -e packages/sdk/wildframe_events -e packages/sdk/wildframe_observability -e packages/sdk/wildframe_compliance
           PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest -c pyproject.toml packages/sdk/tests/ --asyncio-mode=auto -q --cov=packages/sdk --cov-report=term-missing:skip-covered
 
-      - name: Run Compliance SDK tests
-        run: |
-          PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest packages/sdk/wildframe_compliance/tests --asyncio-mode=auto -q --cov=packages/sdk/wildframe_compliance --cov-report=term-missing:skip-covered
-
       - name: Print slowest tests
         if: always()
         run: PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest packages/sdk/wildframe_events/tests packages/sdk/wildframe_observability/tests packages/sdk/wildframe_compliance/tests --asyncio-mode=auto --durations=20 -q
