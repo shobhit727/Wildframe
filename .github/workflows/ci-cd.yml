@@ -229,6 +229,7 @@ jobs:
 
       - name: Run SDK tests
         run: |
+          pip install -e packages/sdk/wildframe_events -e packages/sdk/wildframe_observability -e packages/sdk/wildframe_compliance
           PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest -c pyproject.toml packages/sdk/tests/ --asyncio-mode=auto -q --cov=packages/sdk --cov-report=term-missing:skip-covered
 
       - name: Run Compliance SDK tests
