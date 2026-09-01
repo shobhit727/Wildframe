@@ -12,8 +12,8 @@ from typing import Any
 from uuid import UUID
 import bcrypt
 from app.core.settings import settings
-from jose import JWTError, jwt
-from jose.exceptions import ExpiredSignatureError
+from jose import JWTError, jwt  # type: ignore[import-untyped]
+from jose.exceptions import ExpiredSignatureError  # type: ignore[import-untyped]
 
 from app.models import User
 
