@@ -89,7 +89,7 @@ async def get_current_user_id(
         token_manager = TokenManager()
         try:
             payload = token_manager.verify_token(token, token_type="access")
-        except JWTError:  # type: ignore[attr-defined]
+        except JWTError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
