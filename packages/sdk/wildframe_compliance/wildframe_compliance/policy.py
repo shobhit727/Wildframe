@@ -231,7 +231,9 @@ class IndiaDPDPPolicy(CompliancePolicy):
     grievance_response_days: int = 30
 
     # DPDP: Cross-border transfers
+    max_retention_days: int | None = 100
     central_govt_approval_required: bool = True
+    max_retention_days: int | None = 100
 
     # OTT-specific: India OTT publisher compliance
     content_self_classification: bool = True

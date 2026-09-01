@@ -226,13 +226,17 @@ jobs:
         run: |
           python -m pip install --quiet "pytest<8" "pytest-asyncio>=0.21,<0.22" "pytest-cov<5" "fastapi>=0.104" "prometheus-client>=0.18" "httpx>=0.25,<0.28"
 
-      - name: Run SDK tests
+      - name: Run SDK tests (wildframe_events, wildframe_observability)
         run: |
-          PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest packages/sdk/tests --asyncio-mode=auto -q --cov=packages --cov-report=term-missing:skip-covered
+          PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest packages/sdk/wildframe_events/tests packages/sdk/wildframe_observability/tests --asyncio-mode=auto -q --cov=packages/sdk/wildframe_events --cov=packages/sdk/wildframe_observability --cov-report=term-missing:skip-covered
+
+      - name: Run Compliance SDK tests
+        run: |
+          PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest packages/sdk/wildframe_compliance/tests --asyncio-mode=auto -q --cov=packages/sdk/wildframe_compliance --cov-report=term-missing:skip-covered
 
       - name: Print slowest tests
         if: always()
-        run: PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest packages/sdk/tests --asyncio-mode=auto --durations=20 -q
+        run: PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest packages/sdk/wildframe_events/tests packages/sdk/wildframe_observability/tests packages/sdk/wildframe_compliance/tests --asyncio-mode=auto --durations=20 -q
 
   backend-route-contract:
     name: Frontend/backend route contract (#44)
