@@ -227,9 +227,9 @@ jobs:
         run: |
           python -m pip install --quiet "pytest<8" "pytest-asyncio>=0.21,<0.22" "pytest-cov<5" "fastapi>=0.104" "prometheus-client>=0.18" "httpx>=0.25,<0.28"
 
-      - name: Run SDK tests (wildframe_events, wildframe_observability)
+      - name: Run SDK tests
         run: |
-          PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest -c pyproject.toml packages/sdk/wildframe_events/tests packages/sdk/wildframe_observability/tests --asyncio-mode=auto -q --cov=packages/sdk/wildframe_events --cov=packages/sdk/wildframe_observability --cov-report=term-missing:skip-covered
+          PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest -c pyproject.toml packages/sdk/tests/ --asyncio-mode=auto -q --cov=packages/sdk --cov-report=term-missing:skip-covered
 
       - name: Run Compliance SDK tests
         run: |
