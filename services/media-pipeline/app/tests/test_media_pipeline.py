@@ -70,7 +70,7 @@ class FakeLogRepo:
         return log
 
     async def list_for_job(self, job_id: UUID) -> list[PipelineStageLog]:
-        return [l for l in self.logs if l.job_id == job_id]
+        return [log for log in self.logs if log.job_id == job_id]
 
 
 class CountingStage(Stage):
@@ -211,7 +211,7 @@ async def test_retry_then_fail_emits_pipeline_failed_dlq():
     assert dlq[0].payload["stage"] == "flaky"
     # A failure was logged for each attempt.
     logs = await service.log_repo.list_for_job(job.id)
-    assert len([l for l in logs if l.status == PipelineStageStatus.FAILED]) == 3
+    assert len([log for log in logs if log.status == PipelineStageStatus.FAILED]) == 3
 
 
 @pytest.mark.asyncio
@@ -250,7 +250,8 @@ async def test_non_critical_stage_skip_continues_pipeline():
     assert job.status == PipelineJobStatus.COMPLETED
     # The non-critical stage was recorded as skipped.
     logs = await service.log_repo.list_for_job(job.id)
-    skipped = [l for l in logs if l.status == PipelineStageStatus.SKIPPED]
+    skipped = [log for log in logs if log.status == PipelineStageStatus.SKIPPED]
+    assert skipped[0].stage == "besteffort"
     assert len(skipped) == 1
     assert skipped[0].stage == "besteffort"
 

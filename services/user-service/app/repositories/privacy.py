@@ -1,7 +1,7 @@
 """User-service privacy repository."""
 
 import logging
-from datetime import UTC, datetime
+# from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -24,7 +24,9 @@ class UserConsentRepository:
         logger.info(f"User consent created: {consent.consent_type} for {consent.user_id}")
         return consent
 
-    async def get_by_user_type_jurisdiction(self, user_id: UUID, consent_type: str, jurisdiction: str) -> UserConsentRecord | None:
+    async def get_by_user_type_jurisdiction(
+        self, user_id: UUID, consent_type: str, jurisdiction: str
+    ) -> UserConsentRecord | None:
         stmt = select(UserConsentRecord).where(
             UserConsentRecord.user_id == user_id,
             UserConsentRecord.consent_type == consent_type,
@@ -33,7 +35,8 @@ class UserConsentRepository:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_user(self, user_id: UUID) -> list[UserConsentRecord]:
-        stmt = select(UserConsentRecord).where(UserConsentRecord.user_id == user_id).order_by(UserConsentRecord.created_at.desc())
+        stmt = select(UserConsentRecord).where(
+            UserConsentRecord.user_id == user_id
+        ).order_by(UserConsentRecord.created_at.desc())
         result = await self.db.execute(stmt)
         return list(result.scalars().all())

@@ -49,13 +49,16 @@ async def create_consent(
 
 
 @router.get("/consent", response_model=list[ConsentRecordResponse])
-async def list_consent(user_id: UUID, repo: Annotated[UserConsentRepository, Depends(get_consent_repo)]) -> list[ConsentRecordResponse]:
+async def list_consent(
+    user_id: UUID, repo: Annotated[UserConsentRepository, Depends(get_consent_repo)]
+) -> list[ConsentRecordResponse]:
     records = await repo.get_by_user(user_id)
     return [ConsentRecordResponse.model_validate(r) for r in records]
 
-
 @router.get("/preferences", response_model=PreferenceCenterResponse)
-async def get_preferences(user_id: UUID, repo: Annotated[UserConsentRepository, Depends(get_consent_repo)]) -> PreferenceCenterResponse:
+async def get_preferences(
+    user_id: UUID, repo: Annotated[UserConsentRepository, Depends(get_consent_repo)]
+) -> PreferenceCenterResponse:
     records = await repo.get_by_user(user_id)
     return PreferenceCenterResponse(
         user_id=user_id,

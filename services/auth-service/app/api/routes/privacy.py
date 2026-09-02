@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from wildframe_compliance.jurisdiction import Jurisdiction
 
@@ -268,7 +268,10 @@ async def create_consent(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Consent record already exists for user {request.user_id}, type {request.consent_type}, jurisdiction {jurisdiction}",
+            detail=(
+                f"Consent record already exists for user {request.user_id}, "
+                f"type {request.consent_type}, jurisdiction {jurisdiction}"
+            ),
         )
     consent = ConsentRecord(
         user_id=request.user_id,

@@ -22,15 +22,12 @@ from app.schemas import (
 from app.security import PasswordManager, TokenManager
 from app.services import AuthService
 from jose.exceptions import JWTError
- 
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from app.api.routes.auth import router as auth_router
 from app.api.routes.privacy import router as privacy_router
-
 logger = logging.getLogger(__name__)
 
-# Create router
 router = APIRouter()
 
 router.include_router(auth_router)
