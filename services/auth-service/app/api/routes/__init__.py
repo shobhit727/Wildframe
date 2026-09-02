@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from app.api.routes.auth import router as auth_router
 from app.api.routes.privacy import router as privacy_router
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()

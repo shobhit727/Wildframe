@@ -65,7 +65,9 @@ async def require_admin(
 
     user = await UserRepository(db).get_by_id(user_id)
     if not user or role_for_email(user.email) != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
+        )
     return user_id
 
 
@@ -81,6 +83,7 @@ def _validate_jurisdiction(jurisdiction: str) -> str:
 
 
 # Privacy Notice Management (Admin endpoints)
+
 
 @router.post(
     "/notices",
@@ -202,7 +205,9 @@ async def update_privacy_notice(
     return PrivacyNoticeResponse.model_validate(notice)
 
 
-@router.post("/notices/{version}/{jurisdiction}/{language}/set-current", response_model=PrivacyNoticeResponse)
+@router.post(
+    "/notices/{version}/{jurisdiction}/{language}/set-current", response_model=PrivacyNoticeResponse
+)
 async def set_notice_current(
     version: str,
     jurisdiction: str,
@@ -225,7 +230,9 @@ async def set_notice_current(
     return PrivacyNoticeResponse.model_validate(notice)
 
 
-@router.post("/notices/{version}/{jurisdiction}/{language}/deprecate", response_model=PrivacyNoticeResponse)
+@router.post(
+    "/notices/{version}/{jurisdiction}/{language}/deprecate", response_model=PrivacyNoticeResponse
+)
 async def deprecate_notice(
     version: str,
     jurisdiction: str,
@@ -249,6 +256,7 @@ async def deprecate_notice(
 
 
 # Consent Management (User endpoints)
+
 
 @router.post(
     "/consent",
@@ -310,7 +318,9 @@ async def get_active_consent(
     return [ConsentRecordResponse.model_validate(r) for r in records]
 
 
-@router.get("/consent/{user_id}/{consent_type}/{jurisdiction}", response_model=ConsentRecordResponse)
+@router.get(
+    "/consent/{user_id}/{consent_type}/{jurisdiction}", response_model=ConsentRecordResponse
+)
 async def get_consent(
     user_id: UUID,
     consent_type: str,
@@ -328,7 +338,9 @@ async def get_consent(
     return ConsentRecordResponse.model_validate(record)
 
 
-@router.patch("/consent/{user_id}/{consent_type}/{jurisdiction}", response_model=ConsentRecordResponse)
+@router.patch(
+    "/consent/{user_id}/{consent_type}/{jurisdiction}", response_model=ConsentRecordResponse
+)
 async def update_consent(
     user_id: UUID,
     consent_type: str,
@@ -362,7 +374,10 @@ async def update_consent(
     return ConsentRecordResponse.model_validate(updated)
 
 
-@router.post("/consent/{user_id}/{consent_type}/{jurisdiction}/withdraw", response_model=ConsentRecordResponse)
+@router.post(
+    "/consent/{user_id}/{consent_type}/{jurisdiction}/withdraw",
+    response_model=ConsentRecordResponse,
+)
 async def withdraw_consent(
     user_id: UUID,
     consent_type: str,
@@ -390,7 +405,9 @@ async def withdraw_consent(
     return ConsentRecordResponse.model_validate(withdrawn)
 
 
-@router.post("/consent/{user_id}/{consent_type}/{jurisdiction}/grant", response_model=ConsentRecordResponse)
+@router.post(
+    "/consent/{user_id}/{consent_type}/{jurisdiction}/grant", response_model=ConsentRecordResponse
+)
 async def grant_consent(
     user_id: UUID,
     consent_type: str,
@@ -419,6 +436,7 @@ async def grant_consent(
 
 # Privacy Preference Center (User-facing)
 
+
 @router.get("/preferences", response_model=PrivacyPreferenceCenterResponse)
 async def get_privacy_preferences(
     user_id: Annotated[UUID, Depends(get_current_user_id)],
@@ -427,7 +445,9 @@ async def get_privacy_preferences(
 ) -> PrivacyPreferenceCenterResponse:
     """Get privacy preference center data for current user."""
     current_notices = await notice_repo.get_all_current()
-    notices_dict = {n.jurisdiction: PrivacyNoticeResponse.model_validate(n) for n in current_notices}
+    notices_dict = {
+        n.jurisdiction: PrivacyNoticeResponse.model_validate(n) for n in current_notices
+    }
     available_consent_types = {
         "marketing": "Marketing communications and promotional offers",
         "analytics": "Analytics and usage tracking for service improvement",
@@ -440,6 +460,8 @@ async def get_privacy_preferences(
     return PrivacyPreferenceCenterResponse(
         user_id=user_id,
         current_notices=notices_dict,
-        consent_records=[ConsentRecordResponse.model_validate(r) for r in await consent_repo.get_by_user(user_id)],
+        consent_records=[
+            ConsentRecordResponse.model_validate(r) for r in await consent_repo.get_by_user(user_id)
+        ],
         available_consent_types=available_consent_types,
     )

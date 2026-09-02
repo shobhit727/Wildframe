@@ -1,6 +1,7 @@
 """User-service privacy repository."""
 
 import logging
+
 # from datetime import UTC, datetime
 from uuid import UUID
 
@@ -35,8 +36,10 @@ class UserConsentRepository:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-        stmt = select(UserConsentRecord).where(
-            UserConsentRecord.user_id == user_id
-        ).order_by(UserConsentRecord.created_at.desc())
+        stmt = (
+            select(UserConsentRecord)
+            .where(UserConsentRecord.user_id == user_id)
+            .order_by(UserConsentRecord.created_at.desc())
+        )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())

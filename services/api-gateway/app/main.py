@@ -12,6 +12,7 @@ from fastapi.responses import Response
 from wildframe_observability.wire import wire_observability
 
 from app.api.gateway_routes import router as gateway_router
+
 # from app.core.privacy_proxy import resolve_jurisdiction
 from app.core.settings import settings
 from app.middleware import (

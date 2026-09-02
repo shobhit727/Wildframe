@@ -28,7 +28,9 @@ async def create_consent(
     repo: Annotated[UserConsentRepository, Depends(get_consent_repo)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ConsentRecordResponse:
-    existing = await repo.get_by_user_type_jurisdiction(request.user_id, request.consent_type, request.jurisdiction)
+    existing = await repo.get_by_user_type_jurisdiction(
+        request.user_id, request.consent_type, request.jurisdiction
+    )
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Consent already exists")
     consent = UserConsentRecord(
@@ -54,6 +56,7 @@ async def list_consent(
 ) -> list[ConsentRecordResponse]:
     records = await repo.get_by_user(user_id)
     return [ConsentRecordResponse.model_validate(r) for r in records]
+
 
 @router.get("/preferences", response_model=PreferenceCenterResponse)
 async def get_preferences(
