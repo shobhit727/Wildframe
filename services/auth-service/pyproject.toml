@@ -77,9 +77,19 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "aiokafka"
 ignore_missing_imports = true
+ignore_untyped = true
 
 [[tool.mypy.overrides]]
 module = "aiokafka.*"
+ignore_missing_imports = true
+ignore_untyped = true
+
+[[tool.mypy.overrides]]
+module = "aiokafka.consumer"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "aiokafka.consumer.consumer"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

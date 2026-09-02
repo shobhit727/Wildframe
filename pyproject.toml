@@ -288,14 +288,26 @@ ignore_errors = true
 module = "app.tests.*"
 ignore_errors = true
 
-# aiokafka has no stubs; silence missing-import errors
+# aiokafka has no stubs; silence missing-import and untyped-import errors
 [[tool.mypy.overrides]]
 module = "aiokafka"
 ignore_missing_imports = true
+ignore_untyped = true
 
 [[tool.mypy.overrides]]
 module = "aiokafka.*"
 ignore_missing_imports = true
+ignore_untyped = true
+
+[[tool.mypy.overrides]]
+module = "aiokafka.consumer"
+ignore_missing_imports = true
+ignore_untyped = true
+
+[[tool.mypy.overrides]]
+module = "aiokafka.consumer.consumer"
+ignore_missing_imports = true
+ignore_untyped = true
 
 # Exclude all services with duplicate "app" module names
 [[tool.mypy.overrides]]
