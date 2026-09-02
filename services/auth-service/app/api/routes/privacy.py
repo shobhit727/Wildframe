@@ -235,7 +235,7 @@ async def update_privacy_notice(
         else:
             notice.is_current = False
     if request.metadata is not None:
-        notice.metadata = request.metadata
+        notice.notice_metadata = request.metadata
 
     await repo.db.flush()
     logger.info(f"Privacy notice updated: {version}/{jurisdiction}/{language}")
@@ -476,7 +476,7 @@ async def update_consent(
     if request.withdrawal_reason is not None:
         record.withdrawal_reason = request.withdrawal_reason
     if request.metadata is not None:
-        record.metadata = request.metadata
+        record.consent_metadata = request.metadata
 
     updated = await repo.update(record)
     return ConsentRecordResponse.model_validate(updated)
