@@ -293,11 +293,15 @@ class PrivacyNoticeCreate(BaseModel):
         metadata: Additional metadata as JSON string
     """
 
-    version: str = Field(..., pattern=r"^\d+\.\d+\.\d+$", description="Semver format: MAJOR.MINOR.PATCH")
+    version: str = Field(
+        ..., pattern=r"^\d+\.\d+\.\d+$", description="Semver format: MAJOR.MINOR.PATCH"
+    )
     jurisdiction: str = Field(..., min_length=2, max_length=100)
     title: str = Field(..., min_length=1, max_length=255)
     content: str = Field(..., min_length=1)
-    language: str = Field(default="en", pattern=r"^[a-z]{2}$", description="ISO 639-1 language code")
+    language: str = Field(
+        default="en", pattern=r"^[a-z]{2}$", description="ISO 639-1 language code"
+    )
     effective_date: datetime
     metadata: str | None = Field(None, description="Additional metadata as JSON string")
 

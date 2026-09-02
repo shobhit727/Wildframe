@@ -20,8 +20,7 @@ from app.schemas import (
     PrivacyNoticeUpdate,
     PrivacyPreferenceCenterResponse,
 )
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -67,6 +66,7 @@ async def get_current_user_id(
 
 # Privacy Notice Management (Admin endpoints)
 
+
 @router.post(
     "/notices",
     response_model=PrivacyNoticeResponse,
@@ -95,7 +95,10 @@ async def create_privacy_notice(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Privacy notice version {request.version} already exists for {request.jurisdiction}/{request.language}",
+            detail=(
+                f"Privacy notice version {request.version} "
+                f"already exists for {request.jurisdiction}/{request.language}",
+            ),
         )
 
     # Create notice
@@ -122,8 +125,8 @@ async def create_privacy_notice(
 
 @router.get("/notices", response_model=list[PrivacyNoticeResponse])
 async def list_privacy_notices(
-    jurisdiction: str | None = None,
     repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],
+    jurisdiction: str | None = None,
 ) -> list[PrivacyNoticeResponse]:
     """List privacy notices.
 
@@ -240,7 +243,9 @@ async def update_privacy_notice(
     return PrivacyNoticeResponse.model_validate(notice)
 
 
-@router.post("/notices/{version}/{jurisdiction}/{language}/set-current", response_model=PrivacyNoticeResponse)
+@router.post(
+    "/notices/{version}/{jurisdiction}/{language}/set-current", response_model=PrivacyNoticeResponse
+)
 async def set_notice_current(
     version: str,
     jurisdiction: str,
@@ -272,7 +277,9 @@ async def set_notice_current(
     return PrivacyNoticeResponse.model_validate(notice)
 
 
-@router.post("/notices/{version}/{jurisdiction}/{language}/deprecate", response_model=PrivacyNoticeResponse)
+@router.post(
+    "/notices/{version}/{jurisdiction}/{language}/deprecate", response_model=PrivacyNoticeResponse
+)
 async def deprecate_notice(
     version: str,
     jurisdiction: str,
@@ -306,6 +313,7 @@ async def deprecate_notice(
 
 # Consent Management (User endpoints)
 
+
 @router.post(
     "/consent",
     response_model=ConsentRecordResponse,
@@ -334,7 +342,10 @@ async def create_consent(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Consent record already exists for user {request.user_id}, type {request.consent_type}, jurisdiction {request.jurisdiction}",
+            detail=(
+                f"Consent record already exists for user {request.user_id}, "
+                f"type {request.consent_type}, jurisdiction {request.jurisdiction}",
+            ),
         )
 
     consent = ConsentRecord(
@@ -389,7 +400,9 @@ async def get_active_consent(
     return [ConsentRecordResponse.model_validate(r) for r in records]
 
 
-@router.get("/consent/{user_id}/{consent_type}/{jurisdiction}", response_model=ConsentRecordResponse)
+@router.get(
+    "/consent/{user_id}/{consent_type}/{jurisdiction}", response_model=ConsentRecordResponse
+)
 async def get_consent(
     user_id: UUID,
     consent_type: str,
@@ -420,7 +433,9 @@ async def get_consent(
     return ConsentRecordResponse.model_validate(record)
 
 
-@router.patch("/consent/{user_id}/{consent_type}/{jurisdiction}", response_model=ConsentRecordResponse)
+@router.patch(
+    "/consent/{user_id}/{consent_type}/{jurisdiction}", response_model=ConsentRecordResponse
+)
 async def update_consent(
     user_id: UUID,
     consent_type: str,
@@ -467,13 +482,16 @@ async def update_consent(
     return ConsentRecordResponse.model_validate(updated)
 
 
-@router.post("/consent/{user_id}/{consent_type}/{jurisdiction}/withdraw", response_model=ConsentRecordResponse)
+@router.post(
+    "/consent/{user_id}/{consent_type}/{jurisdiction}/withdraw",
+    response_model=ConsentRecordResponse,
+)
 async def withdraw_consent(
     user_id: UUID,
     consent_type: str,
     jurisdiction: str,
-    reason: str | None = None,
     repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],
+    reason: str | None = None,
 ) -> ConsentRecordResponse:
     """Withdraw user consent.
 
@@ -507,7 +525,9 @@ async def withdraw_consent(
     return ConsentRecordResponse.model_validate(withdrawn)
 
 
-@router.post("/consent/{user_id}/{consent_type}/{jurisdiction}/grant", response_model=ConsentRecordResponse)
+@router.post(
+    "/consent/{user_id}/{consent_type}/{jurisdiction}/grant", response_model=ConsentRecordResponse
+)
 async def grant_consent(
     user_id: UUID,
     consent_type: str,
@@ -547,6 +567,7 @@ async def grant_consent(
 
 # Privacy Preference Center (User-facing)
 
+
 @router.get("/preferences", response_model=PrivacyPreferenceCenterResponse)
 async def get_privacy_preferences(
     user_id: Annotated[UUID, Depends(get_current_user_id)],
@@ -565,7 +586,9 @@ async def get_privacy_preferences(
     """
     # Get current notices for all jurisdictions
     current_notices = await notice_repo.get_all_current()
-    notices_dict = {n.jurisdiction: PrivacyNoticeResponse.model_validate(n) for n in current_notices}
+    notices_dict = {
+        n.jurisdiction: PrivacyNoticeResponse.model_validate(n) for n in current_notices
+    }
 
     # Get user's consent records
     consent_records = await consent_repo.get_by_user(user_id)
@@ -584,7 +607,9 @@ async def get_privacy_preferences(
 
     return PrivacyPreferenceCenterResponse(
         user_id=user_id,
-        current_notices={k: PrivacyNoticeResponse.model_validate(v) for k, v in notices_dict.items()},
-        consent_records=[ConsentRecordResponse.model_validate(r) for r in await consent_repo.get_by_user(user_id)],
+        current_notices={
+            k: PrivacyNoticeResponse.model_validate(v) for k, v in notices_dict.items()
+        },
+        consent_records=consent_list,
         available_consent_types=available_consent_types,
     )

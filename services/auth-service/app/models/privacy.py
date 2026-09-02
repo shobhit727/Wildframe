@@ -4,20 +4,19 @@ Implements PrivacyNotice entity with versioning and jurisdiction awareness.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Sequence
 
 from sqlalchemy import (
     Boolean,
     DateTime,
     Index,
-    Integer,
     String,
     Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models import Base, BaseModel
 
@@ -85,7 +84,12 @@ class PrivacyNotice(Base, BaseModel):
     )
 
     __table_args__ = (
-        UniqueConstraint("version", "jurisdiction", "language", name="uq_privacy_notice_version_jurisdiction_lang"),
+        UniqueConstraint(
+            "version",
+            "jurisdiction",
+            "language",
+            name="uq_privacy_notice_version_jurisdiction_lang",
+        ),
         Index("idx_privacy_notice_current", "jurisdiction", "language", "is_current"),
         Index("idx_privacy_notice_effective", "jurisdiction", "language", "effective_date"),
     )

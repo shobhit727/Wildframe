@@ -1,7 +1,5 @@
 """Tests for compliance events module."""
 
-import pytest
-from datetime import UTC, datetime
 from uuid import uuid4
 
 from wildframe_compliance.events import (

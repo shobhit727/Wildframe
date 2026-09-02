@@ -11,8 +11,6 @@ from wildframe_compliance.events import (
     ComplianceEventType,
     COMPLIANCE_POLICY_TOPIC,
 )
-from wildframe_compliance.jurisdiction import Jurisdiction
-from wildframe_compliance.policy import CompliancePolicy
 from wildframe_compliance.settings import ComplianceSettingsMixin
 
 logger = logging.getLogger(__name__)
@@ -64,6 +62,7 @@ class PolicyChangeProducer:
         jurisdiction = getattr(policy, "jurisdiction", None)
         if isinstance(jurisdiction, str):
             from wildframe_compliance.jurisdiction import Jurisdiction
+
             jurisdiction = Jurisdiction(jurisdiction)
 
         event = CompliancePolicyEvent(
@@ -87,10 +86,14 @@ class PolicyChangeProducer:
         )
 
         await self._publisher.publish(domain_event)
-        logger.info(f"Published {event_type.value} for {event.jurisdiction.value} v{event.policy_version}")
+        logger.info(
+            f"Published {event_type.value} for {event.jurisdiction.value} v{event.policy_version}"
+        )
 
 
-async def create_policy_change_producer(settings: ComplianceSettingsMixin) -> "PolicyChangeProducer":
+async def create_policy_change_producer(
+    settings: ComplianceSettingsMixin,
+) -> "PolicyChangeProducer":
     """Factory function to create and start a policy change producer."""
     producer = PolicyChangeProducer(settings)
     await producer.start()

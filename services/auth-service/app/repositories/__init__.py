@@ -5,9 +5,9 @@ from datetime import UTC
 from uuid import UUID
 
 from app.models import (
-    ConsentRecord,
+    ConsentRecord,  # noqa: F401
     LoginAudit,
-    PrivacyNotice,
+    PrivacyNotice,  # noqa: F401
     RefreshToken,
     TokenBlacklist,
     User,

@@ -98,8 +98,10 @@ class PrivacyNoticeRepository:
         Returns:
             List of PrivacyNotice instances
         """
-        stmt = select(PrivacyNotice).where(PrivacyNotice.jurisdiction == jurisdiction).order_by(
-            PrivacyNotice.effective_date.desc()
+        stmt = (
+            select(PrivacyNotice)
+            .where(PrivacyNotice.jurisdiction == jurisdiction)
+            .order_by(PrivacyNotice.effective_date.desc())
         )
         result = await self.db.execute(stmt)
         return result.scalars().all()
@@ -198,8 +200,10 @@ class ConsentRecordRepository:
         Returns:
             List of ConsentRecord instances
         """
-        stmt = select(ConsentRecord).where(ConsentRecord.user_id == user_id).order_by(
-            ConsentRecord.created_at.desc()
+        stmt = (
+            select(ConsentRecord)
+            .where(ConsentRecord.user_id == user_id)
+            .order_by(ConsentRecord.created_at.desc())
         )
         result = await self.db.execute(stmt)
         return result.scalars().all()
