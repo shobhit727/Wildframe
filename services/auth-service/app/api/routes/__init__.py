@@ -21,7 +21,7 @@ from app.schemas import (
 )
 from app.security import PasswordManager, TokenManager
 from app.services import AuthService
-from jose.exceptions import JWTError  # type: ignore[attr-defined]
+from jose.exceptions import JWTError
  
 from sqlalchemy.ext.asyncio import AsyncSession
 
