@@ -135,7 +135,7 @@ class KafkaEventPublisher(EventPublisher):
         if self._producer is None:
             # Imported lazily so the import of this module never hard-requires
             # aiokafka in environments that use the in-memory publisher.
-            from aiokafka import AIOKafkaProducer
+            from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
 
             self._producer = AIOKafkaProducer(
                 bootstrap_servers=self.bootstrap_servers,

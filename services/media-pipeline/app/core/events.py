@@ -116,7 +116,7 @@ class KafkaEventPublisher(EventPublisher):
 
     async def _get_producer(self):
         if self._producer is None:
-            from aiokafka import AIOKafkaProducer
+            from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
 
             self._producer = AIOKafkaProducer(
                 bootstrap_servers=self.bootstrap_servers,

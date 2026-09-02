@@ -13,8 +13,7 @@ import logging
 import os
 from datetime import UTC, datetime
 
-# type: ignore[import-untyped] - aiokafka has no stubs
-from aiokafka import AIOKafkaConsumer
+from aiokafka import AIOKafkaConsumer  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
