@@ -136,7 +136,7 @@ ignore = ["E402"]
 # `if col:` would pass the Column object truthily and never filter.
 "**/repositories/**/*.py" = ["E712", "E711"]
 "**/repositories.py" = ["E712", "E711"]
-"**/tests/**/*.py" = ["E741"]
+[tool.mypy]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
