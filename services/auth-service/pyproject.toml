@@ -74,8 +74,6 @@ python_version = "3.11"
 module = "jose.*"
 ignore_missing_imports = true
 ignore_errors = true
-module = "jose.*"
-ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "aiokafka"

@@ -74,10 +74,6 @@ python-dotenv = "^1.0.0"
 email-validator = "^2.1.0"
 pycountry = ">=22.3,<27.0"
 
-# Development & Testing
-pytest = ">=7.4,<10.0"
-pytest-asyncio = "^0.21.0"
-pytest-cov = "^4.1.0"
 pytest-xdist = "^3.5.0"
 faker = "^20.0.0"
 
@@ -280,9 +276,6 @@ ignore_errors = true
 # Test modules packaged under the app package (services/<svc>/app/tests/)
 # are excluded from type checking like top-level tests; their dependencies
 # (e.g. httpx ASGI transports) differ in stub strictness across versions.
-[[tool.mypy.overrides]]
-module = "tests.*"
-ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = "app.tests.*"
