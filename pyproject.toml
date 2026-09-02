@@ -136,9 +136,7 @@ ignore = ["E402"]
 # `if col:` would pass the Column object truthily and never filter.
 "**/repositories/**/*.py" = ["E712", "E711"]
 "**/repositories.py" = ["E712", "E711"]
-# E741 single-letter loop vars in tests are an established convention.
-"**/tests/**/*.py" = ["E741"]
-
+"**/auth-service/app/api/routes/__init__.py" = ["F821"]
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true
