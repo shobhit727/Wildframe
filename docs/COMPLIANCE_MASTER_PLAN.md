@@ -1,19 +1,29 @@
 # Master Plan: All Remaining COMPLIANCE-* Issues
 
 ## Overview
-24 remaining COMPLIANCE-* issues building on COMPLIANCE-FOUNDATION (#708).
+24 remaining COMPLIANCE-* issues building on COMPLIANCE-FOUNDATION (#708). **Update 2025-09-03: #709 DONE (Phase 1 parallel) — auth-service harden + user-service + gateway - 0710d2c, plan tmp/plan.json --strict PASS.**
+
+## Status Board — Phase 1
+| Issue | Status | Commit | Evidence |
+|-------|--------|--------|----------|
+| #709 COMPLIANCE-PRIVACY | **DONE** | `0710d2c` | 3 agents parallel (auth/user/gateway), no write conflict, `tmp/plan.json` strict PASS, `py_compile` OK, admin guard + Jurisdiction validation + commit fix |
+| #710 COMPLIANCE-PRIVACY DSAR | TODO | — | Next: t7101-7104 |
+| #711 COMPLIANCE-MINORS | TODO | — | — |
+| #708 FOUNDATION | DONE | `5dd9f4d` | 119 SDK tests baseline |
 
 ## Phase 1: Core Privacy & Data Rights (Issues #709, #710, #711)
 **Priority: CRITICAL** - Direct consumers of compliance SDK
 
-### #709 COMPLIANCE-PRIVACY: Privacy Notice, Consent, Preferences
+### #709 COMPLIANCE-PRIVACY: Privacy Notice, Consent, Preferences — **DONE 2025-09-03**
 **Service:** auth-service, user-service, api-gateway
+**Merge:** `0710d2c` — 3 agents parallel, plan `tmp/plan.json` strict PASS, `py_compile` OK on all 6 new privacy files
+**Handoff:** coder-auth fixed `notice_metadata`/`consent_metadata` + `db.commit()` + `require_admin` + `Header(alias="Authorization")` + `Jurisdiction` validation; coder-user created `user-service/app/models/privacy.py` etc + wired router; coder-gateway created `app/core/privacy_proxy.py` + `X-Jurisdiction` cache
 **Components:**
-- Privacy notice management (versioned, jurisdiction-aware)
-- Consent collection UI + API (granular, withdrawable)
-- Privacy preference center (user-facing)
-- Consent audit trail (immutable log)
-- Policy: `GDPRPolicy.consent_*`, `IndiaDPDPPolicy.consent_manager_required`
+- Privacy notice management (versioned, jurisdiction-aware) ✅ `PrivacyNotice` `version/Jurisdiction/language/is_current` + `set_current` deprecates old
+- Consent collection UI + API (granular, withdrawable) ✅ `ConsentRecord` grant/withdraw + `POST /consent` / `PATCH` / `withdraw`/`grant`
+- Privacy preference center (user-facing) ✅ `GET /preferences` + `GET /consent/active`
+- Consent audit trail (immutable log) ✅ `withdrawn_at`/`withdrawal_reason` retained, append-only via `withdraw()` not delete
+- Policy: `GDPRPolicy.consent_*`, `IndiaDPDPPolicy.consent_manager_required` ✅ validated via `wildframe_compliance.Jurisdiction`
 
 ### #710 COMPLIANCE-PRIVACY: Data Subject Rights (Access, Portability, Correction, Deletion)
 **Service:** user-service, auth-service, content-service, analytics-service
@@ -131,13 +141,15 @@
 - All issues touch auth, user data, payments → `security-reviewer` required
 - Payment/crypto → extra scrutiny
 
-## Next Action: Start Phase 1
+## Next Action: Continue Phase 1
 
-**Immediate next:** Create detailed plans for #709, #710, #711 and get Gate 1 approval.
+**Update 2025-09-03:** #709 DONE and pushed (`0710d2c`). **Next:** #710 Data Subject Rights (user-service/auth/content/analytics) — 4 tasks t7101-7104 ready per tmp/plan.json pattern.
 
-**Suggested order:**
-1. #709 Privacy Notice/Consent (auth-service)
-2. #710 Data Subject Rights (user-service)
-3. #711 Minors/Parental Controls (auth-service + streaming-service)
+**Completed:**
+- ✅ #709 Privacy Notice/Consent (auth-service/user-service/gateway) — 3 agents parallel, Gate 1 `gate-review` + Gate 2 `gate-merge` approved, strict PASS
 
-Shall I begin with detailed planning for #709?
+**Remaining Phase 1:**
+1. #710 Data Subject Rights (user-service/auth/content/analytics)
+2. #711 Minors/Parental Controls (auth-service + streaming-service)
+
+Shall I dispatch #710 plan?
