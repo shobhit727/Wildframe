@@ -308,12 +308,12 @@ ignore_untyped = true
 module = "aiokafka.consumer.consumer"
 ignore_missing_imports = true
 ignore_untyped = true
-
 # jose.exceptions has incomplete stubs in types-python-jose
+
 [[tool.mypy.overrides]]
 module = "jose.exceptions"
 ignore_missing_imports = true
-
+ignore_errors = true
 # Exclude all services with duplicate "app" module names
 [[tool.mypy.overrides]]
 module = "services.admin_service.*"
