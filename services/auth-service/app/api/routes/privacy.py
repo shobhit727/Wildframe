@@ -130,7 +130,7 @@ async def create_privacy_notice(
 @router.get("/notices", response_model=list[PrivacyNoticeResponse])
 async def list_privacy_notices(
     jurisdiction: str | None = None,
-    repo: Annotated[PrivacyNoticeRepository | None, Depends(get_privacy_notice_repo)] = None,
+    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],
 ) -> list[PrivacyNoticeResponse]:
     """List privacy notices."""
     if jurisdiction:
@@ -382,9 +382,9 @@ async def withdraw_consent(
     user_id: UUID,
     consent_type: str,
     jurisdiction: str,
-    repo: Annotated[ConsentRecordRepository | None, Depends(get_consent_record_repo)] = None,
-    db: Annotated[AsyncSession | None, Depends(get_db)] = None,
-) -> ConsentRecordResponse:
+    repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
     """Withdraw user consent."""
     jurisdiction = _validate_jurisdiction(jurisdiction)
     record = await repo.get_by_user_type_jurisdiction(user_id, consent_type, jurisdiction)
@@ -411,9 +411,9 @@ async def grant_consent(
     user_id: UUID,
     consent_type: str,
     jurisdiction: str,
-    repo: Annotated[ConsentRecordRepository | None, Depends(get_consent_record_repo)] = None,
-    db: Annotated[AsyncSession | None, Depends(get_db)] = None,
-    """Grant (or re-grant) user consent."""
+    repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
     jurisdiction = _validate_jurisdiction(jurisdiction)
     record = await repo.get_by_user_type_jurisdiction(user_id, consent_type, jurisdiction)
     if not record:
