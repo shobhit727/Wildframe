@@ -4,7 +4,14 @@ import logging
 from datetime import UTC
 from uuid import UUID
 
-from app.models import LoginAudit, RefreshToken, TokenBlacklist, User
+from app.models import (
+    ConsentRecord,
+    LoginAudit,
+    PrivacyNotice,
+    RefreshToken,
+    TokenBlacklist,
+    User,
+)
 from app.security import normalize_email
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -265,3 +272,16 @@ class TokenBlacklistRepository(BaseRepository):
             await self.rollback()
             logger.error(f"Error deleting expired blacklist entries: {e!s}")
             raise
+
+
+from app.repositories.privacy_repository import ConsentRecordRepository, PrivacyNoticeRepository
+
+__all__ = [
+    "BaseRepository",
+    "ConsentRecordRepository",
+    "LoginAuditRepository",
+    "PrivacyNoticeRepository",
+    "RefreshTokenRepository",
+    "TokenBlacklistRepository",
+    "UserRepository",
+]

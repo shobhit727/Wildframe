@@ -278,3 +278,171 @@ class HealthCheckResponse(BaseModel):
             }
         }
     )
+
+
+class PrivacyNoticeCreate(BaseModel):
+    """Privacy notice creation request.
+
+    Attributes:
+        version: Notice version (semver format: MAJOR.MINOR.PATCH)
+        jurisdiction: Jurisdiction this notice applies to
+        title: Notice title
+        content: Full notice content (markdown supported)
+        language: Language code (ISO 639-1)
+        effective_date: When this version becomes effective
+        metadata: Additional metadata as JSON string
+    """
+
+    version: str = Field(..., pattern=r"^\d+\.\d+\.\d+$", description="Semver format: MAJOR.MINOR.PATCH")
+    jurisdiction: str = Field(..., min_length=2, max_length=100)
+    title: str = Field(..., min_length=1, max_length=255)
+    content: str = Field(..., min_length=1)
+    language: str = Field(default="en", pattern=r"^[a-z]{2}$", description="ISO 639-1 language code")
+    effective_date: datetime
+    metadata: str | None = Field(None, description="Additional metadata as JSON string")
+
+
+class PrivacyNoticeUpdate(BaseModel):
+    """Privacy notice update request.
+
+    Attributes:
+        title: Notice title
+        content: Full notice content (markdown supported)
+        deprecated_date: When this version was deprecated
+        is_current: Whether this is the current version
+        metadata: Additional metadata as JSON string
+    """
+
+    title: str | None = Field(None, min_length=1, max_length=255)
+    content: str | None = Field(None, min_length=1)
+    deprecated_date: datetime | None = None
+    is_current: bool | None = None
+    metadata: str | None = None
+
+
+class PrivacyNoticeResponse(BaseModel):
+    """Privacy notice response.
+
+    Attributes:
+        id: Unique notice identifier
+        version: Notice version
+        jurisdiction: Jurisdiction this notice applies to
+        title: Notice title
+        content: Full notice content
+        language: Language code
+        effective_date: When this version becomes effective
+        deprecated_date: When this version was deprecated
+        is_current: Whether this is the current version
+        metadata: Additional metadata
+        created_at: Record creation timestamp
+        updated_at: Record update timestamp
+    """
+
+    id: UUID
+    version: str
+    jurisdiction: str
+    title: str
+    content: str
+    language: str
+    effective_date: datetime
+    deprecated_date: datetime | None
+    is_current: bool
+    metadata: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConsentRecordCreate(BaseModel):
+    """Consent record creation request.
+
+    Attributes:
+        user_id: User ID
+        consent_type: Type of consent (marketing, analytics, profiling, etc.)
+        jurisdiction: Jurisdiction this consent applies to
+        granted: Whether consent was granted
+        version: Privacy notice version this consent refers to
+        ip_address: IP address when consent was given
+        user_agent: User agent string
+        metadata: Additional metadata as JSON string
+    """
+
+    user_id: UUID
+    consent_type: str = Field(..., min_length=1, max_length=100)
+    jurisdiction: str = Field(..., min_length=2, max_length=100)
+    granted: bool
+    version: str = Field(..., min_length=1, max_length=50)
+    ip_address: str | None = Field(None, max_length=45)
+    user_agent: str | None = None
+    metadata: str | None = None
+
+
+class ConsentRecordUpdate(BaseModel):
+    """Consent record update request.
+
+    Attributes:
+        granted: Whether consent was granted
+        withdrawn_at: When consent was withdrawn
+        withdrawal_reason: Reason for withdrawal
+        metadata: Additional metadata as JSON string
+    """
+
+    granted: bool | None = None
+    withdrawn_at: datetime | None = None
+    withdrawal_reason: str | None = Field(None, max_length=255)
+    metadata: str | None = None
+
+
+class ConsentRecordResponse(BaseModel):
+    """Consent record response.
+
+    Attributes:
+        id: Unique consent record identifier
+        user_id: User ID
+        consent_type: Type of consent
+        jurisdiction: Jurisdiction this consent applies to
+        granted: Whether consent was granted
+        granted_at: When consent was granted
+        withdrawn_at: When consent was withdrawn
+        withdrawal_reason: Reason for withdrawal
+        version: Privacy notice version this consent refers to
+        ip_address: IP address when consent was given
+        user_agent: User agent string
+        metadata: Additional metadata
+        created_at: Record creation timestamp
+        updated_at: Record update timestamp
+    """
+
+    id: UUID
+    user_id: UUID
+    consent_type: str
+    jurisdiction: str
+    granted: bool
+    granted_at: datetime | None
+    withdrawn_at: datetime | None
+    withdrawal_reason: str | None
+    version: str
+    ip_address: str | None
+    user_agent: str | None
+    metadata: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PrivacyPreferenceCenterResponse(BaseModel):
+    """Privacy preference center response for user-facing UI.
+
+    Attributes:
+        user_id: User ID
+        current_notices: Current privacy notices by jurisdiction
+        consent_records: User's consent records
+        available_consent_types: Available consent types with descriptions
+    """
+
+    user_id: UUID
+    current_notices: dict[str, PrivacyNoticeResponse]
+    consent_records: list[ConsentRecordResponse]
+    available_consent_types: dict[str, str]
