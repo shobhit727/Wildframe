@@ -22,7 +22,7 @@ from app.schemas import (
 from app.security import PasswordManager, TokenManager
 from app.services import AuthService
 from jose.exceptions import JWTError  # type: ignore[attr-defined]
-from jose.exceptions import JWTError  # type: ignore[attr-defined]
+ 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.auth import router as auth_router
