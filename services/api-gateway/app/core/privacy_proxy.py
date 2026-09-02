@@ -21,7 +21,7 @@ VALID_JURISDICTIONS = {"EU", "US", "IN", "GLOBAL", "US-CA", "CA", "BR", "JP", "A
 
 def resolve_jurisdiction(
     x_jurisdiction: Annotated[str | None, Header(alias="X-Jurisdiction")] = None,
-    request: Request = None,
+    request: Request | None = None,
 ) -> str:
     """Resolve jurisdiction from header, with GeoIP fallback.
 
