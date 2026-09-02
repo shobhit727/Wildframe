@@ -13,6 +13,9 @@ import logging
 import os
 from datetime import UTC, datetime
 
+# type: ignore[import-untyped] - aiokafka has no stubs
+from aiokafka import AIOKafkaConsumer
+
 logger = logging.getLogger(__name__)
 
 CONSUMER_GROUP = "auth-service"
@@ -42,7 +45,7 @@ async def run_user_moderation_consumer(session_factory) -> None:
     also be re-applied by re-issuing the decision."""
     bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
     try:
-        from aiokafka import AIOKafkaConsumer  # type: ignore[import-untyped]
+        pass
     except ImportError:  # pragma: no cover - aiokafka is an auth dependency
         logger.warning("aiokafka not installed; user.moderated consumer disabled")
         return
