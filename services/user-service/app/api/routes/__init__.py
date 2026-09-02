@@ -28,6 +28,10 @@ from app.schemas import (
 from app.security.manager import TokenManager
 from app.services import UserService
 
+from app.api.routes.privacy import router as privacy_router
+
+router.include_router(privacy_router)
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()

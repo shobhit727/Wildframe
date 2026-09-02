@@ -290,7 +290,7 @@ class PrivacyNoticeCreate(BaseModel):
         content: Full notice content (markdown supported)
         language: Language code (ISO 639-1)
         effective_date: When this version becomes effective
-        metadata: Additional metadata as JSON string
+        notice_metadata: Additional metadata as JSON string
     """
 
     version: str = Field(
@@ -303,7 +303,7 @@ class PrivacyNoticeCreate(BaseModel):
         default="en", pattern=r"^[a-z]{2}$", description="ISO 639-1 language code"
     )
     effective_date: datetime
-    metadata: str | None = Field(None, description="Additional metadata as JSON string")
+    notice_metadata: str | None = Field(None, description="Additional metadata as JSON string")
 
 
 class PrivacyNoticeUpdate(BaseModel):
@@ -314,14 +314,14 @@ class PrivacyNoticeUpdate(BaseModel):
         content: Full notice content (markdown supported)
         deprecated_date: When this version was deprecated
         is_current: Whether this is the current version
-        metadata: Additional metadata as JSON string
+        notice_metadata: Additional metadata as JSON string
     """
 
     title: str | None = Field(None, min_length=1, max_length=255)
     content: str | None = Field(None, min_length=1)
     deprecated_date: datetime | None = None
     is_current: bool | None = None
-    metadata: str | None = None
+    notice_metadata: str | None = None
 
 
 class PrivacyNoticeResponse(BaseModel):
@@ -337,7 +337,7 @@ class PrivacyNoticeResponse(BaseModel):
         effective_date: When this version becomes effective
         deprecated_date: When this version was deprecated
         is_current: Whether this is the current version
-        metadata: Additional metadata
+        notice_metadata: Additional metadata
         created_at: Record creation timestamp
         updated_at: Record update timestamp
     """
@@ -351,7 +351,7 @@ class PrivacyNoticeResponse(BaseModel):
     effective_date: datetime
     deprecated_date: datetime | None
     is_current: bool
-    metadata: str | None
+    notice_metadata: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -369,7 +369,7 @@ class ConsentRecordCreate(BaseModel):
         version: Privacy notice version this consent refers to
         ip_address: IP address when consent was given
         user_agent: User agent string
-        metadata: Additional metadata as JSON string
+        consent_metadata: Additional metadata as JSON string
     """
 
     user_id: UUID
@@ -379,7 +379,7 @@ class ConsentRecordCreate(BaseModel):
     version: str = Field(..., min_length=1, max_length=50)
     ip_address: str | None = Field(None, max_length=45)
     user_agent: str | None = None
-    metadata: str | None = None
+    consent_metadata: str | None = None
 
 
 class ConsentRecordUpdate(BaseModel):
@@ -389,13 +389,13 @@ class ConsentRecordUpdate(BaseModel):
         granted: Whether consent was granted
         withdrawn_at: When consent was withdrawn
         withdrawal_reason: Reason for withdrawal
-        metadata: Additional metadata as JSON string
+        consent_metadata: Additional metadata as JSON string
     """
 
     granted: bool | None = None
     withdrawn_at: datetime | None = None
     withdrawal_reason: str | None = Field(None, max_length=255)
-    metadata: str | None = None
+    consent_metadata: str | None = None
 
 
 class ConsentRecordResponse(BaseModel):
@@ -413,7 +413,7 @@ class ConsentRecordResponse(BaseModel):
         version: Privacy notice version this consent refers to
         ip_address: IP address when consent was given
         user_agent: User agent string
-        metadata: Additional metadata
+        consent_metadata: Additional metadata
         created_at: Record creation timestamp
         updated_at: Record update timestamp
     """
@@ -429,7 +429,7 @@ class ConsentRecordResponse(BaseModel):
     version: str
     ip_address: str | None
     user_agent: str | None
-    metadata: str | None
+    consent_metadata: str | None
     created_at: datetime
     updated_at: datetime
 
