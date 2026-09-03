@@ -10,11 +10,11 @@
 | #709 COMPLIANCE-PRIVACY | **DONE** | `0710d2c` | 3 agents parallel, `tmp/plan.json` strict PASS, `py_compile` OK |
 | #710 COMPLIANCE-PRIVACY DSAR | **DONE** | `142fede` | 4 agents (user/auth/content/analytics), `tmp/plan-710.json` strict PASS, 12 files OK |
 | #711 COMPLIANCE-MINORS | **DONE** | `e4ad506` | 4 agents (auth/user/streaming/gateway), `tmp/plan-711.json` strict PASS, 11 files OK |
-| #718 COMPLIANCE-BILLING | **DONE** | `pending` | 6 agents parallel Phase 2+3, `tmp/plan-718-717.json` strict PASS (8 tasks), 18 files |
-| #712 COMPLIANCE-CONTENT | **DONE** | `pending` | 6 agents parallel, rights registry + territorial licensing — 3 files |
-| #713 COMPLIANCE-CREATOR | **DONE** | `pending` | KYC/KYB + Stripe + tax forms + living wage — 3 files |
-| #715 COMPLIANCE-REVIEWS | **DONE** | `pending` | Moderated reviews + queue — 4 files |
-| #717 COMPLIANCE-CREATOR Payout | **DONE** | `pending` | Payout schedule + multi-currency + ledger — 4 files |
+| #718 COMPLIANCE-BILLING | **DONE** | `80bd323` | 6 agents parallel Phase 2+3, `tmp/plan-718-717.json` strict PASS (8 tasks), 18 files |
+| #712 COMPLIANCE-CONTENT | **DONE** | `80bd323` | 6 agents parallel, rights registry + territorial licensing — 3 files |
+| #713 COMPLIANCE-CREATOR | **DONE** | `80bd323` | KYC/KYB + Stripe + tax forms + living wage — 3 files |
+| #715 COMPLIANCE-REVIEWS | **DONE** | `80bd323` | Moderated reviews + queue — 4 files |
+| #717 COMPLIANCE-CREATOR Payout | **DONE** | `80bd323` | Payout schedule + multi-currency + ledger — 4 files |
 | #719-#732 | TODO | — | Phase 4 MEDIUM — 14 issues pending |
 
 ## Phase 1: Core Privacy & Data Rights (Issues #709, #710, #711)
