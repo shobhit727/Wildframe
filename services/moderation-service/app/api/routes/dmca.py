@@ -1,7 +1,6 @@
 """DMCA routes - takedown, counter-notice, repeat infringer."""
 
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,8 +13,14 @@ router = APIRouter(prefix="/dmca", tags=["dmca"])
 
 
 @router.post("/takedown", status_code=201)
-async def create_takedown(request: TakedownCreate, db: Annotated[AsyncSession, Depends(get_db)]) -> dict:
-    rec = DMCATakedown(content_id=request.content_id, reporter_email=request.reporter_email, reason=request.reason)
+async def create_takedown(
+    request: TakedownCreate, db: Annotated[AsyncSession, Depends(get_db)]
+) -> dict:
+    rec = DMCATakedown(
+        content_id=request.content_id,
+        reporter_email=request.reporter_email,
+        reason=request.reason,
+    )
     db.add(rec)
     await db.flush()
     await db.commit()
@@ -23,7 +28,9 @@ async def create_takedown(request: TakedownCreate, db: Annotated[AsyncSession, D
 
 
 @router.post("/counter", status_code=201)
-async def counter_notice(request: CounterNoticeCreate, db: Annotated[AsyncSession, Depends(get_db)]) -> dict:
+async def counter_notice(
+    request: CounterNoticeCreate, db: Annotated[AsyncSession, Depends(get_db)]
+) -> dict:
     from sqlalchemy import select
 
     stmt = select(DMCATakedown).where(DMCATakedown.id == request.takedown_id)

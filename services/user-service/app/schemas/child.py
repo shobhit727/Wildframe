@@ -10,7 +10,9 @@ class ChildAccountCreate(BaseModel):
     child_user_id: UUID
     parent_user_id: UUID
     relationship: str = Field(default="parent", pattern="^(parent|guardian)$")
-    verification_method: str = Field(default="email_otp", pattern="^(email_otp|document|credit_card)$")
+    verification_method: str = Field(
+        default="email_otp", pattern="^(email_otp|document|credit_card)$"
+    )
 
 
 class ChildAccountResponse(BaseModel):

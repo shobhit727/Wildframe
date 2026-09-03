@@ -10,7 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.maturity import ContentMaturity
-from app.schemas.maturity import MaturityCheckRequest, MaturityCheckResponse, MaturityCreate, MaturityResponse
+from app.schemas.maturity import (
+    MaturityCheckRequest,
+    MaturityCheckResponse,
+    MaturityCreate,
+    MaturityResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +44,23 @@ async def check_maturity(
     result = await db.execute(stmt)
     maturity = result.scalar_one_or_none()
     if not maturity:
-        return MaturityCheckResponse(allowed=True, reason="No maturity restriction", requires_consent=False, min_age=0)
+        return MaturityCheckResponse(
+            allowed=True, reason="No maturity restriction", requires_consent=False, min_age=0
+        )
     if request.user_age < maturity.min_age and not request.parental_consent:
-        return MaturityCheckResponse(allowed=False, reason=f"Requires age {maturity.min_age} or parental consent", requires_consent=True, min_age=maturity.min_age)
+        return MaturityCheckResponse(
+            allowed=False,
+            reason=f"Requires age {maturity.min_age} or parental consent",
+            requires_consent=True,
+            min_age=maturity.min_age,
+        )
     # Check bedtime / screen time would go here
-    return MaturityCheckResponse(allowed=True, reason=None, requires_consent=maturity.requires_parental_consent, min_age=maturity.min_age)
+    return MaturityCheckResponse(
+        allowed=True,
+        reason=None,
+        requires_consent=maturity.requires_parental_consent,
+        min_age=maturity.min_age,
+    )
 
 
 @router.get("/{content_id}", response_model=MaturityResponse)

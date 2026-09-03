@@ -7,5 +7,6 @@ SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
 }
 
+
 def rotation_check(key_id: str) -> bool:
     return True

@@ -1,9 +1,9 @@
 """Auth-service age verification models - self-declare plus document check, consent_minor_age per jurisdiction."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,7 +16,9 @@ class AgeVerification(Base, BaseModel):
     __tablename__ = "age_verifications"
 
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    verification_method: Mapped[str] = mapped_column(String(50), nullable=False)  # self_declare, document, id_check
+    verification_method: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # self_declare, document, id_check
     declared_age: Mapped[int | None] = mapped_column(Integer, nullable=True)
     verified_age: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_minor: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

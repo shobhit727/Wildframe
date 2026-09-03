@@ -31,4 +31,8 @@ async def get_drm(content_id: UUID, db: Annotated[AsyncSession, Depends(get_db)]
     rec = result.scalar_one_or_none()
     if not rec:
         return {"error": "not found"}
-    return {"content_id": str(rec.content_id), "fairplay": rec.fairplay_enabled, "widevine": rec.widevine_enabled}
+    return {
+        "content_id": str(rec.content_id),
+        "fairplay": rec.fairplay_enabled,
+        "widevine": rec.widevine_enabled,
+    }

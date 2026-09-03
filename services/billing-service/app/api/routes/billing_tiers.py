@@ -1,7 +1,6 @@
 """Billing tiers routes."""
 
 from typing import Annotated
-from uuid import UUID
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +13,9 @@ router = APIRouter(prefix="/tiers", tags=["billing-tiers"])
 
 
 @router.post("", response_model=SubscriptionTierResponse, status_code=201)
-async def create_tier(request: SubscriptionTierCreate, db: Annotated[AsyncSession, Depends(get_db)]) -> SubscriptionTierResponse:
+async def create_tier(
+    request: SubscriptionTierCreate, db: Annotated[AsyncSession, Depends(get_db)]
+) -> SubscriptionTierResponse:
     tier = SubscriptionTier(**request.model_dump())
     db.add(tier)
     await db.flush()

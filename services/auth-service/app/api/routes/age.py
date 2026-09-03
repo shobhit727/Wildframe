@@ -54,8 +54,17 @@ async def verify_age(
     await db.flush()
     await db.commit()
     await db.refresh(record)
-    jwt_claim = {"age_verified": verified, "is_minor": is_minor, "minor_flag": is_minor, "consent_age": consent_age, "verified_at": now.isoformat()}
-    logger.info(f"Age verified: user={request.user_id} age={request.declared_age} minor={is_minor} j={request.jurisdiction}")
+    jwt_claim = {
+        "age_verified": verified,
+        "is_minor": is_minor,
+        "minor_flag": is_minor,
+        "consent_age": consent_age,
+        "verified_at": now.isoformat(),
+    }
+    logger.info(
+        f"Age verified: user={request.user_id} age={request.declared_age} "
+        f"minor={is_minor} j={request.jurisdiction}"
+    )
     return AgeVerifyResponse(
         user_id=request.user_id,
         verified_age=record.verified_age,
@@ -79,7 +88,9 @@ async def check_age(
     result = await db.execute(stmt)
     record = result.scalar_one_or_none()
     if not record:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Age verification not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Age verification not found"
+        )
     return AgeVerifyResponse(
         user_id=record.user_id,
         verified_age=record.verified_age,
@@ -88,5 +99,8 @@ async def check_age(
         consent_minor_age=record.consent_minor_age,
         verified=record.verified_at is not None,
         verified_at=record.verified_at,
-        jwt_claim={"age_verified": record.verified_at is not None, "is_minor": record.is_minor},
+        jwt_claim={
+            "age_verified": record.verified_at is not None,
+            "is_minor": record.is_minor,
+        },
     )

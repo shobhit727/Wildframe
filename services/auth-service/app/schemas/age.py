@@ -10,7 +10,9 @@ class AgeVerifyRequest(BaseModel):
     user_id: UUID
     declared_age: int = Field(..., ge=0, le=120)
     jurisdiction: str = Field(..., min_length=2, max_length=10)
-    verification_method: str = Field(default="self_declare", pattern="^(self_declare|document|id_check)$")
+    verification_method: str = Field(
+        default="self_declare", pattern="^(self_declare|document|id_check)$"
+    )
     document_type: str | None = None
 
 

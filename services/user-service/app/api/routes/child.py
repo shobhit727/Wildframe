@@ -39,7 +39,9 @@ async def create_child_account(
     await db.flush()
     await db.commit()
     await db.refresh(record)
-    logger.info(f"Child account created: child={request.child_user_id} parent={request.parent_user_id}")
+    logger.info(
+        f"Child account created: child={request.child_user_id} parent={request.parent_user_id}"
+    )
     return ChildAccountResponse.model_validate(record)
 
 
@@ -65,7 +67,9 @@ async def list_children(
     parent_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> list[ChildAccountResponse]:
-    stmt = select(ChildAccount).where(ChildAccount.parent_user_id == parent_id, ChildAccount.is_active.is_(True))
+    stmt = select(ChildAccount).where(
+        ChildAccount.parent_user_id == parent_id, ChildAccount.is_active.is_(True)
+    )
     result = await db.execute(stmt)
     records = result.scalars().all()
     return [ChildAccountResponse.model_validate(r) for r in records]

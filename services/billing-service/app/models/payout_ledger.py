@@ -23,6 +23,8 @@ class PayoutLedger(Base):
     net_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     treaty: Mapped[str | None] = mapped_column(String(20), nullable=True)  # US-IN, etc.
     reconciled: Mapped[bool] = mapped_column(default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
 
     __table_args__ = (Index("idx_ledger_creator", "creator_id"),)

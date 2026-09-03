@@ -5,8 +5,6 @@ from typing import Annotated
 
 from fastapi import Header, HTTPException, Request, status
 
-from app.core.privacy_proxy import VALID_JURISDICTIONS
-
 logger = logging.getLogger(__name__)
 
 # Routes that require age verification
@@ -33,7 +31,10 @@ def check_age_gate(
     # Require age_verified header for restricted routes
     if x_age_verified != "true":
         logger.warning(f"Age gate blocked {path} - not verified")
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Age verification required for this content")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Age verification required for this content",
+        )
     # Check minor + jurisdiction
     jurisdiction = (x_jurisdiction or "GLOBAL").upper()
     minor_age = JURISDICTION_MINOR_AGE.get(jurisdiction, 16)
