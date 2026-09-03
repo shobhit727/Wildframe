@@ -410,7 +410,7 @@ async def grant_consent(
     consent_type: str,
     jurisdiction: str,
     repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],  # type: ignore[assignment]
-    db: Annotated[AsyncSession, Depends(get_db)],  # type: ignore[assignment],
+    db: Annotated[AsyncSession, Depends(get_db)],  # type: ignore[assignment]
 ) -> ConsentRecordResponse:
     """Grant (or re-grant) user consent."""
     jurisdiction = _validate_jurisdiction(jurisdiction)
@@ -438,7 +438,7 @@ async def grant_consent(
 async def get_privacy_preferences(
     user_id: Annotated[UUID, Depends(get_current_user_id)],
     notice_repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],  # type: ignore[assignment]
-    consent_repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],  # type: ignore[assignment],
+    consent_repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],  # type: ignore[assignment]
 ) -> PrivacyPreferenceCenterResponse:
     """Get privacy preference center data for current user."""
     current_notices = await notice_repo.get_all_current()
