@@ -19,7 +19,11 @@
 | #720 COMPLIANCE-DRM | **DONE** | `batchA` | DRM 3 files, `py_compile` OK |
 | #721 COMPLIANCE-SECURITY | **DONE** | `batchA` | Audit 4 files, `py_compile` OK |
 | #722 COMPLIANCE-ADS | **DONE** | `batchA` | Ads 4 files, `py_compile` OK |
-| #723-#732 | TODO | — | Phase 4 MEDIUM — 10 issues pending (Batch B/C) |
+| #723 COMPLIANCE-ACCESSIBILITY | **DONE** | `batchB` | WCAG 2.2 AA 3 files, `py_compile` OK |
+| #724 COMPLIANCE-TRACKING | **DONE** | `batchB` | Cookie/SDK 4 files, `py_compile` OK |
+| #725 COMPLIANCE-PROCESSORS | **DONE** | `batchB` | Processor inventory 3 files, `py_compile` OK |
+| #726 COMPLIANCE-DOCUMENTS | **DONE** | `batchB` | Legal docs 3 files, `py_compile` OK |
+| #727-#732 | TODO | — | Phase 4 MEDIUM — 6 issues pending (Batch C) |
 
 ## Phase 1: Core Privacy & Data Rights (Issues #709, #710, #711)
 **Priority: CRITICAL** - Direct consumers of compliance SDK
@@ -121,8 +125,8 @@
 - Payout reconciliation + statements ✅ `PayoutLedger` `reconciled` + `gross/net` + `idx_ledger_creator`
 - Dispute resolution workflow ✅ `status` pending/paid/failed/disputed
 
-## Phase 4: Technical & Security (Issues #719, #720, #721, #722, #723, #724, #725, #726, #727, #728, #729, #730, #731, #732) — **Batch A DONE 2025-09-03**
-**Priority: MEDIUM** - Platform hardening — 4 agents parallel, `tmp/plan-batchA.json` strict PASS (6 tasks), 14 files `py_compile` OK
+## Phase 4: Technical & Security (Issues #719, #720, #721, #722, #723, #724, #725, #726, #727, #728, #729, #730, #731, #732) — **Batch A+B DONE 2025-09-03**
+**Priority: MEDIUM** - Platform hardening — Batch A 4 agents (719-722) + Batch B 4 agents (723-726), `tmp/plan-batchA.json` + `tmp/plan-batchB.json` strict PASS, 27 files `py_compile` OK
 
 | Issue | Service | Key Components | Status |
 |-------|---------|----------------|--------|
@@ -130,10 +134,10 @@
 | #720 COMPLIANCE-DRM | streaming-service | Offline downloads, DRM (FairPlay/Widevine), device limits, expiry | **DONE** `batchA` 3 files |
 | #721 COMPLIANCE-SECURITY | all | Audit trails, breach response, encryption, key rotation | **DONE** `batchA` 4 files |
 | #722 COMPLIANCE-ADS | content-service, api-gateway | Consent-gated ads, minor-safe, TCF 2.0, GPP | **DONE** `batchA` 4 files |
-| #723 COMPLIANCE-ACCESSIBILITY | web, streaming-service | WCAG 2.2 AA, captions, audio description, keyboard nav |
-| #724 COMPLIANCE-TRACKING | analytics-service, web | Cookie consent, SDK governance, consent mode |
-| #725 COMPLIANCE-PROCESSORS | admin-service | Processor inventory, DPA metadata, vendor change control |
-| #726 COMPLIANCE-DOCUMENTS | admin-service | Versioned legal docs, acceptance tracking, audit log |
+| #723 COMPLIANCE-ACCESSIBILITY | web, streaming-service | WCAG 2.2 AA, captions, audio description, keyboard nav | **DONE** `batchB` 3 files |
+| #724 COMPLIANCE-TRACKING | analytics-service, web | Cookie consent, SDK governance, consent mode | **DONE** `batchB` 4 files |
+| #725 COMPLIANCE-PROCESSORS | admin-service | Processor inventory, DPA metadata, vendor change control | **DONE** `batchB` 3 files |
+| #726 COMPLIANCE-DOCUMENTS | admin-service | Versioned legal docs, acceptance tracking, audit log | **DONE** `batchB` 3 files |
 | #727 COMPLIANCE-COMMERCE | billing-service, creators-service | Tax, invoice, creator payout, financial records |
 | #728 COMPLIANCE-TRANSFERS | all | Data residency, SCC/BCR, adequacy, transfer impact assessment |
 | #729 COMPLIANCE-COPYRIGHT | moderation-service | DMCA workflows (duplicate of #719?) |
@@ -160,18 +164,20 @@
 - All issues touch auth, user data, payments → `security-reviewer` required
 - Payment/crypto → extra scrutiny
 
-## Next Action: Phase 4 — Technical & Security (14 issues)
+## Next Action: Phase 4 Batch C — Final (6 issues)
 
-**Update 2025-09-03:** Phase 1 COMPLETE (709+710+711) + Phase 2+3 COMPLETE (718+712+713+715+717) — 6 agents parallel, `tmp/plan-718-717.json` strict PASS (8 tasks), 18 files `py_compile` OK. **Next:** Phase 4 #719-#732 (14 issues, 22 tasks) — MEDIUM, mostly independent, can run with 6-8 parallel agents per batch.
+**Update 2025-09-03:** Phase 1 COMPLETE (709+710+711) + Phase 2+3 COMPLETE (718+712+713+715+717) + Batch A COMPLETE (719-722) + Batch B COMPLETE (723-726) — 4+4 agents parallel, `tmp/plan-batchA.json` + `tmp/plan-batchB.json` strict PASS, 27 files `py_compile` OK. **Next:** Batch C #727 COMMERCE, #728 TRANSFERS, #731 EU, #732 INDIA + #708 FOUNDATION close + duplicates 729/730.
 
 **Completed:**
 - ✅ Phase 1 (CRITICAL): #709 (3 agents) + #710 (4 agents) + #711 (4 agents) — all strict PASS
-- ✅ Phase 2+3 (HIGH): #718 (billing) + #712 (rights) + #713 (onboarding) + #715 (reviews) + #717 (payout) — 6 agents parallel, strict PASS, 18 files
+- ✅ Phase 2+3 (HIGH): #718 + #712 + #713 + #715 + #717 — 6 agents parallel, strict PASS, 18 files
+- ✅ Batch A (MEDIUM): #719 + #720 + #721 + #722 — 4 agents parallel, strict PASS, 14 files
+- ✅ Batch B (MEDIUM): #723 + #724 + #725 + #726 — 4 agents parallel, strict PASS, 13 files
 
-**Next Phase 4 (MEDIUM — Platform hardening):**
-- Batch A: #719 COPYRIGHT, #720 DRM, #721 SECURITY (4 services), #722 ADS (2 services) — 4 agents parallel
-- Batch B: #723 ACCESSIBILITY, #724 TRACKING, #725 PROCESSORS, #726 DOCUMENTS — 4 agents parallel
-- Batch C: #727 COMMERCE, #728 TRANSFERS (3 services), #731 EU, #732 INDIA — 4 agents parallel
-- Duplicates #729/#730 skip (duplicates of 719/720)
+**Next Batch C (MEDIUM — Final):**
+- #727 COMMERCE, #728 TRANSFERS (3 services), #731 EU, #732 INDIA — 4 agents parallel
+- Duplicates #729/#730 → close as duplicate
+- #708 FOUNDATION → close (SDK 119 tests baseline already done)
+- #714, #716 (orphan GitHub issues) → close after verification
 
-Shall I dispatch Phase 4 Batch A (4 agents: copyright/drm/security/ads) now?
+Shall I dispatch Batch C (4 agents: commerce/transfers/EU/India) now?
