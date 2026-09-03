@@ -23,7 +23,14 @@
 | #724 COMPLIANCE-TRACKING | **DONE** | `batchB` | Cookie/SDK 4 files, `py_compile` OK |
 | #725 COMPLIANCE-PROCESSORS | **DONE** | `batchB` | Processor inventory 3 files, `py_compile` OK |
 | #726 COMPLIANCE-DOCUMENTS | **DONE** | `batchB` | Legal docs 3 files, `py_compile` OK |
-| #727-#732 | TODO | — | Phase 4 MEDIUM — 6 issues pending (Batch C) |
+| #727 COMPLIANCE-COMMERCE | **DONE** | `batchC` | Commerce 4 files, `py_compile` OK |
+| #728 COMPLIANCE-TRANSFERS | **DONE** | `batchC` | Transfers 4 files, `py_compile` OK |
+| #729 COMPLIANCE-COPYRIGHT | **SKIP** | `duplicate` | Duplicate of #719 — closed |
+| #730 COMPLIANCE-DRM | **SKIP** | `duplicate` | Duplicate of #720 — closed |
+| #731 COMPLIANCE-EU | **DONE** | `batchC` | EU AVMS/DSA/DMA 4 files, `py_compile` OK |
+| #732 COMPLIANCE-INDIA | **DONE** | `batchC` | India OTT 4 files, `py_compile` OK |
+| #708 FOUNDATION | **DONE** | `final` | 119 SDK tests + 25/25 issues closed |
+| #714, #716 ORPHANS | **DONE** | `final` | Closed as covered by #713/#716 |
 
 ## Phase 1: Core Privacy & Data Rights (Issues #709, #710, #711)
 **Priority: CRITICAL** - Direct consumers of compliance SDK
@@ -125,8 +132,8 @@
 - Payout reconciliation + statements ✅ `PayoutLedger` `reconciled` + `gross/net` + `idx_ledger_creator`
 - Dispute resolution workflow ✅ `status` pending/paid/failed/disputed
 
-## Phase 4: Technical & Security (Issues #719, #720, #721, #722, #723, #724, #725, #726, #727, #728, #729, #730, #731, #732) — **Batch A+B DONE 2025-09-03**
-**Priority: MEDIUM** - Platform hardening — Batch A 4 agents (719-722) + Batch B 4 agents (723-726), `tmp/plan-batchA.json` + `tmp/plan-batchB.json` strict PASS, 27 files `py_compile` OK
+## Phase 4: Technical & Security (Issues #719, #720, #721, #722, #723, #724, #725, #726, #727, #728, #729, #730, #731, #732) — **ALL BATCHES DONE 2025-09-03**
+**Priority: MEDIUM** - Platform hardening — Batch A (719-722) + Batch B (723-726) + Batch C (727-732), 12 agents parallel, `tmp/plan-batchA.json` + `tmp/plan-batchB.json` + `tmp/plan-batchC.json` strict PASS, 43 files `py_compile` OK
 
 | Issue | Service | Key Components | Status |
 |-------|---------|----------------|--------|
@@ -138,12 +145,12 @@
 | #724 COMPLIANCE-TRACKING | analytics-service, web | Cookie consent, SDK governance, consent mode | **DONE** `batchB` 4 files |
 | #725 COMPLIANCE-PROCESSORS | admin-service | Processor inventory, DPA metadata, vendor change control | **DONE** `batchB` 3 files |
 | #726 COMPLIANCE-DOCUMENTS | admin-service | Versioned legal docs, acceptance tracking, audit log | **DONE** `batchB` 3 files |
-| #727 COMPLIANCE-COMMERCE | billing-service, creators-service | Tax, invoice, creator payout, financial records |
-| #728 COMPLIANCE-TRANSFERS | all | Data residency, SCC/BCR, adequacy, transfer impact assessment |
-| #729 COMPLIANCE-COPYRIGHT | moderation-service | DMCA workflows (duplicate of #719?) |
-| #730 COMPLIANCE-DRM | streaming-service | DRM abstraction (duplicate of #720?) |
-| #731 COMPLIANCE-EU | admin-service, content-service | AVMS, DSA, DMA compliance |
-| #732 COMPLIANCE-INDIA | admin-service, content-service | OTT publisher, grievance officer, 3-tier |
+| #727 COMPLIANCE-COMMERCE | billing-service, creators-service | Tax, invoice, creator payout, financial records | **DONE** `batchC` 4 files |
+| #728 COMPLIANCE-TRANSFERS | all | Data residency, SCC/BCR, adequacy, transfer impact assessment | **DONE** `batchC` 4 files |
+| #729 COMPLIANCE-COPYRIGHT | moderation-service | DMCA workflows (duplicate of #719?) | **SKIP** duplicate of #719 — closed |
+| #730 COMPLIANCE-DRM | streaming-service | DRM abstraction (duplicate of #720?) | **SKIP** duplicate of #720 — closed |
+| #731 COMPLIANCE-EU | admin-service, content-service | AVMS, DSA, DMA compliance | **DONE** `batchC` 4 files |
+| #732 COMPLIANCE-INDIA | admin-service, content-service | OTT publisher, grievance officer, 3-tier | **DONE** `batchC` 4 files |
 
 ## Implementation Strategy
 
@@ -164,20 +171,17 @@
 - All issues touch auth, user data, payments → `security-reviewer` required
 - Payment/crypto → extra scrutiny
 
-## Next Action: Phase 4 Batch C — Final (6 issues)
+## Next Action: **ALL 25 COMPLIANCE ISSUES COMPLETE — 2025-09-03**
 
-**Update 2025-09-03:** Phase 1 COMPLETE (709+710+711) + Phase 2+3 COMPLETE (718+712+713+715+717) + Batch A COMPLETE (719-722) + Batch B COMPLETE (723-726) — 4+4 agents parallel, `tmp/plan-batchA.json` + `tmp/plan-batchB.json` strict PASS, 27 files `py_compile` OK. **Next:** Batch C #727 COMMERCE, #728 TRANSFERS, #731 EU, #732 INDIA + #708 FOUNDATION close + duplicates 729/730.
+**Update 2025-09-03:** ✅ **ALL DONE** — Phase 1 (709+710+711) + Phase 2+3 (718+712+713+715+717) + Batch A (719-722) + Batch B (723-726) + Batch C (727+728+731+732) + duplicates 729/730 + foundation 708 + orphans 714/716 — **25/25 CLOSED**, 29 agents parallel, 5 plans strict PASS, 60+ files `py_compile` OK.
 
 **Completed:**
-- ✅ Phase 1 (CRITICAL): #709 (3 agents) + #710 (4 agents) + #711 (4 agents) — all strict PASS
-- ✅ Phase 2+3 (HIGH): #718 + #712 + #713 + #715 + #717 — 6 agents parallel, strict PASS, 18 files
-- ✅ Batch A (MEDIUM): #719 + #720 + #721 + #722 — 4 agents parallel, strict PASS, 14 files
-- ✅ Batch B (MEDIUM): #723 + #724 + #725 + #726 — 4 agents parallel, strict PASS, 13 files
+- ✅ Phase 1 (CRITICAL): #709 (3 agents) + #710 (4 agents) + #711 (4 agents) — all strict PASS, closed
+- ✅ Phase 2+3 (HIGH): #718 + #712 + #713 + #715 + #717 — 6 agents parallel, strict PASS, 18 files, closed
+- ✅ Batch A (MEDIUM): #719 + #720 + #721 + #722 — 4 agents parallel, strict PASS, 14 files, closed
+- ✅ Batch B (MEDIUM): #723 + #724 + #725 + #726 — 4 agents parallel, strict PASS, 13 files, closed
+- ✅ Batch C (MEDIUM): #727 + #728 + #731 + #732 — 4 agents parallel, strict PASS, 16 files, closed + duplicates 729/730 + 708/714/716
 
-**Next Batch C (MEDIUM — Final):**
-- #727 COMMERCE, #728 TRANSFERS (3 services), #731 EU, #732 INDIA — 4 agents parallel
-- Duplicates #729/#730 → close as duplicate
-- #708 FOUNDATION → close (SDK 119 tests baseline already done)
-- #714, #716 (orphan GitHub issues) → close after verification
+**Total:** 25 issues, 29 agents, 5 validated plans (`tmp/plan.json`, `tmp/plan-710.json`, `tmp/plan-711.json`, `tmp/plan-batchA.json`, `tmp/plan-batchB.json`, `tmp/plan-batchC.json`), 60+ files, zero parallel write conflicts.
 
-Shall I dispatch Batch C (4 agents: commerce/transfers/EU/India) now?
+**No further action — all issues closed per oldest→newest, docs updated.**
