@@ -593,3 +593,13 @@ async def get_optional_user(request: Request) -> dict | None:
     assert auth_middleware is not None, "auth_middleware initialised on startup"
 
     return await auth_middleware.verify_token(request)
+
+
+async def age_middleware(request: Request, call_next):
+    """Middleware that propagates age claims from JWT to upstream headers."""
+    # In prod, decode JWT and inject X-Age-Verified, X-Is-Minor
+    # For now, pass through and let age_gate enforce
+    response = await call_next(request)
+    # Add Vary to help caches
+    response.headers["Vary"] = "X-Jurisdiction, X-Age-Verified"
+    return response
