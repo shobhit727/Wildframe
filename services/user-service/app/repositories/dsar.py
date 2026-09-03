@@ -16,7 +16,13 @@ class DSARRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create(self, user_id: UUID, request_type: str, data_categories: list[str], reason: str | None = None) -> DSARRequest:
+    async def create(
+        self,
+        user_id: UUID,
+        request_type: str,
+        data_categories: list[str],
+        reason: str | None = None,
+    ) -> DSARRequest:
         # SLA: 30d GDPR, 45d CCPA - use 30d default, 45d if US-CA
         sla_days = 30
         sla_deadline = datetime.now(UTC) + timedelta(days=sla_days)

@@ -1,10 +1,11 @@
 """Content-service DSAR routes - copyright metadata and usage rights export."""
 
 import logging
-from typing import Annotated
+
+# from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
 from app.schemas.dsar import ContentDSARResponse
 

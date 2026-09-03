@@ -8,7 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class DSARCreateRequest(BaseModel):
     user_id: UUID
-    request_type: str = Field(..., pattern="^(access|portability|correction|deletion|restriction|objection|automated_decision)$")
+    request_type: str = Field(
+        ...,
+        pattern="^(access|portability|correction|deletion|restriction|objection|automated_decision)$",
+    )
     data_categories: list[str] = Field(default_factory=list)
     reason: str | None = None
 

@@ -20,10 +20,16 @@ class AnalyticsDSARExport(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     dsar_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    export_format: Mapped[str] = mapped_column(String(10), default="json", nullable=False)  # json, csv
+    export_format: Mapped[str] = mapped_column(
+        String(10), default="json", nullable=False
+    )  # json, csv
     retention_days: Mapped[int] = mapped_column(default=365, nullable=False)
-    sla_compliant: Mapped[bool] = mapped_column(default=True, nullable=False)  # 30d GDPR /45d CCPA check
+    sla_compliant: Mapped[bool] = mapped_column(
+        default=True, nullable=False
+    )  # 30d GDPR /45d CCPA check
     data: Mapped[str] = mapped_column(Text, nullable=False)  # JSON array of events
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
 
     __table_args__ = (Index("idx_analytics_dsar_user", "user_id"),)
