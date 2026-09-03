@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def detect_billing_jurisdiction(
     x_jurisdiction: Annotated[str | None, Header(alias="X-Jurisdiction")] = None,
     cf_ipcountry: Annotated[str | None, Header(alias="CF-IPCountry")] = None,
-    request: Request = None,
+    request: Request | None = None,
 ) -> str:
     """Detect jurisdiction for billing - X-Jurisdiction header or GeoIP fallback."""
     if x_jurisdiction:

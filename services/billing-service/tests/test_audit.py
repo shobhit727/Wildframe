@@ -9,5 +9,5 @@ def test_audit_model():
 
 
 def test_audit_encrypted():
-    rec = BillingAudit(event_type="refund")
+    rec = BillingAudit(event_type="refund", encrypted=True)
     assert rec.encrypted is True

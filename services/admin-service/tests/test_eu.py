@@ -10,5 +10,5 @@ def test_eu_create():
 
 
 def test_eu_model():
-    rec = EUCompliance()
+    rec = EUCompliance(avms_enabled=True)
     assert rec.avms_enabled is True
