@@ -1,6 +1,5 @@
 """Tests for auth-service privacy - notices and consent."""
 
-import pytest
 from datetime import datetime, UTC
 from uuid import uuid4
 
@@ -56,13 +55,14 @@ def test_consent_model():
         jurisdiction="US",
         granted=True,
         version="1.0.0",
-        consent_metadata='{}',
+        consent_metadata="{}",
     )
     assert consent.consent_type == "analytics"
 
 
 def test_age_verify_schema():
     from app.schemas.age import AgeVerifyRequest
+
     req = AgeVerifyRequest(user_id=uuid4(), declared_age=25, jurisdiction="EU")
     assert req.declared_age == 25
     assert req.jurisdiction == "EU"

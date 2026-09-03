@@ -1,7 +1,9 @@
 """Auth httpx integration - privacy routes DB."""
+
 import pytest
 from httpx import AsyncClient, ASGITransport
 from app.main import create_app
+
 
 @pytest.mark.asyncio
 async def test_health_privacy_openapi():
@@ -11,6 +13,7 @@ async def test_health_privacy_openapi():
         resp = await ac.get("/openapi.json")
         assert resp.status_code == 200
         assert "privacy" in resp.text
+
 
 @pytest.mark.asyncio
 async def test_privacy_openapi_has_notices():

@@ -1,6 +1,5 @@
 """Tests for user-service privacy - consent and child."""
 
-from datetime import datetime, UTC
 from uuid import uuid4
 
 from app.models.privacy import UserConsentRecord
@@ -22,11 +21,7 @@ def test_user_consent_create():
 
 def test_user_consent_model():
     rec = UserConsentRecord(
-        user_id=uuid4(),
-        consent_type="analytics",
-        jurisdiction="US",
-        granted=True,
-        version="1.0.0",
+        user_id=uuid4(), consent_type="analytics", jurisdiction="US", granted=True, version="1.0.0"
     )
     assert rec.consent_type == "analytics"
 

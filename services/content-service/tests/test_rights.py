@@ -2,7 +2,7 @@
 
 from uuid import uuid4
 
-from app.models.rights import RightsHolder, TerritorialLicense
+from app.models.rights import RightsHolder
 from app.models.reviews import Review
 from app.schemas.rights import RightsHolderCreate
 from app.schemas.reviews import ReviewCreate
@@ -24,5 +24,7 @@ def test_rights_holder_model():
 
 
 def test_review_model():
-    review = Review(content_id=uuid4(), user_id=uuid4(), rating=4, text="Good", verified_viewer=True)
+    review = Review(
+        content_id=uuid4(), user_id=uuid4(), rating=4, text="Good", verified_viewer=True
+    )
     assert review.rating == 4
