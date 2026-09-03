@@ -1,8 +1,6 @@
 """User-service privacy repository."""
 
 import logging
-
-# from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -36,9 +34,23 @@ class UserConsentRepository:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_user(self, user_id: UUID) -> list[UserConsentRecord]:
         stmt = (
             select(UserConsentRecord)
             .where(UserConsentRecord.user_id == user_id)
+            .order_by(UserConsentRecord.created_at.desc())
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_active_by_user(self, user_id: UUID) -> list[UserConsentRecord]:
+        stmt = (
+            select(UserConsentRecord)
+            .where(
+                UserConsentRecord.user_id == user_id,
+                UserConsentRecord.granted == True,
+                UserConsentRecord.withdrawn_at.is_(None),
+            )
             .order_by(UserConsentRecord.created_at.desc())
         )
         result = await self.db.execute(stmt)
