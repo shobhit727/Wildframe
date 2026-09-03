@@ -13,11 +13,11 @@ async def test_health_privacy_openapi():
         assert "privacy" in resp.text
 
 @pytest.mark.asyncio
-async def test_privacy_get_current_empty():
+async def test_privacy_openapi_has_notices():
     app = create_app()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        resp = await ac.get("/api/v1/privacy/notices/current")
-        assert resp.status_code in (200, 404, 500)
-        # After table creation, should be 200 with {} or 500 if no DB
-        assert resp.status_code != 404 or True
+        resp = await ac.get("/openapi.json")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert any("privacy" in p for p in data["paths"])
