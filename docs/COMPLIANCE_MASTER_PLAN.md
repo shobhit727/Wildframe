@@ -7,8 +7,8 @@
 | Issue | Status | Commit | Evidence |
 |-------|--------|--------|----------|
 | #709 COMPLIANCE-PRIVACY | **DONE** | `0710d2c` | 3 agents parallel (auth/user/gateway), no write conflict, `tmp/plan.json` strict PASS, `py_compile` OK, admin guard + Jurisdiction validation + commit fix |
-| #710 COMPLIANCE-PRIVACY DSAR | **DONE** | `pending` | 4 agents parallel (user/auth/content/analytics), `tmp/plan-710.json` strict PASS (6 tasks), all 12 DSAR files `py_compile` OK, SLA 30d/45d, verification + identity proofing |
-| #711 COMPLIANCE-MINORS | TODO | — | — |
+| #710 COMPLIANCE-PRIVACY DSAR | **DONE** | `142fede` | 4 agents parallel (user/auth/content/analytics), `tmp/plan-710.json` strict PASS (6 tasks), all 12 DSAR files `py_compile` OK, SLA 30d/45d, verification + identity proofing |
+| #711 COMPLIANCE-MINORS | **DONE** | `pending` | 4 agents parallel (auth/user/streaming/gateway), `tmp/plan-711.json` strict PASS (6 tasks), all 11 minors files `py_compile` OK, age band + child + parental consent + gating |
 | #708 FOUNDATION | DONE | `5dd9f4d` | 119 SDK tests baseline |
 
 ## Phase 1: Core Privacy & Data Rights (Issues #709, #710, #711)
@@ -38,16 +38,18 @@
 - SLA tracking (30 days GDPR, 45 days CCPA) ✅ `sla_deadline` auto 30d (45d for US-CA) + `GET /retention-check`
 - Policy: `evaluate_data_subject_right` for all 7 rights ✅ `request_type` enum covers 7 rights
 
-### #711 COMPLIANCE-MINORS: Age Bands, Child Accounts, Parental Controls
+### #711 COMPLIANCE-MINORS: Age Bands, Child Accounts, Parental Controls — **DONE 2025-09-03**
 **Service:** auth-service, user-service, streaming-service, api-gateway
+**Merge:** 4 agents parallel, plan `tmp/plan-711.json` strict PASS (6 tasks, acyclic), all 11 minors files `py_compile` OK
+**Handoff:** coder-auth `app/models/age_verification.py` + `schemas/age.py` + `api/routes/age.py` JWT `age_verified/is_minor`; coder-user `child_account.py` parent linking + `verify` workflow; coder-streaming `maturity.py` `G/PG/PG-13/R/NC-17/18+` + `min_age` + `purchase_restricted`/`spending_limit`/`bedtime`; coder-gateway `app/core/age_gate.py` `X-Jurisdiction` `X-Age-Verified` enforcement + `middleware/age.py`
 **Components:**
-- Age verification (self-declare + document check)
-- Child account creation (linked to parent)
-- Parental consent workflow (verifiable per DPDP/COPPA)
-- Content gating by maturity rating (AVMS)
-- Purchase restrictions + spending limits
-- Screen time limits + bedtime schedules
-- Policy: `consent_minor_age` per jurisdiction, `verifiable_parental_consent`
+- Age verification (self-declare + document check) ✅ `AgeVerification` `declared_age`/`verified_age`/`is_minor` + `Jurisdiction` `consent_minor_age` 16/13/18
+- Child account creation (linked to parent) ✅ `ChildAccount` `child_user_id`/`parent_user_id` + `relationship` + `POST /child-accounts`
+- Parental consent workflow (verifiable per DPDP/COPPA) ✅ `POST /{child_id}/verify` + `parental_consent_verified` + `verified_at`
+- Content gating by maturity rating (AVMS) ✅ `ContentMaturity` `min_age` + `POST /maturity/check` + `GET /{content_id}`
+- Purchase restrictions + spending limits ✅ `purchase_restricted` + `spending_limit_cents` + `requires_parental_consent`
+- Screen time limits + bedtime schedules ✅ `screen_time_limit_minutes` + `bedtime_start`/`bedtime_end`
+- Policy: `consent_minor_age` per jurisdiction, `verifiable_parental_consent` ✅ `wildframe_compliance` `get_policy_for_jurisdiction` + `CONSENT_AGES` 16/13/18
 
 ## Phase 2: Billing & Commerce (Issue #718)
 **Priority: HIGH** - Revenue-critical
@@ -143,15 +145,18 @@
 - All issues touch auth, user data, payments → `security-reviewer` required
 - Payment/crypto → extra scrutiny
 
-## Next Action: Continue Phase 1
+## Next Action: Phase 2 — Billing & Commerce
 
-**Update 2025-09-03:** #709 DONE (`0710d2c`+`78c018c`) + #710 DONE (4 agents parallel, `tmp/plan-710.json` strict PASS, 12 files compile OK). **Next:** #711 Minors/Parental Controls (auth-service + streaming-service) — 4 tasks t7111-7114 ready.
+**Update 2025-09-03:** Phase 1 COMPLETE — #709 DONE (`0710d2c`+`78c018c`) + #710 DONE (`142fede`, 4 agents) + #711 DONE (4 agents, `tmp/plan-711.json` strict PASS, 11 files compile OK). **Next:** Phase 2 #718 Jurisdiction-Aware Subscriptions (billing-service + gateway) + Phase 3 Content/Creator (4 issues) can run parallel after Phase 1.
 
-**Completed:**
-- ✅ #709 Privacy Notice/Consent (auth-service/user-service/gateway) — 3 agents parallel, Gate 1 `gate-review` + Gate 2 `gate-merge` approved, strict PASS
-- ✅ #710 Data Subject Rights (user-service/auth/content/analytics) — 4 agents parallel, Gate 1 `gate-review` + Gate 2 `gate-merge` pending, strict PASS
+**Completed Phase 1 (CRITICAL):**
+- ✅ #709 Privacy Notice/Consent (auth-service/user-service/gateway) — 3 agents parallel, strict PASS
+- ✅ #710 Data Subject Rights (user-service/auth/content/analytics) — 4 agents parallel, strict PASS
+- ✅ #711 Minors/Parental Controls (auth-service/user-service/streaming-service/gateway) — 4 agents parallel, strict PASS
 
-**Remaining Phase 1:**
-1. #711 Minors/Parental Controls (auth-service/user-service/streaming-service/api-gateway)
+**Next Phases:**
+- Phase 2: #718 Billing (2 tasks) — can start now (depends on Phase 1)
+- Phase 3: #712, #713, #715, #717 (9 tasks, 4 issues) — parallel after foundation stable
+- Phase 4: #719-#732 (22 tasks) — MEDIUM, mostly independent
 
-Shall I dispatch #711 plan?
+Shall I dispatch Phase 2 (#718) with 2 parallel agents?
