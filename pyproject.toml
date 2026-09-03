@@ -282,22 +282,18 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = "aiokafka"
 ignore_missing_imports = true
-ignore_untyped = true
 
 [[tool.mypy.overrides]]
 module = "aiokafka.*"
 ignore_missing_imports = true
-ignore_untyped = true
 
 [[tool.mypy.overrides]]
 module = "aiokafka.consumer"
 ignore_missing_imports = true
-ignore_untyped = true
 
 [[tool.mypy.overrides]]
 module = "aiokafka.consumer.consumer"
 ignore_missing_imports = true
-ignore_untyped = true
 # jose.exceptions has incomplete stubs in types-python-jose
 
 [[tool.mypy.overrides]]
