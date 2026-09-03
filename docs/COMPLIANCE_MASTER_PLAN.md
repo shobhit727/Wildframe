@@ -15,7 +15,11 @@
 | #713 COMPLIANCE-CREATOR | **DONE** | `80bd323` | KYC/KYB + Stripe + tax forms + living wage — 3 files |
 | #715 COMPLIANCE-REVIEWS | **DONE** | `80bd323` | Moderated reviews + queue — 4 files |
 | #717 COMPLIANCE-CREATOR Payout | **DONE** | `80bd323` | Payout schedule + multi-currency + ledger — 4 files |
-| #719-#732 | TODO | — | Phase 4 MEDIUM — 14 issues pending |
+| #719 COMPLIANCE-COPYRIGHT | **DONE** | `batchA` | DMCA 3 files, `tmp/plan-batchA.json` strict PASS, `py_compile` OK |
+| #720 COMPLIANCE-DRM | **DONE** | `batchA` | DRM 3 files, `py_compile` OK |
+| #721 COMPLIANCE-SECURITY | **DONE** | `batchA` | Audit 4 files, `py_compile` OK |
+| #722 COMPLIANCE-ADS | **DONE** | `batchA` | Ads 4 files, `py_compile` OK |
+| #723-#732 | TODO | — | Phase 4 MEDIUM — 10 issues pending (Batch B/C) |
 
 ## Phase 1: Core Privacy & Data Rights (Issues #709, #710, #711)
 **Priority: CRITICAL** - Direct consumers of compliance SDK
@@ -117,15 +121,15 @@
 - Payout reconciliation + statements ✅ `PayoutLedger` `reconciled` + `gross/net` + `idx_ledger_creator`
 - Dispute resolution workflow ✅ `status` pending/paid/failed/disputed
 
-## Phase 4: Technical & Security (Issues #719, #720, #721, #722, #723, #724, #725, #726, #727, #728, #729, #730, #731, #732)
-**Priority: MEDIUM** - Platform hardening
+## Phase 4: Technical & Security (Issues #719, #720, #721, #722, #723, #724, #725, #726, #727, #728, #729, #730, #731, #732) — **Batch A DONE 2025-09-03**
+**Priority: MEDIUM** - Platform hardening — 4 agents parallel, `tmp/plan-batchA.json` strict PASS (6 tasks), 14 files `py_compile` OK
 
-| Issue | Service | Key Components |
-|-------|---------|----------------|
-| #719 COMPLIANCE-COPYRIGHT | moderation-service | DMCA intake, takedown, counter-notice, repeat infringer |
-| #720 COMPLIANCE-DRM | streaming-service | Offline downloads, DRM (FairPlay/Widevine), device limits, expiry |
-| #721 COMPLIANCE-SECURITY | all | Audit trails, breach response, encryption, key rotation |
-| #722 COMPLIANCE-ADS | content-service, api-gateway | Consent-gated ads, minor-safe, TCF 2.0, GPP |
+| Issue | Service | Key Components | Status |
+|-------|---------|----------------|--------|
+| #719 COMPLIANCE-COPYRIGHT | moderation-service | DMCA intake, takedown, counter-notice, repeat infringer | **DONE** `batchA` 3 files |
+| #720 COMPLIANCE-DRM | streaming-service | Offline downloads, DRM (FairPlay/Widevine), device limits, expiry | **DONE** `batchA` 3 files |
+| #721 COMPLIANCE-SECURITY | all | Audit trails, breach response, encryption, key rotation | **DONE** `batchA` 4 files |
+| #722 COMPLIANCE-ADS | content-service, api-gateway | Consent-gated ads, minor-safe, TCF 2.0, GPP | **DONE** `batchA` 4 files |
 | #723 COMPLIANCE-ACCESSIBILITY | web, streaming-service | WCAG 2.2 AA, captions, audio description, keyboard nav |
 | #724 COMPLIANCE-TRACKING | analytics-service, web | Cookie consent, SDK governance, consent mode |
 | #725 COMPLIANCE-PROCESSORS | admin-service | Processor inventory, DPA metadata, vendor change control |
