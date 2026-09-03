@@ -265,6 +265,7 @@ services:
     - ../services/auth-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -296,6 +297,7 @@ services:
     - ../services/user-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -329,6 +331,7 @@ services:
     - ../services/admin-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -362,6 +365,7 @@ services:
     - ../services/content-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -394,6 +398,7 @@ services:
     - ../services/api-gateway:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -420,6 +425,7 @@ services:
     - ../services/streaming-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -449,6 +455,7 @@ services:
     - ../services/search-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -478,6 +485,7 @@ services:
     - ../services/recommendation-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -504,6 +512,7 @@ services:
     - ../services/billing-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -531,6 +540,7 @@ services:
     - ../services/analytics-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -557,6 +567,7 @@ services:
     - ../services/notification-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -585,6 +596,7 @@ services:
     - ../services/creators-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -613,6 +625,7 @@ services:
     - ../services/moderation-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -641,6 +654,7 @@ services:
     - ../services/uploads-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
@@ -667,6 +681,7 @@ services:
     - ../services/media-pipeline:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     networks:
     - wildframe-network
