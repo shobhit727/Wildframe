@@ -30,6 +30,7 @@ from app.repositories import (
 from app.services import CreatorService
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+
 @pytest_asyncio.fixture
 async def session():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False, future=True)
@@ -39,6 +40,7 @@ async def session():
     async with factory() as sess:
         yield sess
     await engine.dispose()
+
 
 @pytest_asyncio.fixture
 async def service(session):
@@ -50,6 +52,7 @@ async def service(session):
         PayoutLedgerRepository(session),
     )
 
+
 def _svc(session):
     return CreatorService(
         CreatorAccountRepository(session),
@@ -58,6 +61,7 @@ def _svc(session):
         MilestoneRepository(session),
         PayoutLedgerRepository(session),
     )
+
 
 # ------------------------------------------------------------- idempotent accrual
 @pytest.mark.asyncio
@@ -104,6 +108,7 @@ async def test_accrual_is_idempotent(session):
     rows = result.scalars().all()
     assert len(rows) == 1, "exactly one ledger row per (creator, period)"
 
+
 # ------------------------------------------------------------ floor invariant >=0
 @pytest.mark.asyncio
 async def test_floor_must_be_non_negative(session):
@@ -123,6 +128,7 @@ async def test_floor_must_be_non_negative(session):
     # A zero floor is valid (no guarantee, pool-only).
     zero = await svc.set_floor(acct.id, per_minute_amount=0.0)
     assert zero.per_minute_amount == 0.0
+
 
 # -------------------------------------- kill rolls back only unreleased tranches
 @pytest.mark.asyncio
@@ -170,6 +176,7 @@ async def test_kill_rolls_back_only_unreleased_tranches(session):
     assert by_threshold[30].status == TrancheStatus.RELEASED, "released stays released"
     assert by_threshold[60].status == TrancheStatus.ROLLED_BACK, "unreleased rolled back"
     assert by_threshold[100].status == TrancheStatus.ROLLED_BACK, "unreleased rolled back"
+
 
 # ----------------------------------------------- onboarding default kyc pending
 @pytest.mark.asyncio
