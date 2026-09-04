@@ -5,6 +5,7 @@ from typing import Annotated
 from uuid import UUID
 
 from jose import jwt
+from jose.exceptions import JWTError  # type: ignore[attr-defined]
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,7 +59,7 @@ async def get_current_user_id(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token type",
             )
-    except jwt.JWTError:
+    except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
