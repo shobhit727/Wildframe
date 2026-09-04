@@ -6,6 +6,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+
 # ---------------------------------------------------------------- CreatorAccount
 class CreatorAccountCreate(BaseModel):
     display_name: str = Field("", max_length=255)
@@ -13,12 +14,14 @@ class CreatorAccountCreate(BaseModel):
     region_code: str = Field("US", max_length=8)
     currency: str = Field("USD", max_length=8)
 
+
 class CreatorAccountUpdate(BaseModel):
     display_name: Optional[str] = Field(None, max_length=255)
     bio: Optional[str] = Field(None, max_length=2000)
     region_code: Optional[str] = Field(None, max_length=8)
     currency: Optional[str] = Field(None, max_length=8)
     stripe_connect_account_id: Optional[str] = Field(None, max_length=255)
+
 
 class CreatorAccountResponse(BaseModel):
     id: UUID
@@ -34,11 +37,13 @@ class CreatorAccountResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
 # ----------------------------------------------------------------- EffectiveFloor
 class EffectiveFloorCreate(BaseModel):
     per_minute_amount: float = Field(..., ge=0)
     currency: str = Field("USD", max_length=8)
     reason: Optional[str] = Field(None, max_length=500)
+
 
 class EffectiveFloorResponse(BaseModel):
     id: UUID
@@ -49,9 +54,11 @@ class EffectiveFloorResponse(BaseModel):
     last_adjusted_at: Optional[datetime]
     reason: Optional[str]
 
+
 # -------------------------------------------------------------------- CreatorPoolBalance
 class PoolContributionRequest(BaseModel):
     cents: int = Field(..., ge=0)
+
 
 class CreatorPoolBalanceResponse(BaseModel):
     id: UUID
@@ -60,12 +67,14 @@ class CreatorPoolBalanceResponse(BaseModel):
     contributed_cents: int
     last_payout_at: Optional[datetime]
 
+
 # -------------------------------------------------------------------- Milestone
 class MilestoneCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     total_cents: int = Field(0, ge=0)
     currency: str = Field("USD", max_length=8)
     goal: Optional[str] = Field(None, max_length=1000)
+
 
 class MilestoneResponse(BaseModel):
     id: UUID
@@ -79,11 +88,13 @@ class MilestoneResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
 # ------------------------------------------------------------- MilestoneTranche
 class TrancheCreate(BaseModel):
     threshold: int = Field(..., ge=0, le=100)
     amount_cents: int = Field(0, ge=0)
     release_condition: Optional[str] = Field(None, max_length=1000)
+
 
 class MilestoneTrancheResponse(BaseModel):
     id: UUID
@@ -94,6 +105,7 @@ class MilestoneTrancheResponse(BaseModel):
     release_condition: Optional[str]
     released_at: Optional[datetime]
 
+
 # ----------------------------------------------------------------- PayoutLedger
 class PayoutAccrualRequest(BaseModel):
     period_start: datetime
@@ -101,6 +113,7 @@ class PayoutAccrualRequest(BaseModel):
     view_minutes: int = Field(0, ge=0)
     earned_cents: int = Field(0, ge=0)
     stripe_fee_cents: int = Field(0, ge=0)
+
 
 class PayoutLedgerResponse(BaseModel):
     id: UUID
@@ -117,4 +130,3 @@ class PayoutLedgerResponse(BaseModel):
     stripe_transfer_id: Optional[str]
     status: str  # "accrued" | "transferred" | "failed"
     created_at: datetime
-

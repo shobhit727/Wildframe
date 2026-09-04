@@ -237,17 +237,15 @@ class PayoutLedger(Base):
         CheckConstraint("share_cents >= 0", name="ck_ledger_share_non_negative"),
         Index("ix_ledger_creator_period", "creator_id", "period_start", "period_end"),
     )
+
+
 class CreatorPayout(Base):
     """Payout schedule for a creator (net-30, net-45, etc.)."""
 
     __tablename__ = "creator_payouts"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    creator_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), nullable=False, index=True
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
     schedule: Mapped[str] = mapped_column(
@@ -270,9 +268,7 @@ class CreatorOnboarding(Base):
 
     __tablename__ = "creator_onboarding"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), nullable=False, index=True, unique=True
     )
@@ -284,15 +280,15 @@ class CreatorOnboarding(Base):
     tax_form_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # W-8BEN, W-9, GST
     tax_form_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     bank_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    contract_version: Mapped[str] = mapped_column(
-        String(20), default="1.0.0", nullable=False
-    )
+    contract_version: Mapped[str] = mapped_column(String(20), default="1.0.0", nullable=False)
     living_wage_cents: Mapped[int] = mapped_column(default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
 
     __table_args__ = (Index("idx_onboarding_user", "user_id"),)
+
+
 class InboundEventStatus(str, Enum):
     """Processing status of an inbound event from another service."""
 
