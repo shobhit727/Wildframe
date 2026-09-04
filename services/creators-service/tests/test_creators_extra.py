@@ -1,7 +1,7 @@
 """Extra creators tests for remaining 8 files."""
 
 from uuid import uuid4
-from app.models import CreatorPayout, CreatorOnboarding, PayoutLedger
+from app.models import CreatorPayout, CreatorOnboarding
 from app.schemas.onboarding import OnboardingCreate
 
 def test_creators_extra1():
