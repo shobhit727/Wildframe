@@ -40,3 +40,65 @@ pytest-cov = "^4.1.0"
 black = ">=23.11,<27.0"
 mypy = "^1.7.0"
 types-python-jose = "^3.3.4"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.11"
+
+[[tool.mypy.overrides]]
+module = "jose.*"
+ignore_missing_imports = true
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "aiokafka"
+ignore_missing_imports = true
+ignore_untyped = true
+
+[[tool.mypy.overrides]]
+module = "aiokafka.*"
+ignore_missing_imports = true
+ignore_untyped = true
+
+[[tool.mypy.overrides]]
+module = "aiokafka.consumer"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "aiokafka.consumer.consumer"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "redis.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyotp.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "bcrypt.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "stripe.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "app.models.onboarding"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "app.models.payout"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "app.models.commerce"
+ignore_missing_imports = true
