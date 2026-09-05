@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/dsar", tags=["analytics-dsar"])
 
+
 @router.get("/export", response_model=list[AnalyticsExportResponse])
 async def export_analytics(
     user_id: UUID, format: str = Query(default="json", pattern="^(json|csv)$")
@@ -30,6 +31,7 @@ async def export_analytics(
             created_at=datetime.now(UTC),
         )
     ]  # stub with SLA check
+
 
 @router.get("/retention-check")
 async def check_retention(user_id: UUID, retention_days: int) -> dict:
