@@ -8,8 +8,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from app.core.settings import settings
-
 
 @dataclass
 class Event:
@@ -118,6 +116,9 @@ def set_event_publisher(publisher: EventPublisher) -> None:
 
 def _build_publisher() -> EventPublisher:
     """Build the appropriate event publisher based on settings."""
+    # Import settings dynamically to allow patching in tests
+    from app.core.settings import settings
+
     if settings.EVENT_PUBLISHER == "kafka":
         return KafkaEventPublisher(settings.KAFKA_BOOTSTRAP_SERVERS)
     return InMemoryEventPublisher()
