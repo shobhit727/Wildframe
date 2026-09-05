@@ -84,6 +84,11 @@ https://localhost:8013 {
 	reverse_proxy moderation-service:8000
 }
 
+https://localhost:3000, https://192.168.1.14:3000 {
+  import tls
+  reverse_proxy web:3000
+}
+
 https://localhost:8014 {
 	import tls
 	reverse_proxy uploads-service:8000

@@ -1,6 +1,7 @@
 type WebpackConfig = any;
 
 const nextConfig = {
+  output: 'standalone',
   // Allow local and LAN-IP access to dev assets (containerized browsers / device testing).
   // Dev-only setting; production builds are unaffected.
   allowedDevOrigins: ["localhost", "127.0.0.1", "::1", "192.168.1.14"],

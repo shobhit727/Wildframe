@@ -21,7 +21,7 @@ export function buildCspHeader(opts: CspOptions): string {
 
   const scriptSrc = isDev
     ? `'self' ${nonceSource} 'unsafe-inline' 'unsafe-eval'`
-    : `'self' ${nonceSource}`;
+    : `'self' ${nonceSource} 'unsafe-inline'`; // Allow unsafe-inline for static pages
 
   const directives = [
     "default-src 'self'",
@@ -36,7 +36,6 @@ export function buildCspHeader(opts: CspOptions): string {
     "frame-ancestors 'none'",
     `connect-src 'self' ${apiUrl} https:`,
     "worker-src 'self' blob:",
-    ...(isDev ? [] : ["upgrade-insecure-requests"]),
   ];
 
   return directives.join('; ');

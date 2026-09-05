@@ -209,6 +209,22 @@ services:
     - jaeger
     networks:
     - wildframe-network
+  web:
+    restart: unless-stopped
+    image: deployments-web:latest
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      - NEXT_PUBLIC_APP_NAME=Wildframe
+      - NEXT_PUBLIC_APP_URL=http://192.168.1.14:3000
+      - NEXT_PUBLIC_API_URL=http://192.168.1.14:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api-gateway
+    networks:
+      - wildframe-network
+
   loki:
     restart: unless-stopped
     image: grafana/loki:latest

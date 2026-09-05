@@ -1,0 +1,17 @@
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
+
+# Copy entire standalone output (includes node_modules at root)
+COPY --chown=nextjs:nodejs .next/standalone ./
+# Static files must be at ./apps/web/.next/static relative to server.js
+COPY --chown=nextjs:nodejs .next/static ./apps/web/.next/static
+COPY --chown=nextjs:nodejs public ./apps/web/public
+
+USER nextjs
+WORKDIR /app/apps/web
+EXPOSE 3000
+ENV PORT=3000
+CMD ["node", "server.js"]
