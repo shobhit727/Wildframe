@@ -289,6 +289,34 @@ class CreatorOnboarding(Base):
     __table_args__ = (Index("idx_onboarding_user", "user_id"),)
 
 
+class CreatorCommerce(Base):
+    """Creator commerce record - payout destination and tax info."""
+
+    __tablename__ = "creator_commerce"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    creator_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True, unique=True
+    )
+    payout_destination_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    stripe_account_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    tax_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    default_currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (Index("idx_commerce_creator", "creator_id"),)
+
+
 class InboundEventStatus(str, Enum):
     """Processing status of an inbound event from another service."""
 
