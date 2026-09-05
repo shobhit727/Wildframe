@@ -1,4 +1,3 @@
-# ruff: noqa: F401
 from __future__ import annotations
 from typing import Any
 import json
@@ -12,6 +11,7 @@ from uuid import uuid4
 from app.core.settings import settings
 
 
+@dataclass
 class Event:
     """A small, self-describing domain event.
 
