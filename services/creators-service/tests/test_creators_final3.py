@@ -1,5 +1,5 @@
 def test_creators_final3_a():
-    from app.models.commerce import CreatorCommerce
+    from app.models import CreatorCommerce
 
     assert CreatorCommerce is not None
 
