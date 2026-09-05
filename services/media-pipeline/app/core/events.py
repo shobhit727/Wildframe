@@ -28,7 +28,7 @@ class Event:
 
     topic: str
     key: str
-    payload: dict[str, Any]
+    payload: dict[str, Any] = field(default_factory=dict)
     event_id: str = field(default_factory=lambda: str(uuid4()))
     occurred_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
@@ -60,6 +60,10 @@ class InMemoryEventPublisher(EventPublisher):
         self.sent.append(event)
         logging.getLogger(__name__).debug("InMemoryEventPublisher: published %s", event.topic)
 
+    async def publish_many(self, events: list[Event]) -> None:
+        for ev in events:
+            await self.publish(ev)
+
 
 class KafkaEventPublisher(EventPublisher):
     """Kafka-backed event publisher."""
@@ -87,6 +91,11 @@ class KafkaEventPublisher(EventPublisher):
             key=event.key,
             value=event.to_dict(),
         )
+
+    async def close(self) -> None:
+        if self._producer is not None:
+            await self._producer.stop()
+            self._producer = None
 
 
 # Default publisher (in-memory)
