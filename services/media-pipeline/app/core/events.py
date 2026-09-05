@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import Any
 import json
 import logging
-from typing import TYPE_CHECKING
 from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
