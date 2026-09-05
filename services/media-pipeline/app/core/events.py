@@ -99,11 +99,14 @@ class KafkaEventPublisher(EventPublisher):
 
 
 # Default publisher (in-memory)
-_event_publisher: EventPublisher = InMemoryEventPublisher()
+_event_publisher: EventPublisher | None = None
 
 
 def get_event_publisher() -> EventPublisher:
-    """Get the current event publisher."""
+    """Get the current event publisher. Initializes if not set."""
+    global _event_publisher
+    if _event_publisher is None:
+        _event_publisher = _build_publisher()
     return _event_publisher
 
 
