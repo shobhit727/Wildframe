@@ -10,7 +10,8 @@ describe('CSP builder', () => {
     expect(typeof nonce).toBe('string');
     expect(nonce.length).toBeGreaterThan(0);
     // CSP nonce regex: /^'nonce-([A-Za-z0-9+/_-]+={0,2})'$/ — alphanumeric is valid
-    expect(nonce).toMatch(/^[A-Za-z0-9+/_-]+={0,2}$/);
+    // crypto.randomUUID().replace(/-/g, '') produces lowercase hex (a-f, 0-9)
+    expect(nonce).toMatch(/^[a-z0-9+/_-]+={0,2}$/);
   });
 
   it('builds strict CSP for production (no unsafe-inline/eval in script-src)', () => {
