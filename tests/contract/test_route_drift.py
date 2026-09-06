@@ -63,7 +63,6 @@ KNOWN_FRONTEND_ONLY_PATHS: set[tuple[str, str]] = {
     ("admin", "/admin/api/v1/admin/alerts/{}"),
     ("admin", "/admin/api/v1/admin/content/flags"),
     ("admin", "/admin/api/v1/admin/content/flags/{}"),
-    ("admin", "/admin/api/v1/admin/content/alerts"),
     ("admin", "/admin/api/v1/admin/config"),
     ("admin", "/admin/api/v1/admin/config/{}"),
     ("admin", "/admin/api/v1/documents"),
@@ -72,6 +71,21 @@ KNOWN_FRONTEND_ONLY_PATHS: set[tuple[str, str]] = {
     ("admin", "/admin/api/v1/india"),
     ("admin", "/admin/api/v1/processors"),
     ("admin", "/admin/api/v1/transfers"),
+    # Additional admin endpoints found in frontend
+    ("admin", "/admin/api/v1/admin/alerts/{}/acknowledge"),
+    ("admin", "/admin/api/v1/admin/audit/admin/{}"),
+    ("admin", "/admin/api/v1/admin/audit/resource/{}/{}"),
+    ("admin", "/admin/api/v1/admin/content/flagged"),
+    ("admin", "/admin/api/v1/admin/content/resolve"),
+    ("admin", "/admin/api/v1/admin/stats"),
+    ("admin", "/admin/api/v1/admin/users/moderate"),
+    # analytics service
+    ("analytics", "/analytics/api/v1/analytics/events"),
+    # auth service (TODO: implement auth endpoints)
+    ("auth", "/auth/api/v1/auth/login"),
+    ("auth", "/auth/api/v1/auth/logout"),
+    ("auth", "/auth/api/v1/auth/me"),
+    ("auth", "/auth/api/v1/auth/mfa/login-verify"),
 }
 
 def _normalize(path: str) -> str:
