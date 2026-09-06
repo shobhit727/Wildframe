@@ -36,8 +36,12 @@ export function buildCspHeader(opts: CspOptions): string {
     "frame-ancestors 'none'",
     `connect-src 'self' ${apiUrl} https:`,
     "worker-src 'self' blob:",
-    "upgrade-insecure-requests",
   ];
+
+  // upgrade-insecure-requests only in production (isDev=false)
+  if (!isDev) {
+    directives.push("upgrade-insecure-requests");
+  }
 
   return directives.join('; ');
 }
