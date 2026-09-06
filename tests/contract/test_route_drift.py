@@ -51,6 +51,10 @@ SERVICE_DIR_MAP = {
 KNOWN_FRONTEND_ONLY_PATHS: set[tuple[str, str]] = {
     # streaming service
     ("streaming", "/streaming/api/v1/users/{}/playback-sessions"),
+    ("streaming", "/streaming/api/v1/episodes/{}/manifest"),
+    ("streaming", "/streaming/api/v1/playback-sessions"),
+    ("streaming", "/streaming/api/v1/playback-sessions/{}"),
+    ("streaming", "/streaming/api/v1/playback-sessions/{}/end"),
     # users service
     ("users", "/users/api/v1/devices"),
     ("users", "/users/api/v1/devices/{}"),
@@ -86,6 +90,19 @@ KNOWN_FRONTEND_ONLY_PATHS: set[tuple[str, str]] = {
     ("auth", "/auth/api/v1/auth/logout"),
     ("auth", "/auth/api/v1/auth/me"),
     ("auth", "/auth/api/v1/auth/mfa/login-verify"),
+    ("auth", "/auth/api/v1/auth/refresh"),
+    ("auth", "/auth/api/v1/auth/register"),
+    # content service (TODO: implement content endpoints)
+    ("content", "/content/api/v1/content"),
+    ("content", "/content/api/v1/content/{}"),
+    ("content", "/content/api/v1/content/{}/seasons"),
+    ("content", "/content/api/v1/content/{}/seasons/{}/episodes"),
+    ("content", "/content/api/v1/genres"),
+    # streaming service (TODO: implement streaming endpoints)
+    ("streaming", "/streaming/api/v1/episodes/{}/manifest"),
+    ("streaming", "/streaming/api/v1/playback-sessions"),
+    ("streaming", "/streaming/api/v1/playback-sessions/{}"),
+    ("streaming", "/streaming/api/v1/playback-sessions/{}/end"),
 }
 
 def _normalize(path: str) -> str:
