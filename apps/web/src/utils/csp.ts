@@ -21,7 +21,7 @@ export function buildCspHeader(opts: CspOptions): string {
 
   const scriptSrc = isDev
     ? `'self' ${nonceSource} 'unsafe-inline' 'unsafe-eval'`
-    : `'self' ${nonceSource} 'unsafe-inline'`; // Allow unsafe-inline for static pages
+    : `'self' ${nonceSource}`;
 
   const directives = [
     "default-src 'self'",
