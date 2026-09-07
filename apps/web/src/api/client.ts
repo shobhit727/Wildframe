@@ -260,7 +260,7 @@ class APIClient {
   clearAuth() {
     clearTokens();
     if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-      window.location.href = '/login';
+      window.location.assign('/login');
     }
   }
 
