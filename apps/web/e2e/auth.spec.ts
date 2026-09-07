@@ -15,7 +15,7 @@ test.describe('Authentication Flow', () => {
 
   test('should show signup page', async ({ page }) => {
     await page.goto('/signup');
-    await expect(page.locator('h1')).toContainText('Sign Up');
+    await expect(page.locator('h1')).toContainText('Create Account');
     await expect(page.locator('input[id="email"]')).toBeVisible();
     await expect(page.locator('input[id="password"]')).toBeVisible();
     await expect(page.locator('input[id="confirmPassword"]')).toBeVisible();
@@ -39,7 +39,7 @@ test.describe('Home Page', () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
-  test('should navigate to signup from home', async ({ page }) => {
+  test('should navigate to signup from home", async ({ page }) => {
     await page.goto('/');
     await page.click('a[href="/signup"]');
     await expect(page).toHaveURL(/\/signup/);
