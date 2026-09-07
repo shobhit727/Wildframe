@@ -39,7 +39,7 @@ test.describe('Home Page', () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
-  test('should navigate to signup from home", async ({ page }) => {
+  test('should navigate to signup from home', async ({ page }) => {
     await page.goto('/');
     await page.click('a[href="/signup"]');
     await expect(page).toHaveURL(/\/signup/);
