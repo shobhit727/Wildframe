@@ -8,17 +8,17 @@ test.describe('Authentication Flow', () => {
   test('should show login page', async ({ page }) => {
     await page.goto('/login');
     await expect(page.locator('h1')).toContainText('Sign In');
-    await expect(page.locator('input[name="email"]')).toBeVisible();
-    await expect(page.locator('input[name="password"]')).toBeVisible();
+    await expect(page.locator('input[id="email"]')).toBeVisible();
+    await expect(page.locator('input[id="password"]')).toBeVisible();
     await expect(page.locator('button[type="submit"]')).toBeVisible();
   });
 
   test('should show signup page', async ({ page }) => {
     await page.goto('/signup');
     await expect(page.locator('h1')).toContainText('Sign Up');
-    await expect(page.locator('input[name="email"]')).toBeVisible();
-    await expect(page.locator('input[name="password"]')).toBeVisible();
-    await expect(page.locator('input[name="confirmPassword"]')).toBeVisible();
+    await expect(page.locator('input[id="email"]')).toBeVisible();
+    await expect(page.locator('input[id="password"]')).toBeVisible();
+    await expect(page.locator('input[id="confirmPassword"]')).toBeVisible();
   });
 
   test('should redirect to login when accessing protected route', async ({ page }) => {
