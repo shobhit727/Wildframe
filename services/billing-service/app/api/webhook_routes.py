@@ -122,7 +122,6 @@ async def _handle_checkout_session_completed(
         await service.purchase_title(
             user_id,
             content_id,
-            amount,
             currency=currency,
             stripe_payment_intent_id=stripe_payment_intent_id,
         )
