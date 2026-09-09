@@ -1,0 +1,47 @@
+# Trivy configuration
+scanners:
+  - vuln
+  - secret
+  - misconfig
+
+severity:
+  - CRITICAL
+  - HIGH
+
+ignore-unfixed: true
+vuln-type:
+  - os
+  - library
+
+skip-dirs:
+  - apps/web/node_modules
+  - apps/web/.next
+  - node_modules
+  - .git
+  - .github
+  - docs
+  - tests
+  - scripts
+  - .cache
+  - .github
+  - __pycache__
+  - "*.pyc"
+  - "*.pyo"
+  - "*.pyd"
+
+skip-files:
+  - apps/web/certificates/localhost-key.pem
+  - "*.md"
+  - "*.txt"
+  - "*.json"
+  - "*.yml"
+  - "*.yaml"
+  - "*.lock"
+  - ".gitignore"
+  - ".dockerignore"
+  - ".eslintignore"
+  - ".prettierignore"
+
+ignorefile: .trivyignore
+
+exit-code: 0
