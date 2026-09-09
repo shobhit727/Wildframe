@@ -22,19 +22,19 @@ Complete guide for deploying and operating Wildframe in production environments.
 
 ```bash
 # Run all tests
-cd netflix_backend
-pytest tests/ --cov
+for svc in services/*/; do
+  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+done
 
 # Type checking
-mypy app/
+mypy services/*/app --config-file pyproject.toml
 
 # Linting
-pylint app/
-black --check app/
-isort --check app/
+ruff check services/
+black --check services/
 
 # Frontend
-cd ../apps/web
+cd apps/web
 npm run build
 npm run type-check
 npm run lint
@@ -48,7 +48,7 @@ safety check  # Python
 npm audit     # JavaScript
 
 # SAST scanning
-bandit -r app/  # Python code security
+bandit -r services/
 ```
 
 ### Documentation
@@ -119,7 +119,7 @@ pg_dump -U postgres postgres_db > backup_$(date +%Y%m%d_%H%M%S).sql
 # Build image
 docker build \
   -t wildframe-backend:v1.0.0 \
-  -f netflix_backend/Dockerfile \
+  -f services/auth-service/Dockerfile \
   .
 
 # Tag for registry
@@ -683,4 +683,4 @@ curl -I https://api.wildframe.com/api/content
 
 ---
 
-Last Updated: May 26, 2026
+**Last Updated**: September 7, 2026

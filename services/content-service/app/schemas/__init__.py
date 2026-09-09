@@ -114,6 +114,7 @@ class ContentResponse(BaseModel):
     is_premium: bool
     can_download: bool
     can_stream: bool
+    price_usd: float | None = None
     created_at: datetime
     updated_at: datetime
     published_at: datetime | None = None
@@ -240,6 +241,7 @@ class ContentCreateRequest(BaseModel):
     is_premium: bool = False
     can_download: bool = True
     can_stream: bool = True
+    price_usd: float | None = Field(None, ge=0, description="TVOD price in USD (for pay-per-view)")
     genre_ids: list[UUID] = []
 
     @field_validator("slug")
@@ -266,6 +268,7 @@ class ContentUpdateRequest(BaseModel):
     is_premium: bool | None = None
     can_download: bool | None = None
     can_stream: bool | None = None
+    price_usd: float | None = Field(None, ge=0, description="TVOD price in USD (for pay-per-view)")
     genre_ids: list[UUID] | None = None
 
 

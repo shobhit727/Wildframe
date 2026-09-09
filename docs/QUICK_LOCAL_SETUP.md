@@ -33,9 +33,13 @@ curl https://localhost:8006/health
 - [ ] Run unit tests (project-wide)
 
 ```bash
-./run_tests.sh
-# or
-pytest -q
+# All 15 services + SDK
+for svc in services/*/; do
+  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+done
+
+# Or single service
+cd services/auth-service && pytest tests --asyncio-mode=auto
 ```
 
 - [ ] Open and inspect service code you want to work on
@@ -46,4 +50,32 @@ code .
 rg "uvicorn|FastAPI|if __name__ == \"__main__\"" -S --hidden || true
 ```
 
-_Saved from session: May 27, 2026_
+- [ ] Run frontend tests
+
+```bash
+cd apps/web
+npm run test            # Vitest unit tests
+npx playwright test    # Playwright E2E tests
+```
+
+- [ ] Run integration tests (needs compose stack up)
+
+```bash
+poetry run pytest tests/integration -q    # ~12 min
+```
+
+- [ ] Run contract tests
+
+```bash
+pytest tests/contract -q
+```
+
+- [ ] Verify CI status
+
+```bash
+gh run list --workflow=ci-cd.yml --branch main --limit 1
+```
+
+---
+
+_Saved from session: September 7, 2026_

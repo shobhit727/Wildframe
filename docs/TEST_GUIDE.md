@@ -2,7 +2,7 @@
 
 Comprehensive reference for writing, running, and debugging tests across the Wildframe platform.
 
-**Last Updated**: August 17, 2026
+**Last Updated**: September 7, 2026
 
 ---
 
@@ -28,7 +28,7 @@ Comprehensive reference for writing, running, and debugging tests across the Wil
 | Mocking | **unittest.mock** (`AsyncMock`, `MagicMock`, `patch`) + **pytest-mock** (`mocker` fixture) | Stub external dependencies |
 | Coverage | **pytest-cov** | Track line + branch coverage |
 | Frontend unit | **Vitest** | Fast, ESM-native, Jest-compatible API |
-| Frontend E2E | **Playwright** | Scripts exist, not yet run in CI |
+| Frontend E2E | **Playwright** | 3 test suites (auth, content, subscription) - running in CI |
 | Load | **k6** | Optional, not yet written |
 
 ---
@@ -235,12 +235,89 @@ poetry run pytest tests/integration -q    # ~12 min
 > requests are paced (≤3 per 60 s window) so the gateway rate limiter does
 > not flake the suite.
 
-### Full platform E2E
+### Frontend E2E Tests (Playwright)
 
-The dockerized stack (`deployments/docker-compose.dev.yml`) is the E2E target:
-boot it, then probe endpoints per [API_DOCUMENTATION.md](API_DOCUMENTATION.md).
-The Aug 9, 2026 security sweep used exactly this flow (see
-[AUDIT_FIX_SUMMARY.md](../AUDIT_FIX_SUMMARY.md)).
+The repository includes Playwright E2E tests that run in CI against the
+dockerized stack:
+
+**Test Suites:**
+- `e2e/auth.spec.ts` — Authentication flow (login, signup, protected route redirects)
+- `e2e/content.spec.ts` — Content library, content detail, search pages
+- `e2e/subscription.spec.ts` — Subscription page access
+
+**Run locally:**
+```bash
+# Terminal 1: Start the frontend dev server
+cd apps/web
+npm run dev
+
+# Terminal 2: Run Playwright tests
+npx playwright test
+```
+
+**Run in CI:**
+```bash
+cd apps/web
+npx playwright test --reporter=github
+```
+
+**Test count:** 9 tests total (3 suites × 3 tests each)
+
+**Configuration:** `apps/web/playwright.config.ts`
+- Base URL: `https://localhost:3000` (HTTPS with self-signed certs)
+- Single browser: Chromium (CI), multi-browser locally
+- Web server: Starts `npm run dev` automatically
+- HTTPS errors ignored (self-signed certs)
+- Timeout: 300s for web server startup
+
+---
+
+### Live-stack integration suite (`tests/integration/`, repo root)
+
+Since Aug 2026 the repo ships a cross-service integration suite that runs
+against the **real dockerized stack** through the Caddy proxy (HTTPS). 87
+tests across 7 modules + `conftest.py`:
+
+- `test_gateway_auth.py` — edge auth matrix through the gateway (expired /
+  wrong-audience / malformed tokens, public vs. protected routes) and the
+  gateway rate limiter (429 flood test, run last with drain sleeps).
+- `test_auth_token_lifecycle.py` — register → login → refresh → logout /
+  token revocation.
+- `test_authorization_cross_service.py` — per-service authorization and
+  audience verification (auth, content, analytics, billing, creators,
+  notification, search, streaming, admin, media-pipeline).
+- `test_billing_webhook_idempotency.py` — Stripe webhook: signature
+  verification (unsigned → 400), first delivery `handled:true`, replay
+  `idempotent:true`, exactly one PAID invoice row.
+- `test_contract_schemas.py` — shared response shapes across services.
+- `test_health_readiness.py` — `/health` and `/ready` for every service
+  (search `/ready` regression).
+- `test_pipeline_idempotency.py` — media-pipeline job start/get now require
+  a verified JWT; repeated `start` calls are idempotent.
+
+```bash
+# From repo root — stack must be up; skips itself if the stack is down
+poetry run pytest tests/integration -q    # ~12 min
+```
+
+> ⚠️ The integration suite is deliberately **excluded** from the per-service
+> loop (root `pyproject.toml` `testpaths` only cover `services/*/tests` and
+> `packages/*/tests`), so CI's unit matrix does not run it. It is not
+> testcontainers-based; it treats the compose stack as the test target.
+> HTTP requests use `verify=False` (self-signed dev certs), and IP-keyed
+> requests are paced (≤3 per 60 s window) so the gateway rate limiter does
+> not flake the suite.
+
+### Route Contract Tests
+
+Static analysis test that validates frontend API calls match backend routes:
+
+```bash
+pytest tests/contract -q
+```
+
+16 tests verifying frontend paths resolve to registered backend routes.
+Known frontend-only paths are documented in `tests/contract/test_route_drift.py`.
 
 ### Smoke test (after deployment)
 
@@ -297,3 +374,4 @@ docker compose -f deployments/docker-compose.dev.yml up -d
 - [HOW_TO_RUN_TESTS.md](../HOW_TO_RUN_TESTS.md) — Cheat sheet
 - [TESTING_GUIDE.md](../TESTING_GUIDE.md) — Manual API testing with curl
 - [SERVICE_ARCHITECTURE_PATTERN.md](SERVICE_ARCHITECTURE_PATTERN.md) — Why the test layout looks the way it does
+- [FRONTEND_ARCHITECTURE.md](FRONTEND_ARCHITECTURE.md) — Frontend structure and conventions

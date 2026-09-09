@@ -148,6 +148,7 @@ class Content(Base):
     # Content info
     content_rating = Column(String(20), nullable=True)  # G, PG, PG-13, R, etc.
     is_premium = Column(Boolean, default=False)
+    price_usd = Column(Float, nullable=True, default=None)  # TVOD price in USD (for pay-per-view)
     can_download = Column(Boolean, default=True)
     can_stream = Column(Boolean, default=True)
 

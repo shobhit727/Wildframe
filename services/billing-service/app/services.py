@@ -30,6 +30,7 @@ Monetary invariants (#477/#478):
 import logging
 from datetime import datetime
 from decimal import Decimal
+import httpx
 from typing import Mapping
 from uuid import UUID
 
@@ -254,11 +255,29 @@ class BillingService:
     # TVOD purchases
     # -----------------------------------------------------------------------
 
+    async def _fetch_content_price(self, content_id: UUID) -> Decimal:
+        """Fetch the TVOD price for content from the content service."""
+        content_service_url = "http://content-service:8000"
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            try:
+                response = await client.get(f"{content_service_url}/api/v1/content/{content_id}")
+                response.raise_for_status()
+                data = response.json()
+                price = data.get("price_usd")
+                if price is None:
+                    raise ValueError(f"Content {content_id} does not have a TVOD price set")
+                return Decimal(str(price))
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    raise ValueError(f"Content {content_id} not found")
+                raise ValueError(f"Failed to fetch content price: {e}")
+            except Exception as e:
+                raise ValueError(f"Failed to fetch content price: {e}")
+
     async def purchase_title(
         self,
         user_id: UUID,
         content_id: UUID,
-        price: Decimal,
         currency: str = "USD",
         stripe_payment_intent_id: str | None = None,
     ) -> Purchase:
@@ -266,8 +285,13 @@ class BillingService:
 
         Uses a deterministic idempotency key derived from user+content
         so duplicate requests are safe. Currency validated against ISO-4217.
+        Price is fetched from the content service (canonical source).
         """
         validate_currency(currency)
+        
+        # Fetch canonical price from content service
+        price = await self._fetch_content_price(content_id)
+        
         idem_key = f"tvod:{user_id}:{content_id}"
         existing = await self.purchase_repo.get_by_user_and_content(user_id, content_id)
         if existing:

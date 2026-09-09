@@ -2,7 +2,7 @@
 
 Get the Wildframe platform running on your local machine in under 10 minutes.
 
-**Last Updated**: August 9, 2026
+**Last Updated**: September 7, 2026
 **Version**: 1.0.0
 
 ---
@@ -137,9 +137,11 @@ so `/admin` is accessible.
 
 ## 6. Run the Test Suite
 
+### Backend Unit Tests (per service)
+
 Backend tests must run **per service** (every service has its own top-level
-`app` package, so a combined `pytest services/` sweep breaks on shadowed
-imports):
+`app` package, so a combined `pytest services/` sweep from the repo root breaks
+on shadowed `app.*` imports):
 
 ```bash
 # All 15 services + SDK
@@ -150,16 +152,47 @@ done
 # One service
 cd services/auth-service
 pytest tests --asyncio-mode=auto
-
-# Live-stack integration suite (needs the compose stack up; ~12 min, 87 tests)
-poetry run pytest tests/integration -q
-
-# Frontend
-cd apps/web
-npx vitest run
 ```
 
-See [TEST_GUIDE.md](../docs/TEST_GUIDE.md) for the full testing playbook.
+### Live-Stack Integration Suite
+
+Needs the compose stack up (~12 min, 87 tests):
+
+```bash
+poetry run pytest tests/integration -q
+```
+
+### Frontend Tests
+
+```bash
+cd apps/web
+
+# Unit tests (Vitest)
+npx vitest run
+
+# E2E tests (Playwright) - needs dev server running
+npm run dev         # in separate terminal
+npx playwright test
+```
+
+### CI Test Commands (reference)
+
+```bash
+# Backend unit tests (runs in CI per service)
+poetry run pytest tests --asyncio-mode=auto
+
+# Frontend unit tests
+cd apps/web && npx vitest run
+
+# Frontend E2E tests (Playwright) - runs in CI
+cd apps/web && npx playwright test
+
+# Integration tests (needs docker compose stack)
+poetry run pytest tests/integration -q
+
+# Contract tests (route drift)
+pytest tests/contract -q
+```
 
 ---
 
@@ -181,7 +214,7 @@ docker compose -f deployments/docker-compose.dev.yml down -v
 ## Quick Port Reference
 
 | Port | Service |
-|---:|---|
+|---|---|
 | 8000 | API Gateway |
 | 8001 | Auth |
 | 8002 | User |
@@ -192,7 +225,7 @@ docker compose -f deployments/docker-compose.dev.yml down -v
 | 8007 | Recommendation |
 | 8008 | Billing |
 | 8009 | Analytics |
-| 8010 | Notification |
+| 8009 | Notification |
 | 8011 | Media Pipeline |
 | 8012 | Creators |
 | 8013 | Moderation |

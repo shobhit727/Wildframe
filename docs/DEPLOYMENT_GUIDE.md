@@ -32,6 +32,57 @@ push main
     +--> in-cluster /health checks
 ```
 
+## CI Pipeline Details (54 Jobs)
+
+| Stage | Jobs | Tools |
+|---|---|---|
+| Lint | 1 (Backend) + 1 (Frontend) | ruff, black, mypy, ESLint, Prettier |
+| Unit Tests | 16 (15 services + SDK) | pytest, Vitest |
+| Integration | 1 | pytest + httpx (87 tests, ~12 min) |
+| Contract | 1 | pytest (16 route drift tests) |
+| Frontend E2E | 1 | Playwright (9 tests: auth, content, subscription) |
+| Build | 17 (16 services + frontend) | Docker |
+| Security | 1 | Trivy |
+| Helm | 1 | helm lint |
+| Deploy | 2 | skipped (no AWS creds) |
+
+**Total time**: ~15-20 minutes
+
+### CI Pipeline Commands (reference)
+
+```bash
+# Backend lint
+ruff check services/
+black --check services/
+mypy services/*/app --config-file pyproject.toml
+
+# Frontend lint
+cd apps/web && npm run lint
+
+# Backend unit tests (per service)
+for svc in services/*/; do
+  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+done
+
+# Frontend unit tests
+cd apps/web && npx vitest run
+
+# Integration tests (needs docker compose stack)
+poetry run pytest tests/integration -q
+
+# Contract tests
+pytest tests/contract -q
+
+# Frontend E2E tests
+cd apps/web && npx playwright test --reporter=github
+
+# Security scan
+trivy fs --severity HIGH,CRITICAL .
+
+# Helm lint
+helm lint infrastructure/helm/wildframe
+```
+
 ## GitHub configuration
 
 Create GitHub Environments named `staging` and `production`.
@@ -39,7 +90,7 @@ Create GitHub Environments named `staging` and `production`.
 Configure the following secrets in each environment:
 
 | Secret | Purpose |
-| --- | --- |
+|---|---|
 | `AWS_DEPLOY_ROLE_ARN` | IAM role assumed through GitHub OIDC |
 | `WILDFRAME_JWT_SECRET` | JWT signing secret |
 | `WILDFRAME_POSTGRES_PASSWORD` | PostgreSQL password |
@@ -150,7 +201,7 @@ After Helm succeeds, CI waits for all 15 backend deployments:
 # Fail the deployment if any service does not become ready.
 for svc in $SERVICES; do
   kubectl rollout status "deployment/$svc" --timeout=10m
- done
+done
 ```
 
 The pipeline then runs `/health` against every service from an ephemeral in-cluster curl pod. Failures are not ignored.

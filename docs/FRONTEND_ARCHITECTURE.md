@@ -2,7 +2,7 @@
 
 The Wildframe web app is a Next.js 15 application using the App Router, TypeScript, TailwindCSS, and a small set of opinionated client libraries.
 
-**Last Updated**: June 4, 2026
+**Last Updated**: September 7, 2026
 **Stack**: Next.js 15 · React 19 · TypeScript 5 · TailwindCSS 4 · TanStack Query · Zustand · Axios
 
 ---
@@ -48,9 +48,11 @@ apps/web/
 │   ├── constants/       # Strings, enums
 │   └── middleware.ts    # Next.js middleware (auth redirect, headers)
 ├── public/
-├── tests/               # Vitest + Playwright (planned)
+├── e2e/                 # Playwright E2E tests
+├── tests/               # Vitest unit/component tests
 ├── tailwind.config.ts
 ├── next.config.ts
+├── playwright.config.ts
 └── package.json
 ```
 
@@ -249,12 +251,49 @@ export function HlsPlayer({ src, onTimeUpdate }: Props) {
 |---|---|---|
 | Unit | **Vitest** | `tests/unit/**` |
 | Component | **Vitest** + **Testing Library** | `tests/components/**` |
-| E2E | **Playwright** | `tests/e2e/**` |
+| E2E | **Playwright** | `e2e/**` |
 
 ```bash
 npm run test            # vitest
 npm run test:coverage   # vitest --coverage
 npm run test:e2e        # playwright test
+```
+
+### Playwright E2E Tests
+
+**Test Suites:** 3 test files (9 tests total)
+- `e2e/auth.spec.ts` — Authentication flow (login, signup, protected route redirects)
+- `e2e/content.spec.ts` — Content library, content detail, search pages
+- `e2e/subscription.spec.ts` — Subscription page access
+
+**Run locally:**
+```bash
+# Terminal 1: Start the frontend dev server
+npm run dev
+
+# Terminal 2: Run Playwright tests
+npx playwright test
+```
+
+**Run in CI:**
+```bash
+npx playwright test --reporter=github
+```
+
+**Configuration:** `playwright.config.ts`
+- Base URL: `https://localhost:3000` (HTTPS with self-signed certs)
+- Single browser: Chromium (CI), multi-browser locally
+- Web server: Starts `npm run dev` automatically
+- HTTPS errors ignored (self-signed certs)
+- Timeout: 300s for web server startup
+
+**Test count:** 9 tests total (3 test files × 3 tests each)
+
+### Vitest Unit/Component Tests
+
+```bash
+npm run test            # vitest
+npm run test:coverage   # vitest --coverage
 ```
 
 Coverage target: 70%+ on `src/components/` and `src/hooks/`.

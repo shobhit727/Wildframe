@@ -217,30 +217,104 @@ Fixes #123
 
 ### Backend Testing
 ```bash
-# Unit tests
-pytest services/auth-service/tests/unit -v
-
-# Integration tests
-pytest services/auth-service/tests/integration -v
+# Unit tests (per service)
+pytest services/auth-service/tests -v
 
 # Coverage
 pytest services/auth-service/tests --cov=app --cov-report=html
 
 # Specific test
-pytest services/auth-service/tests::test_user_registration -v
+pytest services/auth-service/tests -v -k "test_register_success"
+
+# All 15 services + SDK
+for svc in services/*/; do
+  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+done
+```
+
+### Integration Tests
+```bash
+# Live-stack integration suite (needs compose stack up; ~12 min, 87 tests)
+poetry run pytest tests/integration -q
+```
+
+### Contract Tests
+```bash
+# Route drift detection (frontend-to-backend)
+pytest tests/contract -q
 ```
 
 ### Frontend Testing
 ```bash
-# Run tests
-npm run test --workspace=apps/web
+cd apps/web
+
+# Unit tests (Vitest)
+npm run test
 
 # Watch mode
-npm run test:watch --workspace=apps/web
+npm run test:watch
 
 # Coverage
-npm run test:coverage --workspace=apps/web
+npm run test:coverage
+
+# E2E tests (Playwright) - needs dev server running
+npm run dev              # Terminal 1
+npx playwright test      # Terminal 2
+
+# CI E2E command
+npx playwright test --reporter=github
 ```
+
+### Test Structure
+
+| Layer | Tool | Where |
+|---|---|---|
+| Backend unit | pytest + pytest-asyncio | `services/*/tests/` |
+| HTTP client | httpx (ASGITransport) | In-process app testing |
+| Mocking | unittest.mock, pytest-mock | Stub external dependencies |
+| Coverage | pytest-cov | Line + branch coverage |
+| Frontend unit | Vitest | `apps/web/tests/` |
+| Frontend component | Vitest + Testing Library | `apps/web/tests/components/` |
+| Frontend E2E | Playwright | `apps/web/e2e/` |
+
+### Playwright E2E Tests
+
+**Test Suites:** 3 test files (9 tests total)
+- `e2e/auth.spec.ts` — Authentication flow (login, signup, protected route redirects)
+- `e2e/content.spec.ts` — Content library, content detail, search pages
+- `e2e/subscription.spec.ts` — Subscription page access
+
+**Run locally:**
+```bash
+# Terminal 1: Start the frontend dev server
+npm run dev
+
+# Terminal 2: Run Playwright tests
+npx playwright test
+```
+
+**Run in CI:**
+```bash
+npx playwright test --reporter=github
+```
+
+**Configuration:** `playwright.config.ts`
+- Base URL: `https://localhost:3000` (HTTPS with self-signed certs)
+- Single browser: Chromium (CI), multi-browser locally
+- Web server: Starts `npm run dev` automatically
+- HTTPS errors ignored (self-signed certs)
+- Timeout: 300s for web server startup
+
+**Test count:** 9 tests total (3 test files × 3 tests each)
+
+### Vitest Unit/Component Tests
+
+```bash
+npm run test            # vitest
+npm run test:coverage   # vitest --coverage
+```
+
+Coverage target: 70%+ on `src/components/` and `src/hooks/`.
 
 ### Test Naming Convention
 ```python
@@ -268,6 +342,7 @@ Brief description of changes
 ## Testing
 - [ ] Unit tests added
 - [ ] Integration tests added
+- [ ] E2E tests added (if UI changes)
 - [ ] Manual testing done
 
 ## Related Issues
@@ -355,7 +430,7 @@ pip list --outdated
 - [ ] DASH packaging
 - [ ] CDN integration
 
-### Phase 5: Frontend (Weeks 13-14)
+### Phase 4: Frontend (Weeks 13-14)
 - [ ] Next.js project
 - [ ] Component library
 - [ ] Video player
@@ -369,9 +444,9 @@ pip list --outdated
 - [ ] Operational runbooks
 
 ### Phase 7: Testing & Quality (Ongoing)
-- [ ] Unit tests
-- [ ] Integration tests
-- [ ] E2E tests
+- [x] Unit tests
+- [x] Integration tests
+- [x] E2E tests
 - [ ] Load testing
 - [ ] Code quality
 
@@ -571,4 +646,4 @@ docker-compose up --build
 
 ---
 
-Last Updated: May 26, 2026
+**Last Updated**: September 7, 2026

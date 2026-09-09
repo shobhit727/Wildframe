@@ -121,7 +121,6 @@ class SubscribeRequest(BaseModel):
 class PurchaseRequest(BaseModel):
     user_id: UUID
     content_id: UUID
-    price: Decimal = Field(..., gt=0, description="Price in USD")
 
 
 class CreateMilestoneRequest(BaseModel):
@@ -207,7 +206,7 @@ async def purchase_title(
             detail="You can only purchase content for your own account",
         )
     try:
-        purchase = await service.purchase_title(request.user_id, request.content_id, request.price)
+        purchase = await service.purchase_title(request.user_id, request.content_id)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"purchase_id": str(purchase.id), "status": "completed"}

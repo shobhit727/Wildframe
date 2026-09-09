@@ -1,7 +1,7 @@
 # 🏗️ Wildframe Platform Architecture
 
 **Version**: 1.0.0  
-**Last Updated**: May 28, 2026  
+**Last Updated**: September 7, 2026  
 **Stability**: Active development — not production-ready (see `STATUS.md`)
 
 > Some sections below are aspirational design notes retained for history.
@@ -28,6 +28,7 @@ Wildframe is a production-grade OTT (Over-The-Top) streaming platform built on a
 6. [Scalability](#scalability)
 7. [High Availability](#high-availability)
 8. [Monitoring & Observability](#monitoring--observability)
+9. [Testing & CI](#testing--ci)
 
 ---
 
@@ -51,7 +52,7 @@ Wildframe is a production-grade OTT (Over-The-Top) streaming platform built on a
          │              │             │
     ┌────▼──────────────▼─────────────▼────┐
     │    Shared Infrastructure              │
-    │  ├─ PostgreSQL (12 databases)        │
+    │  ├─ PostgreSQL (16 databases)        │
     │  ├─ Redis (caching & sessions)       │
     │  ├─ Kafka (event streaming)          │
     │  ├─ Elasticsearch (full-text search) │
@@ -338,9 +339,11 @@ apps/web/
 │   ├── styles/                    # Global styles
 │   └── types/                     # TypeScript types
 ├── public/                        # Static assets
+├── e2e/                           # Playwright E2E tests
 ├── tsconfig.json                  # TypeScript config
 ├── tailwind.config.ts             # TailwindCSS config
-└── next.config.ts                 # Next.js config
+├── next.config.ts                 # Next.js config
+└── package.json
 ```
 
 ### State Management
@@ -429,6 +432,13 @@ streaming_db    → Streaming Service (sessions, watch history)
 billing_db      → Billing Service (subscriptions, payments)
 analytics_db    → Analytics Service (events, behavior)
 admin_db        → Admin Service (content, moderation)
+recommendations_db → Recommendation Service
+notification_db → Notification Service
+search_db       → Search Service
+media_pipeline_db → Media Pipeline Service
+creators_db     → Creators Service
+moderation_db   → Moderation Service
+uploads_db      → Uploads Service
 ```
 
 ### Auth Service Schema
@@ -525,6 +535,145 @@ alembic downgrade -1
 
 ---
 
+## Communication Patterns
+
+### REST APIs
+Synchronous request/response for CRUD operations and queries.
+
+### Event-Driven (Kafka)
+Async event publishing for:
+- User registration → welcome email, profile creation
+- Content upload → transcoding pipeline
+- Billing events → notifications, analytics
+- Content moderation → flags, alerts
+
+### JWT Audience
+Auth-service tokens carry `aud: "wildframe-api"`. Every service verifying
+auth-issued tokens **must** decode with `audience=settings.JWT_AUDIENCE`
+(`"wildframe-api"`), or python-jose raises `JWTClaimsError: Invalid audience`.
+The api-gateway is a **transparent proxy** — it rate-limits proxied requests
+(keyed by user `sub` or IP) but does not reject them; each backend service
+enforces auth at its own boundary.
+
+---
+
+## Security Model
+
+### JWT Authentication
+- Access Token: 15 min, stateless, `aud: "wildframe-api"`
+- Refresh Token: 7 days, HttpOnly cookie, rotated on use
+- `python-jose` library, RS256 signing
+
+### Rate Limiting (Gateway)
+- Key: authenticated user `sub` or client IP
+- Limits: auth 5/min, search 100/min, default 1000/min
+- Response: `429 Too Many Requests` with `Retry-After`
+
+### Correlation ID
+Unique identifier tracking a request through all services and logs.
+
+### HTTPS/TLS
+- Caddy reverse proxy terminates TLS (self-signed dev certs)
+- Internal service-to-service HTTP on docker network
+- Only host-facing ports are TLS
+
+---
+
+## Testing & CI
+
+### Test Stack
+
+| Layer | Tool | Where |
+|---|---|---|
+| Backend unit/route | pytest + pytest-asyncio | `services/*/tests/` |
+| HTTP client | httpx (ASGITransport) | In-process app testing |
+| Mocking | unittest.mock, pytest-mock | Stub external dependencies |
+| Coverage | pytest-cov | Line + branch coverage |
+| Frontend unit | Vitest | `apps/web/tests/` |
+| Frontend component | Vitest + Testing Library | `apps/web/tests/components/` |
+| Frontend E2E | Playwright | `apps/web/e2e/` |
+| Integration | pytest + httpx | `tests/integration/` |
+| Contract | pytest + static analysis | `tests/contract/` |
+
+### CI Pipeline (54 jobs)
+
+```yaml
+# Backend
+- Lint (ruff, black, mypy)
+- Unit tests per service (15 services + SDK)
+- Integration tests (87 tests, ~12 min)
+- Contract tests (16 route drift tests)
+- Docker build smoke (15 services + frontend)
+
+# Frontend
+- Lint (ESLint, Prettier)
+- Type-check (TypeScript)
+- Unit tests (Vitest)
+- E2E tests (Playwright: auth, content, subscription)
+
+# Infrastructure
+- Helm lint
+- Docker build & push (16 images)
+- Security scan (Trivy)
+
+# Deploy (skipped - requires AWS creds)
+- Staging
+- Production
+```
+
+### Running Tests Locally
+
+```bash
+# Backend unit tests (per service)
+for svc in services/*/; do
+  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+done
+
+# Single service
+cd services/auth-service && pytest tests --asyncio-mode=auto
+
+# Integration tests (needs compose stack)
+poetry run pytest tests/integration -q
+
+# Contract tests
+pytest tests/contract -q
+
+# Frontend
+cd apps/web
+npm run test              # vitest
+npm run test:e2e          # playwright test
+```
+
+### Test Structure
+
+```
+# Backend service
+services/<service>/
+├── app/
+└── tests/
+    ├── conftest.py
+    ├── test_*.py          # Unit tests
+    └── test_*_edges.py    # Edge cases
+
+# Frontend
+apps/web/
+├── tests/
+│   ├── unit/
+│   └── components/
+└── e2e/
+    ├── auth.spec.ts
+    ├── content.spec.ts
+    └── subscription.spec.ts
+
+# Repo root
+tests/
+├── integration/           # 87 live-stack tests
+└── contract/
+    └── test_route_drift.py
+```
+
+---
+
 ## Key Concepts
 
 ### Microservices
@@ -573,4 +722,62 @@ Unique identifier tracking a request through all services and all logs, enabling
 
 ---
 
-Last Updated: August 17, 2026
+## CI/CD Pipeline
+
+The CI pipeline (GitHub Actions) runs **54 jobs** on every push to main:
+
+| Stage | Jobs | Tools |
+|---|---|---|
+| Lint | 1 (Backend) + 1 (Frontend) | ruff, black, mypy, ESLint, Prettier |
+| Unit Tests | 16 (15 services + SDK) | pytest, Vitest |
+| Integration | 1 | pytest + httpx |
+| Contract | 1 | pytest |
+| Frontend E2E | 1 | Playwright |
+| Build | 17 (16 services + frontend) | Docker |
+| Security | 1 | Trivy |
+| Helm | 1 | helm lint |
+| Deploy | 2 | skipped (no AWS creds) |
+
+**Total time**: ~15-20 minutes
+
+---
+
+## Monitoring & Observability
+
+### Metrics (Prometheus + Grafana)
+- Service health, latency, error rates
+- Business metrics (registrations, streams, revenue)
+
+### Logging (Loki)
+- Structured JSON logs with `X-Request-ID`
+- Query by service, trace ID, level
+
+### Tracing (Jaeger)
+- End-to-end request tracing
+- Service graph visualization
+
+### Health Checks
+- `/health` — liveness (DB, Redis)
+- `/ready` — readiness (migrations, config)
+
+---
+
+## Key Files Reference
+
+| File | Purpose |
+|---|---|
+| `AGENTS.md` | Agent instructions, repo conventions |
+| `README.md` | Project overview, quick links |
+| `deployments/docker-compose.dev.yml` | Local dev stack |
+| `infrastructure/database/init-databases.sql` | 16 service databases |
+| `infrastructure/terraform/` | AWS infrastructure |
+| `infrastructure/kubernetes/` | Helm charts |
+| `apps/web/playwright.config.ts` | E2E test config |
+| `tests/contract/test_route_drift.py` | Frontend-backend route contract |
+| `tests/integration/conftest.py` | Integration test fixtures |
+| `scripts/init_schemas.py` | Create all tables |
+| `scripts/seed_demo.py` | Demo data |
+
+---
+
+**Last Updated**: September 7, 2026

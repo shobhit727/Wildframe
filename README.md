@@ -115,6 +115,8 @@ The CI workflow is the primary reproducible validation environment. For local te
 - `TESTING_GUIDE.md`
 - `HOW_TO_RUN_TESTS.md`
 
+### Backend Unit Tests
+
 Backend unit/route tests run per service (a combined `pytest services/` sweep
 from the repo root breaks on shadowed `app.*` imports):
 
@@ -123,6 +125,8 @@ for svc in services/*/; do
   (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
 done
 ```
+
+### Integration Tests
 
 The repo also ships a live-stack integration suite (`tests/integration/`, 87
 tests) that exercises the full HTTPS stack — auth token lifecycle, gateway
@@ -133,6 +137,73 @@ the CI unit matrix:
 
 ```bash
 poetry run pytest tests/integration -q    # ~12 min
+```
+
+### Contract Tests
+
+Route drift detection (frontend-to-backend path validation):
+
+```bash
+pytest tests/contract -q
+```
+
+16 tests verifying frontend paths resolve to registered backend routes.
+
+### Frontend Tests
+
+```bash
+cd apps/web
+
+# Unit tests (Vitest)
+npm run test
+
+# E2E tests (Playwright)
+npm run dev              # Terminal 1
+npx playwright test      # Terminal 2
+```
+
+### Playwright E2E Tests
+
+**Test Suites:** 3 test files (9 tests total)
+- `e2e/auth.spec.ts` — Authentication flow (login, signup, protected route redirects)
+- `e2e/content.spec.ts` — Content library, content detail, search pages
+- `e2e/subscription.spec.ts` — Subscription page access
+
+**Run locally:**
+```bash
+# Terminal 1: Start the frontend dev server
+npm run dev
+
+# Terminal 2: Run Playwright tests
+npx playwright test
+```
+
+**Run in CI:**
+```bash
+npx playwright test --reporter=github
+```
+
+**Test count:** 9 tests total (3 test files × 3 tests each)
+
+### CI Test Commands (reference)
+
+```bash
+# Backend unit tests (per service)
+for svc in services/*/; do
+  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+done
+
+# Frontend unit tests
+cd apps/web && npx vitest run
+
+# Frontend E2E tests
+cd apps/web && npx playwright test
+
+# Integration tests (needs docker compose stack)
+poetry run pytest tests/integration -q
+
+# Contract tests
+pytest tests/contract -q
 ```
 
 Avoid treating old completion reports as current test evidence. CI results from the current commit are authoritative.
