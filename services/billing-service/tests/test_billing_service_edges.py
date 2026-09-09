@@ -88,8 +88,9 @@ class TestPurchase:
         user_id, content_id = uuid4(), uuid4()
         existing = MagicMock()
         service.purchase_repo.get_by_user_and_content.return_value = existing
+        service._fetch_content_price = AsyncMock(return_value=Decimal("4.99"))
 
-        result = await service.purchase_title(user_id, content_id, Decimal("4.99"))
+        result = await service.purchase_title(user_id, content_id)
 
         assert result is existing
         service.purchase_repo.create.assert_not_awaited()
@@ -100,8 +101,9 @@ class TestPurchase:
         purchase.id = uuid4()
         service.purchase_repo.get_by_user_and_content.return_value = None
         service.purchase_repo.create.return_value = purchase
+        service._fetch_content_price = AsyncMock(return_value=Decimal("4.99"))
 
-        result = await service.purchase_title(user_id, content_id, Decimal("4.99"))
+        result = await service.purchase_title(user_id, content_id)
 
         assert result is purchase
         service.inv_repo.create.assert_awaited_once()
