@@ -288,10 +288,10 @@ class BillingService:
         Price is fetched from the content service (canonical source).
         """
         validate_currency(currency)
-        
+
         # Fetch canonical price from content service
         price = await self._fetch_content_price(content_id)
-        
+
         idem_key = f"tvod:{user_id}:{content_id}"
         existing = await self.purchase_repo.get_by_user_and_content(user_id, content_id)
         if existing:
