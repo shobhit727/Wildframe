@@ -372,17 +372,14 @@ class TestAgeVerificationModel:
                 assert _get_index_attr(AgeVerification, field) is True
 
     def test_verification_method_length(self):
-        from app.models.age_verification import AgeVerification
         col = _get_column(AgeVerification, 'verification_method')
         assert col.type.length == 50
 
     def test_jurisdiction_length(self):
-        from app.models.age_verification import AgeVerification
         col = _get_column(AgeVerification, 'jurisdiction')
         assert col.type.length == 10
 
     def test_indexes(self):
-        from app.models.age_verification import AgeVerification
         indexes = [idx.name for idx in AgeVerification.__table__.indexes]
         expected = [
             'idx_age_verify_user',
