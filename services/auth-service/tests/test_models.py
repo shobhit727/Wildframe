@@ -10,7 +10,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import String, Integer, Boolean, Text, DateTime, Index
+from sqlalchemy import String, Integer, Boolean, Text, DateTime
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 
@@ -22,7 +22,6 @@ from app.models import (
     TokenBlacklist,
     LoginAudit,
     AgeVerification,
-    SecurityAudit,
     PrivacyNotice,
     ConsentRecord,
 )
