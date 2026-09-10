@@ -309,9 +309,13 @@ __all__: Sequence[str] = (
     "RefreshToken",
     "TokenBlacklist",
     "LoginAudit",
+    "AgeVerification",
+    "SecurityAudit",
     "PrivacyNotice",
     "ConsentRecord",
 )
 
-# Import privacy models at the end to avoid circular imports
+# Import all models at the end to avoid circular imports
+from app.models.age_verification import AgeVerification
+from app.models.audit import SecurityAudit
 from app.models.privacy import ConsentRecord, PrivacyNotice

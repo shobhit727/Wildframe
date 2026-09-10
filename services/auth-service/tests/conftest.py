@@ -22,7 +22,11 @@ def _no_redis_rate_limit():
 
     The one endpoint test that asserts throttling re-patches allow() itself.
     """
-    with patch("app.api.routes.auth.allow", new=AsyncMock(return_value=True)):
+    # Skip patching if the module doesn't exist (e.g., during model tests)
+    try:
+        with patch("app.api.routes.auth.allow", new=AsyncMock(return_value=True)):
+            yield
+    except (ImportError, AttributeError):
         yield
 
 
