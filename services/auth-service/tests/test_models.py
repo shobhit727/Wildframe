@@ -561,7 +561,6 @@ class TestModelEdgeCases:
         user = User()
         before = datetime.now(UTC)
         user.is_locked = True
-        after = datetime.now(UTC)
         
         assert user.locked_until is not None
         diff = user.locked_until - before.replace(tzinfo=None)
