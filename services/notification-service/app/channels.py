@@ -6,7 +6,6 @@ remaining channels. Channels without provider configuration raise
 ChannelUnavailable and are skipped, not retried.
 """
 
-from asyncio import Lock
 import asyncio
 import logging
 import smtplib
