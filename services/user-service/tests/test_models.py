@@ -1,5 +1,8 @@
 """Behavioral model tests for user-service entities."""
 
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from uuid import uuid4
 
 from app.models import (
@@ -7,11 +10,26 @@ from app.models import (
     UserDevice,
     UserPreference,
     UserSubscriptionProfile,
+    Base,
 )
 
 
-def test_user_profile_defaults() -> None:
+@pytest.fixture(scope="function")
+def db_session():
+    """Create an isolated in-memory SQLite session for each test."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    sess = Session()
+    yield sess
+    sess.close()
+
+
+def test_user_profile_defaults(db_session):
     profile = UserProfile(user_id=uuid4())
+    db_session.add(profile)
+    db_session.commit()
+    db_session.refresh(profile)
 
     assert profile.is_active is True
     assert profile.public_profile is False
@@ -22,13 +40,16 @@ def test_user_profile_defaults() -> None:
     assert profile.language == "en-US"
 
 
-def test_user_device_defaults_and_constraints() -> None:
+def test_user_device_defaults_and_constraints(db_session):
     device = UserDevice(
         user_id=uuid4(),
         device_id="device-1",
         device_name="Test Device",
         device_type="web",
     )
+    db_session.add(device)
+    db_session.commit()
+    db_session.refresh(device)
 
     assert device.device_id == "device-1"
     assert device.device_name == "Test Device"
@@ -39,8 +60,11 @@ def test_user_device_defaults_and_constraints() -> None:
     assert device.can_download is False
 
 
-def test_user_preference_defaults() -> None:
+def test_user_preference_defaults(db_session):
     prefs = UserPreference(user_id=uuid4())
+    db_session.add(prefs)
+    db_session.commit()
+    db_session.refresh(prefs)
 
     assert prefs.theme == "dark"
     assert prefs.language == "en-US"
@@ -61,8 +85,11 @@ def test_user_preference_defaults() -> None:
     assert prefs.push_notifications is True
 
 
-def test_user_subscription_profile_defaults() -> None:
+def test_user_subscription_profile_defaults(db_session):
     sub = UserSubscriptionProfile(user_id=uuid4())
+    db_session.add(sub)
+    db_session.commit()
+    db_session.refresh(sub)
 
     assert sub.subscription_tier == "free"
     assert sub.subscription_status == "active"

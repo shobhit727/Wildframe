@@ -4,18 +4,19 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 
 
 @pytest.mark.asyncio
 async def test_health_check():
     """Test health check endpoint."""
-    from app.main import app
-    from fastapi.testclient import TestClient
+    from app.main import create_app
 
-    client = TestClient(app)
-    response = client.get("/health")
-    assert response.status_code == 200
-    assert response.json()["status"] in ("healthy", "degraded")
+    app = create_app()
+    with TestClient(app) as client:
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json()["status"] in ("healthy", "degraded")
 
 
 @pytest.mark.asyncio

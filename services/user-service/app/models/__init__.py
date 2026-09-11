@@ -2,18 +2,10 @@ import uuid
 
 """SQLAlchemy models for User Service."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import (
-    Boolean,
-    Column,
-    DateTime,
-    Index,
-    Integer,
-    String,
-    Text,
-)
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -31,35 +23,40 @@ class UserProfile(Base):
         Index("idx_created_at", "created_at"),
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=False
-    )  # Reference to auth service user
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True)
 
     # Profile information
-    avatar_url = Column(String(2048), nullable=True)  # Profile picture
-    bio = Column(Text, nullable=True, default="")  # User bio
-    phone_number = Column(String(20), nullable=True)
-    date_of_birth = Column(DateTime, nullable=True)  # Age verification
-    country = Column(String(2), nullable=True)  # ISO country code
-    language = Column(String(5), default="en-US")  # Preferred language
-    timezone = Column(String(50), nullable=True)  # User timezone
+    avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    bio: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    phone_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    date_of_birth: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    language: Mapped[str] = mapped_column(String(5), default="en-US", nullable=False)
+    timezone: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Account settings
-    public_profile = Column(Boolean, default=False)  # Can other users see profile
-    newsletter_subscribed = Column(Boolean, default=True)
-    marketing_emails = Column(Boolean, default=False)
+    public_profile: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    newsletter_subscribed: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    marketing_emails: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Profile metadata
-    completed_onboarding = Column(Boolean, default=False)
-    profile_completeness = Column(Integer, default=0)  # 0-100%
+    completed_onboarding: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    profile_completeness: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Soft delete support
-    is_active = Column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
 
 
 class UserDevice(Base):
@@ -72,38 +69,47 @@ class UserDevice(Base):
         Index("idx_last_active_at", "last_active_at"),
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
 
     # Device identification
-    device_id = Column(String(255), nullable=False, unique=True)  # Browser/app fingerprint
-    device_name = Column(String(255), nullable=False)  # e.g., "Chrome on MacOS"
-    device_type = Column(String(50), nullable=False)  # "web", "ios", "android", "smart_tv"
+    device_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    device_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    device_type: Mapped[str] = mapped_column(String(50), nullable=False)
 
     # Device details
-    os_name = Column(String(50), nullable=True)  # "macOS", "iOS", "Android", "Windows"
-    os_version = Column(String(50), nullable=True)
-    browser_name = Column(String(50), nullable=True)
-    browser_version = Column(String(50), nullable=True)
+    os_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    os_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    browser_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    browser_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Network info
-    ip_address = Column(String(45), nullable=True)  # IPv4 or IPv6
-    user_agent = Column(Text, nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Device status
-    is_active = Column(Boolean, default=True)
-    is_trusted = Column(Boolean, default=False)  # Trusted device (skip 2FA)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_trusted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Playback permissions
-    can_stream = Column(Boolean, default=True)
-    can_download = Column(Boolean, default=False)
+    can_stream: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    can_download: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Metadata
-    last_active_at = Column(DateTime, nullable=True)
-    registration_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    registration_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
 
 
 class UserPreference(Base):
@@ -112,41 +118,46 @@ class UserPreference(Base):
     __tablename__ = "user_preferences"
     __table_args__ = (Index("idx_user_preferences_user_id", "user_id", unique=True),)
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False, unique=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True)
 
     # Display preferences
-    theme = Column(String(20), default="dark")  # "dark", "light", "auto"
-    language = Column(String(5), default="en-US")
-    subtitle_language = Column(String(5), default="en-US")
-    subtitle_size = Column(String(20), default="medium")  # "small", "medium", "large"
-    closed_captions = Column(Boolean, default=False)
+    theme: Mapped[str] = mapped_column(String(20), default="dark", nullable=False)
+    language: Mapped[str] = mapped_column(String(5), default="en-US", nullable=False)
+    subtitle_language: Mapped[str] = mapped_column(String(5), default="en-US", nullable=False)
+    subtitle_size: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
+    closed_captions: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Playback preferences
-    autoplay = Column(Boolean, default=True)
-    autoplay_next_episode = Column(Boolean, default=True)
-    default_video_quality = Column(
-        String(20), default="adaptive"
-    )  # "adaptive", "720p", "1080p", "4k"
-    default_audio_language = Column(String(5), default="en-US")
+    autoplay: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    autoplay_next_episode: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    default_video_quality: Mapped[str] = mapped_column(String(20), default="adaptive", nullable=False)
+    default_audio_language: Mapped[str] = mapped_column(String(5), default="en-US", nullable=False)
 
     # Maturity rating
-    content_rating = Column(String(20), default="PG-13")  # "G", "PG", "PG-13", "R", "NC-17"
-    allow_explicit_content = Column(Boolean, default=True)
+    content_rating: Mapped[str] = mapped_column(String(20), default="PG-13", nullable=False)
+    allow_explicit_content: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Privacy preferences
-    share_viewing_activity = Column(Boolean, default=False)
-    allow_recommendations = Column(Boolean, default=True)
-    data_collection = Column(Boolean, default=False)  # For analytics
+    share_viewing_activity: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    allow_recommendations: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    data_collection: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Notification preferences
-    email_new_content = Column(Boolean, default=True)
-    email_recommendations = Column(Boolean, default=False)
-    push_notifications = Column(Boolean, default=True)
+    email_new_content: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    email_recommendations: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    push_notifications: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
 
 
 class UserSubscriptionProfile(Base):
@@ -158,25 +169,30 @@ class UserSubscriptionProfile(Base):
         Index("idx_subscription_tier", "subscription_tier"),
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False, unique=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, unique=True)
 
     # Subscription info
-    subscription_tier = Column(String(50), default="free")  # "free", "basic", "standard", "premium"
-    subscription_status = Column(
-        String(50), default="active"
-    )  # "active", "inactive", "suspended", "canceled"
+    subscription_tier: Mapped[str] = mapped_column(String(50), default="free", nullable=False)
+    subscription_status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
 
     # Limits
-    max_concurrent_streams = Column(Integer, default=1)
-    can_download = Column(Boolean, default=False)
-    can_use_4k = Column(Boolean, default=False)
-    ad_free = Column(Boolean, default=False)
+    max_concurrent_streams: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    can_download: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_use_4k: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    ad_free: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Subscription dates
-    current_period_start = Column(DateTime, nullable=True)
-    current_period_end = Column(DateTime, nullable=True)
+    current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )

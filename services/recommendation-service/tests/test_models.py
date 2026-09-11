@@ -33,8 +33,17 @@ def test_user_preferences_defaults(db_session):
     assert isinstance(fetched.created_at, datetime.datetime)
     assert isinstance(fetched.updated_at, datetime.datetime)
     # compare using timestamps to avoid tz awareness issues
-    assert abs(now.timestamp() - fetched.created_at.timestamp()) < 5
-    assert abs(now.timestamp() - fetched.updated_at.timestamp()) < 5
+    # SQLite doesn't preserve timezone, so compare naive datetimes
+    if fetched.created_at.tzinfo is not None:
+        created_ts = fetched.created_at.timestamp()
+        updated_ts = fetched.updated_at.timestamp()
+    else:
+        # naive datetime - treat as UTC
+        created_ts = fetched.created_at.replace(tzinfo=datetime.timezone.utc).timestamp()
+        updated_ts = fetched.updated_at.replace(tzinfo=datetime.timezone.utc).timestamp()
+    now_ts = now.timestamp()
+    assert abs(now_ts - created_ts) < 5
+    assert abs(now_ts - updated_ts) < 5
 
 
 def test_user_preferences_timestamp_update(db_session):
@@ -64,7 +73,12 @@ def test_recommendation_fields(db_session):
     assert fetched.score == 0.85
     assert fetched.reason == "popular"
     assert fetched.algorithm == "collab"
-    delta_seconds = datetime.datetime.now(datetime.timezone.utc).timestamp() - fetched.created_at.timestamp()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if fetched.created_at.tzinfo is not None:
+        created_ts = fetched.created_at.timestamp()
+    else:
+        created_ts = fetched.created_at.replace(tzinfo=datetime.timezone.utc).timestamp()
+    delta_seconds = now.timestamp() - created_ts
     assert abs(delta_seconds) < 5
 
 

@@ -59,12 +59,12 @@ def test_drm_config_defaults():
 
 
 def test_maturity_model_defaults():
-    pg = inspect(ContentMaturity).c.parental_guidance_required
-    assert pg.default.arg is True
+    pg = inspect(ContentMaturity).c.requires_parental_consent
+    assert pg.default.arg is False
     pr = inspect(ContentMaturity).c.purchase_restricted
     assert pr.default.arg is False
     spend_limit = inspect(ContentMaturity).c.spending_limit_cents
-    assert spend_limit.default.arg == 0
+    assert spend_limit.default is None
     screen_time = inspect(ContentMaturity).c.screen_time_limit_minutes
     assert screen_time.default is None
     bedtime_start = inspect(ContentMaturity).c.bedtime_start

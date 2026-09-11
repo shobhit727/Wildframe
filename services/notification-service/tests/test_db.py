@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.api.notification_routes import get_current_user_id as notif_user_di
 from app.channels import DeliveryError
 from app.core.database import DatabaseManager
-from app.main import app
+from app.main import create_app
 from app.models import Base
 
 
@@ -34,6 +34,7 @@ async def test_env(tmp_path):
         test_engine, class_=AsyncSession, expire_on_commit=False
     )
 
+    app = create_app()
     yield app
 
     DatabaseManager.engine = original_engine
@@ -53,9 +54,11 @@ def other_user_id():
 
 @pytest.fixture
 def client(test_env, auth_user_id):
+    app = test_env
     app.dependency_overrides.clear()
     app.dependency_overrides[notif_user_di] = lambda: auth_user_id
-    yield TestClient(app, base_url="http://localhost")
+    with TestClient(app, base_url="http://localhost") as ac:
+        yield ac
     app.dependency_overrides.clear()
 
 
@@ -143,10 +146,10 @@ class TestIdempotency:
         ][0]["id"]
 
         # Other user cannot read/delete it.
-        app.dependency_overrides[notif_user_di] = lambda: other_user_id
+        client.app.dependency_overrides[notif_user_di] = lambda: other_user_id
         assert client.post(f"/api/v1/notifications/{notif_id}/read").status_code == 404
         assert client.delete(f"/api/v1/notifications/{notif_id}").status_code == 404
-        app.dependency_overrides[notif_user_di] = lambda: auth_user_id
+        client.app.dependency_overrides[notif_user_di] = lambda: auth_user_id
 
         # Owner deletes; row vanishes from every read path; double delete stays idempotent.
         assert client.delete(f"/api/v1/notifications/{notif_id}").json() == {"status": "deleted"}
@@ -239,7 +242,7 @@ class TestChannelIsolationAndRetry:
             notif_id = client.get(f"/api/v1/notifications/unread/{auth_user_id}").json()[
                 "notifications"
             ][0]["id"]
-            app.dependency_overrides[notif_user_di] = lambda: other_user_id
+            client.app.dependency_overrides[notif_user_di] = lambda: other_user_id
             assert client.post(f"/api/v1/notifications/{notif_id}/retry").status_code == 404
 
     def test_transient_failure_retried_with_backoff(self):

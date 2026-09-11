@@ -10,7 +10,7 @@ from app.api.notification_routes import (
     get_current_user_id as notif_user_di,
     get_notif_service,
 )
-from app.main import app
+from app.main import create_app
 
 
 @pytest.fixture
@@ -25,6 +25,7 @@ def override_auth():
 
 @pytest.fixture
 def client(auth_user_id):
+    app = create_app()
     app.dependency_overrides.clear()
     app.dependency_overrides[notif_user_di] = lambda: auth_user_id
     # Default service stub: keeps route handlers off the real DB. Tests that
@@ -35,8 +36,8 @@ def client(auth_user_id):
     default_service.get_unread = AsyncMock(return_value=[])
     default_service.mark_as_read = AsyncMock(return_value=True)
     app.dependency_overrides[get_notif_service] = lambda: default_service
-    # Not a context manager: lifespan raises without a healthy DB.
-    yield TestClient(app, base_url="http://localhost")
+    with TestClient(app, base_url="http://localhost") as ac:
+        yield ac
     app.dependency_overrides.clear()
 
 
@@ -56,7 +57,7 @@ def override(service_mock):
 
 class TestSendNotification:
     def test_send_success(self, client, service, auth_user_id):
-        app.dependency_overrides[get_notif_service] = override(service)
+        client.app.dependency_overrides[get_notif_service] = override(service)
         user_id = auth_user_id
 
         response = client.post(
@@ -76,7 +77,7 @@ class TestSendNotification:
         )
 
     def test_send_defaults_to_in_app_channel(self, client, service, auth_user_id):
-        app.dependency_overrides[get_notif_service] = override(service)
+        client.app.dependency_overrides[get_notif_service] = override(service)
 
         response = client.post(
             "/api/v1/notifications/send",
@@ -91,7 +92,7 @@ class TestSendNotification:
         assert service.send_notification.await_args.args[3] == "in-app"
 
     def test_send_requires_user_id(self, client, service):
-        app.dependency_overrides[get_notif_service] = override(service)
+        client.app.dependency_overrides[get_notif_service] = override(service)
 
         response = client.post(
             "/api/v1/notifications/send", json={"title": "Hi", "message": "There"}
@@ -100,7 +101,7 @@ class TestSendNotification:
         assert response.status_code == 422
 
     def test_send_invalid_user_id_returns_422(self, client, service):
-        app.dependency_overrides[get_notif_service] = override(service)
+        client.app.dependency_overrides[get_notif_service] = override(service)
 
         response = client.post(
             "/api/v1/notifications/send",

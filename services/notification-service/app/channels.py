@@ -10,6 +10,7 @@ from asyncio import Lock
 import asyncio
 import logging
 import smtplib
+import threading
 import time
 from email.message import EmailMessage
 from app.core.settings import settings
@@ -148,7 +149,7 @@ class EmailQuotaTracker:
     def __init__(self, quotas: dict[str, int] | None = None):
         self._quotas = quotas or {}
         self._counts: dict[str, tuple[int, float]] = {}  # provider -> (count, day_ts)
-        self._lock = Lock()
+        self._lock = threading.Lock()
 
     def _day_bucket(self) -> float:
         return time.time() // 86400
