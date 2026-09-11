@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.core.settings import settings
+# import moved to runtime to avoid circular import issues during testing
+# from app.core.settings import settings
 
 
 class DatabaseManager:
@@ -25,6 +26,7 @@ class DatabaseManager:
         # Pool budget (#64/#427/#296) and server-side timeouts (#429/#430):
         # NullPool for SQLite (in-memory tests), capped QueuePool + asyncpg
         # statement/lock timeouts for PostgreSQL.
+        from app.core.settings import settings  # runtime import to avoid circular deps
         if settings.DATABASE_URL.startswith("sqlite"):
             pool_kwargs: dict = {}
             connect_args: dict = {}

@@ -28,9 +28,10 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     DATABASE_POOL_SIZE: int = 5
     DATABASE_MAX_OVERFLOW: int = 5
 
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379"
-
+    JWT_SECRET_KEY: str = "test-secret"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_AUDIENCE: str = "wildframe-api"
+    JWT_ISSUER: str = "wildframe-auth"
     # Logging
     LOG_LEVEL: str = "INFO"
 
@@ -60,8 +61,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     # Server
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8010
-
-    # Compliance: Notification service handles global user communications
+    ENVIRONMENT: str = "test"
     compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
     compliance_additional_jurisdictions: list[Jurisdiction] = [
         Jurisdiction.EU,

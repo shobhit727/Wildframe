@@ -32,4 +32,14 @@ class AnalyticsDSARExport(Base):
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
 
+    def __init__(self, **kwargs):
+        if "export_format" not in kwargs:
+            kwargs["export_format"] = "json"
+        if "retention_days" not in kwargs:
+            kwargs["retention_days"] = 365
+        if "sla_compliant" not in kwargs:
+            kwargs["sla_compliant"] = True
+        if "created_at" not in kwargs:
+            kwargs["created_at"] = datetime.now(UTC)
+        super().__init__(**kwargs)
     __table_args__ = (Index("idx_analytics_dsar_user", "user_id"),)

@@ -11,8 +11,7 @@ import logging
 import smtplib
 import time
 from email.message import EmailMessage
-from threading import Lock
-
+import logging
 from app.core.settings import settings
 from app.models import Notification
 from app.templates import render_template
