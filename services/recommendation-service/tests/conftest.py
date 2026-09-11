@@ -8,17 +8,13 @@ sys.modules.setdefault("wildframe_compliance", types.SimpleNamespace())
 sys.modules.setdefault(
     "wildframe_compliance.jurisdiction",
     types.SimpleNamespace(
-        Jurisdiction=enum.Enum(
-            "Jurisdiction", {"GLOBAL": 0, "EU": 1, "US": 2, "IN": 3}
-        )
-    )
+        Jurisdiction=enum.Enum("Jurisdiction", {"GLOBAL": 0, "EU": 1, "US": 2, "IN": 3})
+    ),
 )
 
 sys.modules.setdefault(
     "wildframe_compliance.settings",
-    types.SimpleNamespace(
-        ComplianceSettingsMixin=type("ComplianceSettingsMixin", (object,), {})
-    )
+    types.SimpleNamespace(ComplianceSettingsMixin=type("ComplianceSettingsMixin", (object,), {})),
 )
 
 # def mock_redis_cache():
@@ -27,6 +23,7 @@ sys.modules.setdefault(
 #         with patch("app.services._cache_set", new=AsyncMock()):
 #             with patch("app.services._cache_invalidate", new=AsyncMock()):
 #                 yield
+
 
 @pytest.fixture(autouse=True)
 def reset_catalog_client():

@@ -28,6 +28,7 @@ class Event(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     __table_args__ = (Index("idx_events_user_type", "user_id", "event_type"),)
+
     def __init__(self, **kwargs):
         if "timestamp" not in kwargs:
             kwargs["timestamp"] = datetime.now(UTC)

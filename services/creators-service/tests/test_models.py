@@ -19,6 +19,7 @@ from app.models import (
     CreatorAccount,
 )
 
+
 @pytest_asyncio.fixture
 async def session():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False, future=True)
@@ -28,6 +29,7 @@ async def session():
     async with factory() as sess:
         yield sess
     await engine.dispose()
+
 
 # ---------- CreatorOnboarding defaults & constraints ----------
 @pytest.mark.asyncio
@@ -43,6 +45,7 @@ async def test_onboarding_defaults(session: AsyncSession):
     assert onboarding.bank_verified is False
     assert onboarding.living_wage_cents == 0
 
+
 @pytest.mark.asyncio
 async def test_onboarding_user_unique(session: AsyncSession):
     """Only one onboarding record per user_id (unique constraint)."""
@@ -52,6 +55,7 @@ async def test_onboarding_user_unique(session: AsyncSession):
     session.add_all([o1, o2])
     with pytest.raises(IntegrityError):
         await session.commit()
+
 
 # ---------- CreatorCommerce unique creator constraint ----------
 @pytest.mark.asyncio
@@ -63,6 +67,7 @@ async def test_commerce_creator_unique(session: AsyncSession):
     with pytest.raises(IntegrityError):
         await session.commit()
 
+
 # ---------- EffectiveFloor non‑negative constraint ----------
 @pytest.mark.asyncio
 async def test_effective_floor_non_negative(session: AsyncSession):
@@ -71,6 +76,7 @@ async def test_effective_floor_non_negative(session: AsyncSession):
     session.add(floor)
     with pytest.raises(IntegrityError):
         await session.commit()
+
 
 # ---------- PayoutLedger defaults ----------
 @pytest.mark.asyncio
@@ -87,9 +93,11 @@ async def test_payout_ledger_defaults(session: AsyncSession):
     await session.refresh(ledger)
     # status defaults to ACCRUED per model definition
     from app.models import PayoutStatus
+
     assert ledger.status == PayoutStatus.ACCRUED
     # stripe_fee_cents default 0
     assert ledger.stripe_fee_cents == 0
+
 
 # ---------- CreatorAccount basic creation ----------
 @pytest.mark.asyncio

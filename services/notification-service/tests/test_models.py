@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 sys.path.insert(0, str(Path(__file__).parents[1]))
 from app.models import Base, Notification
 
+
 @pytest.fixture
 async def session(tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/models.db")

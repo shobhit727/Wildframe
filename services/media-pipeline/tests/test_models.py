@@ -22,6 +22,7 @@ def test_pipeline_job_defaults():
     assert job.context in (None, {})
     assert job.created_at in (None, job.created_at)  # accept None before DB insert
 
+
 def test_pipeline_job_custom_initialization():
     """Explicit fields are respected and defaults still apply to others."""
     job = PipelineJob(

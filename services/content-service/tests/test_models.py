@@ -2,14 +2,14 @@ import importlib.util
 import pathlib
 
 # Load models dynamically
-module_path = pathlib.Path(__file__).resolve().parents[1] / 'app' / 'models' / '__init__.py'
-spec = importlib.util.spec_from_file_location('content_models', module_path)
+module_path = pathlib.Path(__file__).resolve().parents[1] / "app" / "models" / "__init__.py"
+spec = importlib.util.spec_from_file_location("content_models", module_path)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
 # Load rights separately
-rights_path = pathlib.Path(__file__).resolve().parents[1] / 'app' / 'models' / 'rights.py'
-spec_r = importlib.util.spec_from_file_location('content_rights', rights_path)
+rights_path = pathlib.Path(__file__).resolve().parents[1] / "app" / "models" / "rights.py"
+spec_r = importlib.util.spec_from_file_location("content_rights", rights_path)
 mod_r = importlib.util.module_from_spec(spec_r)
 spec_r.loader.exec_module(mod_r)
 
@@ -23,6 +23,7 @@ Episode = mod.Episode
 RightsHolder = mod_r.RightsHolder
 TerritorialLicense = mod_r.TerritorialLicense
 
+
 def test_content_genre_relationship():
     genre = Genre(name="Action", slug="action")
     content = Content(
@@ -34,6 +35,7 @@ def test_content_genre_relationship():
     )
     content.genres.append(genre)
     assert content.genres[0].name == "Action"
+
 
 def test_season_and_episode_hierarchy():
     content = Content(
@@ -54,6 +56,7 @@ def test_season_and_episode_hierarchy():
     assert episode.season.season_number == 1
     assert episode.content.title == "Series X"
 
+
 def test_rights_holder_and_license():
     holder = RightsHolder(name="Studio A", type="studio")
     license = TerritorialLicense(
@@ -65,12 +68,15 @@ def test_rights_holder_and_license():
         avail_end="2024-01-01T00:00:00+00:00",
     )
     assert license.rights_holder_id == holder.id
+
+
 def test_review_model():
     import importlib.util
     import pathlib
     import uuid
-    rev_path = pathlib.Path(__file__).resolve().parents[1] / 'app' / 'models' / 'reviews.py'
-    spec = importlib.util.spec_from_file_location('content_review', rev_path)
+
+    rev_path = pathlib.Path(__file__).resolve().parents[1] / "app" / "models" / "reviews.py"
+    spec = importlib.util.spec_from_file_location("content_review", rev_path)
     rev_mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(rev_mod)
     Review = rev_mod.Review
@@ -83,6 +89,7 @@ def test_review_model():
         verified_viewer=False,
     )
     assert review.rating == 5
+
 
 if __name__ == "__main__":
     test_content_genre_relationship()
