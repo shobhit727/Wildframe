@@ -6,12 +6,12 @@ remaining channels. Channels without provider configuration raise
 ChannelUnavailable and are skipped, not retried.
 """
 
+from asyncio import Lock
 import asyncio
 import logging
 import smtplib
 import time
 from email.message import EmailMessage
-import logging
 from app.core.settings import settings
 from app.models import Notification
 from app.templates import render_template

@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import DateTime, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -16,7 +16,9 @@ class TrackingConsent(Base):
     cookie_consent: Mapped[str] = mapped_column(String(20), default="essential", nullable=False)
     sdk_governed: Mapped[bool] = mapped_column(default=True, nullable=False)
     consent_mode: Mapped[str] = mapped_column(String(20), default="denied", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

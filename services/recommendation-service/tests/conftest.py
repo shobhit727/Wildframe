@@ -1,17 +1,32 @@
 import pytest
-import types, sys
-sys.modules.setdefault('wildframe_compliance', types.SimpleNamespace())
+import types
+import sys
 import enum
-sys.modules.setdefault('wildframe_compliance.jurisdiction', types.SimpleNamespace(Jurisdiction=enum.Enum('Jurisdiction', {'GLOBAL':0,'EU':1,'US':2,'IN':3})))
-sys.modules.setdefault('wildframe_compliance.settings', types.SimpleNamespace(ComplianceSettingsMixin=type('ComplianceSettingsMixin',(object,),{})))
-from unittest.mock import patch
+
+sys.modules.setdefault("wildframe_compliance", types.SimpleNamespace())
+
+sys.modules.setdefault(
+    "wildframe_compliance.jurisdiction",
+    types.SimpleNamespace(
+        Jurisdiction=enum.Enum(
+            "Jurisdiction", {"GLOBAL": 0, "EU": 1, "US": 2, "IN": 3}
+        )
+    )
+)
+
+sys.modules.setdefault(
+    "wildframe_compliance.settings",
+    types.SimpleNamespace(
+        ComplianceSettingsMixin=type("ComplianceSettingsMixin", (object,), {})
+    )
+)
+
 # def mock_redis_cache():
 #     """Mock Redis cache functions for all tests to avoid cross-test interference."""
 #     with patch("app.services._cache_get", new=AsyncMock(return_value=None)):
 #         with patch("app.services._cache_set", new=AsyncMock()):
 #             with patch("app.services._cache_invalidate", new=AsyncMock()):
 #                 yield
-
 
 @pytest.fixture(autouse=True)
 def reset_catalog_client():
