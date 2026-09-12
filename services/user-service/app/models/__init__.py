@@ -131,7 +131,9 @@ class UserPreference(Base):
     # Playback preferences
     autoplay: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     autoplay_next_episode: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    default_video_quality: Mapped[str] = mapped_column(String(20), default="adaptive", nullable=False)
+    default_video_quality: Mapped[str] = mapped_column(
+        String(20), default="adaptive", nullable=False
+    )
     default_audio_language: Mapped[str] = mapped_column(String(5), default="en-US", nullable=False)
 
     # Maturity rating
@@ -183,8 +185,12 @@ class UserSubscriptionProfile(Base):
     ad_free: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Subscription dates
-    current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_period_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    current_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Metadata
     created_at: Mapped[datetime] = mapped_column(

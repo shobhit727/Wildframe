@@ -1,7 +1,8 @@
 import os
 import importlib.util
-module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'app', 'models.py'))
-spec = importlib.util.spec_from_file_location('uploads_models', module_path)
+
+module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app", "models.py"))
+spec = importlib.util.spec_from_file_location("uploads_models", module_path)
 uploads_models = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(uploads_models)
 UploadSession = uploads_models.UploadSession
@@ -9,6 +10,7 @@ UploadChunk = uploads_models.UploadChunk
 UploadSessionStatus = uploads_models.UploadSessionStatus
 from uuid import uuid4
 from sqlalchemy import inspect
+
 
 def test_upload_session_defaults():
     """UploadSession defaults on creation.
@@ -34,7 +36,9 @@ def test_upload_session_defaults():
 def test_upload_chunk_unique_index_definition():
     """UploadChunk defines unique index on (session_id, index)."""
     insp = inspect(UploadChunk.__table__)
-    index = next((idx for idx in insp.indexes if idx.name == "idx_upload_chunk_session_index"), None)
+    index = next(
+        (idx for idx in insp.indexes if idx.name == "idx_upload_chunk_session_index"), None
+    )
     assert index is not None, "unique index idx_upload_chunk_session_index missing"
     assert set(index.columns.keys()) == {"session_id", "index"}
     assert index.unique
