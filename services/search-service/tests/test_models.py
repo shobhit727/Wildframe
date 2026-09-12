@@ -5,10 +5,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.models import SearchQuery, SearchIndex
 
+
 # Helper to get a fresh in‑memory DB and session
 @pytest.fixture
 def session():
-    engine = create_engine('sqlite:///:memory:', echo=False, future=True)
+    engine = create_engine("sqlite:///:memory:", echo=False, future=True)
     # Create tables
     SearchQuery.metadata.create_all(engine)
     SearchIndex.metadata.create_all(engine)
@@ -16,6 +17,7 @@ def session():
     with Session() as s:
         yield s
         s.rollback()
+
 
 def test_search_query_defaults(session):
     uid = uuid.uuid4()
@@ -30,6 +32,7 @@ def test_search_query_defaults(session):
     # stored values match input
     assert sq.user_id == uid
     assert sq.query_text == "test query"
+
 
 def test_search_index_defaults_and_update(session):
     cid = uuid.uuid4()
@@ -50,6 +53,7 @@ def test_search_index_defaults_and_update(session):
     si.title = "New Title"
     session.commit()
     assert si.updated_at > old_updated
+
 
 def test_search_index_unique_content_id(session):
     cid = uuid.uuid4()

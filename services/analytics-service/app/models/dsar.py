@@ -42,4 +42,5 @@ class AnalyticsDSARExport(Base):
         if "created_at" not in kwargs:
             kwargs["created_at"] = datetime.now(UTC)
         super().__init__(**kwargs)
+
     __table_args__ = (Index("idx_analytics_dsar_user", "user_id"),)
