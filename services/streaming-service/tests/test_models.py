@@ -9,11 +9,13 @@ from uuid import uuid4
 
 from sqlalchemy import inspect
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parents[1]))
 from app.models import PlaybackSession, PlaybackSessionStatus, DeliveryProtocol
 from app.models.accessibility import AccessibilityConfig
 from app.models.drm import DRMConfig
 from app.models.maturity import ContentMaturity
-
 
 def test_playback_session_defaults_and_expiry():
     # column defaults

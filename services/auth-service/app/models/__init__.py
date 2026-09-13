@@ -316,6 +316,6 @@ __all__: Sequence[str] = (
 )
 
 # Import all models at the end to avoid circular imports
-from app.models.age_verification import AgeVerification
-from app.models.audit import SecurityAudit
-from app.models.privacy import ConsentRecord, PrivacyNotice
+from .age_verification import AgeVerification
+from .audit import SecurityAudit
+from .privacy import ConsentRecord, PrivacyNotice

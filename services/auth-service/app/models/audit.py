@@ -7,7 +7,7 @@ from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models import Base, BaseModel
+from . import Base, BaseModel
 
 
 class SecurityAudit(Base, BaseModel):

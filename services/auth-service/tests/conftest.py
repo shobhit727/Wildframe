@@ -1,19 +1,24 @@
 """Shared test fixtures and configuration."""
 
-import asyncio
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+import sys
+from pathlib import Path
 
 import pytest
-from app.models import Base, User
+from unittest.mock import AsyncMock, patch
+from uuid import uuid4
+from datetime import UTC, datetime
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+# Add auth-service app to path so we can import from app.*
+sys.path.insert(0, str(Path(__file__).parents[1] / "app"))
+
+from app.models import Base, User, RefreshToken, TokenBlacklist, LoginAudit
 from app.repositories import (
     LoginAuditRepository,
     RefreshTokenRepository,
     UserRepository,
 )
 from app.security import PasswordManager, TokenManager
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +38,8 @@ def _no_redis_rate_limit():
 @pytest.fixture(scope="session")
 def event_loop():
     """Create event loop for tests."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
+    import asyncio
+    loop = asyncio.new_event_loop()
     yield loop
     loop.close()
 
@@ -41,32 +47,17 @@ def event_loop():
 @pytest.fixture
 async def test_engine(tmp_path):
     """Create a fresh per-test database engine using a temp-file SQLite DB."""
-    db_path = tmp_path / "test.db"
-    engine = create_async_engine(
-        f"sqlite+aiosqlite:///{db_path}",
-        echo=False,
-        connect_args={"timeout": 15},
-    )
-
-    # Create tables
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/test.db")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
     yield engine
-
     await engine.dispose()
 
 
 @pytest.fixture
 async def test_session_factory(test_engine):
     """Create test session factory."""
-    return async_sessionmaker(
-        test_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autoflush=False,
-        autocommit=False,
-    )
+    return async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
 
 @pytest.fixture
@@ -74,7 +65,6 @@ async def test_session(test_session_factory):
     """Create test database session."""
     async with test_session_factory() as session:
         yield session
-        # Rollback after test
         await session.rollback()
 
 
@@ -100,17 +90,12 @@ def token_manager():
 async def test_user(test_session, password_manager):
     """Create test user."""
     user = User(
-        id=uuid4(),
         email="test@example.com",
-        password_hash=password_manager.hash_password("SecurePass123!"),
-        first_name="Test",
-        last_name="User",
-        email_verified=True,
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
+        password_hash=password_manager.hash("testpass123"),
     )
     test_session.add(user)
-    await test_session.commit()
+    await test_session.flush()
+    await test_session.refresh(user)
     return user
 
 
