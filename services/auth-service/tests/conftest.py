@@ -2,23 +2,23 @@
 
 import sys
 from pathlib import Path
+import asyncio
 
 import pytest
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
-from datetime import UTC, datetime
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # Add auth-service app to path so we can import from app.*
 sys.path.insert(0, str(Path(__file__).parents[1] / "app"))
 
-from app.models import Base, User, RefreshToken, TokenBlacklist, LoginAudit
+from app.models import Base, User
 from app.repositories import (
     LoginAuditRepository,
     RefreshTokenRepository,
     UserRepository,
 )
 from app.security import PasswordManager, TokenManager
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +38,6 @@ def _no_redis_rate_limit():
 @pytest.fixture(scope="session")
 def event_loop():
     """Create event loop for tests."""
-    import asyncio
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
