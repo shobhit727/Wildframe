@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+# from uuid import uuid4  # unused, removed for lint
 
 # Add auth-service app to path so we can import from app.*
 sys.path.insert(0, str(Path(__file__).parents[1] / "app"))
