@@ -91,7 +91,7 @@ async def test_user(test_session, password_manager):
     """Create test user."""
     user = User(
         email="test@example.com",
-        password_hash=password_manager.hash("testpass123"),
+        password_hash=password_manager.hash_password("testpass123"),
     )
     test_session.add(user)
     await test_session.flush()
