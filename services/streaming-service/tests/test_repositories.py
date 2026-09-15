@@ -7,6 +7,7 @@ from app.models.drm import DRMConfig
 from app.models.maturity import ContentMaturity
 from app.repositories import PlaybackSessionRepository
 
+
 @pytest.fixture(scope="session")
 async def engine(tmp_path_factory):
     """Async SQLite engine for tests."""
@@ -17,6 +18,7 @@ async def engine(tmp_path_factory):
     yield engine
     await engine.dispose()
 
+
 @pytest.fixture
 async def session(engine):
     """Async session per test, rolled back after."""
@@ -24,6 +26,7 @@ async def session(engine):
     async with async_session_factory() as s:
         yield s
         await s.rollback()
+
 
 @pytest.mark.asyncio
 async def test_playback_session_crud(session: AsyncSession):
@@ -53,6 +56,7 @@ async def test_playback_session_crud(session: AsyncSession):
     completed = await repo.get_by_id(sess.id)
     assert completed.status == PlaybackSessionStatus.COMPLETED
 
+
 @pytest.mark.asyncio
 async def test_drm_config(session: AsyncSession):
     drm = DRMConfig(content_id=uuid4(), fairplay_enabled=True, widevine_enabled=False)
@@ -61,6 +65,7 @@ async def test_drm_config(session: AsyncSession):
     await session.refresh(drm)
     assert drm.id and drm.fairplay_enabled and not drm.widevine_enabled
     assert drm.device_limit == 3 and drm.expiry_hours == 48
+
 
 @pytest.mark.asyncio
 async def test_content_maturity(session: AsyncSession):

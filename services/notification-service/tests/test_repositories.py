@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parents[2]))
 from app.models import Base, Notification, NotificationPreference
 from app.repositories import NotificationRepository
 
+
 @pytest.fixture
 async def session(tmp_path) -> AsyncSession:
     """Async SQLite session for isolated repository tests."""
@@ -20,6 +21,7 @@ async def session(tmp_path) -> AsyncSession:
     async with async_session() as sess:
         yield sess
     await engine.dispose()
+
 
 @pytest.mark.asyncio
 async def test_create_and_retrieve(session: AsyncSession):
@@ -33,6 +35,7 @@ async def test_create_and_retrieve(session: AsyncSession):
     n1 = await repo.create(user, "A", "B", event_id=event)
     n2 = await repo.create(user, "C", "D", event_id=event)
     assert n1.id == n2.id
+
 
 @pytest.mark.asyncio
 async def test_unread_and_count(session: AsyncSession):
@@ -48,6 +51,7 @@ async def test_unread_and_count(session: AsyncSession):
     await repo.mark_as_read(unread[0].id, user)
     assert await repo.count_unread(user) == 1
 
+
 @pytest.mark.asyncio
 async def test_mark_as_read_scoped(session: AsyncSession):
     repo = NotificationRepository(session)
@@ -57,6 +61,7 @@ async def test_mark_as_read_scoped(session: AsyncSession):
     assert await repo.mark_as_read(notif.id, user) is True
     # other user cannot mark
     assert await repo.mark_as_read(notif.id, other) is False
+
 
 @pytest.mark.asyncio
 async def test_soft_delete_idempotent(session: AsyncSession):
@@ -70,6 +75,7 @@ async def test_soft_delete_idempotent(session: AsyncSession):
     # other user cannot delete
     assert await repo.soft_delete(notif.id, other) is False
 
+
 @pytest.mark.asyncio
 async def test_preference_default_and_update(session: AsyncSession):
     repo = NotificationRepository(session)
@@ -80,6 +86,7 @@ async def test_preference_default_and_update(session: AsyncSession):
     assert updated.in_app_enabled is False and updated.email_enabled is False
     with pytest.raises(ValueError):
         await repo.update_preference(user, unknown_field=True)
+
 
 def test_parse_delivery_errors_static():
     notif = Notification(delivery_errors='{"email":"failed"}')

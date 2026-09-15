@@ -63,6 +63,8 @@ async def test_notification_preserves_delivery_and_read_state(session: AsyncSess
     assert loaded.channel == "email"
     assert loaded.delivery_status == "delivered"
     assert loaded.is_read is True
+
+
 @pytest.mark.asyncio
 async def test_notification_event_id_uniqueness(session: AsyncSession):
     """event_id is unique; duplicate raises IntegrityError on flush."""
@@ -71,8 +73,10 @@ async def test_notification_event_id_uniqueness(session: AsyncSession):
     n2 = Notification(user_id=uuid.uuid4(), title="C", message="D", event_id=evt)
     session.add_all([n1, n2])
     import pytest, sqlalchemy
+
     with pytest.raises(sqlalchemy.exc.IntegrityError):
         await session.flush()
+
 
 @pytest.mark.asyncio
 async def test_notification_parse_delivery_errors(session: AsyncSession):
@@ -89,6 +93,7 @@ async def test_notification_parse_delivery_errors(session: AsyncSession):
     parsed = NotificationRepository.parse_delivery_errors(notif)
     assert parsed == errors
 
+
 @pytest.mark.asyncio
 async def test_notification_preference_defaults(session: AsyncSession):
     """Default NotificationPreference fields are all enabled (True)."""
@@ -100,6 +105,7 @@ async def test_notification_preference_defaults(session: AsyncSession):
     assert pref.push_enabled is True
     assert pref.sms_enabled is True
 
+
 @pytest.mark.asyncio
 async def test_notification_repository_deduplication(session: AsyncSession):
     """Creating twice with same event_id returns the same notification row."""
@@ -109,11 +115,10 @@ async def test_notification_repository_deduplication(session: AsyncSession):
     n2 = await repo.create(uuid.uuid4(), "C", "D", channel="email", event_id=event)
     assert n1.id == n2.id
     # Ensure only one row persisted
-    result = await session.execute(
-        select(Notification).where(Notification.event_id == event)
-    )
+    result = await session.execute(select(Notification).where(Notification.event_id == event))
     rows = result.scalars().all()
     assert len(rows) == 1
+
 
 @pytest.mark.asyncio
 async def test_notification_delivery_status_transition(session: AsyncSession):
@@ -125,6 +130,7 @@ async def test_notification_delivery_status_transition(session: AsyncSession):
     await session.commit()
     loaded = await session.get(Notification, notif.id)
     assert loaded is not None and loaded.delivery_status == "failed"
+
 
 @pytest.mark.asyncio
 async def test_preference_update_invalid_field(session: AsyncSession):

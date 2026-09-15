@@ -13,21 +13,21 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-    from app.models import (
-        PlaybackSession,
-        PlaybackSessionStatus,
-        DeliveryProtocol,
-        VideoManifest,
-        TranscodingJob,
-        StreamingQualityProfile,
-        CDNRegion,
-        StreamingStatistics,
-        DownloadSession,
-        TranscodingStatus,
-    )
-    from app.models.accessibility import AccessibilityConfig
-    from app.models.drm import DRMConfig
-    from app.models.maturity import ContentMaturity
+from app.models import (
+    PlaybackSession,
+    PlaybackSessionStatus,
+    DeliveryProtocol,
+    VideoManifest,
+    TranscodingJob,
+    StreamingQualityProfile,
+    CDNRegion,
+    StreamingStatistics,
+    DownloadSession,
+    TranscodingStatus,
+)
+from app.models.accessibility import AccessibilityConfig
+from app.models.drm import DRMConfig
+from app.models.maturity import ContentMaturity
 
 
 def test_playback_session_defaults_and_expiry():
@@ -87,15 +87,6 @@ def test_maturity_model_defaults():
     bedtime_end = inspect(ContentMaturity).c.bedtime_end
     assert bedtime_end.default is None
 
-from app.models import (
-    VideoManifest,
-    TranscodingJob,
-    StreamingQualityProfile,
-    CDNRegion,
-    StreamingStatistics,
-    DownloadSession,
-    TranscodingStatus,
-)
 
 def test_video_manifest_defaults():
     inc = inspect(VideoManifest).c.include_subtitles
@@ -106,6 +97,7 @@ def test_video_manifest_defaults():
     assert live_edge.default.arg == 6
     gen = inspect(VideoManifest).c.generated_at
     assert gen.default is not None
+
 
 def test_transcoding_job_defaults_and_status_transition():
     status_col = inspect(TranscodingJob).c.status
@@ -124,6 +116,7 @@ def test_transcoding_job_defaults_and_status_transition():
     job.status = TranscodingStatus.PROCESSING
     assert job.status == TranscodingStatus.PROCESSING
 
+
 def test_streaming_quality_profile_defaults():
     fps = inspect(StreamingQualityProfile).c.fps
     assert fps.default.arg == 24
@@ -134,11 +127,13 @@ def test_streaming_quality_profile_defaults():
     is_active = inspect(StreamingQualityProfile).c.is_active
     assert is_active.default.arg is True
 
+
 def test_cdn_region_defaults():
     edge_ips = inspect(CDNRegion).c.edge_server_ips
     assert edge_ips.default.arg == []
     max_conc = inspect(CDNRegion).c.max_concurrent_streams
     assert max_conc.default.arg == 10000
+
 
 def test_streaming_statistics_defaults():
     period_type = inspect(StreamingStatistics).c.period_type
@@ -147,6 +142,7 @@ def test_streaming_statistics_defaults():
     assert total_streams.default.arg == 0
     avg_res = inspect(StreamingStatistics).c.average_resolution
     assert avg_res.default is None
+
 
 def test_download_session_defaults_and_ttl():
     ttl = inspect(DownloadSession).c.download_ttl_days

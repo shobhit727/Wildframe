@@ -4,16 +4,25 @@ from uuid import uuid4
 import sys, os
 
 # Ensure the uploads-service app package is first on PYTHONPATH
-service_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'app'))
+service_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app"))
 sys.path.insert(0, service_dir)
 
-from app.models import Base, UploadSession, UploadChunk, OutboxEvent, OutboxEventStatus, UploadSessionStatus
+from app.models import (
+    Base,
+    UploadSession,
+    UploadChunk,
+    OutboxEvent,
+    OutboxEventStatus,
+    UploadSessionStatus,
+)
 from app.repositories import UploadChunkRepository
+
 
 @pytest.fixture(scope="function")
 async def async_db():
     """Async in‑memory SQLite DB for repository tests."""
     from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -21,6 +30,7 @@ async def async_db():
     async with async_session() as session:
         yield session
     await engine.dispose()
+
 
 @pytest.mark.asyncio
 async def test_create_and_get_session(async_db: AsyncSession):
@@ -38,6 +48,7 @@ async def test_create_and_get_session(async_db: AsyncSession):
     assert fetched.total_chunks == 3
     assert fetched.status == UploadSessionStatus.INITIATED
 
+
 @pytest.mark.asyncio
 async def test_list_by_creator_limit(async_db: AsyncSession):
     repo = UploadChunkRepository(async_db)
@@ -51,6 +62,7 @@ async def test_list_by_creator_limit(async_db: AsyncSession):
         await repo.create(sess)
     result = await repo.list_by_creator(creator, limit=2)
     assert len(result) == 2
+
 
 @pytest.mark.asyncio
 async def test_chunk_operations(async_db: AsyncSession):
@@ -69,6 +81,7 @@ async def test_chunk_operations(async_db: AsyncSession):
     indices = await repo.received_indices(sess.id)
     assert indices == [0]
 
+
 @pytest.mark.asyncio
 async def test_outbox_event_flow(async_db: AsyncSession):
     repo = UploadChunkRepository(async_db)
@@ -78,6 +91,7 @@ async def test_outbox_event_flow(async_db: AsyncSession):
     await repo.mark_dispatched(ev.id)
     pending_after = await repo.pending_events(limit=1)
     assert all(p.id != ev.id for p in pending_after)
+
 
 @pytest.mark.asyncio
 async def test_expired_and_aborted_sessions(async_db: AsyncSession):

@@ -94,8 +94,10 @@ def test_review_model():
     )
     assert review.rating == 5
 
+
 def test_content_rating_defaults_and_constraints():
     import uuid
+
     content = Content(
         title="Rated Movie",
         slug="rated-movie",
@@ -107,8 +109,10 @@ def test_content_rating_defaults_and_constraints():
     assert rating.rating == 8.5
     assert 0 <= rating.rating <= 10
 
+
 def test_content_recommendation_validity():
     import uuid
+
     c1 = Content(
         title="Movie A",
         slug="movie-a",
@@ -131,8 +135,10 @@ def test_content_recommendation_validity():
     )
     assert 0.0 <= rec.similarity_score <= 1.0
 
+
 def test_content_creator_relationship_and_uniqueness():
     import uuid
+
     content = Content(
         title="Creator Test",
         slug="creator-test",
@@ -144,8 +150,11 @@ def test_content_creator_relationship_and_uniqueness():
     creator = ContentCreator(content_id=content.id, creator_id=creator_id, role="director")
     assert creator.role == "director"
 
+
 def test_content_series_and_episode_linkage():
-    series = ContentSeries(title="Series X", slug="series-x", description="Series", animation_style=None)
+    series = ContentSeries(
+        title="Series X", slug="series-x", description="Series", animation_style=None
+    )
     content = Content(
         title="Ep1",
         slug="ep1",
@@ -157,11 +166,13 @@ def test_content_series_and_episode_linkage():
     content.series = series
     assert content.series.title == "Series X"
 
+
 def test_rights_holder_defaults():
     holder = RightsHolder(name="Studio B", type="studio")
     assert holder.type == "studio"
     # defaults are DB-side; not guaranteed on plain instance
     # assert holder.created_at is not None  # omitted
+
 
 def test_territorial_license_defaults():
     holder = RightsHolder(name="Studio C", type="studio")
@@ -176,7 +187,7 @@ def test_territorial_license_defaults():
     assert license.exclusive is True
     # royalty_rate default applies on DB insert
     # assert license.royalty_rate == "0.30"
-    
+
 
 if __name__ == "__main__":
     test_content_genre_relationship()

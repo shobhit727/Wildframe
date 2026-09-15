@@ -3,8 +3,10 @@
 import uuid
 import pytest_asyncio
 from datetime import datetime, timezone
+
 # set up in‑memory DB same as other tests
 import os
+
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 
 from app.models import CreatorAccount, CreatorOnboarding, PayoutLedger
@@ -14,19 +16,20 @@ from app.repositories import (
 )
 from app.models import CreatorSuspendedError
 
+
 @pytest_asyncio.fixture
 async def session() -> AsyncSession:
-    engine = create_async_engine(
-        os.getenv("DATABASE_URL"), echo=False, future=True
-    )
+    engine = create_async_engine(os.getenv("DATABASE_URL"), echo=False, future=True)
     async with engine.begin() as conn:
         # create tables
         from app.core.database import Base
+
         await conn.run_sync(Base.metadata.create_all)
     async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     async with async_session() as s:
         yield s
     await engine.dispose()
+
 
 @pytest.mark.asyncio
 async def test_creator_account_and_onboarding_flow(session: AsyncSession):
@@ -37,8 +40,8 @@ async def test_creator_account_and_onboarding_flow(session: AsyncSession):
     # onboarding record directly (no dedicated repo)
     onboarding = CreatorOnboarding(user_id=user_id, kyc_type="individual")
     # setup dates for ledger
-    period_start = datetime(2024,1,1,0,0,0, tzinfo=timezone.utc)
-    period_end = datetime(2024,1,31,23,59,59, tzinfo=timezone.utc)
+    period_start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    period_end = datetime(2024, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
     ledger_repo = PayoutLedgerRepository(session)
     key = "test-key"
     row1 = await ledger_repo.accrued(
@@ -69,6 +72,7 @@ async def test_creator_account_and_onboarding_flow(session: AsyncSession):
     )
     assert row2.id == row1.id
 
+
 @pytest.mark.asyncio
 async def test_payout_ledger_suspended_creator(session: AsyncSession):
     acct_repo = CreatorAccountRepository(session)
@@ -78,8 +82,8 @@ async def test_payout_ledger_suspended_creator(session: AsyncSession):
     acct.is_active = False
     await session.flush()
     ledger_repo = PayoutLedgerRepository(session)
-    period_start = datetime(2024,1,1,0,0,0, tzinfo=timezone.utc)
-    period_end = datetime(2024,1,31,23,59,59, tzinfo=timezone.utc)
+    period_start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    period_end = datetime(2024, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
     with pytest.raises(CreatorSuspendedError):
         await ledger_repo.accrued(
             creator_id=user_id,

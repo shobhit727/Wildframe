@@ -34,6 +34,7 @@ def test_tracking_consent_defaults():
     assert cons.sdk_governed is True
     assert cons.consent_mode == "denied"
 
+
 def test_event_custom_timestamp_and_data():
     """Event respects provided timestamp and stores arbitrary event_data."""
     custom_ts = datetime(2020, 1, 1, tzinfo=UTC)
@@ -49,10 +50,12 @@ def test_event_custom_timestamp_and_data():
     assert evt.event_data == data
     assert evt.content_id is None
 
+
 def test_event_partitioning_index():
     """Event model defines composite index on user_id and event_type."""
     indexes = [idx.name for idx in Event.__table_args__]
     assert "idx_events_user_type" in indexes
+
 
 def test_dsar_export_defaults_and_formats():
     """DSAR export defaults and respects export_format field."""
@@ -60,10 +63,9 @@ def test_dsar_export_defaults_and_formats():
     assert rec.export_format == "json"
     assert rec.retention_days == 365
     assert rec.sla_compliant is True
-    csv_rec = AnalyticsDSARExport(
-        user_id=uuid4(), dsar_id=uuid4(), data="[]", export_format="csv"
-    )
+    csv_rec = AnalyticsDSARExport(user_id=uuid4(), dsar_id=uuid4(), data="[]", export_format="csv")
     assert csv_rec.export_format == "csv"
+
 
 def test_dsar_export_retention_and_sla():
     """Retention days affect expiry calculation (simulated)."""
@@ -76,6 +78,7 @@ def test_dsar_export_retention_and_sla():
     )
     assert rec.retention_days == 10
     assert rec.sla_compliant is False
+
 
 def test_tracking_consent_defaults_and_variations():
     """TrackingConsent defaults and handles explicit values."""

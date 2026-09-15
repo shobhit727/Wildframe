@@ -2,12 +2,7 @@ import importlib.util
 import pathlib
 
 _admin_path = (
-    pathlib.Path(__file__).resolve()
-    .parents[2]
-    / "admin-service"
-    / "app"
-    / "models"
-    / "admin.py"
+    pathlib.Path(__file__).resolve().parents[2] / "admin-service" / "app" / "models" / "admin.py"
 )
 _spec = importlib.util.spec_from_file_location("admin_models_impl", _admin_path)
 _mod = importlib.util.module_from_spec(_spec)

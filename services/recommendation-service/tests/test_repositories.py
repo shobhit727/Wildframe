@@ -8,12 +8,15 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from app.models import Base, Recommendation, UserPreferences
 from app.repositories import RecommendationRepository, UserPreferencesRepository
 
+
 @pytest.fixture(scope="session")
 def event_loop():
     import asyncio
+
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+
 
 @pytest_asyncio.fixture
 async def db_session(tmp_path):
@@ -26,6 +29,7 @@ async def db_session(tmp_path):
         yield session
     await engine.dispose()
 
+
 @pytest.mark.asyncio
 async def test_user_preferences_get_or_create(db_session: AsyncSession):
     repo = UserPreferencesRepository(db_session)
@@ -35,6 +39,7 @@ async def test_user_preferences_get_or_create(db_session: AsyncSession):
     fetched = await repo.get_or_create(uid)
     assert fetched.id == pref.id
     assert fetched.user_id == uid
+
 
 @pytest.mark.asyncio
 async def test_recommendation_crud(db_session: AsyncSession):
@@ -51,6 +56,7 @@ async def test_recommendation_crud(db_session: AsyncSession):
     empty = await repo.get_for_user(uid)
     assert empty == []
 
+
 @pytest.mark.asyncio
 async def test_get_for_user_limit_and_order(db_session: AsyncSession):
     repo = RecommendationRepository(db_session)
@@ -65,6 +71,7 @@ async def test_get_for_user_limit_and_order(db_session: AsyncSession):
     # highest scores first
     assert results[0].score >= results[1].score
 
+
 @pytest.mark.asyncio
 async def test_latest_created_at(db_session: AsyncSession):
     repo = RecommendationRepository(db_session)
@@ -73,6 +80,7 @@ async def test_latest_created_at(db_session: AsyncSession):
     await db_session.commit()
     ts = await repo.latest_created_at(uid)
     assert isinstance(ts, datetime)
+
 
 @pytest.mark.asyncio
 async def test_delete_for_content(db_session: AsyncSession):

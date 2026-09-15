@@ -5,8 +5,17 @@ from decimal import Decimal
 from app.models.subscription_tier import SubscriptionTier
 from app.models.commerce import CommerceRecord
 from app.models.payout_ledger import PayoutLedger
-from app.models import Subscription, Purchase, Invoice, Refund, SubscriptionStatus, InvoiceStatus, RefundStatus
+from app.models import (
+    Subscription,
+    Purchase,
+    Invoice,
+    Refund,
+    SubscriptionStatus,
+    InvoiceStatus,
+    RefundStatus,
+)
 from app.services import validate_transition, InvalidStateTransitionError, SUBSCRIPTION_TRANSITIONS
+
 
 def test_subscription_tier_defaults():
     tier = SubscriptionTier(
@@ -79,13 +88,27 @@ def test_subscription_defaults_and_transitions():
     assert sub.is_active in (None, True)
     # check both allowed transitions do not raise
     cur = sub.status or SubscriptionStatus.ACTIVE
-    validate_transition(cur, SubscriptionStatus.CANCELLED, SUBSCRIPTION_TRANSITIONS, context="subscription")
-    validate_transition(SubscriptionStatus.CANCELLED, SubscriptionStatus.ACTIVE, SUBSCRIPTION_TRANSITIONS, context="subscription")
+    validate_transition(
+        cur, SubscriptionStatus.CANCELLED, SUBSCRIPTION_TRANSITIONS, context="subscription"
+    )
+    validate_transition(
+        SubscriptionStatus.CANCELLED,
+        SubscriptionStatus.ACTIVE,
+        SUBSCRIPTION_TRANSITIONS,
+        context="subscription",
+    )
+
 
 def test_purchase_idempotency_key_format():
     user = uuid.uuid4()
     content = uuid.uuid4()
-    purchase = Purchase(user_id=user, content_id=content, price=Decimal("10.00"), currency="USD", idempotency_key=f"tvod:{user}:{content}")
+    purchase = Purchase(
+        user_id=user,
+        content_id=content,
+        price=Decimal("10.00"),
+        currency="USD",
+        idempotency_key=f"tvod:{user}:{content}",
+    )
     assert purchase.idempotency_key.startswith("tvod:")
     r = Refund(invoice_id=uuid.uuid4(), amount=Decimal("50.00"), currency="USD")
     assert r.status in (None, RefundStatus.PROCESSED)

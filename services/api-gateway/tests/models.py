@@ -13,10 +13,12 @@ from app.core.settings import Settings, Settings as SettingsClass
 from app.middleware import ServiceRegistry
 from app.core.age_gate import is_age_restricted, check_age_gate
 
+
 # Helper to create a minimal Request‑like object
 class DummyURL:
     def __init__(self, path: str):
         self.path = path
+
 
 class DummyRequest:
     def __init__(self, path: str):

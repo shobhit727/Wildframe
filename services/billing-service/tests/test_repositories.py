@@ -17,14 +17,18 @@ from app.repositories import (
     InvoiceRepository,
     RegionFloorRepository,
 )
+
+
 # ---------------------------------------------------------------------------
 # Fixtures – isolated SQLite DB per test (mirrors auth-service conftest)
 # ---------------------------------------------------------------------------
 def event_loop():
     import asyncio
+
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+
 
 @pytest.fixture
 async def test_engine(tmp_path):
@@ -34,16 +38,21 @@ async def test_engine(tmp_path):
     yield engine
     await engine.dispose()
 
+
 @pytest.fixture
 async def db_session(test_engine):
-    async_session_factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async_session_factory = async_sessionmaker(
+        test_engine, class_=AsyncSession, expire_on_commit=False
+    )
     async with async_session_factory() as session:
         yield session
         await session.rollback()
 
+
 # ---------------------------------------------------------------------------
 # Repository tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_subscription_repository(db_session: AsyncSession):
@@ -56,6 +65,7 @@ async def test_subscription_repository(db_session: AsyncSession):
     assert fetched.id == sub.id
     assert fetched.tier == RevenueTier.SVOD
     assert fetched.monthly_price == Decimal("7.99")
+
 
 @pytest.mark.asyncio
 async def test_purchase_repository(db_session: AsyncSession):
@@ -75,6 +85,7 @@ async def test_purchase_repository(db_session: AsyncSession):
     assert fetched.id == purchase.id
     assert fetched.price == Decimal("4.99")
 
+
 @pytest.mark.asyncio
 async def test_invoice_repository_latest(db_session: AsyncSession):
     repo = InvoiceRepository(db_session)
@@ -92,6 +103,7 @@ async def test_invoice_repository_latest(db_session: AsyncSession):
     assert latest.id == inv2.id
     assert latest.amount == Decimal("15.00")
 
+
 @pytest.mark.asyncio
 async def test_region_floor_repository(db_session: AsyncSession):
     repo = RegionFloorRepository(db_session)
@@ -102,4 +114,3 @@ async def test_region_floor_repository(db_session: AsyncSession):
     assert fetched is not None
     assert fetched.region_code == "US"
     assert fetched.floor_rate == Decimal("0.10")
-

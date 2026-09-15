@@ -1,7 +1,8 @@
 import os, importlib.util
 from uuid import uuid4
-module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'app', 'models.py'))
-spec = importlib.util.spec_from_file_location('media_models', module_path)
+
+module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app", "models.py"))
+spec = importlib.util.spec_from_file_location("media_models", module_path)
 media_models = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(media_models)
 PipelineJob = media_models.PipelineJob
@@ -13,6 +14,8 @@ TranscodingJob = media_models.TranscodingJob
 TranscodingStatus = media_models.TranscodingStatus
 PipelineStageLog = media_models.PipelineStageLog
 PipelineStageStatus = media_models.PipelineStageStatus
+
+
 def test_pipeline_job_defaults():
     """A freshly created PipelineJob has correct default values."""
     job = PipelineJob(
@@ -31,6 +34,7 @@ def test_pipeline_job_defaults():
     assert job.retries in (None, 0)
     assert job.context in (None, {})
     assert job.created_at in (None, job.created_at)  # accept None before DB insert
+
 
 def test_pipeline_job_custom_initialization():
     """Explicit fields are respected and defaults still apply to others."""
@@ -51,6 +55,7 @@ def test_pipeline_job_custom_initialization():
     assert job.error is None
     assert job.leased_by is None
 
+
 def test_transcoding_job_defaults_and_progress():
     """Legacy TranscodingJob defaults and progress tracking."""
     job = TranscodingJob(
@@ -62,6 +67,7 @@ def test_transcoding_job_defaults_and_progress():
     assert job.progress_percentage == 0
     assert job.output_hls_url is None
     assert job.output_dash_url is None
+
 
 def test_video_manifest_defaults_and_variants():
     """VideoManifest defaults and variant fields validation."""
@@ -78,11 +84,13 @@ def test_video_manifest_defaults_and_variants():
     assert vm.variants == []
     assert vm.available_bitrates == []
 
+
 def test_quality_profile_defaults_and_codecs():
     """StreamingQualityProfile defaults and codec fields."""
     qp = StreamingQualityProfile()
     assert hasattr(qp, "bitrates")
     assert hasattr(qp, "resolutions")
+
 
 def test_pipeline_stage_log_defaults():
     log = PipelineStageLog(job_id=uuid4(), stage="encode", status=PipelineStageStatus.SUCCESS)

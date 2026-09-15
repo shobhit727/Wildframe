@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 from app.models import Base as _Base
+
 Base = _Base
+
 
 class DatabaseManager:
     """Manages database connections."""

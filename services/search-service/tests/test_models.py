@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.models import SearchQuery, SearchIndex
+
 # Heavy imports avoided; use SQLAlchemy model inspection for mapping expectations.
 
 
@@ -66,8 +67,10 @@ def test_search_index_unique_content_id(session):
     with pytest.raises(Exception):  # IntegrityError or similar
         session.commit()
 
+
 def test_search_index_mapping_fields():
     from app.services import CONTENT_INDEX_MAPPING
+
     # duplicate import removed
 
     props = CONTENT_INDEX_MAPPING["mappings"]["properties"]
@@ -81,6 +84,7 @@ def test_search_index_mapping_fields():
     assert props["release_year"]["type"] == "integer"
     assert props["rating"]["type"] == "float"
 
+
 def test_search_query_filters_and_pagination(session):
     """Store JSON filters; ensure result_count updates and pagination works."""
     uid = uuid.uuid4()
@@ -93,6 +97,7 @@ def test_search_query_filters_and_pagination(session):
     fetched = session.get(SearchQuery, sq.id)
     assert fetched.filters == {"type": "movie"}
     assert fetched.result_count == 5
+
 
 def test_search_result_scoring_highlighting_facets():
     """SearchResult should preserve result metadata like scores, highlights, facets."""

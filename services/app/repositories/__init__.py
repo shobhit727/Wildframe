@@ -2,8 +2,7 @@ import importlib.util
 import pathlib
 
 _admin_path = (
-    pathlib.Path(__file__).resolve()
-    .parents[2]
+    pathlib.Path(__file__).resolve().parents[2]
     / "admin-service"
     / "app"
     / "repositories"

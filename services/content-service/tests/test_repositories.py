@@ -6,6 +6,7 @@ import importlib.util
 from uuid import uuid4
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
+
 # Load the content-service models and repositories directly
 def _load_module(name: str, path: pathlib.Path):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -14,6 +15,7 @@ def _load_module(name: str, path: pathlib.Path):
         raise ImportError(f"Cannot load module {name} from {path}")
     spec.loader.exec_module(mod)
     return mod
+
 
 models_path = pathlib.Path(__file__).parents[2] / "app" / "models" / "__init__.py"
 repos_path = pathlib.Path(__file__).parents[2] / "app" / "repositories" / "__init__.py"
@@ -31,6 +33,8 @@ ContentRepository = _repos_mod.ContentRepository
 SeasonRepository = _repos_mod.SeasonRepository
 EpisodeRepository = _repos_mod.EpisodeRepository
 GenreRepository = _repos_mod.GenreRepository
+
+
 @pytest_asyncio.fixture
 async def db_session(tmp_path):
     """Create a fresh async SQLite DB per test file."""
@@ -41,6 +45,7 @@ async def db_session(tmp_path):
     async with async_session() as session:
         yield session
     await engine.dispose()
+
 
 # ---------- Genre Repository ----------
 @pytest.mark.asyncio
@@ -56,6 +61,7 @@ async def test_genre_crud(db_session: AsyncSession):
     deleted = await repo.delete(genre.id)
     assert deleted
     assert await repo.get_by_id(genre.id) is None
+
 
 # ---------- Content Repository ----------
 @pytest.mark.asyncio
@@ -93,6 +99,7 @@ async def test_content_crud_and_filters(db_session: AsyncSession):
     deleted = await repo.delete(content.id)
     assert deleted
     assert await repo.get_by_id(content.id) is None
+
 
 # ---------- Season & Episode ----------
 @pytest.mark.asyncio
@@ -135,6 +142,7 @@ async def test_season_episode_hierarchy(db_session: AsyncSession):
     await season_repo.delete(season.id)
     await content_repo.delete(content.id)
 
+
 # ---------- Rights models (no repository) ----------
 @pytest.mark.asyncio
 async def test_rights_models(db_session: AsyncSession):
@@ -148,10 +156,14 @@ async def test_rights_models(db_session: AsyncSession):
     fetched_license = await db_session.get(_models_mod.TerritorialLicense, license.id)
     assert fetched_holder.name == "Studio Z"
     assert fetched_license.rights_holder_id == holder.id
+
+
 EpisodeRepository = _repos_mod.EpisodeRepository
 GenreRepository = _repos_mod.GenreRepository
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+
+
 @pytest_asyncio.fixture
 async def db_session(tmp_path):
     """Create a fresh async SQLite DB per test file."""
@@ -162,6 +174,7 @@ async def db_session(tmp_path):
     async with async_session() as session:
         yield session
     await engine.dispose()
+
 
 # ---------- Genre Repository ----------
 @pytest.mark.asyncio
@@ -177,6 +190,7 @@ async def test_genre_crud(db_session: AsyncSession):
     deleted = await repo.delete(genre.id)
     assert deleted
     assert await repo.get_by_id(genre.id) is None
+
 
 # ---------- Content Repository ----------
 @pytest.mark.asyncio
@@ -207,6 +221,7 @@ async def test_content_crud_and_filters(db_session: AsyncSession):
     deleted = await content_repo.delete(content.id)
     assert deleted
     assert await content_repo.get_by_id(content.id) is None
+
 
 # ---------- Season & Episode ----------
 @pytest.mark.asyncio
@@ -241,6 +256,7 @@ async def test_season_episode_hierarchy(db_session: AsyncSession):
     await episode_repo.delete(episode.id)
     await season_repo.delete(season.id)
     await content_repo.delete(content.id)
+
 
 # ---------- Rights models (no repository) ----------
 @pytest.mark.asyncio

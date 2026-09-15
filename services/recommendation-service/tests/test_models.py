@@ -97,6 +97,8 @@ def test_recommendation_index_ordering(db_session):
         .all()
     )
     assert results[0].score > results[1].score
+
+
 def test_user_preferences_cold_start_and_feature_vectors(db_session):
     """Cold start: defaults and isolation of mutable fields."""
     pref = UserPreferences(user_id=uuid4())
@@ -116,6 +118,7 @@ def test_user_preferences_cold_start_and_feature_vectors(db_session):
     refreshed2 = db_session.get(UserPreferences, pref2.id)
     assert refreshed2.liked_genres == []
 
+
 def test_recommendation_score_and_explanation_freshness(db_session):
     """Score bounds, explanation content, and recent creation timestamp."""
     genre_name = "Action"
@@ -132,6 +135,10 @@ def test_recommendation_score_and_explanation_freshness(db_session):
     assert fetched.score >= 0
     assert genre_name in fetched.reason
     now = datetime.datetime.now(datetime.timezone.utc)
-    created = fetched.created_at.replace(tzinfo=datetime.timezone.utc) if fetched.created_at.tzinfo is None else fetched.created_at
+    created = (
+        fetched.created_at.replace(tzinfo=datetime.timezone.utc)
+        if fetched.created_at.tzinfo is None
+        else fetched.created_at
+    )
     delta = now.timestamp() - created.timestamp()
     assert delta < 5

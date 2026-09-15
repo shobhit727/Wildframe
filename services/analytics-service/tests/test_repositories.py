@@ -7,6 +7,7 @@ from app.models import Base as EventBase
 from app.models.dsar import Base as DSARBase, AnalyticsDSARExport
 from app.repositories import EventRepository
 
+
 @pytest.fixture(scope="function")
 async def async_session():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True, echo=False)
@@ -18,6 +19,8 @@ async def async_session():
     async with async_session_factory() as session:
         yield session
     await engine.dispose()
+
+
 @pytest.mark.asyncio
 async def test_event_repository_create_and_query(async_session: AsyncSession):
     repo = EventRepository(async_session)
@@ -29,6 +32,7 @@ async def test_event_repository_create_and_query(async_session: AsyncSession):
     assert len(events) == 2
     types = {e.event_type for e in events}
     assert types == {"playback_started", "playback_paused"}
+
 
 @pytest.mark.asyncio
 async def test_analytics_dsar_export_query(async_session: AsyncSession):

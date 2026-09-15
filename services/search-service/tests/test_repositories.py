@@ -6,6 +6,7 @@ from app.models import Base as SearchBase
 from app.models import SearchQuery, SearchIndex
 from app.repositories import SearchQueryRepository, SearchIndexRepository
 
+
 @pytest.fixture(scope="function")
 async def async_session():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True, echo=False)
@@ -17,6 +18,7 @@ async def async_session():
         yield session
     await engine.dispose()
 
+
 @pytest.mark.asyncio
 async def test_search_query_create_and_recent(async_session: AsyncSession):
     repo = SearchQueryRepository(async_session)
@@ -26,6 +28,7 @@ async def test_search_query_create_and_recent(async_session: AsyncSession):
     recent = await repo.get_recent(user_id=user_id, limit=1)
     assert len(recent) == 1
     assert recent[0].query_text == "test query"
+
 
 @pytest.mark.asyncio
 async def test_search_index_upsert_and_delete(async_session: AsyncSession):

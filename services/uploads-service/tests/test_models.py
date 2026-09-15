@@ -49,6 +49,7 @@ def test_upload_chunk_unique_index_definition():
     assert set(index.columns.keys()) == {"session_id", "index"}
     assert index.unique
 
+
 @pytest.fixture(scope="function")
 def db_session():
     """In‑memory SQLite DB session for upload models."""
@@ -58,6 +59,7 @@ def db_session():
     sess = Session()
     yield sess
     sess.close()
+
 
 def test_upload_chunk_unique_index_enforced(db_session):
     """Duplicate (session_id, index) raises IntegrityError."""
@@ -84,6 +86,7 @@ def test_upload_chunk_unique_index_enforced(db_session):
     db_session.add(c2)
     with pytest.raises(IntegrityError):
         db_session.commit()
+
 
 def test_upload_chunk_tracking_and_status_progression(db_session):
     """Chunk count and status change on first chunk."""
@@ -113,11 +116,13 @@ def test_upload_chunk_tracking_and_status_progression(db_session):
     assert refreshed.status == UploadSessionStatus.UPLOADING
     assert refreshed.uploaded_chunks == 1
 
+
 def test_upload_session_status_enum_values():
     assert UploadSessionStatus.INITIATED.value == "initiated"
     assert UploadSessionStatus.UPLOADING.value == "uploading"
     assert UploadSessionStatus.COMPLETE.value == "complete"
     assert UploadSessionStatus.ABORTED.value == "aborted"
+
 
 def test_upload_session_expiry_logic(db_session):
     """Session past expires_at is considered expired."""

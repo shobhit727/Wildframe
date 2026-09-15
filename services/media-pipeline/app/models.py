@@ -1,4 +1,6 @@
 import uuid
+from datetime import datetime, UTC
+from enum import Enum
 
 """Media pipeline service models.
 
@@ -20,17 +22,6 @@ resumed job can skip stages already done. ``retries`` counts attempts at the
 *current* stage (reset when the job advances past it).
 """
 
-    from sqlalchemy import (
-        Column,
-        DateTime,
-        ForeignKey,
-        Index,
-        Integer,
-        String,
-        Text,
-        Boolean,
-        ARRAY,
-    )
 from sqlalchemy import (
     Column,
     DateTime,
@@ -40,8 +31,11 @@ from sqlalchemy import (
     String,
     Text,
     Boolean,
-    # JSONB not supported by SQLite; use Text for tests
-    stage_versions = Column(Text, default="{}", nullable=False)
+    ARRAY,
+    Enum as SQLEnum,
+    JSON,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -67,7 +61,7 @@ class PipelineJob(Base):
 
     __tablename__ = "pipeline_jobs"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     content_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     upload_session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), nullable=False, index=True
@@ -117,7 +111,7 @@ class PipelineStageLog(Base):
 
     __tablename__ = "pipeline_stage_logs"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_id = Column(
         UUID(as_uuid=True),
         ForeignKey("pipeline_jobs.id", ondelete="CASCADE"),
@@ -127,11 +121,6 @@ class PipelineStageLog(Base):
     stage = Column(String(50), nullable=False)
     duration_ms = Column(Integer, nullable=False, default=0)
     message = Column(Text, nullable=True)
-    def __init__(self, *args, **kwargs):
-        if self.duration_ms is None:
-            self.duration_ms = 0
-        if self.created_at is None:
-            self.created_at = datetime.utcnow()
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -181,7 +170,7 @@ class OutboxEvent(Base):
 
     __tablename__ = "outbox_events"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     topic: Mapped[str] = mapped_column(Text, nullable=False)
     event_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
@@ -209,7 +198,7 @@ class TranscodingJob(Base):
 
     __tablename__ = "transcoding_jobs"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     content_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
     source_url = Column(String(2048), nullable=False)
     status = Column(SQLEnum(TranscodingStatus), default=TranscodingStatus.PENDING)  # type: ignore[var-annotated]
@@ -224,26 +213,24 @@ class TranscodingJob(Base):
         nullable=False,
     )
     __table_args__ = (Index("idx_transcoding_status", "status"),)
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.status is None:
-            self.status = TranscodingStatus.PENDING
-        if self.progress_percentage is None:
-            self.progress_percentage = 0
+
 
 from enum import Enum
 
+
 class DeliveryProtocol(str, Enum):
     """Supported streaming manifest protocols."""
+
     HLS = "hls"
     DASH = "dash"
+
 
 class VideoManifest(Base):
     """Minimal manifest model for media‑pipeline tests."""
 
     __tablename__ = "video_manifest"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     episode_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     content_id = Column(UUID(as_uuid=True), nullable=False, index=True)
 
@@ -261,21 +248,7 @@ class VideoManifest(Base):
 
     generated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Ensure defaults for in‑memory objects
-        if self.include_subtitles is None:
-            self.include_subtitles = True
-        if self.include_closed_captions is None:
-            self.include_closed_captions = True
-        if self.live_edge_seconds is None:
-            self.live_edge_seconds = 6
-        if self.target_segment_duration_seconds is None:
-            self.target_segment_duration_seconds = 10
-        if self.variants is None:
-            self.variants = []
-        if self.available_bitrates is None:
-            self.available_bitrates = []
+
 class StreamingQualityProfile(Base):
     """Placeholder quality profile model for tests.
 
@@ -284,13 +257,6 @@ class StreamingQualityProfile(Base):
 
     __tablename__ = "streaming_quality_profile"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     bitrates = Column(ARRAY(Integer), nullable=False, default=list)
     resolutions = Column(ARRAY(String), nullable=False, default=list)
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.bitrates is None:
-            self.bitrates = []
-        if self.resolutions is None:
-            self.resolutions = []

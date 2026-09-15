@@ -4,7 +4,15 @@ from uuid import uuid4
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from app.models import Base, UserProfile, UserDevice, UserPreference, UserSubscriptionProfile, DSARRequest, ChildAccount
+from app.models import (
+    Base,
+    UserProfile,
+    UserDevice,
+    UserPreference,
+    UserSubscriptionProfile,
+    DSARRequest,
+    ChildAccount,
+)
 from app.repositories import (
     UserProfileRepository,
     UserDeviceRepository,
@@ -13,13 +21,16 @@ from app.repositories import (
     DSARRepository,
 )
 
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Create an event loop for async tests."""
     import asyncio
+
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+
 
 @pytest_asyncio.fixture
 async def db_session(tmp_path):
@@ -31,6 +42,7 @@ async def db_session(tmp_path):
     async with async_session() as session:
         yield session
     await engine.dispose()
+
 
 @pytest.mark.asyncio
 async def test_user_profile_crud(db_session: AsyncSession):
@@ -46,6 +58,7 @@ async def test_user_profile_crud(db_session: AsyncSession):
     await db_session.commit()
     assert updated.completed_onboarding is True
     assert updated.profile_completeness == 100
+
 
 @pytest.mark.asyncio
 async def test_user_device_repository(db_session: AsyncSession):
@@ -67,6 +80,7 @@ async def test_user_device_repository(db_session: AsyncSession):
     await db_session.commit()
     assert deactivated.is_active is False
 
+
 @pytest.mark.asyncio
 async def test_user_preference_repository(db_session: AsyncSession):
     repo = UserPreferenceRepository(db_session)
@@ -80,6 +94,7 @@ async def test_user_preference_repository(db_session: AsyncSession):
     await db_session.commit()
     assert updated.theme == "light"
     assert updated.allow_explicit_content is False
+
 
 @pytest.mark.asyncio
 async def test_subscription_repository(db_session: AsyncSession):
@@ -95,6 +110,7 @@ async def test_subscription_repository(db_session: AsyncSession):
     assert upgraded.subscription_tier == "premium"
     assert upgraded.can_use_4k is True
 
+
 @pytest.mark.asyncio
 async def test_dsar_repository(db_session: AsyncSession):
     repo = DSARRepository(db_session)
@@ -107,6 +123,7 @@ async def test_dsar_repository(db_session: AsyncSession):
     # SLA approx 30 days
     delta = fetched.sla_deadline - datetime.now(UTC)
     assert 29 <= delta.days <= 31
+
 
 @pytest.mark.asyncio
 async def test_child_account_crud(db_session: AsyncSession):

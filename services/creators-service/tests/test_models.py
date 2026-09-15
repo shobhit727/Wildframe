@@ -115,6 +115,7 @@ async def test_creator_account_basic(session: AsyncSession):
     assert acct.is_active is True
     assert acct.currency == "USD"
 
+
 # ---------- CreatorAccount KYC transition ----------
 @pytest.mark.asyncio
 async def test_creator_account_kyc_transition(session: AsyncSession):
@@ -136,6 +137,7 @@ async def test_creator_account_kyc_transition(session: AsyncSession):
     assert acct.kyc_status == "verified"
     assert acct.kyc_verified_at is not None
 
+
 # ---------- CreatorOnboarding extended fields ----------
 @pytest.mark.asyncio
 async def test_creator_onboarding_extended(session: AsyncSession):
@@ -155,6 +157,7 @@ async def test_creator_onboarding_extended(session: AsyncSession):
     assert onboarding.tax_form_verified is True
     assert onboarding.bank_verified is True
 
+
 # ---------- CreatorCommerce defaults and updates ----------
 @pytest.mark.asyncio
 async def test_creator_commerce_defaults_and_update(session: AsyncSession):
@@ -171,6 +174,7 @@ async def test_creator_commerce_defaults_and_update(session: AsyncSession):
     await session.refresh(commerce)
     assert commerce.payout_destination_id == "dest_567"
     assert commerce.stripe_account_id == "acct_789"
+
 
 # ---------- CreatorPayout creation and status flow ----------
 @pytest.mark.asyncio
@@ -190,6 +194,7 @@ async def test_creator_payout_status_flow(session: AsyncSession):
     await session.commit()
     await session.refresh(payout)
     assert payout.status == "paid"
+
 
 # ---------- PayoutLedger constraints and net calculation ----------
 @pytest.mark.asyncio

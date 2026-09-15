@@ -9,6 +9,7 @@ from .test_models import db_session
 
 # Reuse existing db_session fixture from test_models.py
 
+
 def test_user_device_status_transitions(db_session):
     device = UserDevice(
         user_id=uuid4(),
@@ -36,6 +37,7 @@ def test_user_device_status_transitions(db_session):
     assert device.can_stream is False
     assert device.can_download is True
 
+
 def test_user_device_unique_constraint(db_session):
     uid = uuid4()
     d1 = UserDevice(user_id=uid, device_id="dup-1", device_name="A", device_type="web")
@@ -45,6 +47,7 @@ def test_user_device_unique_constraint(db_session):
     db_session.add(d2)
     with pytest.raises(Exception):  # IntegrityError or similar
         db_session.commit()
+
 
 def test_user_preference_updates(db_session):
     pref = UserPreference(user_id=uuid4())
@@ -58,13 +61,15 @@ def test_user_preference_updates(db_session):
     pref.content_rating = "R"
     db_session.commit()
     db_session.refresh(pref)
+
+
 def test_dsar_request_defaults_and_sla(db_session):
     user = uuid4()
     dr = DSARRequest(
         user_id=user,
         request_type="access",
         status="pending",
-        data_categories="[\"profile\"]",
+        data_categories='["profile"]',
         sla_deadline=datetime.now(UTC) + timedelta(days=30),
     )
     db_session.add(dr)

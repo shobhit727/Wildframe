@@ -54,6 +54,8 @@ def test_dmca_model_full_flow():
     # repeat infringer increment
     dmca.repeat_infringer_count += 1
     assert dmca.repeat_infringer_count == 1
+
+
 def test_review_moderation_model_defaults():
     review = ReviewModeration(
         review_id=uuid.uuid4(),
@@ -67,6 +69,8 @@ def test_review_moderation_model_defaults():
     review.auto_flagged = False
     assert review.status == "pending"
     assert review.auto_flagged is False
+
+
 def test_review_moderation_full_flow():
     review = ReviewModeration(
         review_id=uuid.uuid4(),
