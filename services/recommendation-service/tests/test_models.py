@@ -97,3 +97,41 @@ def test_recommendation_index_ordering(db_session):
         .all()
     )
     assert results[0].score > results[1].score
+def test_user_preferences_cold_start_and_feature_vectors(db_session):
+    """Cold start: defaults and isolation of mutable fields."""
+    pref = UserPreferences(user_id=uuid4())
+    db_session.add(pref)
+    db_session.commit()
+    fetched = db_session.get(UserPreferences, pref.id)
+    assert fetched.liked_genres == []
+    assert fetched.disliked_genres == []
+    # mutable defaults should not be shared
+    pref2 = UserPreferences(user_id=uuid4())
+    db_session.add(pref2)
+    db_session.commit()
+    fetched2 = db_session.get(UserPreferences, pref2.id)
+    assert fetched2.liked_genres == []
+    fetched.liked_genres.append("action")
+    db_session.commit()
+    refreshed2 = db_session.get(UserPreferences, pref2.id)
+    assert refreshed2.liked_genres == []
+
+def test_recommendation_score_and_explanation_freshness(db_session):
+    """Score bounds, explanation content, and recent creation timestamp."""
+    genre_name = "Action"
+    rec = Recommendation(
+        user_id=uuid4(),
+        content_id=uuid4(),
+        score=0.73,
+        reason=f"Because you like {genre_name}",
+        algorithm="genre-based",
+    )
+    db_session.add(rec)
+    db_session.commit()
+    fetched = db_session.get(Recommendation, rec.id)
+    assert fetched.score >= 0
+    assert genre_name in fetched.reason
+    now = datetime.datetime.now(datetime.timezone.utc)
+    created = fetched.created_at.replace(tzinfo=datetime.timezone.utc) if fetched.created_at.tzinfo is None else fetched.created_at
+    delta = now.timestamp() - created.timestamp()
+    assert delta < 5

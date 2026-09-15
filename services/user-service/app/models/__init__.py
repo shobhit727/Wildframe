@@ -202,3 +202,6 @@ class UserSubscriptionProfile(Base):
         onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
+
+from .child_account import ChildAccount
+from .dsar import DSARRequest

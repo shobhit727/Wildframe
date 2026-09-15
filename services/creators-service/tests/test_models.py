@@ -17,6 +17,7 @@ from app.models import (
     EffectiveFloor,
     PayoutLedger,
     CreatorAccount,
+    CreatorPayout,
 )
 
 
@@ -113,3 +114,110 @@ async def test_creator_account_basic(session: AsyncSession):
     await session.refresh(acct)
     assert acct.is_active is True
     assert acct.currency == "USD"
+
+# ---------- CreatorAccount KYC transition ----------
+@pytest.mark.asyncio
+async def test_creator_account_kyc_transition(session: AsyncSession):
+    """Verify KYC status can transition and timestamps recorded."""
+    acct = CreatorAccount(
+        user_id=uuid.uuid4(),
+        display_name="KYC Creator",
+        stripe_connect_account_id="acct_123",
+    )
+    session.add(acct)
+    await session.commit()
+    await session.refresh(acct)
+    assert acct.kyc_status == "pending"  # type: ignore[attr-defined]
+    # transition to verified
+    acct.kyc_status = "verified"  # type: ignore[attr-defined]
+    acct.kyc_verified_at = datetime.now(UTC)
+    await session.commit()
+    await session.refresh(acct)
+    assert acct.kyc_status == "verified"
+    assert acct.kyc_verified_at is not None
+
+# ---------- CreatorOnboarding extended fields ----------
+@pytest.mark.asyncio
+async def test_creator_onboarding_extended(session: AsyncSession):
+    """Test contract version, tax form verification, and bank verification flags."""
+    uid = uuid.uuid4()
+    onboarding = CreatorOnboarding(
+        user_id=uid,
+        kyc_type="individual",
+        tax_form_type="W-9",
+        tax_form_verified=True,
+        bank_verified=True,
+    )
+    session.add(onboarding)
+    await session.commit()
+    await session.refresh(onboarding)
+    assert onboarding.contract_version == "1.0.0"
+    assert onboarding.tax_form_verified is True
+    assert onboarding.bank_verified is True
+
+# ---------- CreatorCommerce defaults and updates ----------
+@pytest.mark.asyncio
+async def test_creator_commerce_defaults_and_update(session: AsyncSession):
+    cid = uuid.uuid4()
+    commerce = CreatorCommerce(creator_id=cid)
+    session.add(commerce)
+    await session.commit()
+    await session.refresh(commerce)
+    assert commerce.default_currency == "USD"
+    # update fields
+    commerce.payout_destination_id = "dest_567"
+    commerce.stripe_account_id = "acct_789"
+    await session.commit()
+    await session.refresh(commerce)
+    assert commerce.payout_destination_id == "dest_567"
+    assert commerce.stripe_account_id == "acct_789"
+
+# ---------- CreatorPayout creation and status flow ----------
+@pytest.mark.asyncio
+async def test_creator_payout_status_flow(session: AsyncSession):
+    cid = uuid.uuid4()
+    payout = CreatorPayout(
+        creator_id=cid,
+        amount_cents=10000,
+        schedule="net-45",
+    )
+    session.add(payout)
+    await session.commit()
+    await session.refresh(payout)
+    assert payout.status == "pending"
+    # transition to paid
+    payout.status = "paid"
+    await session.commit()
+    await session.refresh(payout)
+    assert payout.status == "paid"
+
+# ---------- PayoutLedger constraints and net calculation ----------
+@pytest.mark.asyncio
+async def test_payout_ledger_constraints_and_net(session: AsyncSession):
+    creator_id = uuid.uuid4()
+    ledger = PayoutLedger(
+        creator_id=creator_id,
+        idempotency_key=str(uuid.uuid4()),
+        period_start=datetime.now(UTC),
+        period_end=datetime.now(UTC),
+        floor_cents=500,
+        pool_topup_cents=200,
+        share_cents=300,
+        stripe_fee_cents=50,
+        net_cents=950,
+    )
+    session.add(ledger)
+    await session.commit()
+    await session.refresh(ledger)
+    assert ledger.net_cents == 950
+    # negative floor should raise constraint
+    bad = PayoutLedger(
+        creator_id=creator_id,
+        idempotency_key=str(uuid.uuid4()),
+        period_start=datetime.now(UTC),
+        period_end=datetime.now(UTC),
+        floor_cents=-1,
+    )
+    session.add(bad)
+    with pytest.raises(IntegrityError):
+        await session.commit()

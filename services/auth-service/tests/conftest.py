@@ -9,15 +9,24 @@ from unittest.mock import AsyncMock, patch
 
 # from uuid import uuid4  # unused, removed for lint
 
-# Add auth-service app to path so we can import from app.*
-sys.path.insert(0, str(Path(__file__).parents[1] / "app"))
+# Dynamically load Base, User, and repository classes from this service's app package to avoid conflicts
+import importlib.util
+from pathlib import Path
 
-from app.models import Base, User
-from app.repositories import (
-    LoginAuditRepository,
-    RefreshTokenRepository,
-    UserRepository,
-)
+def _load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+_models_mod = _load_module('auth_models', Path(__file__).parents[1] / 'app' / 'models' / '__init__.py')
+Base = _models_mod.Base
+User = _models_mod.User
+
+_repos_mod = _load_module('auth_repos', Path(__file__).parents[1] / 'app' / 'repositories' / '__init__.py')
+LoginAuditRepository = _repos_mod.LoginAuditRepository
+RefreshTokenRepository = _repos_mod.RefreshTokenRepository
+UserRepository = _repos_mod.UserRepository
 from app.security import PasswordManager, TokenManager
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 

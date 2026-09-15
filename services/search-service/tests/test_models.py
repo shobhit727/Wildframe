@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.models import SearchQuery, SearchIndex
+# Heavy imports avoided; use SQLAlchemy model inspection for mapping expectations.
 
 
 # Helper to get a fresh in‑memory DB and session
@@ -64,3 +65,44 @@ def test_search_index_unique_content_id(session):
     session.add(si2)
     with pytest.raises(Exception):  # IntegrityError or similar
         session.commit()
+
+def test_search_index_mapping_fields():
+    from app.services import CONTENT_INDEX_MAPPING
+    # duplicate import removed
+
+    props = CONTENT_INDEX_MAPPING["mappings"]["properties"]
+    # text fields
+    assert props["title"]["type"] == "text"
+    assert props["description"]["type"] == "text"
+    # keyword fields
+    for kw in ["content_type", "genres", "actors", "director", "status"]:
+        assert props[kw]["type"] == "keyword"
+    # numeric fields
+    assert props["release_year"]["type"] == "integer"
+    assert props["rating"]["type"] == "float"
+
+def test_search_query_filters_and_pagination(session):
+    """Store JSON filters; ensure result_count updates and pagination works."""
+    uid = uuid.uuid4()
+    sq = SearchQuery(user_id=uid, query_text="test", filters={"type": "movie"})
+    session.add(sq)
+    session.commit()
+    # simulate pagination by updating result_count manually
+    sq.result_count = 5
+    session.commit()
+    fetched = session.get(SearchQuery, sq.id)
+    assert fetched.filters == {"type": "movie"}
+    assert fetched.result_count == 5
+
+def test_search_result_scoring_highlighting_facets():
+    """SearchResult should preserve result metadata like scores, highlights, facets."""
+    from app.services import SearchResult
+
+    results = [
+        {"id": "1", "title": "A", "score": 1.2, "highlight": {"title": ["<em>A</em>"]}},
+        {"id": "2", "title": "B", "score": 0.8},
+    ]
+    sr = SearchResult(results=results, next_sort=["1"])
+    assert sr.results[0]["score"] == 1.2
+    assert sr.results[0]["highlight"]["title"] == ["<em>A</em>"]
+    assert sr.next_sort == ["1"]

@@ -1,8 +1,18 @@
+import os, importlib.util
 from uuid import uuid4
-
-from app.models import PipelineJob, PipelineJobStatus
-
-
+module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'app', 'models.py'))
+spec = importlib.util.spec_from_file_location('media_models', module_path)
+media_models = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(media_models)
+PipelineJob = media_models.PipelineJob
+PipelineJobStatus = media_models.PipelineJobStatus
+VideoManifest = media_models.VideoManifest
+DeliveryProtocol = media_models.DeliveryProtocol
+StreamingQualityProfile = media_models.StreamingQualityProfile
+TranscodingJob = media_models.TranscodingJob
+TranscodingStatus = media_models.TranscodingStatus
+PipelineStageLog = media_models.PipelineStageLog
+PipelineStageStatus = media_models.PipelineStageStatus
 def test_pipeline_job_defaults():
     """A freshly created PipelineJob has correct default values."""
     job = PipelineJob(
@@ -22,7 +32,6 @@ def test_pipeline_job_defaults():
     assert job.context in (None, {})
     assert job.created_at in (None, job.created_at)  # accept None before DB insert
 
-
 def test_pipeline_job_custom_initialization():
     """Explicit fields are respected and defaults still apply to others."""
     job = PipelineJob(
@@ -41,3 +50,42 @@ def test_pipeline_job_custom_initialization():
     assert job.context in (None, {})
     assert job.error is None
     assert job.leased_by is None
+
+def test_transcoding_job_defaults_and_progress():
+    """Legacy TranscodingJob defaults and progress tracking."""
+    job = TranscodingJob(
+        content_id=uuid4(),
+        source_url="https://example.com/video.mp4",
+    )
+    assert job.id is None
+    assert job.status == TranscodingStatus.PENDING
+    assert job.progress_percentage == 0
+    assert job.output_hls_url is None
+    assert job.output_dash_url is None
+
+def test_video_manifest_defaults_and_variants():
+    """VideoManifest defaults and variant fields validation."""
+    vm = VideoManifest(
+        episode_id=uuid4(),
+        content_id=uuid4(),
+        protocol=DeliveryProtocol.HLS,
+        manifest_url="https://cdn.example.com/manifest.m3u8",
+        manifest_content="#EXTM3U",
+    )
+    assert vm.include_subtitles is True
+    assert vm.include_closed_captions is True
+    assert vm.live_edge_seconds == 6
+    assert vm.variants == []
+    assert vm.available_bitrates == []
+
+def test_quality_profile_defaults_and_codecs():
+    """StreamingQualityProfile defaults and codec fields."""
+    qp = StreamingQualityProfile()
+    assert hasattr(qp, "bitrates")
+    assert hasattr(qp, "resolutions")
+
+def test_pipeline_stage_log_defaults():
+    log = PipelineStageLog(job_id=uuid4(), stage="encode", status=PipelineStageStatus.SUCCESS)
+    assert log.duration_ms == 0
+    assert log.message is None
+    assert log.created_at is not None

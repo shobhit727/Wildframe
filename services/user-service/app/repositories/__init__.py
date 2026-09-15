@@ -264,3 +264,5 @@ class UserSubscriptionProfileRepository(BaseRepository):
             await self.rollback()
             logger.error(f"Error updating subscription tier: {e!s}")
             raise
+
+from .dsar import DSARRepository

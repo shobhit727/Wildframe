@@ -57,13 +57,12 @@ class UserModerationRepository:
     async def update_status(
         self, user_id: str, status: str, reason: str | None, moderated_by: str
     ) -> UserModeration | None:
-        # Row lock makes the read-modify-write of a moderation decision atomic
-        # under concurrency: concurrent decisions serialize instead of racing.
         moderation = await self.get_by_user_id(user_id, for_update=True)
         if moderation:
             moderation.status = status
             moderation.reason = reason
             moderation.moderated_by = moderated_by
+            await self.db.commit()
             await self.db.refresh(moderation)
         return moderation
 
@@ -145,6 +144,7 @@ class ContentModerationRepository:
             moderation.status = status
             moderation.resolved_by = resolved_by
             moderation.resolved_at = datetime.now(UTC) if status == "removed" else None
+            await self.db.commit()
             await self.db.refresh(moderation)
         return moderation
 
@@ -192,6 +192,7 @@ class SystemAlertRepository:
         if alert and not alert.acknowledged:
             alert.acknowledged = True
             alert.acknowledged_by = admin_id
+            await self.db.commit()
             await self.db.refresh(alert)
         return alert
 
@@ -234,6 +235,7 @@ class SystemConfigRepository:
         if config:
             config.value = value
             config.updated_by = updated_by
+            await self.db.commit()
             await self.db.refresh(config)
         return config
 
