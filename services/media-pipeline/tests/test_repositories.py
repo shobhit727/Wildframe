@@ -1,4 +1,9 @@
+import os
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import ExitStack
+
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     create_async_engine,
@@ -12,7 +17,6 @@ from app.models import (
     PipelineJob,
     PipelineJobStatus,
     PipelineStageLog,
-    PipelineStageStatus,
 )
 from app.repositories import (
     PipelineJobRepository,
@@ -21,22 +25,27 @@ from app.repositories import (
 
 
 @pytest_asyncio.fixture
-async def db_session(tmp_path) -> AsyncSession:
-    """Create a fresh async PostgreSQL DB per test file using testcontainers."""
-    with PostgresContainer("postgres:15") as pg:
+async def db_session() -> AsyncIterator[AsyncSession]:
+    """Use disposable PostgreSQL; TEST_DATABASE_URL must name a test database."""
+    with ExitStack() as stack:
+        url = os.environ.get("TEST_DATABASE_URL")
+        if not url:
+            postgres = stack.enter_context(PostgresContainer("postgres:15"))
+            url = postgres.get_connection_url()
         engine = create_async_engine(
-            pg.get_connection_url().replace("postgresql://", "postgresql+asyncpg://"),
+            make_url(url).set(drivername="postgresql+asyncpg"),
             echo=False,
             future=True,
             pool_pre_ping=True,
         )
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-        async with factory() as session:
-            yield session
-        await engine.dispose()
-    # End of fixture
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+            async with factory() as session:
+                yield session
+        finally:
+            await engine.dispose()
 
 
 # ---------------------------------------------------------------------------
@@ -78,20 +87,23 @@ async def test_outbox_enqueue_pending_and_mark(db_session: AsyncSession):
     await repo.create(job)
     await db_session.flush()
 
-    evt = await repo.enqueue_outbox(
+    evt = await repo.enqueue_event(
         topic="pipeline.job.created",
         payload={"job_id": str(job.id)},
         event_key=str(job.id),
     )
     assert evt.status.value == "pending"
 
-    pending_before = await repo.list_pending_outbox()
+    pending_before = await repo.pending_events()
     assert any(e.id == evt.id for e in pending_before)
 
-    await repo.mark_outbox_dispatched(evt.id)
+    await repo.mark_dispatched(evt.id)
     await db_session.flush()
+    await db_session.refresh(evt)
+    assert evt.status.value == "dispatched"
+    assert evt.dispatched_at is not None
 
-    pending_after = await repo.list_pending_outbox()
+    pending_after = await repo.pending_events()
     assert all(e.id != evt.id for e in pending_after)
 
 
@@ -113,14 +125,12 @@ async def test_stage_log_record_and_list(db_session: AsyncSession):
     log1 = PipelineStageLog(
         job_id=job.id,
         stage="ingest",
-        status=PipelineStageStatus.SUCCESS,
         duration_ms=123,
         message="ingest ok",
     )
     log2 = PipelineStageLog(
         job_id=job.id,
         stage="encode",
-        status=PipelineStageStatus.SUCCESS,
         duration_ms=456,
         message="encode ok",
     )
@@ -131,3 +141,7 @@ async def test_stage_log_record_and_list(db_session: AsyncSession):
     assert len(logs) == 2
     stages = {log_entry.stage for log_entry in logs}
     assert stages == {"ingest", "encode"}
+    assert {log_entry.stage: (log_entry.duration_ms, log_entry.message) for log_entry in logs} == {
+        "ingest": (123, "ingest ok"),
+        "encode": (456, "encode ok"),
+    }
