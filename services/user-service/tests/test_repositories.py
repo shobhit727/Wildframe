@@ -1,16 +1,11 @@
 import pytest
 import pytest_asyncio
 from uuid import uuid4
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from app.models import (
     Base,
-    UserProfile,
-    UserDevice,
-    UserPreference,
-    UserSubscriptionProfile,
-    DSARRequest,
     ChildAccount,
 )
 from app.repositories import (
@@ -48,7 +43,7 @@ async def db_session(tmp_path):
 async def test_user_profile_crud(db_session: AsyncSession):
     repo = UserProfileRepository(db_session)
     uid = uuid4()
-    profile = await repo.create(uid)
+    await repo.create(uid)
     await db_session.commit()
     fetched = await repo.get_by_user_id(uid)
     assert fetched is not None
@@ -85,7 +80,7 @@ async def test_user_device_repository(db_session: AsyncSession):
 async def test_user_preference_repository(db_session: AsyncSession):
     repo = UserPreferenceRepository(db_session)
     uid = uuid4()
-    pref = await repo.create_default(uid)
+    await repo.create_default(uid)
     await db_session.commit()
     fetched = await repo.get_by_user_id(uid)
     assert fetched is not None
@@ -100,7 +95,7 @@ async def test_user_preference_repository(db_session: AsyncSession):
 async def test_subscription_repository(db_session: AsyncSession):
     repo = UserSubscriptionProfileRepository(db_session)
     uid = uuid4()
-    sub = await repo.create_default(uid)
+    await repo.create_default(uid)
     await db_session.commit()
     fetched = await repo.get_by_user_id(uid)
     assert fetched.subscription_tier == "free"

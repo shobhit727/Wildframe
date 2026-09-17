@@ -111,7 +111,6 @@ def test_content_rating_defaults_and_constraints():
 
 
 def test_content_recommendation_validity():
-    import uuid
 
     c1 = Content(
         title="Movie A",

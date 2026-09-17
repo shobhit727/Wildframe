@@ -266,4 +266,4 @@ class UserSubscriptionProfileRepository(BaseRepository):
             raise
 
 
-from .dsar import DSARRepository
+from .dsar import DSARRepository as DSARRepository

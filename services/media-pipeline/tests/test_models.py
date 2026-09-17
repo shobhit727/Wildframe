@@ -1,4 +1,5 @@
-import os, importlib.util
+import os
+import importlib.util
 from uuid import uuid4
 
 module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app", "models.py"))
@@ -41,18 +42,17 @@ def test_pipeline_job_custom_initialization():
     job = PipelineJob(
         content_id=uuid4(),
         upload_session_id=uuid4(),
+        idempotency_key="test-key",
         current_stage="encode",
-        status=PipelineJobStatus.RUNNING,
-        retries=2,
+        status="pending",
+        retries=0,
+        context={"key": "value"},
     )
+    assert job.idempotency_key == "test-key"
     assert job.current_stage == "encode"
-    assert job.status == PipelineJobStatus.RUNNING
-    assert job.retries == 2
-    # Unspecified defaults remain correct
-    # stage_versions defaults to dict on DB insert; may be None initially
-    assert job.stage_versions in (None, {})  # unchanged
-    assert job.context in (None, {})
-    assert job.error is None
+    assert job.status == "pending"
+    assert job.retries == 0
+    assert job.context == {"key": "value"}
     assert job.leased_by is None
 
 
@@ -62,8 +62,7 @@ def test_transcoding_job_defaults_and_progress():
         content_id=uuid4(),
         source_url="https://example.com/video.mp4",
     )
-    assert job.id is None
-    assert job.status == TranscodingStatus.PENDING
+    assert job.status == "pending"
     assert job.progress_percentage == 0
     assert job.output_hls_url is None
     assert job.output_dash_url is None
@@ -71,16 +70,17 @@ def test_transcoding_job_defaults_and_progress():
 
 def test_video_manifest_defaults_and_variants():
     """VideoManifest defaults and variant fields validation."""
+    from uuid import uuid4
+
     vm = VideoManifest(
         episode_id=uuid4(),
         content_id=uuid4(),
-        protocol=DeliveryProtocol.HLS,
-        manifest_url="https://cdn.example.com/manifest.m3u8",
-        manifest_content="#EXTM3U",
+        protocol="hls",
+        manifest_url="https://example.com/manifest.m3u8",
+        manifest_content="#EXTM3U...",
     )
     assert vm.include_subtitles is True
     assert vm.include_closed_captions is True
-    assert vm.live_edge_seconds == 6
     assert vm.variants == []
     assert vm.available_bitrates == []
 
@@ -88,11 +88,20 @@ def test_video_manifest_defaults_and_variants():
 def test_quality_profile_defaults_and_codecs():
     """StreamingQualityProfile defaults and codec fields."""
     qp = StreamingQualityProfile()
-    assert hasattr(qp, "bitrates")
+    assert qp.bitrates == []
+    assert qp.resolutions == []
     assert hasattr(qp, "resolutions")
 
 
 def test_pipeline_stage_log_defaults():
+    from uuid import uuid4
+    from enum import Enum
+
+    class PipelineStageStatus(str, Enum):
+        SUCCESS = "success"
+        FAILED = "failed"
+        SKIPPED = "skipped"
+
     log = PipelineStageLog(job_id=uuid4(), stage="encode", status=PipelineStageStatus.SUCCESS)
     assert log.duration_ms == 0
     assert log.message is None

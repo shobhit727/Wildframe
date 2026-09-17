@@ -1,7 +1,9 @@
 import pytest
 import datetime
 from uuid import uuid4
-import sys, os
+import sys
+import os
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Ensure the uploads-service app package is first on PYTHONPATH
 service_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app"))
@@ -11,8 +13,6 @@ from app.models import (
     Base,
     UploadSession,
     UploadChunk,
-    OutboxEvent,
-    OutboxEventStatus,
     UploadSessionStatus,
 )
 from app.repositories import UploadChunkRepository

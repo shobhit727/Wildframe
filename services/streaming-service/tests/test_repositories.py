@@ -1,8 +1,7 @@
 import pytest
 from uuid import uuid4
-from datetime import datetime, UTC
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from app.models import Base, PlaybackSession, PlaybackSessionStatus
+from app.models import Base, PlaybackSessionStatus
 from app.models.drm import DRMConfig
 from app.models.maturity import ContentMaturity
 from app.repositories import PlaybackSessionRepository

@@ -1,6 +1,5 @@
 """Shared test fixtures and configuration."""
 
-import sys
 from pathlib import Path
 import asyncio
 
@@ -11,7 +10,6 @@ from unittest.mock import AsyncMock, patch
 
 # Dynamically load Base, User, and repository classes from this service's app package to avoid conflicts
 import importlib.util
-from pathlib import Path
 
 
 def _load_module(name: str, path: Path):

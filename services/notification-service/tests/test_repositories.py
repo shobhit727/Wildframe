@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 
-from app.models import Base, Notification, NotificationPreference
+from app.models import Base, Notification
 from app.repositories import NotificationRepository
 
 

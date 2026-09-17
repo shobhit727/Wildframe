@@ -1,11 +1,11 @@
 import pytest
 import pytest_asyncio
 from uuid import uuid4
-from datetime import datetime, timedelta, UTC
+from datetime import datetime
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-from app.models import Base, Recommendation, UserPreferences
+from app.models import Base
 from app.repositories import RecommendationRepository, UserPreferencesRepository
 
 
@@ -46,7 +46,7 @@ async def test_recommendation_crud(db_session: AsyncSession):
     repo = RecommendationRepository(db_session)
     uid = uuid4()
     cid = uuid4()
-    rec = await repo.create(uid, cid, 0.9, reason="test", algorithm="cf")
+    await repo.create(uid, cid, 0.9, reason="test", algorithm="cf")
     await db_session.commit()
     fetched = await repo.get_for_user(uid)
     assert len(fetched) == 1
