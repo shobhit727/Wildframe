@@ -1,108 +1,123 @@
 import os
-import importlib.util
+from contextlib import ExitStack
 from uuid import uuid4
 
-module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app", "models.py"))
-spec = importlib.util.spec_from_file_location("media_models", module_path)
-media_models = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(media_models)
-PipelineJob = media_models.PipelineJob
-PipelineJobStatus = media_models.PipelineJobStatus
-VideoManifest = media_models.VideoManifest
-DeliveryProtocol = media_models.DeliveryProtocol
-StreamingQualityProfile = media_models.StreamingQualityProfile
-TranscodingJob = media_models.TranscodingJob
-TranscodingStatus = media_models.TranscodingStatus
-PipelineStageLog = media_models.PipelineStageLog
-PipelineStageStatus = media_models.PipelineStageStatus
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from testcontainers.postgres import PostgresContainer
+
+from app.models import (
+    Base,
+    DeliveryProtocol,
+    PipelineJob,
+    PipelineJobStatus,
+    PipelineStageLog,
+    StreamingQualityProfile,
+    TranscodingJob,
+    TranscodingStatus,
+    VideoManifest,
+)
 
 
-def test_pipeline_job_defaults():
-    """A freshly created PipelineJob has correct default values."""
-    job = PipelineJob(
-        content_id=uuid4(),
-        upload_session_id=uuid4(),
-    )
-    # ID may be None before DB insert (SQLAlchemy assigns on flush)
-    assert job.id is None
-    # Status defaults to pending
-    assert job.status is None
-    # No stage set yet
+@pytest.fixture
+def session():
+    with ExitStack() as stack:
+        url = os.environ.get("TEST_DATABASE_URL")
+        if not url:
+            postgres = stack.enter_context(PostgresContainer("postgres:15"))
+            url = postgres.get_connection_url()
+        engine = create_engine(url)
+        stack.callback(engine.dispose)
+        Base.metadata.create_all(engine)
+        connection = stack.enter_context(engine.connect())
+        transaction = connection.begin()
+        stack.callback(transaction.rollback)
+        yield stack.enter_context(Session(bind=connection))
+
+
+def persist(session, row):
+    session.add(row)
+    session.flush()
+    session.refresh(row)
+    return row
+
+
+def test_pipeline_job_defaults(session):
+    job = persist(session, PipelineJob(content_id=uuid4(), upload_session_id=uuid4()))
+    assert job.id is not None
+    assert job.status == PipelineJobStatus.PENDING
     assert job.current_stage is None
-    # Empty stage_versions, retries, and context
-    # stage_versions defaults to dict on DB insert; may be None initially
-    assert job.stage_versions in (None, {})
-    assert job.retries in (None, 0)
-    assert job.context in (None, {})
-    assert job.created_at in (None, job.created_at)  # accept None before DB insert
+    assert job.stage_versions == {}
+    assert job.retries == 0
+    assert job.context == {}
+    assert job.created_at is not None
 
 
-def test_pipeline_job_custom_initialization():
-    """Explicit fields are respected and defaults still apply to others."""
-    job = PipelineJob(
-        content_id=uuid4(),
-        upload_session_id=uuid4(),
-        idempotency_key="test-key",
-        current_stage="encode",
-        status="pending",
-        retries=0,
-        context={"key": "value"},
+def test_pipeline_job_custom_initialization(session):
+    job = persist(
+        session,
+        PipelineJob(
+            content_id=uuid4(),
+            upload_session_id=uuid4(),
+            idempotency_key="test-key",
+            current_stage="encode",
+            status=PipelineJobStatus.PENDING,
+            retries=2,
+            context={"key": "value"},
+        ),
     )
     assert job.idempotency_key == "test-key"
     assert job.current_stage == "encode"
-    assert job.status == "pending"
-    assert job.retries == 0
+    assert job.status == PipelineJobStatus.PENDING
+    assert job.retries == 2
     assert job.context == {"key": "value"}
     assert job.leased_by is None
 
 
-def test_transcoding_job_defaults_and_progress():
-    """Legacy TranscodingJob defaults and progress tracking."""
-    job = TranscodingJob(
-        content_id=uuid4(),
-        source_url="https://example.com/video.mp4",
+def test_transcoding_job_defaults_and_progress(session):
+    job = persist(
+        session, TranscodingJob(content_id=uuid4(), source_url="https://example.com/video.mp4")
     )
-    assert job.status == "pending"
+    assert job.status == TranscodingStatus.PENDING
     assert job.progress_percentage == 0
     assert job.output_hls_url is None
     assert job.output_dash_url is None
 
 
-def test_video_manifest_defaults_and_variants():
-    """VideoManifest defaults and variant fields validation."""
-    from uuid import uuid4
-
-    vm = VideoManifest(
-        episode_id=uuid4(),
-        content_id=uuid4(),
-        protocol="hls",
-        manifest_url="https://example.com/manifest.m3u8",
-        manifest_content="#EXTM3U...",
+def test_video_manifest_defaults_and_variants(session):
+    manifest = persist(
+        session,
+        VideoManifest(
+            episode_id=uuid4(),
+            content_id=uuid4(),
+            protocol=DeliveryProtocol.HLS,
+            manifest_url="https://example.com/manifest.m3u8",
+            manifest_content="#EXTM3U",
+        ),
     )
-    assert vm.include_subtitles is True
-    assert vm.include_closed_captions is True
-    assert vm.variants == []
-    assert vm.available_bitrates == []
+    assert manifest.include_subtitles is True
+    assert manifest.include_closed_captions is True
+    assert manifest.variants == []
+    assert manifest.available_bitrates == []
 
 
-def test_quality_profile_defaults_and_codecs():
-    """StreamingQualityProfile defaults and codec fields."""
-    qp = StreamingQualityProfile()
-    assert qp.bitrates == []
-    assert qp.resolutions == []
-    assert hasattr(qp, "resolutions")
+def test_quality_profile_defaults_and_codecs(session):
+    profile = persist(session, StreamingQualityProfile())
+    assert profile.bitrates == []
+    assert profile.resolutions == []
+    profile.bitrates = [1000, 2000]
+    profile.resolutions = ["720p", "1080p"]
+    session.flush()
+    session.refresh(profile)
+    assert profile.bitrates == [1000, 2000]
+    assert profile.resolutions == ["720p", "1080p"]
 
 
-def test_pipeline_stage_log_defaults():
-    from uuid import uuid4
-    from enum import Enum
-
-    class PipelineStageStatus(str, Enum):
-        SUCCESS = "success"
-        FAILED = "failed"
-        SKIPPED = "skipped"
-
-    log = PipelineStageLog(job_id=uuid4(), stage="encode", status=PipelineStageStatus.SUCCESS)
+def test_pipeline_stage_log_defaults(session):
+    job = persist(session, PipelineJob(content_id=uuid4(), upload_session_id=uuid4()))
+    log = persist(session, PipelineStageLog(job_id=job.id, stage="encode"))
     assert log.duration_ms == 0
     assert log.message is None
     assert log.created_at is not None
+    assert log.job_id == job.id

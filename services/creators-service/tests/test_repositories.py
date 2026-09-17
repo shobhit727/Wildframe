@@ -8,12 +8,9 @@ from sqlalchemy.ext.asyncio import (
 
 import uuid
 import pytest_asyncio
-from datetime import datetime, timezone
-import os
+from datetime import datetime
 
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
-
-from app.models import CreatorOnboarding
+from app.models import Base, CreatorSuspendedError, PayoutStatus
 from app.repositories import (
     CreatorAccountRepository,
     PayoutLedgerRepository,
@@ -22,11 +19,8 @@ from app.repositories import (
 
 @pytest_asyncio.fixture
 async def session() -> AsyncSession:
-    engine = create_async_engine(os.getenv("DATABASE_URL"), echo=False, future=True)
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
-        # create tables
-        from app.models import Base
-
         await conn.run_sync(Base.metadata.create_all)
     async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     async with async_session() as s:
@@ -35,59 +29,50 @@ async def session() -> AsyncSession:
 
 
 @pytest.mark.asyncio
-async def test_creator_account_and_onboarding_flow(session: AsyncSession):
+async def test_creator_account_and_idempotent_accrual(session: AsyncSession):
     acct_repo = CreatorAccountRepository(session)
     user_id = uuid.uuid4()
     acct = await acct_repo.create(user_id=user_id, display_name="Test", region_code="US")
-    assert acct.user_id == user_id
-    # onboarding record directly (no dedicated repo)
-    _ = CreatorOnboarding(user_id=user_id, kyc_type="individual")
-    # setup dates for ledger
-    period_start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    period_end = datetime(2024, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
+    assert (await acct_repo.get_by_user(user_id)).id == acct.id
     ledger_repo = PayoutLedgerRepository(session)
-    key = "test-key"
-    row1 = await ledger_repo.accrued(
-        user_id=user_id,
-        period_start=period_start,
-        period_end=period_end,
-        amount_usd=100.0,
-        idempotency_key=key,
+    values = dict(
+        creator_id=acct.id,
+        period_start=datetime(2024, 1, 1),
+        period_end=datetime(2024, 1, 31),
+        view_minutes=100,
+        floor_cents=1000,
+        pool_topup_cents=200,
+        share_cents=300,
+        stripe_fee_cents=50,
+        net_cents=1450,
+        idempotency_key="test-key",
     )
-    assert row1.idempotency_key == key
-    assert row1.status == "accrued"
-
-    row2 = await ledger_repo.accrued(
-        user_id=user_id,
-        period_start=period_start,
-        period_end=period_end,
-        amount_usd=150.0,
-        idempotency_key=key,
-    )
-    assert row2.id == row1.id
+    row = await ledger_repo.accrued(**values)
+    duplicate = await ledger_repo.accrued(**{**values, "net_cents": 9999})
+    assert duplicate.id == row.id
+    await session.refresh(duplicate)
+    assert duplicate.net_cents == 1450
+    assert duplicate.status == PayoutStatus.ACCRUED
+    assert (await ledger_repo.get_by_idempotency_key("test-key")).id == row.id
 
 
 @pytest.mark.asyncio
 async def test_payout_ledger_suspended_creator(session: AsyncSession):
     acct_repo = CreatorAccountRepository(session)
-    user_id = uuid.uuid4()
-    await acct_repo.create(user_id=user_id, display_name="Test", region_code="US")
-    await acct_repo.set_status(user_id, "suspended")
-
+    acct = await acct_repo.create(user_id=uuid.uuid4(), display_name="Test", region_code="US")
+    await acct_repo.update(acct, is_active=False)
     ledger_repo = PayoutLedgerRepository(session)
-    period_start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    period_end = datetime(2024, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
-
-    from app.models import CreatorSuspendedError
-
-    try:
+    with pytest.raises(CreatorSuspendedError):
         await ledger_repo.accrued(
-            user_id=user_id,
-            period_start=period_start,
-            period_end=period_end,
-            amount_usd=100.0,
-            idempotency_key="test-key-suspended",
+            creator_id=acct.id,
+            period_start=datetime(2024, 1, 1),
+            period_end=datetime(2024, 1, 31),
+            view_minutes=100,
+            floor_cents=1000,
+            pool_topup_cents=0,
+            share_cents=0,
+            stripe_fee_cents=0,
+            net_cents=1000,
+            idempotency_key="suspended",
         )
-        assert False, "Expected CreatorSuspendedError"
-    except CreatorSuspendedError:
-        pass
+    assert await ledger_repo.get_by_idempotency_key("suspended") is None
