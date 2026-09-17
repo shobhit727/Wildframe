@@ -6,7 +6,7 @@ from sqlalchemy import delete, desc, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import SearchIndex, SearchQuery
+from app.models import SearchIndex, SearchQuery, _naive_now
 
 
 class SearchQueryRepository:
@@ -72,11 +72,10 @@ class SearchIndexRepository:
                     "director": director or "",
                     "release_year": release_year,
                     "rating": int(rating) if rating is not None else None,
-                    "updated_at": (
-                        SearchIndex.updated_at.default.arg()  # type: ignore[union-attr]
-                        if callable(SearchIndex.updated_at.default.arg)  # type: ignore[union-attr]
-                        else None
-                    ),
+                    "updated_at": SearchIndex.updated_at.default.arg(None)
+                    if SearchIndex.updated_at is not None
+                    and callable(SearchIndex.updated_at.default.arg)
+                    else _naive_now(),
                 },
             )
             .returning(SearchIndex)
