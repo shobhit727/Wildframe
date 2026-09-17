@@ -1,49 +1,44 @@
 import pytest
 import pytest_asyncio
-import pathlib
-import importlib.util
+import os
+from collections.abc import AsyncIterator
+from contextlib import ExitStack
+from datetime import UTC, datetime
 from uuid import uuid4
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 
-# Load the content-service models and repositories directly
-def _load_module(name: str, path: pathlib.Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    mod = importlib.util.module_from_spec(spec)
-    if spec.loader is None:
-        raise ImportError(f"Cannot load module {name} from {path}")
-    spec.loader.exec_module(mod)
-    return mod
+from testcontainers.postgres import PostgresContainer
 
-
-models_path = pathlib.Path(__file__).parents[2] / "app" / "models" / "__init__.py"
-repos_path = pathlib.Path(__file__).parents[2] / "app" / "repositories" / "__init__.py"
-
-_models_mod = _load_module("content_models", models_path)
-_repos_mod = _load_module("content_repos", repos_path)
-
-Base = _models_mod.Base
-Genre = _models_mod.Genre
-RightsHolder = _models_mod.RightsHolder
-TerritorialLicense = _models_mod.TerritorialLicense
-ContentType = _models_mod.ContentType
-
-ContentRepository = _repos_mod.ContentRepository
-SeasonRepository = _repos_mod.SeasonRepository
-EpisodeRepository = _repos_mod.EpisodeRepository
-GenreRepository = _repos_mod.GenreRepository
+from app.models import Base, ContentStatus, ContentType
+from app.models.rights import Base as RightsBase, RightsHolder, TerritorialLicense
+from app.repositories import (
+    ContentRepository,
+    SeasonRepository,
+    EpisodeRepository,
+    GenreRepository,
+)
 
 
 @pytest_asyncio.fixture
-async def db_session(tmp_path):
-    """Create a fresh async SQLite DB per test file."""
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'test.db'}", echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async with async_session() as session:
-        yield session
-    await engine.dispose()
+async def db_session() -> AsyncIterator[AsyncSession]:
+    """Use disposable PostgreSQL; TEST_DATABASE_URL must name a test database."""
+    with ExitStack() as stack:
+        url = os.environ.get("TEST_DATABASE_URL")
+        if not url:
+            postgres = stack.enter_context(PostgresContainer("postgres:15"))
+            url = postgres.get_connection_url()
+        engine = create_async_engine(make_url(url).set(drivername="postgresql+asyncpg"), echo=False)
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+                await conn.run_sync(RightsBase.metadata.create_all)
+            async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+            async with async_session() as session:
+                yield session
+        finally:
+            await engine.dispose()
 
 
 # ---------- Genre Repository ----------
@@ -72,7 +67,7 @@ async def test_content_crud_and_filters(db_session: AsyncSession):
         title="Space Quest",
         slug="space-quest",
         description="A sci‑fi adventure",
-        content_type=_models_mod.ContentType.MOVIE,
+        content_type=ContentType.MOVIE,
         release_date=None,
         duration_minutes=None,
         original_language="en",
@@ -91,13 +86,16 @@ async def test_content_crud_and_filters(db_session: AsyncSession):
     assert fetched.title == "Space Quest"
     by_slug = await repo.get_by_slug("space-quest")
     assert by_slug.id == content.id
+    await repo.update(content.id, status=ContentStatus.PUBLISHED)
     by_genre = await repo.get_by_genre(genre.id)
     assert any(c.id == content.id for c in by_genre)
     updated = await repo.update(content.id, title="Space Odyssey")
     assert updated.title == "Space Odyssey"
     deleted = await repo.delete(content.id)
     assert deleted
-    assert await repo.get_by_id(content.id) is None
+    soft_deleted = await repo.get_by_id(content.id)
+    assert soft_deleted is not None and soft_deleted.deleted_at is not None
+    assert all(c.id != content.id for c in await repo.get_by_genre(genre.id))
 
 
 # ---------- Season & Episode ----------
@@ -108,7 +106,7 @@ async def test_season_episode_hierarchy(db_session: AsyncSession):
         title="Series X",
         slug="series-x",
         description="Series test",
-        content_type=_models_mod.ContentType.SERIES,
+        content_type=ContentType.SERIES,
         release_date=None,
         duration_minutes=None,
         original_language="en",
@@ -148,10 +146,16 @@ async def test_rights_models(db_session: AsyncSession):
     holder = RightsHolder(name="Studio Z", type="studio")
     db_session.add(holder)
     await db_session.flush()
-    license = TerritorialLicense(content_id=uuid4(), rights_holder_id=holder.id)
+    license = TerritorialLicense(
+        content_id=uuid4(),
+        rights_holder_id=holder.id,
+        territory="US",
+        avail_start=datetime(2026, 1, 1, tzinfo=UTC),
+        avail_end=datetime(2027, 1, 1, tzinfo=UTC),
+    )
     db_session.add(license)
     await db_session.flush()
-    fetched_holder = await db_session.get(_models_mod.RightsHolder, holder.id)
-    fetched_license = await db_session.get(_models_mod.TerritorialLicense, license.id)
+    fetched_holder = await db_session.get(RightsHolder, holder.id)
+    fetched_license = await db_session.get(TerritorialLicense, license.id)
     assert fetched_holder.name == "Studio Z"
     assert fetched_license.rights_holder_id == holder.id
