@@ -72,10 +72,12 @@ class SearchIndexRepository:
                     "director": director or "",
                     "release_year": release_year,
                     "rating": int(rating) if rating is not None else None,
-                    "updated_at": SearchIndex.updated_at.default.arg(None)
-                    if SearchIndex.updated_at is not None
-                    and callable(SearchIndex.updated_at.default.arg)
-                    else _naive_now(),
+                    "updated_at": (
+                        SearchIndex.updated_at.default.arg(None)
+                        if SearchIndex.updated_at is not None
+                        and callable(SearchIndex.updated_at.default.arg)
+                        else _naive_now()
+                    ),
                 },
             )
             .returning(SearchIndex)
