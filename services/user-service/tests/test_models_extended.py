@@ -3,11 +3,11 @@ from uuid import uuid4
 from datetime import datetime, timedelta, UTC
 from app.models import UserDevice, UserPreference
 from app.models.dsar import DSARRequest
-from app.models.child_account import ChildAccount
 from app.models.privacy import UserConsentRecord
-from .test_models import db_session
+from .test_models import db_session as _model_db_session
 
 # Reuse existing db_session fixture from test_models.py
+db_session = _model_db_session
 
 
 def test_user_device_status_transitions(db_session):

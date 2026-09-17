@@ -1,7 +1,9 @@
 import pytest
 import datetime
 from uuid import uuid4
-import sys, os
+import sys
+import os
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Ensure the uploads-service app package is first on PYTHONPATH
 service_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app"))
@@ -11,8 +13,6 @@ from app.models import (
     Base,
     UploadSession,
     UploadChunk,
-    OutboxEvent,
-    OutboxEventStatus,
     UploadSessionStatus,
 )
 from app.repositories import UploadChunkRepository
@@ -38,6 +38,10 @@ async def test_create_and_get_session(async_db: AsyncSession):
     user_id = uuid4()
     session_obj = UploadSession(
         creator_id=user_id,
+        filename="video.mp4",
+        mime="video/mp4",
+        size_bytes=3072,
+        chunk_size=1024,
         total_chunks=3,
         expires_at=datetime.datetime.utcnow() + datetime.timedelta(hours=1),
     )
@@ -56,6 +60,10 @@ async def test_list_by_creator_limit(async_db: AsyncSession):
     for _ in range(3):
         sess = UploadSession(
             creator_id=creator,
+            filename="video.mp4",
+            mime="video/mp4",
+            size_bytes=1024,
+            chunk_size=1024,
             total_chunks=1,
             expires_at=datetime.datetime.utcnow() + datetime.timedelta(hours=1),
         )
@@ -70,11 +78,15 @@ async def test_chunk_operations(async_db: AsyncSession):
     creator = uuid4()
     sess = UploadSession(
         creator_id=creator,
+        filename="video.mp4",
+        mime="video/mp4",
+        size_bytes=2048,
+        chunk_size=1024,
         total_chunks=2,
         expires_at=datetime.datetime.utcnow() + datetime.timedelta(hours=1),
     )
     await repo.create(sess)
-    chunk = UploadChunk(session_id=sess.id, index=0, size=1024, checksum="abc")
+    chunk = UploadChunk(session_id=sess.id, index=0, size_bytes=1024, checksum_sha256="a" * 64)
     await repo.add_chunk(chunk)
     count = await repo.count_chunks(sess.id)
     assert count == 1
@@ -99,6 +111,10 @@ async def test_expired_and_aborted_sessions(async_db: AsyncSession):
     creator = uuid4()
     expired = UploadSession(
         creator_id=creator,
+        filename="expired.mp4",
+        mime="video/mp4",
+        size_bytes=1024,
+        chunk_size=1024,
         total_chunks=1,
         expires_at=datetime.datetime.utcnow() - datetime.timedelta(minutes=1),
         status=UploadSessionStatus.UPLOADING,
@@ -106,6 +122,11 @@ async def test_expired_and_aborted_sessions(async_db: AsyncSession):
     await repo.create(expired)
     aborted = UploadSession(
         creator_id=creator,
+        filename="aborted.mp4",
+        mime="video/mp4",
+        size_bytes=1024,
+        chunk_size=1024,
+        updated_at=datetime.datetime.utcnow() - datetime.timedelta(minutes=10),
         total_chunks=1,
         expires_at=datetime.datetime.utcnow() + datetime.timedelta(hours=1),
         status=UploadSessionStatus.ABORTED,

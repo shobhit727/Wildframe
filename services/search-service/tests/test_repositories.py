@@ -3,7 +3,6 @@ import uuid
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from app.models import Base as SearchBase
-from app.models import SearchQuery, SearchIndex
 from app.repositories import SearchQueryRepository, SearchIndexRepository
 
 
@@ -35,7 +34,7 @@ async def test_search_index_upsert_and_delete(async_session: AsyncSession):
     repo = SearchIndexRepository(async_session)
     content_id = uuid.uuid4()
     # upsert new row
-    idx = await repo.upsert(content_id, title="Title", content_type="movie")
+    await repo.upsert(content_id, title="Title", content_type="movie")
     await async_session.flush()
     fetched = await repo.get_by_content_id(content_id)
     assert fetched is not None

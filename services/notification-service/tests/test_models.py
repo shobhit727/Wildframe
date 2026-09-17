@@ -2,8 +2,9 @@ import sys
 from pathlib import Path
 import uuid
 from datetime import datetime
-from sqlalchemy import select
+import sqlalchemy
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
@@ -72,7 +73,6 @@ async def test_notification_event_id_uniqueness(session: AsyncSession):
     n1 = Notification(user_id=uuid.uuid4(), title="A", message="B", event_id=evt)
     n2 = Notification(user_id=uuid.uuid4(), title="C", message="D", event_id=evt)
     session.add_all([n1, n2])
-    import pytest, sqlalchemy
 
     with pytest.raises(sqlalchemy.exc.IntegrityError):
         await session.flush()

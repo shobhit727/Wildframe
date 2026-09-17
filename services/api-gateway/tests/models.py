@@ -9,7 +9,7 @@ import pytest
 from fastapi import HTTPException
 
 # Import objects under test
-from app.core.settings import Settings, Settings as SettingsClass
+from app.core.settings import Settings
 from app.middleware import ServiceRegistry
 from app.core.age_gate import is_age_restricted, check_age_gate
 

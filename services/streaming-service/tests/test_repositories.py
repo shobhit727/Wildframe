@@ -1,6 +1,5 @@
 import pytest
 from uuid import uuid4
-from datetime import datetime, UTC
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from app.models import Base, PlaybackSession, PlaybackSessionStatus
 from app.models.drm import DRMConfig
@@ -10,11 +9,14 @@ from app.repositories import PlaybackSessionRepository
 
 @pytest.fixture(scope="session")
 async def engine(tmp_path_factory):
-    """Async SQLite engine for tests."""
+    """Async SQLite engine for the SQLite-compatible models exercised here."""
     path = tmp_path_factory.mktemp("db") / "test.db"
     engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=[PlaybackSession.__table__, DRMConfig.__table__, ContentMaturity.__table__],
+        )
     yield engine
     await engine.dispose()
 
