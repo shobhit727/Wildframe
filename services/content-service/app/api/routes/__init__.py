@@ -6,6 +6,7 @@ Provides REST endpoints for content management operations.
 from typing import Annotated
 from uuid import UUID
 
+import httpx
 from jose import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from jose.exceptions import JWTError
@@ -84,17 +85,65 @@ async def get_admin_identity(
     return str(user_id)
 
 
+async def _enforce_auth_version(authorization: str, payload: dict) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get(
+                f"{settings.AUTH_SERVICE_URL}/api/v1/auth/me",
+                headers={"Authorization": authorization},
+            )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        data = resp.json()
+    except Exception:
+        return
+    current_av = None
+    if isinstance(data, dict):
+        current_av = data.get("auth_version")
+        if current_av is None:
+            current_av = data.get("authVersion")
+        if current_av is None:
+            current_av = data.get("av")
+        if current_av is None and "user" in data and isinstance(data["user"], dict):
+            current_av = data["user"].get("auth_version")
+        if current_av is None and "user" in data and isinstance(data["user"], dict):
+            current_av = data["user"].get("av")
+    if current_av is not None:
+        try:
+            if int(payload.get("av", 0)) != int(current_av):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired token",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+
 async def _require_identity(
     authorization: str | None, *, with_role: bool = False
 ) -> tuple[UUID, str | None, int]:
-    """Shared JWT verification returning the verified subject (role, arv)."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid authorization header",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
     token = authorization.removeprefix("Bearer ")
     try:
         payload = jwt.decode(
@@ -104,8 +153,6 @@ async def _require_identity(
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
         )
-        # Token-type separation (#221): refresh tokens share the audience but
-        # must never be accepted as access tokens.
         if payload.get("type") != "access":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -117,7 +164,7 @@ async def _require_identity(
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
+    await _enforce_auth_version(authorization, payload)
     sub = payload.get("sub")
     if not sub:
         raise HTTPException(

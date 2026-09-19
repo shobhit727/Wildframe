@@ -13,6 +13,7 @@ Endpoints:
 from typing import Annotated
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,17 +39,45 @@ from app.services import ModerationError, ModerationService
 router = APIRouter(prefix="/api/v1/moderation", tags=["moderation"])
 
 
-def _verify_token(
+async def _enforce_auth_version(authorization: str, payload: dict) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get(
+                f"{settings.AUTH_SERVICE_URL}/api/v1/auth/me",
+                headers={"Authorization": authorization},
+            )
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    try:
+        data = resp.json()
+    except Exception:
+        return
+    current_av = None
+    if isinstance(data, dict):
+        current_av = data.get("auth_version")
+        if current_av is None:
+            current_av = data.get("authVersion")
+        if current_av is None:
+            current_av = data.get("av")
+        if current_av is None and "user" in data and isinstance(data["user"], dict):
+            current_av = data["user"].get("auth_version")
+        if current_av is None and "user" in data and isinstance(data["user"], dict):
+            current_av = data["user"].get("av")
+    if current_av is not None:
+        try:
+            if int(payload.get("av", 0)) != int(current_av):
+                raise HTTPException(status_code=401, detail="Invalid or expired token")
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+
+async def _verify_token(
     authorization: str | None,
     *,
     require_admin: bool,
 ) -> str:
-    """Decode an auth-service access token and return its subject.
-
-    Raises 401 for missing/invalid tokens and 403 when the caller is not an
-    admin. This is the service's own enforcement point: the api-gateway is a
-    transparent proxy that does not authorize backend requests.
-    """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization.replace("Bearer ", "")
@@ -64,11 +93,10 @@ def _verify_token(
         raise HTTPException(status_code=401, detail="Invalid token")
     if payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Invalid token type")
+    await _enforce_auth_version(authorization, payload)
     if require_admin and payload.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
     if require_admin and int(payload.get("arv") or 0) != settings.ADMIN_ROLE_VERSION:
-        # #81/#101: role revocation is immediate — a token minted before
-        # ADMIN_ROLE_VERSION was bumped must not retain admin access.
         raise HTTPException(status_code=403, detail="Admin privileges required")
     return str(payload.get("sub") or payload.get("user_id"))
 
@@ -76,15 +104,13 @@ def _verify_token(
 async def get_current_user_id(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> str:
-    """Any authenticated user (access token only)."""
-    return _verify_token(authorization, require_admin=False)
+    return await _verify_token(authorization, require_admin=False)
 
 
 async def get_current_admin_id(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> str:
-    """An authenticated user with the admin role claim."""
-    return _verify_token(authorization, require_admin=True)
+    return await _verify_token(authorization, require_admin=True)
 
 
 async def get_moderation_service(

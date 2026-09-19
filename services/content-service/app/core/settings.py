@@ -33,6 +33,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
+    AUTH_SERVICE_URL: str = "http://auth-service:8000"
 
     # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
     # connections per service instance to prevent DB exhaustion.

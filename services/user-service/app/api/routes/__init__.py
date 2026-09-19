@@ -7,7 +7,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import httpx
+
 from app.core.database import get_db_session
+from app.core.settings import settings
 from app.repositories import (
     UserDeviceRepository,
     UserPreferenceRepository,
@@ -41,10 +44,59 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def _enforce_auth_version(authorization: str, payload: dict) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get(
+                f"{settings.AUTH_SERVICE_URL}/api/v1/auth/me",
+                headers={"Authorization": authorization},
+            )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        data = resp.json()
+    except Exception:
+        return
+    current_av = None
+    if isinstance(data, dict):
+        current_av = data.get("auth_version")
+        if current_av is None:
+            current_av = data.get("authVersion")
+        if current_av is None:
+            current_av = data.get("av")
+        if current_av is None and "user" in data and isinstance(data["user"], dict):
+            current_av = data["user"].get("auth_version")
+        if current_av is None and "user" in data and isinstance(data["user"], dict):
+            current_av = data["user"].get("av")
+    if current_av is not None:
+        try:
+            if int(payload.get("av", 0)) != int(current_av):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired token",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+
 async def get_current_user_id(
     authorization: str | None = Header(None, alias="Authorization"),
 ) -> UUID:
-    """Validate JWT and return the authenticated user_id (sub claim)."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -59,6 +111,7 @@ async def get_current_user_id(
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    await _enforce_auth_version(authorization, payload)
     try:
         return UUID(payload["sub"])
     except (ValueError, TypeError):

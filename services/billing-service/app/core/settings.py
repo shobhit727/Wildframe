@@ -110,6 +110,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     STRIPE_CANCEL_URL: str = "https://wildframe.com/billing/cancel"
 
     CREATORS_SERVICE_URL: str = "http://creators-service:8000"
+    AUTH_SERVICE_URL: str = "http://auth-service:8000"
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

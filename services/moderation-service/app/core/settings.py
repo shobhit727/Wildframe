@@ -33,6 +33,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     # those tokens must decode with this audience (see AGENTS.md).
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
+    AUTH_SERVICE_URL: str = "http://auth-service:8000"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"

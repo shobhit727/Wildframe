@@ -71,6 +71,42 @@ async def _verify_creator(auth_header: str | None) -> None:
             )
 
 
+async def _enforce_auth_version(authorization: str, payload: dict) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get(
+                f"{settings.AUTH_SERVICE_URL}/api/v1/auth/me",
+                headers={"Authorization": authorization},
+            )
+    except Exception:
+        raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid or expired token")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid or expired token")
+    try:
+        data = resp.json()
+    except Exception:
+        return
+    current_av = None
+    if isinstance(data, dict):
+        current_av = data.get("auth_version")
+        if current_av is None:
+            current_av = data.get("authVersion")
+        if current_av is None:
+            current_av = data.get("av")
+        if current_av is None and "user" in data and isinstance(data["user"], dict):
+            current_av = data["user"].get("auth_version")
+        if current_av is None and "user" in data and isinstance(data["user"], dict):
+            current_av = data["user"].get("av")
+    if current_av is not None:
+        try:
+            if int(payload.get("av", 0)) != int(current_av):
+                raise HTTPException(
+                    status_code=http_status.UNAUTHORIZED, detail="Invalid or expired token"
+                )
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token")
+
+
 async def get_current_user_payload(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> dict:
@@ -95,6 +131,7 @@ async def get_current_user_payload(
             )
     except JWTError:
         raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token")
+    await _enforce_auth_version(authorization, payload)
     return payload
 
 
@@ -115,7 +152,6 @@ async def require_admin(
 async def get_current_user_id(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> UUID:
-    """Resolve the authenticated user id from the JWT sub claim."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=http_status.UNAUTHORIZED,
@@ -130,8 +166,6 @@ async def get_current_user_id(
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
         )
-        # Token-type separation (#221): refresh tokens share the audience but
-        # must never be accepted as access tokens.
         if payload.get("type") != "access":
             raise HTTPException(
                 status_code=http_status.UNAUTHORIZED,
@@ -139,6 +173,7 @@ async def get_current_user_id(
             )
     except JWTError:
         raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token")
+    await _enforce_auth_version(authorization, payload)
     sub = str(payload.get("sub") or payload.get("user_id"))
     if not sub:
         raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token subject")
