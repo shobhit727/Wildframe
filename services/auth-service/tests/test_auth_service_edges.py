@@ -153,8 +153,10 @@ class TestRefreshBranches:
 
     async def test_token_not_stored_401(self, service, repos):
         user = _user()
+        user.is_active = True
         service.token_manager.verify_refresh_token = MagicMock(return_value=user.id)
         repos["user_repo"].get_by_id.return_value = user
+        repos["token_repo"].consume.return_value = None
         repos["token_repo"].get_by_token_hash.return_value = None
 
         with pytest.raises(HTTPException) as exc:
@@ -164,16 +166,21 @@ class TestRefreshBranches:
 
     async def test_success_rotates_token(self, service, repos):
         user = _user()
+        user.is_active = True
         refresh, _, _ = service.token_manager.create_refresh_token_for_user(user)
         service.token_manager.verify_refresh_token = MagicMock(return_value=user.id)
         repos["user_repo"].get_by_id.return_value = user
         repos["user_repo"].update.return_value = user
-        repos["token_repo"].get_by_token_hash.return_value = MagicMock()
+        token = MagicMock(
+            user_id=user.id,
+            expires_at=__import__("datetime").datetime.now(UTC) + timedelta(hours=1),
+        )
+        repos["token_repo"].consume.return_value = token
 
         result = await service.refresh_token(refresh)
 
         assert result.access_token
-        repos["token_repo"].revoke.assert_awaited_once()
+        repos["token_repo"].consume.assert_awaited_once()
         repos["token_repo"].create.assert_awaited_once()
 
 

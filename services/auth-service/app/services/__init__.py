@@ -353,21 +353,31 @@ class AuthService:
                 detail="Account suspended",
             )
 
-        # Get stored refresh token
         token_hash = self.token_manager.hash_refresh_token(refresh_token)
-        stored_token = await self.token_repo.get_by_token_hash(token_hash)
+        stored_token = await self.token_repo.consume(token_hash)
         if not stored_token:
-            logger.warning(f"Token refresh failed: token not stored: {user_id}")
+            logger.warning(f"Token refresh failed: token not stored or already consumed: {user_id}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token not found",
             )
+        if str(stored_token.user_id) != str(user_id):
+            logger.warning(f"Token refresh failed: user mismatch: {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token not found",
+            )
+        expires_at = stored_token.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at < datetime.now(UTC):
+            await self.token_repo.commit()
+            logger.warning(f"Token refresh failed: token expired: {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token expired",
+            )
 
-        # Revoke old refresh token
-        await self.token_repo.revoke(token_hash)
-        await self.token_repo.commit()
-
-        # Create new tokens
         access_token = self.token_manager.create_access_token(
             user.id, user.email, user.auth_version
         )
@@ -377,7 +387,6 @@ class AuthService:
             new_expires_at,
         ) = self.token_manager.create_refresh_token_for_user(user)
 
-        # Store new refresh token
         await self.token_repo.create(
             user_id=user.id,
             token_hash=new_token_hash,

@@ -13,7 +13,7 @@ from app.models import (
     User,
 )
 from app.security import normalize_email
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -146,16 +146,30 @@ class RefreshTokenRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def consume(self, token_hash: str) -> RefreshToken | None:
+        """Atomically consume a refresh token via DELETE ... RETURNING."""
+        try:
+            stmt = (
+                delete(RefreshToken)
+                .where(RefreshToken.token_hash == token_hash)
+                .returning(RefreshToken)
+            )
+            result = await self.session.execute(stmt)
+            token = result.scalar_one_or_none()
+            if token is not None:
+                await self.flush()
+                logger.info("Consumed refresh token")
+            return token
+        except Exception as e:
+            await self.rollback()
+            logger.error(f"Error consuming token: {e!s}")
+            raise
+
     async def revoke(self, token_hash: str) -> bool:
         """Revoke refresh token."""
         try:
-            token = await self.get_by_token_hash(token_hash)
-            if token:
-                await self.session.delete(token)
-                await self.flush()
-                logger.info("Revoked refresh token")
-                return True
-            return False
+            token = await self.consume(token_hash)
+            return token is not None
         except Exception as e:
             await self.rollback()
             logger.error(f"Error revoking token: {e!s}")

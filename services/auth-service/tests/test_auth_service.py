@@ -416,16 +416,16 @@ class TestAuthServiceTokenRefresh:
         mock_user.auth_version = 0
         mock_repositories["user_repo"].get_by_id.return_value = mock_user
 
-        # Mock token retrieval
         mock_token = MagicMock()
-        mock_token.device_id = None
-        mock_token.revoked_at = None
+        mock_token.user_id = user_id
+        mock_token.expires_at = datetime.now(UTC) + timedelta(hours=1)
+        mock_repositories["token_repo"].consume.return_value = mock_token
         mock_repositories["token_repo"].get_by_token_hash.return_value = mock_token
 
         token_response = await auth_service.refresh_token(refresh_token)
 
         assert token_response.access_token is not None
-        mock_repositories["token_repo"].get_by_token_hash.assert_called_once()
+        mock_repositories["token_repo"].consume.assert_called_once()
 
     async def test_refresh_invalid_token(self, auth_service):
         """Test refresh with invalid token."""
