@@ -193,7 +193,7 @@ Read local orchestration before Kubernetes:
 1. `deployments/docker-compose.dev.yml` — PostgreSQL, Redis, Kafka, Elasticsearch, observability tools, Caddy, all services, and the web app.
 2. `infrastructure/database/init-databases.sql` — database-per-service names.
 3. `infrastructure/caddy/Caddyfile` — host ports and TLS routing.
-4. `apps/web/certificates/` — development certificates used by Caddy and Next.js.
+4. `apps/web/certificates/` — development certificates (generated locally via `scripts/generate-dev-certs.sh`, never committed) used by Caddy and Next.js.
 5. `scripts/init_schemas.py` — schema creation from SQLAlchemy metadata.
 6. `scripts/seed_demo.py` — demo data and the first useful manual workflow.
 

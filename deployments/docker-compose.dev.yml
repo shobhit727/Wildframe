@@ -1,3 +1,5 @@
+# Dev TLS certificates: never committed. Generate before up:
+#   bash scripts/generate-dev-certs.sh   # creates apps/web/certificates/*.pem (SANs localhost,127.0.0.1,::1,192.168.1.14, perms 644)
 services:
   postgres:
     restart: unless-stopped
@@ -47,16 +49,35 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENERS: SASL_SSL://0.0.0.0:29092,SASL_SSL_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: SASL_SSL://kafka:29092,SASL_SSL_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: SASL_SSL:SASL_SSL,SASL_SSL_HOST:SASL_SSL
+      KAFKA_INTER_BROKER_LISTENER_NAME: SASL_SSL
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN,SCRAM-SHA-512
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+      KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
+      KAFKA_SUPER_USERS: User:admin;User:kafka
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_INTER_BROKER_USER}" password="${KAFKA_INTER_BROKER_PASSWORD}" user_admin="${KAFKA_ADMIN_PASSWORD}" user_auth-service="${AUTH_SERVICE_KAFKA_PASSWORD}" user_user-service="${USER_SERVICE_KAFKA_PASSWORD}" user_content-service="${CONTENT_SERVICE_KAFKA_PASSWORD}" user_streaming-service="${STREAMING_SERVICE_KAFKA_PASSWORD}" user_search-service="${SEARCH_SERVICE_KAFKA_PASSWORD}" user_recommendation-service="${RECOMMENDATION_SERVICE_KAFKA_PASSWORD}" user_billing-service="${BILLING_SERVICE_KAFKA_PASSWORD}" user_analytics-service="${ANALYTICS_SERVICE_KAFKA_PASSWORD}" user_notification-service="${NOTIFICATION_SERVICE_KAFKA_PASSWORD}" user_creators-service="${CREATORS_SERVICE_KAFKA_PASSWORD}" user_moderation-service="${MODERATION_SERVICE_KAFKA_PASSWORD}" user_uploads-service="${UPLOADS_SERVICE_KAFKA_PASSWORD}" user_media-pipeline="${MEDIA_PIPELINE_KAFKA_PASSWORD}" user_admin-service="${ADMIN_SERVICE_KAFKA_PASSWORD}";'
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/localhost.pem
+      KAFKA_SSL_KEYSTORE_TYPE: PEM
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/localhost.pem
+      KAFKA_SSL_TRUSTSTORE_TYPE: PEM
+      KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ""
+      KAFKA_SSL_KEYSTORE_PASSWORD: ${KAFKA_SSL_KEYSTORE_PASSWORD}
+      KAFKA_SSL_KEY_PASSWORD: ${KAFKA_SSL_KEY_PASSWORD}
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_SSL_TRUSTSTORE_PASSWORD}
     ports:
     - 9092:9092
     - 29092:29092
     volumes:
     - kafka_data:/var/lib/kafka/data
+    # Dev TLS certificates are generated locally via scripts/generate-dev-certs.sh (never committed, issue #788).
+    # Mount the directory so Caddy/Grafana/Kafka all see the same generated pair.
+    - ../apps/web/certificates:/etc/kafka/secrets:ro
     healthcheck:
       test:
       - CMD
@@ -270,6 +291,13 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${AUTH_SERVICE_KAFKA_USERNAME:-auth-service}
+      KAFKA_SASL_PASSWORD: ${AUTH_SERVICE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: auth-service
+      KAFKA_GROUP_ID: auth-service
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -302,6 +330,13 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${USER_SERVICE_KAFKA_USERNAME:-user-service}
+      KAFKA_SASL_PASSWORD: ${USER_SERVICE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: user-service
+      KAFKA_GROUP_ID: user-service
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -336,6 +371,13 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${ADMIN_SERVICE_KAFKA_USERNAME:-admin-service}
+      KAFKA_SASL_PASSWORD: ${ADMIN_SERVICE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: admin-service
+      KAFKA_GROUP_ID: admin-service
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -370,6 +412,13 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${CONTENT_SERVICE_KAFKA_USERNAME:-content-service}
+      KAFKA_SASL_PASSWORD: ${CONTENT_SERVICE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: content-service
+      KAFKA_GROUP_ID: content-service
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -405,6 +454,14 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${API_GATEWAY_KAFKA_USERNAME:-api-gateway}
+      KAFKA_SASL_PASSWORD: ${API_GATEWAY_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: api-gateway
+      KAFKA_GROUP_ID: api-gateway
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
     - auth-service
     - user-service
@@ -432,6 +489,13 @@ services:
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${STREAMING_SERVICE_KAFKA_USERNAME:-streaming-service}
+      KAFKA_SASL_PASSWORD: ${STREAMING_SERVICE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: streaming-service
+      KAFKA_GROUP_ID: streaming-service
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -462,6 +526,13 @@ services:
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${SEARCH_SERVICE_KAFKA_USERNAME:-search-service}
+      KAFKA_SASL_PASSWORD: ${SEARCH_SERVICE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: search-service
+      KAFKA_GROUP_ID: search-service
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -492,6 +563,13 @@ services:
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${RECOMMENDATION_SERVICE_KAFKA_USERNAME:-recommendation-service}
+      KAFKA_SASL_PASSWORD: ${RECOMMENDATION_SERVICE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: recommendation-service
+      KAFKA_GROUP_ID: recommendation-service
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -519,6 +597,13 @@ services:
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${BILLING_SERVICE_KAFKA_USERNAME:-billing-service}
+      KAFKA_SASL_PASSWORD: ${BILLING_SERVICE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: billing-service
+      KAFKA_GROUP_ID: billing-service
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -547,6 +632,13 @@ services:
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${ANALYTICS_SERVICE_KAFKA_USERNAME:-analytics-service}
+      KAFKA_SASL_PASSWORD: ${ANALYTICS_SERVICE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: analytics-service
+      KAFKA_GROUP_ID: analytics-service
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -574,6 +666,13 @@ services:
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${NOTIFICATION_SERVICE_KAFKA_USERNAME:-notification-service}
+      KAFKA_SASL_PASSWORD: ${NOTIFICATION_SERVICE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: notification-service
+      KAFKA_GROUP_ID: notification-service
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -601,6 +700,13 @@ services:
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${CREATORS_SERVICE_KAFKA_USERNAME:-creators-service}
+      KAFKA_SASL_PASSWORD: ${CREATORS_SERVICE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: creators-service
+      KAFKA_GROUP_ID: creators-service
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -630,6 +736,13 @@ services:
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${MODERATION_SERVICE_KAFKA_USERNAME:-moderation-service}
+      KAFKA_SASL_PASSWORD: ${MODERATION_SERVICE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: moderation-service
+      KAFKA_GROUP_ID: moderation-service
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -659,6 +772,13 @@ services:
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${UPLOADS_SERVICE_KAFKA_USERNAME:-uploads-service}
+      KAFKA_SASL_PASSWORD: ${UPLOADS_SERVICE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: uploads-service
+      KAFKA_GROUP_ID: uploads-service
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -688,6 +808,13 @@ services:
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key
+      KAFKA_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_SASL_MECHANISM: PLAIN
+      KAFKA_SASL_USERNAME: ${MEDIA_PIPELINE_KAFKA_USERNAME:-media-pipeline}
+      KAFKA_SASL_PASSWORD: ${MEDIA_PIPELINE_KAFKA_PASSWORD}
+      KAFKA_CLIENT_ID: media-pipeline
+      KAFKA_GROUP_ID: media-pipeline
+      KAFKA_SSL_INSECURE: "true"
     depends_on:
       postgres:
         condition: service_healthy

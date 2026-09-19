@@ -120,12 +120,16 @@ actually binds (8000 for most; 8003 for content, 8004 for streaming).
   bindings on the app services are removed from compose; `http://` on those
   ports is refused. Plain `http://` to a proxied port surfaces as
   SSL_ERROR_RX_RECORD_TOO_LONG in browsers.
-- Certificates are the self-signed pair in `apps/web/certificates/`
-  (`localhost.pem` / `localhost-key.pem`, SANs: localhost, 127.0.0.1, ::1).
-  Regenerate with:
-  `openssl req -x509 -newkey rsa:2048 -keyout apps/web/certificates/localhost-key.pem -out apps/web/certificates/localhost.pem -days 365 -nodes -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1"`
-  then `chmod 644` both files (Caddy/Grafana containers read them as non-root)
-  and restart `caddy` + `grafana`.
+- Certificates are self-signed and **generated locally** via
+  `bash scripts/generate-dev-certs.sh` (or `make certs`). They live in
+  `apps/web/certificates/` (`localhost.pem` / `localhost-key.pem`, SANs:
+  `DNS:localhost`, `IP:127.0.0.1`, `IP:::1`, `IP:192.168.1.14`) and are **never
+  committed** (ignored by `.gitignore`). The generator runs
+  `openssl req -x509 -newkey rsa:2048 -keyout apps/web/certificates/localhost-key.pem -out apps/web/certificates/localhost.pem -days 365 -nodes -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1,IP:192.168.1.14"`
+  then `chmod 644` both files (Caddy/Grafana/Kafka containers read them as
+  non-root). Restart `caddy` + `grafana` after regeneration. Run the generator
+  before `docker compose -f deployments/docker-compose.dev.yml up` or
+  `npm run dev` — missing certs cause TLS startup failures.
 - The Next.js dev server (`apps/web`, `npm run dev`) serves HTTPS itself via
   `--experimental-https` with the same cert pair (see `dev` script); never
   point it at `http://localhost:3000`.

@@ -30,16 +30,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import ssl
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Any, List, Optional
 
 from wildframe_events.event import DomainEvent, validate_payload
 
 logger = logging.getLogger(__name__)
 
-#: Default upper bound for a serialized event (1 MiB). Exceeding this
-#: raises :class:`EventTooLargeError` before anything is sent, so an
-#: oversized event can never exhaust broker or consumer memory.
 DEFAULT_MAX_PAYLOAD_BYTES = 1_000_000
 
 
@@ -55,7 +54,6 @@ class EventPublisher(ABC):
     abstraction.
     """
 
-    #: Serialized-size cap enforced by every adapter before sending.
     max_payload_bytes: int = DEFAULT_MAX_PAYLOAD_BYTES
 
     @abstractmethod
@@ -143,6 +141,11 @@ class KafkaEventPublisher(EventPublisher):
         max_payload_bytes: int = DEFAULT_MAX_PAYLOAD_BYTES,
         max_retries: int = 5,
         retry_backoff_ms: int = 500,
+        security_protocol: str | None = None,
+        sasl_mechanism: str | None = None,
+        sasl_username: str | None = None,
+        sasl_password: str | None = None,
+        ssl_context: Optional[ssl.SSLContext] = None,
     ) -> None:
         self.bootstrap_servers = bootstrap_servers
         self.client_id = client_id
@@ -150,6 +153,34 @@ class KafkaEventPublisher(EventPublisher):
         self.max_payload_bytes = max_payload_bytes
         self.max_retries = max_retries
         self.retry_backoff_ms = retry_backoff_ms
+        self.security_protocol = security_protocol or os.getenv(
+            "KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"
+        )
+        self.sasl_mechanism = sasl_mechanism or os.getenv("KAFKA_SASL_MECHANISM")
+        self.sasl_username = sasl_username or os.getenv("KAFKA_SASL_USERNAME")
+        self.sasl_password = sasl_password or os.getenv("KAFKA_SASL_PASSWORD")
+        if ssl_context is not None:
+            self.ssl_context: Optional[ssl.SSLContext] = ssl_context
+        else:
+            env_ca = os.getenv("KAFKA_SSL_CA_LOCATION")
+            if env_ca:
+                ctx = ssl.create_default_context(cafile=env_ca)
+                self.ssl_context = ctx
+            elif self.security_protocol in ("SSL", "SASL_SSL"):
+                insecure = os.getenv("KAFKA_SSL_INSECURE", "true").lower() not in (
+                    "false",
+                    "0",
+                    "no",
+                )
+                if insecure:
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    self.ssl_context = ctx
+                else:
+                    self.ssl_context = None
+            else:
+                self.ssl_context = None
         self._producer = None
 
     async def _get_producer(self):
@@ -157,23 +188,24 @@ class KafkaEventPublisher(EventPublisher):
         if self._producer is None:
             from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
 
-            kwargs = {
+            kwargs: dict[str, Any] = {
                 "bootstrap_servers": self.bootstrap_servers,
                 "client_id": self.client_id,
                 "acks": self.acks,
-                # Idempotent producer: producer-side retries cannot create
-                # duplicate broker records (Kafka dedups by producer-id +
-                # sequence number). Requires acks=all; honoured only then.
                 "enable_idempotence": self.acks == "all",
-                # Broker-side cap: the producer refuses records larger
-                # than this instead of failing later at the broker.
                 "max_request_size": self.max_payload_bytes + 4096,
                 "value_serializer": lambda v: v.to_json().encode("utf-8"),
                 "key_serializer": lambda k: k.encode("utf-8") if k else None,
+                "security_protocol": self.security_protocol,
             }
-            # ``retries``/``retry_backoff_ms`` existed in aiokafka < 0.11;
-            # newer releases rely on the idempotent producer's built-in
-            # bounded retries. Introspect so the SDK works on both.
+            if self.ssl_context is not None:
+                kwargs["ssl_context"] = self.ssl_context
+            if self.sasl_mechanism:
+                kwargs["sasl_mechanism"] = self.sasl_mechanism
+            if self.sasl_username:
+                kwargs["sasl_plain_username"] = self.sasl_username
+            if self.sasl_password:
+                kwargs["sasl_plain_password"] = self.sasl_password
             import inspect
 
             try:

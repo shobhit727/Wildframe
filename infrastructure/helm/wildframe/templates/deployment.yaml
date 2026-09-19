@@ -105,6 +105,28 @@ spec:
           value: {{ $svc.containerPort | quote }}
         - name: KAFKA_BOOTSTRAP_SERVERS
           value: {{ $.Values.infra.kafkaBootstrap }}
+        {{- if $.Values.kafka.sasl.enabled }}
+        - name: KAFKA_SECURITY_PROTOCOL
+          value: {{ $.Values.kafka.sasl.securityProtocol | quote }}
+        - name: KAFKA_SASL_MECHANISM
+          value: {{ $.Values.kafka.sasl.mechanism | quote }}
+        - name: KAFKA_SASL_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ $.Values.kafka.sasl.secretRef }}
+              key: {{ $name }}-username
+        - name: KAFKA_SASL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ $.Values.kafka.sasl.secretRef }}
+              key: {{ $name }}-password
+        - name: KAFKA_CLIENT_ID
+          value: {{ $name }}
+        - name: KAFKA_GROUP_ID
+          value: {{ $name }}
+        - name: KAFKA_SSL_INSECURE
+          value: "true"
+        {{- end }}
         - name: JAEGER_AGENT_HOST
           value: {{ $.Values.infra.jaegerAgentHost }}
         - name: JWT_SECRET_KEY

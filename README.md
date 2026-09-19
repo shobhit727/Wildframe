@@ -98,12 +98,13 @@ python scripts/seed_demo.py
 
 Everything is TLS on the host: the Caddy proxy terminates HTTPS for every
 service port (`https://localhost:8000` = gateway, `:8001` auth, …) and the
-Next.js dev server serves `https://localhost:3000` with the repo's
-self-signed cert (`apps/web/certificates/`). The cert carries SANs for
-`localhost`, loopback and `192.168.1.14`, so phones/devices on the LAN can
-hit `https://192.168.1.14:<port>` directly; a plain-HTTP mirror of the
-gateway also exists at `http://localhost:8080` for tooling that cannot
-trust self-signed certs.
+Next.js dev server serves `https://localhost:3000` with a locally-generated
+self-signed cert (`apps/web/certificates/` — never committed; run
+`bash scripts/generate-dev-certs.sh` before `docker compose up` or `npm run dev`).
+The cert carries SANs for `localhost`, loopback and `192.168.1.14`, so
+phones/devices on the LAN can hit `https://192.168.1.14:<port>` directly; a
+plain-HTTP mirror of the gateway also exists at `http://localhost:8080` for
+tooling that cannot trust self-signed certs.
 
 For service-specific development, see `docs/DEVELOPMENT.md` and `docs/QUICKSTART.md`.
 

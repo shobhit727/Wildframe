@@ -1,44 +1,24 @@
 replicaCount: 1
-
 image:
   repository: ghcr.io/shobhit727/wildframe
-  # Immutable tag only (#340/#341): never 'latest'. CI builds/pushes
-  # per-service images tagged with the commit SHA and the release semver;
-  # deployments must reference one of those.
-  tag: "1.0.0"
+  tag: 1.0.0
   pullPolicy: IfNotPresent
-
 imagePullSecrets: []
-
 namespace: wildframe
-
 infra:
-  postgresHost: "postgres"
+  postgresHost: postgres
   postgresPort: 5432
-  redisHost: "redis-master"
+  redisHost: redis-master
   redisPort: 6379
-  kafkaBootstrap: "kafka:9092"
+  kafkaBootstrap: kafka:9092
   kafkaPort: 9092
-  jaegerAgentHost: "jaeger-agent"
+  jaegerAgentHost: jaeger-agent
   jaegerAgentPort: 6831
-
-# Rolling update bounds: never take the whole service offline, never more
-# than one extra pod at a time (surge) during upgrades.
 strategy:
   maxSurge: 1
   maxUnavailable: 0
-
-# Graceful shutdown window so in-flight requests/jobs can finish before SIGKILL.
 terminationGracePeriodSeconds: 60
-
-# Services never call the Kubernetes API (secrets/config are injected via
-# secretKeyRef/configMapKeyRef), so the projected service-account token is
-# unnecessary attack surface.
 automountServiceAccountToken: false
-
-# Probe thresholds tuned to tolerate dependency latency and rolling
-# deployments without restart storms. Override per service via
-# services.<name>.probes.<probeName> (merged over these defaults).
 probes:
   startupProbe:
     path: /health
@@ -57,13 +37,12 @@ probes:
     periodSeconds: 15
     timeoutSeconds: 5
     failureThreshold: 5
-
 services:
   api-gateway:
     containerPort: 8000
     replicas: 2
     env:
-      CORS_ALLOWED_ORIGINS: "http://localhost:3000"
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
     probes:
       readinessProbe:
         path: /ready
@@ -74,7 +53,7 @@ services:
     replicas: 1
     db: auth_db
     env:
-      PASSWORD_BCRYPT_ROUNDS: "12"
+      PASSWORD_BCRYPT_ROUNDS: '12'
     probes:
       readinessProbe:
         path: /ready
@@ -155,18 +134,14 @@ services:
     containerPort: 8000
     replicas: 1
     db: admin_db
-
 service:
   type: ClusterIP
   port: 80
-
 ingress:
   enabled: false
   className: nginx
   host: wildframe.example.com
-  # Namespace label (name) of the ingress controller that fronts api-gateway.
   controllerNamespace: ingress-nginx
-
 resources:
   requests:
     cpu: 100m
@@ -174,21 +149,18 @@ resources:
   limits:
     cpu: 500m
     memory: 512Mi
-
-# Deployed environments must provide these values through a Kubernetes Secret.
 secrets:
   existingSecret: wildframe-runtime
   jwtSecretKey: JWT_SECRET_KEY
   postgresPasswordKey: POSTGRES_PASSWORD
-
-# Migration job (single serialized job, not per-pod initContainers, issue #342).
 migration:
   enabled: true
-  image: ""
-  # If empty, uses $.Values.image.repository/migration:$.Values.image.tag
-  command: ["alembic", "upgrade", "head"]
-  # Hook annotation: "pre-install" | "pre-upgrade" | "" (manual)
-  hook: "pre-install"
+  image: ''
+  command:
+  - alembic
+  - upgrade
+  - head
+  hook: pre-install
   resources:
     requests:
       cpu: 250m
@@ -196,68 +168,227 @@ migration:
     limits:
       cpu: 500m
       memory: 256Mi
-
-# External managed service CIDRs/FQDNs for NetworkPolicy egress.
-# When set, egress rules allow traffic to these destinations instead of/in
-# addition to in-cluster podSelectors (issues #347/#348).
 external:
   postgres:
     enabled: false
-    # CIDR blocks (e.g. "10.0.0.0/16") or FQDNs (requires Cilium/Calico FQDN support)
     cidrs: []
     fqdns: []
   redis:
     enabled: false
     cidrs: []
     fqdns: []
-
-# Kafka SASL/ACL enablement (scaffold — requires Strimzi KafkaUser operator or manual ACLs, issues #550/#551).
 kafka:
   enabled: true
   topics:
-    - user.registered
-    - user.login
-    - token.revoked
+  - billing.checkout.session.created
+  - billing.payout.accrued
+  - billing.payout.transferred
+  - billing.subscription.cancelled
+  - billing.subscription.created
+  - billing.subscription.updated
+  - content.deleted
+  - content.encoded
+  - content.metadata_extracted
+  - content.packaged
+  - content.pipeline.failed
+  - content.published
+  - content.scanned
+  - content.unpublished
+  - content.uploaded
+  - content.uploaded.aborted
+  - creator.floor.adjusted
+  - creator.milestone.reached
+  - creator.onboarded
+  - creator.suspended
+  - moderation.decision_made
+  - moderation.flagged
+  - user.moderated
+  - user.registered
   sasl:
-    enabled: false
-    mechanism: SCRAM-SHA-512
-    # secretRef: name of secret containing sasl username/password keys
-    secretRef: ""
+    enabled: true
+    mechanism: PLAIN
+    secretRef: wildframe-kafka-sasl
+    securityProtocol: SASL_SSL
   acl:
-    enabled: false
-    # Per-service topic ACLs (producer/consumer) — scaffold only, operator applies.
-    # Example:
-    # auth-service:
-    #   produce: [user.registered, token.revoked]
-    #   consume: [user.login]
-    services: {}
-
-# Global defaults for topology spread and pod anti-affinity (issue #387/#636).
-# Override per service via services.<name>.topologySpread / .podAntiAffinity.
+    enabled: true
+    services:
+      uploads-service:
+        produce:
+        - content.uploaded
+        - content.uploaded.aborted
+        consume: []
+      media-pipeline:
+        produce:
+        - content.scanned
+        - content.metadata_extracted
+        - content.encoded
+        - content.packaged
+        - content.pipeline.failed
+        - content.uploaded.dlq
+        consume:
+        - content.uploaded
+      content-service:
+        produce:
+        - content.published
+        - content.deleted
+        - content.unpublished
+        - content.uploaded.dlq
+        - content.uploaded.aborted.dlq
+        - content.metadata_extracted.dlq
+        - content.encoded.dlq
+        - content.packaged.dlq
+        - content.pipeline.failed.dlq
+        - creator.suspended.dlq
+        - moderation.decision_made.dlq
+        consume:
+        - content.uploaded
+        - content.uploaded.aborted
+        - content.metadata_extracted
+        - content.encoded
+        - content.packaged
+        - content.pipeline.failed
+        - creator.suspended
+        - moderation.decision_made
+      streaming-service:
+        produce:
+        - content.encoded.dlq
+        - content.packaged.dlq
+        - content.published.dlq
+        consume:
+        - content.encoded
+        - content.packaged
+        - content.published
+      search-service:
+        produce:
+        - content.metadata_extracted.dlq
+        - content.published.dlq
+        - content.deleted.dlq
+        - content.unpublished.dlq
+        consume:
+        - content.metadata_extracted
+        - content.published
+        - content.deleted
+        - content.unpublished
+      recommendation-service:
+        produce:
+        - content.published.dlq
+        - content.deleted.dlq
+        - content.unpublished.dlq
+        consume:
+        - content.published
+        - content.deleted
+        - content.unpublished
+      billing-service:
+        produce:
+        - billing.subscription.created
+        - billing.subscription.updated
+        - billing.subscription.cancelled
+        - billing.checkout.session.created
+        - billing.payout.accrued
+        - billing.payout.transferred
+        - creator.onboarded.dlq
+        - creator.milestone.reached.dlq
+        - creator.floor.adjusted.dlq
+        - creator.suspended.dlq
+        consume:
+        - creator.onboarded
+        - creator.milestone.reached
+        - creator.floor.adjusted
+        - creator.suspended
+      creators-service:
+        produce:
+        - creator.onboarded
+        - creator.milestone.reached
+        - creator.floor.adjusted
+        - billing.subscription.created.dlq
+        - billing.subscription.cancelled.dlq
+        - billing.payout.accrued.dlq
+        - billing.payout.transferred.dlq
+        - creator.suspended.dlq
+        consume:
+        - billing.subscription.created
+        - billing.subscription.cancelled
+        - billing.payout.accrued
+        - billing.payout.transferred
+        - creator.suspended
+      moderation-service:
+        produce:
+        - moderation.flagged
+        - moderation.decision_made
+        - creator.suspended
+        - content.scanned.dlq
+        consume:
+        - content.scanned
+      notification-service:
+        produce:
+        - content.scanned.dlq
+        - content.published.dlq
+        - content.pipeline.failed.dlq
+        - billing.subscription.created.dlq
+        - billing.subscription.updated.dlq
+        - billing.subscription.cancelled.dlq
+        - creator.onboarded.dlq
+        - creator.milestone.reached.dlq
+        - creator.suspended.dlq
+        - moderation.flagged.dlq
+        - moderation.decision_made.dlq
+        - billing.payout.transferred.dlq
+        consume:
+        - content.scanned
+        - content.published
+        - content.pipeline.failed
+        - billing.subscription.created
+        - billing.subscription.updated
+        - billing.subscription.cancelled
+        - creator.onboarded
+        - creator.milestone.reached
+        - creator.suspended
+        - moderation.flagged
+        - moderation.decision_made
+        - billing.payout.transferred
+      analytics-service:
+        produce:
+        - content.published.dlq
+        - billing.subscription.created.dlq
+        - billing.subscription.cancelled.dlq
+        - billing.checkout.session.created.dlq
+        - creator.floor.adjusted.dlq
+        - moderation.flagged.dlq
+        - moderation.decision_made.dlq
+        consume:
+        - content.published
+        - billing.subscription.created
+        - billing.subscription.cancelled
+        - billing.checkout.session.created
+        - creator.floor.adjusted
+        - moderation.flagged
+        - moderation.decision_made
+      user-service:
+        produce:
+        - billing.subscription.created.dlq
+        - billing.subscription.updated.dlq
+        - billing.subscription.cancelled.dlq
+        consume:
+        - billing.subscription.created
+        - billing.subscription.updated
+        - billing.subscription.cancelled
+    authorizer: kafka.security.authorizer.AclAuthorizer
+    allowEveryoneIfNoAclFound: false
+    superUsers:
+    - User:admin
 topologySpread:
   enabled: true
   maxSkew: 1
   topologyKey: kubernetes.io/hostname
   whenUnsatisfiable: DoNotSchedule
-  # Optional: labelSelector to spread over (defaults to app label)
-  # labelSelector: {}
-
 podAntiAffinity:
   enabled: true
-  # "preferred" (soft) or "required" (hard)
   type: preferred
   weight: 100
   topologyKey: kubernetes.io/hostname
-
-# Container security hardening (issues #519/#520/#521).
 containerSecurity:
   readOnlyRootFilesystem: true
-  # App writes to /tmp and /app/logs via emptyDir volumes (already mounted).
-
-# ServiceAccount per workload (least-privilege RBAC, issue #343).
 serviceAccount:
   create: true
-  # Annotations for IRSA / workload identity.
   annotations: {}
-  # Automount service account token (false by global default).
   automountToken: false

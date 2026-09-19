@@ -41,7 +41,18 @@ and the compose file — no `.env` file is required for local development.
 
 ---
 
-## 3. Start the Platform
+## 3. Generate Dev TLS Certificates
+
+Development TLS certificates are **never committed**. Generate them locally:
+
+```bash
+bash scripts/generate-dev-certs.sh
+# verifies: apps/web/certificates/localhost.pem and localhost-key.pem exist, SANs DNS:localhost,IP:127.0.0.1,IP:::1,IP:192.168.1.14, perms 644
+```
+
+The generator is idempotent — re-run after deleting the files to rotate.
+
+## 3b. Start the Platform
 
 ```bash
 docker compose -f deployments/docker-compose.dev.yml up --build -d
@@ -106,11 +117,13 @@ npm run dev
 
 Open https://localhost:3000.
 
-> The dev server uses the repo's self-signed certificate
+> The dev server uses a locally-generated self-signed certificate
 > (`apps/web/certificates/localhost.pem`, SANs: localhost, loopback,
-> 192.168.1.14). Accept the browser warning, or trust the cert. The API base
-> URL defaults to `https://localhost:8000` (Caddy → gateway); override with
-> `NEXT_PUBLIC_API_URL` when testing from another device.
+> 192.168.1.14 — never committed, see step 3). Generate with
+> `bash scripts/generate-dev-certs.sh` if missing. Accept the browser warning,
+> or trust the cert. The API base URL defaults to `https://localhost:8000`
+> (Caddy → gateway); override with `NEXT_PUBLIC_API_URL` when testing from
+> another device.
 
 ---
 

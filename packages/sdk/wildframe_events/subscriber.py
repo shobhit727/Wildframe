@@ -55,7 +55,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import random
+import ssl
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
@@ -79,7 +81,6 @@ from wildframe_events.topics import Topic
 
 logger = logging.getLogger(__name__)
 
-# Type alias: a handler is an async callable that takes a DomainEvent.
 EventHandler = Callable[[DomainEvent], Any]
 
 
@@ -106,8 +107,6 @@ async def _run_with_event_correlation(event: DomainEvent, handler: EventHandler)
     await handler(event)
 
 
-#: Cap on the exponential retry backoff (ms) — bounded even for large
-#: ``max_retries`` values.
 MAX_RETRY_BACKOFF_MS = 60_000
 
 
@@ -260,6 +259,11 @@ class KafkaEventSubscriber(EventSubscriber):
         dedup_store: Optional[DeduplicationStore] = None,
         dedup_ttl_seconds: float = 86_400.0,
         dlq_publisher: Optional[EventPublisher] = None,
+        security_protocol: str | None = None,
+        sasl_mechanism: str | None = None,
+        sasl_username: str | None = None,
+        sasl_password: str | None = None,
+        ssl_context: Optional[ssl.SSLContext] = None,
     ) -> None:
         self.bootstrap_servers = bootstrap_servers
         self.group_id = group_id
@@ -270,6 +274,34 @@ class KafkaEventSubscriber(EventSubscriber):
         self.dedup_store = dedup_store
         self.dedup_ttl_seconds = dedup_ttl_seconds
         self.dlq_publisher = dlq_publisher
+        self.security_protocol = security_protocol or os.getenv(
+            "KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"
+        )
+        self.sasl_mechanism = sasl_mechanism or os.getenv("KAFKA_SASL_MECHANISM")
+        self.sasl_username = sasl_username or os.getenv("KAFKA_SASL_USERNAME")
+        self.sasl_password = sasl_password or os.getenv("KAFKA_SASL_PASSWORD")
+        if ssl_context is not None:
+            self.ssl_context: Optional[ssl.SSLContext] = ssl_context
+        else:
+            env_ca = os.getenv("KAFKA_SSL_CA_LOCATION")
+            if env_ca:
+                ctx = ssl.create_default_context(cafile=env_ca)
+                self.ssl_context = ctx
+            elif self.security_protocol in ("SSL", "SASL_SSL"):
+                insecure = os.getenv("KAFKA_SSL_INSECURE", "true").lower() not in (
+                    "false",
+                    "0",
+                    "no",
+                )
+                if insecure:
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    self.ssl_context = ctx
+                else:
+                    self.ssl_context = None
+            else:
+                self.ssl_context = None
         self._handlers: Dict[str, List[EventHandler]] = {}
         self._consumer: Optional["AIOKafkaConsumer"] = None
         self._task: Optional[asyncio.Task] = None
@@ -281,6 +313,26 @@ class KafkaEventSubscriber(EventSubscriber):
         """Get consumer, asserting it's not None."""
         assert self._consumer is not None, "Consumer not started"
         return self._consumer  # type: ignore[return-value]
+
+    def _consumer_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "bootstrap_servers": self.bootstrap_servers,
+            "group_id": self.group_id,
+            "client_id": self.client_id,
+            "enable_auto_commit": False,
+            "auto_offset_reset": "earliest",
+            "max_partition_fetch_bytes": self.max_payload_bytes + 8192,
+            "security_protocol": self.security_protocol,
+        }
+        if self.ssl_context is not None:
+            kwargs["ssl_context"] = self.ssl_context
+        if self.sasl_mechanism:
+            kwargs["sasl_mechanism"] = self.sasl_mechanism
+        if self.sasl_username:
+            kwargs["sasl_plain_username"] = self.sasl_username
+        if self.sasl_password:
+            kwargs["sasl_plain_password"] = self.sasl_password
+        return kwargs
 
     async def subscribe(self, topic: str, handler: EventHandler) -> None:
         self._handlers.setdefault(topic, []).append(handler)
@@ -295,19 +347,14 @@ class KafkaEventSubscriber(EventSubscriber):
         """
         from aiokafka import AIOKafkaConsumer
 
-        if self._consumer_or_raise is not None:
-            return  # Already started.
+        if self._consumer is not None:
+            return
         topics = list(self._handlers.keys())
         if not topics:
             raise ValueError("subscribe() at least one topic before start()")
         self._consumer = AIOKafkaConsumer(
             *topics,
-            bootstrap_servers=self.bootstrap_servers,
-            group_id=self.group_id,
-            client_id=self.client_id,
-            enable_auto_commit=False,
-            auto_offset_reset="earliest",
-            max_partition_fetch_bytes=self.max_payload_bytes + 8192,
+            **self._consumer_kwargs(),
         )
         await self._consumer_or_raise.start()  # type: ignore[attr-defined]
         self._reconnect_attempt = 0
@@ -348,12 +395,7 @@ class KafkaEventSubscriber(EventSubscriber):
                 pass
         self._consumer = AIOKafkaConsumer(
             *list(self._handlers.keys()),
-            bootstrap_servers=self.bootstrap_servers,
-            group_id=self.group_id,
-            client_id=self.client_id,
-            enable_auto_commit=False,
-            auto_offset_reset="earliest",
-            max_partition_fetch_bytes=self.max_payload_bytes + 8192,
+            **self._consumer_kwargs(),
         )
         await self._consumer_or_raise.start()  # type: ignore[attr-defined]
 
@@ -381,7 +423,6 @@ class KafkaEventSubscriber(EventSubscriber):
             raw = str(raw).encode("utf-8")
         key = key_raw.decode("utf-8") if isinstance(key_raw, bytes) else (key_raw or "")
 
-        # Size bound BEFORE deserialization (no JSON parse of giant blobs).
         if len(raw) > self.max_payload_bytes:
             await self._quarantine_raw(
                 topic,
@@ -405,8 +446,6 @@ class KafkaEventSubscriber(EventSubscriber):
             await self._commit(message)
             return
 
-        # Server-controlled ordering timestamp (broker clock), never the
-        # producer-supplied occurred_at.
         ts_ms = getattr(message, "timestamp", None)
         if ts_ms and not event.server_time:
             event.server_time = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc).isoformat()
@@ -420,8 +459,6 @@ class KafkaEventSubscriber(EventSubscriber):
                     return
                 marks.append(dedup_key)
             await self._dispatch(event)
-            # Mark only AFTER successful processing: a crash mid-handler
-            # redelivers the event instead of losing it.
             for dedup_key in marks:
                 await self.dedup_store.mark(dedup_key, self.dedup_ttl_seconds)
         else:
@@ -429,7 +466,7 @@ class KafkaEventSubscriber(EventSubscriber):
         await self._commit(message)
 
     async def _commit(self, message: Any) -> None:
-        if self._consumer_or_raise is not None:
+        if self._consumer is not None:
             await self._consumer_or_raise.commit()
 
     async def _dispatch(self, event: DomainEvent) -> None:
@@ -490,8 +527,6 @@ class KafkaEventSubscriber(EventSubscriber):
         )
         _DUPLICATES_TOTAL.labels(topic=event.topic).inc()
 
-    # -- Dead-letter queue -------------------------------------------------
-
     def _get_dlq_publisher(self) -> EventPublisher:
         if self.dlq_publisher is not None:
             return self.dlq_publisher
@@ -499,6 +534,11 @@ class KafkaEventSubscriber(EventSubscriber):
             self._lazy_dlq_publisher = KafkaEventPublisher(
                 bootstrap_servers=self.bootstrap_servers,
                 client_id=f"{self.client_id}-dlq",
+                security_protocol=self.security_protocol,
+                sasl_mechanism=self.sasl_mechanism,
+                sasl_username=self.sasl_username,
+                sasl_password=self.sasl_password,
+                ssl_context=self.ssl_context,
             )
         return self._lazy_dlq_publisher
 
@@ -554,8 +594,6 @@ class KafkaEventSubscriber(EventSubscriber):
         try:
             await publisher.publish(dlq_event)
         except EventTooLargeError:
-            # The original payload may itself have been near the size
-            # cap; retry with metadata only so DLQ never fails on size.
             try:
                 dlq_event.payload.pop("original_event", None)
                 await publisher.publish(dlq_event)
@@ -568,9 +606,6 @@ class KafkaEventSubscriber(EventSubscriber):
                 )
                 return
         except Exception as exc:  # noqa: BLE001
-            # A failed DLQ write must never block the partition forever —
-            # raise the alarm and let the offset commit (the message is
-            # redeliverable only if we do not commit; quarantine wins).
             logger.critical(
                 "failed to publish DLQ event topic=%s key=%s: %s",
                 dlq_event.topic,
@@ -605,22 +640,15 @@ class KafkaEventSubscriber(EventSubscriber):
             except (asyncio.CancelledError, Exception):
                 pass
             self._task = None
-        if self._consumer_or_raise is not None:
+        if self._consumer is not None:
             try:
-                await self._consumer_or_raise.stop()
+                await self._consumer.stop()
             except Exception:  # noqa: BLE001 - best-effort teardown
                 pass
             self._consumer = None
         if self._lazy_dlq_publisher is not None:
             await self._lazy_dlq_publisher.close()
             self._lazy_dlq_publisher = None
-
-
-# ---------------------------------------------------------------------------
-# Metrics: retry / DLQ / dedup / processed counters.
-# prometheus_client is optional — without it, the same events are visible
-# in structured logs (the counters become no-ops).
-# ---------------------------------------------------------------------------
 
 
 class _CounterProxy:

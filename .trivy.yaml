@@ -30,7 +30,6 @@ skip-dirs:
   - "*.pyd"
 
 skip-files:
-  - apps/web/certificates/localhost-key.pem
   - "*.md"
   - "*.txt"
   - "*.json"

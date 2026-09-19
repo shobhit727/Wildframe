@@ -1,3 +1,5 @@
+# Dev TLS certificates are generated locally via scripts/generate-dev-certs.sh
+# (never committed, issue #788). Generate before docker compose up.
 {
 	auto_https off
 }

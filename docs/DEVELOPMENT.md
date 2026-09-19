@@ -35,8 +35,11 @@ pip install poetry && poetry install
 # Install frontend dependencies
 npm install
 
+# Generate dev TLS certificates (never committed)
+bash scripts/generate-dev-certs.sh
+
 # Start development environment
-docker-compose -f deployments/docker-compose.dev.yml up -d
+docker compose -f deployments/docker-compose.dev.yml up -d
 
 # Note: no Alembic in this repo — schema changes are applied by hand to the
 # dev DBs (see docs/OPERATIONS.md "Database Migrations"). This command is
