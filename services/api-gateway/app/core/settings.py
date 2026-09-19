@@ -6,6 +6,22 @@ from pydantic_settings import BaseSettings
 from wildframe_compliance.jurisdiction import Jurisdiction
 from wildframe_compliance.settings import ComplianceSettingsMixin
 
+DEV_ENVIRONMENTS = {"", "development", "test"}
+
+DEV_DEFAULTS = {
+    "REDIS_URL": "redis://localhost:6379",
+    "JWT_SECRET_KEY": "dev-secret-key-change-in-production-min-32-bytes",
+}
+
+KNOWN_INSECURE_JWT_SECRETS = (
+    "dev-secret-key",
+    "dev-secret-key-change-in-production",
+    "dev-secret-key-change-in-production-min-32-bytes",
+    "your-secret-key-change-in-production",
+    "secret",
+    "changeme",
+)
+
 
 class Settings(ComplianceSettingsMixin, BaseSettings):
     """Application settings."""
@@ -13,24 +29,13 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     SERVICE_NAME: str = "Api Gateway"
     SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
-
-    # Database (api-gateway is stateless — no DB)
-
-    # Security
-    JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
+    JWT_SECRET_KEY: str | None = None
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_MINUTES: int = 15
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379"
-
-    # Logging
+    REDIS_URL: str | None = None
     LOG_LEVEL: str = "INFO"
-
-    # Server
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8000
-
-    # Compliance: API Gateway is global entry point
     compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
     compliance_additional_jurisdictions: list[Jurisdiction] = [
         Jurisdiction.EU,
@@ -40,21 +45,11 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     compliance_dpo_email: str = "dpo@wildframe.com"
     compliance_grievance_officer_email: str = "grievance@wildframe.com"
     compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
-
-    # CORS
-    # Explicit allow-list (#68): wildcard origins paired with credentials are
-    # rejected by browsers and invite CSRF; production must override with the
-    # real frontend origin(s).
     CORS_ALLOWED_ORIGINS: list[str] = [
         "http://localhost:3000",
         "https://localhost:3000",
     ]
     CORS_ALLOW_CREDENTIALS: bool = True
-
-    # Upstream proxy: bounded timeouts, retry budget and connection limits.
-    # Hierarchy: gateway connect (5s) < gateway read/write (30s) < proxy-side
-    # overall deadline; the gateway never follows upstream redirects so a
-    # redirect chain cannot outlive the bounded request.
     UPSTREAM_CONNECT_TIMEOUT: float = 5.0
     UPSTREAM_READ_TIMEOUT: float = 30.0
     UPSTREAM_WRITE_TIMEOUT: float = 30.0
@@ -64,17 +59,12 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     UPSTREAM_MAX_RETRIES: int = 2
     UPSTREAM_RETRY_BASE_DELAY: float = 0.1
     UPSTREAM_MAX_RETRY_DELAY: float = 0.5
-
-    # Request/response hardening limits.
     MAX_REQUEST_BODY_SIZE: int = 5 * 1024 * 1024
     MAX_RESPONSE_BODY_SIZE: int = 10 * 1024 * 1024
     MAX_HEADER_COUNT: int = 100
     MAX_HEADER_FIELD_SIZE: int = 8192
     MAX_HEADER_TOTAL_SIZE: int = 64 * 1024
     MAX_DECOMPRESSION_RATIO: int = 10
-
-    # Per-endpoint rate limits (requests per minute)
-    # Default: 1000/min; stricter for expensive ops
     RATE_LIMIT_AUTH: int = 5
     RATE_LIMIT_SEARCH: int = 100
     RATE_LIMIT_UPLOAD_CREATE: int = 100
@@ -82,26 +72,39 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     RATE_LIMIT_REINDEX: int = 20
     RATE_LIMIT_DEFAULT: int = 1000
 
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_development_defaults(cls, values: dict) -> dict:
+        environment = values.get("ENVIRONMENT") or ""
+        if environment in DEV_ENVIRONMENTS:
+            for key, value in DEV_DEFAULTS.items():
+                values.setdefault(key, value)
+        return values
+
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
-        """Fail fast if running in production with default insecure secrets.
-
-        A wildcard CORS origin combined with credentials would let any site
-        issue credentialed cross-origin requests, so production must configure
-        an explicit origin allowlist. Validation happens at Settings
-        construction, i.e. at process import: an unsafe production config
-        prevents the gateway from starting at all.
-        """
-        default_secrets = [
-            "your-secret-key-change-in-production",
-            "dev-secret-key",
-        ]
+        if self.ENVIRONMENT in DEV_ENVIRONMENTS:
+            return self
+        if self.REDIS_URL is None:
+            raise ValueError(
+                "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
+            )
+        if self.JWT_SECRET_KEY is None:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
+            )
+        if self.JWT_SECRET_KEY in KNOWN_INSECURE_JWT_SECRETS:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
+            )
+        if len(self.JWT_SECRET_KEY) < 32:
+            raise ValueError(
+                "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
+            )
         unsafe_cors = self.CORS_ALLOW_CREDENTIALS and (
             "*" in self.CORS_ALLOWED_ORIGINS or not self.CORS_ALLOWED_ORIGINS
         )
-        if self.ENVIRONMENT == "production" and (
-            self.JWT_SECRET_KEY in default_secrets or unsafe_cors
-        ):
+        if unsafe_cors:
             raise ValueError(
                 "JWT_SECRET_KEY must be a strong secret and CORS_ALLOWED_ORIGINS must "
                 "be an explicit origin list in production (wildcard origins with "

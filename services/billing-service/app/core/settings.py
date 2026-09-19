@@ -16,6 +16,28 @@ from app.core.money import validate_currency
 from wildframe_compliance.jurisdiction import Jurisdiction
 from wildframe_compliance.settings import ComplianceSettingsMixin
 
+DEV_ENVIRONMENTS = {"", "development", "test"}
+
+DEV_DEFAULTS = {
+    "DATABASE_URL": "postgresql+asyncpg://postgres:password@localhost:5432/billing_db",
+    "REDIS_URL": "redis://localhost:6379/0",
+    "JWT_SECRET_KEY": "dev-secret-key-change-in-production-min-32-bytes",
+}
+
+KNOWN_INSECURE_DB_CREDENTIALS = (
+    "wildframe:password",
+    "wildframe:wildframe_dev_password",
+    "postgres:password",
+)
+KNOWN_INSECURE_JWT_SECRETS = (
+    "dev-secret-key",
+    "dev-secret-key-change-in-production",
+    "dev-secret-key-change-in-production-min-32-bytes",
+    "your-secret-key-change-in-production",
+    "secret",
+    "changeme",
+)
+
 
 class Settings(ComplianceSettingsMixin, BaseSettings):
     """Application settings loaded from environment / .env file."""
@@ -23,41 +45,23 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     SERVICE_NAME: str = "Billing"
     SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
-
-    # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/billing_db"
-    REDIS_URL: str = "redis://localhost:6379/0"
-
-    # Security
+    DATABASE_URL: str | None = None
+    REDIS_URL: str | None = None
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
     JWT_ALGORITHM: str = "HS256"
-    JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
+    JWT_SECRET_KEY: str | None = None
     JWT_EXPIRATION_MINUTES: int = 15
-
-    # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
-    # connections per service instance to prevent DB exhaustion.
     DATABASE_POOL_SIZE: int = 5
     DATABASE_MAX_OVERFLOW: int = 5
-
-    # Logging
     LOG_LEVEL: str = "INFO"
-
-    # CORS
-    # Explicit allow-list (#68): wildcard origins paired with credentials are
-    # rejected by browsers and invite CSRF; production must override with the
-    # real frontend origin(s).
     CORS_ALLOWED_ORIGINS: list[str] = [
         "http://localhost:3000",
         "https://localhost:3000",
     ]
     CORS_ALLOW_CREDENTIALS: bool = True
-
-    # Server
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8008
-
-    # Compliance: Billing service handles global financial data
     compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
     compliance_additional_jurisdictions: list[Jurisdiction] = [
         Jurisdiction.EU,
@@ -67,72 +71,72 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     compliance_dpo_email: str = "dpo@wildframe.com"
     compliance_grievance_officer_email: str = "grievance@wildframe.com"
     compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
-
-    # -----------------------------------------------------------------------
-    # Sustenance Engine parameters (§2 + §3 of PRODUCT_VISION.md)
-    # -----------------------------------------------------------------------
-
-    # >=55% of net SVOD revenue goes to creators (contractual floor, not cap).
     CREATOR_SHARE_PERCENTAGE: Decimal = Decimal("0.55")
-
-    # 15% of net revenue flows into the Creator Pool each payout cycle.
     CREATOR_POOL_PERCENTAGE: Decimal = Decimal("0.15")
-
-    # SVOD subscription price.
     SVOD_MONTHLY_PRICE: Decimal = Decimal("7.99")
-
-    # Milestone-tranched funding split (must sum to 100%).
     MILESTONE_TRANCHE_PERCENTAGES: list[Decimal] = [
         Decimal("10.00"),
         Decimal("20.00"),
         Decimal("30.00"),
         Decimal("40.00"),
     ]
-
-    # Default currency for payouts.
     DEFAULT_CURRENCY: str = "USD"
-
-    # -----------------------------------------------------------------------
-    # Stripe Connect integration
-    # -----------------------------------------------------------------------
-
-    # Stripe secret key (sk_live_... or sk_test_...).
     STRIPE_API_KEY: str = "sk_test_default_change_me"
-
-    # Stripe webhook signing secret (whsec_...).
     STRIPE_WEBHOOK_SECRET: str = "whsec_default_change_me"
-
-    # Stripe Price ID for the SVOD $7.99/mo subscription.
     STRIPE_SVOD_PRICE_ID: str = "price_default_svod"
-
-    # Redirect URLs after Stripe Checkout completes or is cancelled.
     STRIPE_SUCCESS_URL: str = "https://wildframe.com/billing/success"
     STRIPE_CANCEL_URL: str = "https://wildframe.com/billing/cancel"
-
     CREATORS_SERVICE_URL: str = "http://creators-service:8000"
     AUTH_SERVICE_URL: str = "http://auth-service:8000"
 
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_development_defaults(cls, values: dict) -> dict:
+        environment = values.get("ENVIRONMENT") or ""
+        if environment in DEV_ENVIRONMENTS:
+            for key, value in DEV_DEFAULTS.items():
+                values.setdefault(key, value)
+        return values
+
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
-        """Fail fast if running in production with default insecure secrets."""
-        if self.ENVIRONMENT == "production":
-            if self.STRIPE_API_KEY.startswith("sk_test_"):
-                raise ValueError("STRIPE_API_KEY must be a live key in production")
-            if self.STRIPE_WEBHOOK_SECRET.startswith("whsec_default"):
-                raise ValueError("STRIPE_WEBHOOK_SECRET must be set in production")
-            if self.JWT_SECRET_KEY == "your-secret-key-change-in-production":
-                raise ValueError("JWT_SECRET_KEY must be set in production")
+        if self.ENVIRONMENT in DEV_ENVIRONMENTS:
+            return self
+        if self.DATABASE_URL is None:
+            raise ValueError(
+                "DATABASE_URL must be set explicitly when ENVIRONMENT is not development."
+            )
+        if any(credential in self.DATABASE_URL for credential in KNOWN_INSECURE_DB_CREDENTIALS):
+            raise ValueError("DATABASE_URL must not use known default credentials.")
+        if self.REDIS_URL is None:
+            raise ValueError(
+                "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
+            )
+        if self.JWT_SECRET_KEY is None:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
+            )
+        if self.JWT_SECRET_KEY in KNOWN_INSECURE_JWT_SECRETS:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
+            )
+        if len(self.JWT_SECRET_KEY) < 32:
+            raise ValueError(
+                "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
+            )
+        if self.STRIPE_API_KEY.startswith("sk_test_"):
+            raise ValueError("STRIPE_API_KEY must be a live key in production")
+        if self.STRIPE_WEBHOOK_SECRET.startswith("whsec_default"):
+            raise ValueError("STRIPE_WEBHOOK_SECRET must be set in production")
         return self
 
     @model_validator(mode="after")
     def validate_currency(self) -> "Settings":
-        """Validate DEFAULT_CURRENCY against ISO-4217 allowlist (#477/#478)."""
         validate_currency(self.DEFAULT_CURRENCY)
         return self
 
     @model_validator(mode="after")
     def validate_cors_credentials(self) -> "Settings":
-        """Reject wildcard CORS with credentials in production (#68)."""
         if (
             self.ENVIRONMENT == "production"
             and self.CORS_ALLOWED_ORIGINS == ["*"]
@@ -144,13 +148,9 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             )
         return self
 
-    # Issue #319: Per-provider daily email quota (for notification-service integration)
     EMAIL_PROVIDER_DAILY_QUOTA: dict[str, int] = {}
-    # Issue #488/#545: Per-creator max concurrent jobs
     PIPELINE_MAX_JOBS_PER_CREATOR: int = 2
-    # Issue #495: CloudFront distribution ID for CDN invalidation
     CLOUDFRONT_DISTRIBUTION_ID: str | None = None
-    # Issue #469: Metrics endpoint token
     METRICS_TOKEN: str = ""
 
     class Config:
