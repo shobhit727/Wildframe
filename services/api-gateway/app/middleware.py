@@ -150,7 +150,7 @@ class RateLimiter:
 
     Limits are configured via settings (RATE_LIMIT_* per minute).
     Key = user sub (if authenticated) or client IP.
-    Fail-open on Redis errors (#214).
+    Fail-closed for auth on Redis errors, fail-open otherwise.
     """
 
     def __init__(self, redis_client: redis.Redis):
@@ -183,10 +183,9 @@ class RateLimiter:
     async def check_rate_limit(self, user_id: str, service: str, path: str = "") -> bool:
         """Check if user has exceeded rate limit for service.
 
-        Fail-open on Redis errors (unavailable, corrupt counter value): the
-        rate limiter is anti-abuse protection, not an authorization
-        decision, and a Redis outage or restart must not take the whole
-        gateway down (#214). Windows are ephemeral by design.
+        Fail-closed for auth on Redis errors, fail-open otherwise. Auth is
+        security-sensitive and must not be brute-forcible during an outage;
+        other services keep fail-open for availability.
         """
         key = f"rate_limit:{user_id}:{service}"
         limit = self._get_limit(service, path)
@@ -195,7 +194,10 @@ class RateLimiter:
             count = int(await self.redis.incr(key))
             if count == 1:
                 await self.redis.expire(key, 60)  # 1 minute window
-        except Exception:  # noqa: BLE001 - fail open on Redis errors
+        except Exception:  # noqa: BLE001
+            if service == "auth":
+                logger.warning("Rate limiter Redis error for %s; denying request", service)
+                return False
             logger.warning("Rate limiter Redis error for %s; allowing request", service)
             return True
 

@@ -3,11 +3,8 @@
 Used by the email-verification resent flow (#54): per-IP quotas plus a
 per-email cooldown so an address cannot be flooded with verification
 emails, and repeated probes are throttled. Redis is the single source of
-truth so limits survive service restarts.
-
-Fail-open by design: if Redis is unreachable the endpoint still responds
-(round-robin behaviour), because the enumeration-safe response contract is
-what matters most — throttling is defense-in-depth on top of it.
+truth so limits survive service restarts. Fail-closed on Redis errors for
+auth-sensitive endpoints.
 """
 
 import hashlib
@@ -61,7 +58,7 @@ async def allow(
     """
     client = _get_client()
     if client is None:
-        return True
+        return False
 
     token_key = f"rl:token:{_scope(key)}"
     try:
@@ -78,5 +75,5 @@ async def allow(
                 return False
 
         return True
-    except Exception:  # noqa: BLE001 - fail open on Redis errors
-        return True
+    except Exception:  # noqa: BLE001 - fail closed on Redis errors for auth
+        return False

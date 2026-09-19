@@ -1,9 +1,8 @@
-"""Redis rate-limiter fault-injection tests (#214).
+"""Redis rate-limiter fault-injection tests (#214 / #792).
 
-Pins the documented fail-open contract: a Redis outage or corrupt data must
-never turn the limiter into an authorization gate (it is defense-in-depth),
-keys are namespaced + PII-hashed, and every key carries a TTL so nothing
-grows indefinitely.
+Auth rate limiting is fail-closed on Redis errors to prevent brute-force
+during outages. Keys are namespaced + PII-hashed, and every key carries a
+TTL so nothing grows indefinitely.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -23,14 +22,14 @@ def _no_global_client():
 
 
 async def test_no_redis_client_fails_open():
-    assert await allow("probe-key", max_requests=5, window_seconds=60) is True
+    assert await allow("probe-key", max_requests=5, window_seconds=60) is False
 
 
 async def test_redis_error_fails_open():
     client = AsyncMock()
     client.pipeline.side_effect = Exception("connection refused")
     with patch("app.core.rate_limit._get_client", return_value=client):
-        assert await allow("probe-key", max_requests=5, window_seconds=60) is True
+        assert await allow("probe-key", max_requests=5, window_seconds=60) is False
 
 
 async def test_over_limit_rejected():
