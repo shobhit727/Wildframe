@@ -1,3 +1,10 @@
+# Development compose: postgres/redis/kafka here are DEV-ONLY (ephemeral,
+# in-cluster equivalents). Production Helm (infrastructure/helm) requires
+# managed external RDS/ElastiCache and fails closed if external postgres/redis
+# not configured (see templates/validate-external.yaml and values-production.yaml).
+# Backup/PITR for production is via Terraform RDS backupRetention 30d, KMS
+# encryption, multi-AZ, and ElastiCache multi-AZ with slow-log.
+
 # Dev TLS certificates: never committed. Generate before up:
 #   bash scripts/generate-dev-certs.sh   # creates apps/web/certificates/*.pem (SANs localhost,127.0.0.1,::1,192.168.1.14, perms 644)
 services:

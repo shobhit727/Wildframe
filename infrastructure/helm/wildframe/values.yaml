@@ -1,3 +1,8 @@
+# Default values (development): in-cluster postgres/redis via docker-compose or
+# cluster DNS (postgres, redis-master). Production MUST override with managed
+# external endpoints (RDS/ElastiCache) via values-production.yaml;
+# validation in templates/validate-external.yaml fails closed for
+# namespace wildframe-production if external config is missing.
 replicaCount: 1
 image:
   repository: ghcr.io/shobhit727/wildframe
@@ -177,6 +182,10 @@ external:
     enabled: false
     cidrs: []
     fqdns: []
+# Production managed data-plane: RDS Aurora PostgreSQL (backupRetention 30d, PITR,
+# KMS encryption, Multi-AZ) and ElastiCache Redis (multi-AZ, KMS, slow-log).
+# See infrastructure/terraform/main.tf and helm values-production.yaml for
+# the documented production path; in-chart postgres/redis is dev-only.
 kafka:
   enabled: true
   topics:

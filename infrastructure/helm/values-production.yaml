@@ -1,8 +1,18 @@
+# Production values: managed external data-plane required (issue #796).
+# PostgreSQL: AWS RDS Aurora PostgreSQL (engine 15.6) via infrastructure/terraform/main.tf
+#   - backupRetention 30d (minimum 7d enforced), PITR via continuous backups
+#   - KMS encryption (aws_kms_key.rds), private subnets, no public access
+#   - disaster recovery: cross-AZ replication (db_instance_count 2), point-in-time
+#     restore, snapshot retention per terraform variables.tf
+# Redis: AWS ElastiCache Redis 7.0 (multi-AZ, KMS encryption, slow-log CW)
+#   - managed via aws_elasticache_replication_group, multi_az_enabled true
+# In-chart postgres/redis is dev-only (deployments/docker-compose.dev.yml);
+# production validation (templates/validate-external.yaml) fails closed if
+# infra.postgresHost/redisHost is in-cluster or external.*.enabled is false
+# or CIDRs/FQDNs are empty. Set infra.hosts to real RDS/ElastiCache endpoints
+# and CIDRs/FQDNs to VPC ranges for NetworkPolicy egress.
 namespace: wildframe-production
 
-# Production scale-out (issue #387): critical services get a minimum of 2
-# replicas with PDBs (minAvailable 1) and topology spread + anti-affinity so
-# a node loss never takes a critical service offline.
 replicaCount: 2
 
 image:
@@ -10,29 +20,26 @@ image:
   pullPolicy: IfNotPresent
 
 infra:
-  postgresHost: "postgres-prod"
-  redisHost: "redis-master-prod"
+  postgresHost: "wildframe-prod.cluster-abc123xyz.us-east-1.rds.amazonaws.com"
+  postgresPort: 5432
+  redisHost: "wildframe-prod-001.abc123.cache.amazonaws.com"
+  redisPort: 6379
   kafkaBootstrap: "kafka-prod:9092"
 
 ingress:
   enabled: true
   host: app.wildframe.com
 
-# External managed services (AWS RDS / ElastiCache): uncomment and set the
-# VPC CIDRs or Cilium FQDNs when the cluster uses managed datastores
-# (issues #347/#348). NetworkPolicy will allow egress to these instead of
-# the in-cluster podSelectors.
 external:
   postgres:
-    enabled: false # set true; cidrs: ["10.0.0.0/16"] (RDS VPC/subnet CIDRs)
-    cidrs: []
+    enabled: true
+    cidrs: ["10.0.0.0/16"]
     fqdns: []
   redis:
-    enabled: false # set true; cidrs: ["10.0.1.0/16"] (ElastiCache VPC CIDRs)
-    cidrs: []
+    enabled: true
+    cidrs: ["10.0.0.0/16"]
     fqdns: []
 
-# Critical services: >1 replica, spread across hosts, hard anti-affinity.
 services:
   api-gateway:
     replicas: 3
@@ -63,10 +70,6 @@ services:
     podAntiAffinity:
       type: required
 
-# Mixed-version prevention for stateful-ish workloads (issue #636):
-# maxUnavailable=1 with maxSurge=0 would be used for StatefulSets; these are
-# Deployments, so the standard surge=1/unavailable=0 rolling update applies.
-# Topology spread (spread pods across hosts/zones) is enabled globally.
 topologySpread:
   enabled: true
   maxSkew: 2
