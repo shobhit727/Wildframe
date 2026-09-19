@@ -105,6 +105,10 @@ class MilestoneKillError(BillingError):
     """Raised when trying to release a tranche on a killed milestone."""
 
 
+class MilestoneAuthorizationError(BillingError):
+    pass
+
+
 # ---------------------------------------------------------------------------
 # FSM transition tables (#190/#220)
 # ---------------------------------------------------------------------------
@@ -471,20 +475,34 @@ class BillingService:
         creator_id: UUID,
         project_title: str,
         total_commitment: Decimal,
+        caller_id: UUID | None = None,
+        caller_is_admin: bool = False,
     ) -> Milestone:
         """Create a milestone commitment with 4 tranches (10/20/30/40%).
 
         All tranches start as LOCKED. They are released one at a time as
         milestones are verified.
         """
+        if caller_id is not None and caller_id != creator_id and not caller_is_admin:
+            raise MilestoneAuthorizationError(
+                "not authorized to create milestone for another creator"
+            )
         return await self.milestone_repo.create(creator_id, project_title, total_commitment)
 
-    async def release_tranche(self, milestone_id: UUID, tranche_number: int) -> MilestoneTranche:
+    async def release_tranche(
+        self,
+        milestone_id: UUID,
+        tranche_number: int,
+        caller_id: UUID | None = None,
+        caller_is_admin: bool = False,
+    ) -> MilestoneTranche:
         """Release a specific tranche after its milestone has been verified.
 
         Tranche must be in LOCKED status and the milestone must not be
         KILLED. On release, a corresponding payout accrual is created.
         """
+        if caller_id is not None and not caller_is_admin:
+            raise MilestoneAuthorizationError("admin privileges required")
         milestone = await self.milestone_repo.get(milestone_id)
         if not milestone:
             raise BillingError(f"Milestone {milestone_id} not found")
@@ -502,9 +520,8 @@ class BillingService:
         tranche.status = TrancheStatus.RELEASED
         tranche.released_at = datetime.utcnow()
 
-        # Accrue payout for the released tranche amount.
         idem_key = f"tranche:{milestone_id}:{tranche_number}"
-        validate_currency("USD")  # Always USD for milestone payouts
+        validate_currency("USD")
         await self.payout_repo.accrue(
             creator_id=milestone.creator_id,
             amount=tranche.amount,
@@ -516,13 +533,20 @@ class BillingService:
         )
         return tranche
 
-    async def kill_milestone(self, milestone_id: UUID) -> Milestone:
+    async def kill_milestone(
+        self,
+        milestone_id: UUID,
+        caller_id: UUID | None = None,
+        caller_is_admin: bool = False,
+    ) -> Milestone:
         """Kill a milestone: revert all unreleased tranches to the Creator Pool.
 
         Already-released tranches are NOT clawed back — only LOCKED ones
         revert. The reverted funds become available for redistribution in
         the next pool cycle.
         """
+        if caller_id is not None and not caller_is_admin:
+            raise MilestoneAuthorizationError("admin privileges required")
         milestone = await self.milestone_repo.get(milestone_id)
         if not milestone:
             raise BillingError(f"Milestone {milestone_id} not found")

@@ -26,6 +26,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.money import CurrencyError, to_minor_units, validate_currency
+from app.core.settings import settings
 from app.core.stripe_client import StripeClient, StripeError
 from app.models import (
     InvoiceStatus,
@@ -42,7 +44,7 @@ from app.repositories import (
     SubscriptionRepository,
     WebhookEventRepository,
 )
-from app.services import BillingService
+from app.services import BillingError, BillingService
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +80,6 @@ async def _handle_checkout_session_completed(
     event: dict[str, Any],
     service: BillingService,
 ) -> None:
-    """Handle checkout.session.completed.
-
-    - If metadata['tier'] is set → SVOD subscription activation.
-    - If metadata['type'] == 'tvod' → TVOD purchase recording.
-    """
     session = event["data"]["object"]
     metadata = session.get("metadata", {})
     user_id_str = metadata.get("user_id") or session.get("client_reference_id")
@@ -93,7 +90,6 @@ async def _handle_checkout_session_completed(
     user_id = UUID(user_id_str)
     tier = metadata.get("tier")
     if tier:
-        # SVOD subscription activation / upgrade.
         try:
             tier_enum = RevenueTier(tier.lower())
         except ValueError:
@@ -109,15 +105,36 @@ async def _handle_checkout_session_completed(
         logger.info("SVOD subscription activated for user %s (tier=%s)", user_id, tier)
 
     elif metadata.get("type") == "tvod":
-        # TVOD purchase recording.
         content_id_str = metadata.get("content_id")
         if not content_id_str:
             logger.warning("TVOD checkout missing content_id: %s", session.get("id"))
             return
 
         content_id = UUID(content_id_str)
-        amount = Decimal(str(session["amount_total"])) / Decimal(100)
+        payment_status = session.get("payment_status")
+        if payment_status != "paid":
+            raise BillingError(f"Checkout session not paid: {payment_status}")
         currency = session.get("currency", "USD").upper()
+        try:
+            validate_currency(currency)
+        except CurrencyError as exc:
+            raise BillingError(str(exc)) from exc
+        if currency != settings.DEFAULT_CURRENCY:
+            raise BillingError(
+                f"Currency mismatch: expected {settings.DEFAULT_CURRENCY} got {currency}"
+            )
+        amount_total = session.get("amount_total")
+        if amount_total is None:
+            raise BillingError("Missing amount_total in checkout session")
+        try:
+            canonical_price = await service._fetch_content_price(content_id)
+        except ValueError as exc:
+            raise BillingError(str(exc)) from exc
+        expected_minor = to_minor_units(canonical_price, currency)
+        if int(amount_total) != expected_minor:
+            raise BillingError(
+                f"Amount mismatch: expected {expected_minor} got {amount_total} for content {content_id}"
+            )
         stripe_payment_intent_id = session.get("payment_intent")
         await service.purchase_title(
             user_id,
@@ -129,7 +146,7 @@ async def _handle_checkout_session_completed(
             "TVOD purchase recorded for user %s (content=%s, amount=%s)",
             user_id,
             content_id,
-            amount,
+            canonical_price,
         )
 
 

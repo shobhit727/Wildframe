@@ -1,7 +1,9 @@
 from http import HTTPStatus as http_status
-from jose import jwt
+
+import httpx
+from jose import JWTError, jwt
+
 from app.core.settings import settings
-from jose import JWTError
 
 """Billing service API routes.
 
@@ -23,6 +25,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.money import CurrencyError, validate_currency
+from app.core.stripe_client import StripeClient, StripeError
 from app.repositories import (
     CreatorPoolRepository,
     InvoiceRepository,
@@ -34,9 +38,78 @@ from app.repositories import (
     SubscriptionRepository,
     WebhookEventRepository,
 )
-from app.services import BillingError, BillingService, TierInvalidError
+from app.services import BillingError, BillingService, MilestoneAuthorizationError, TierInvalidError
 
 router = APIRouter(prefix="/api/v1/billing", tags=["billing"])
+
+
+async def _verify_creator(auth_header: str | None) -> None:
+    if not settings.CREATORS_SERVICE_URL:
+        return
+    if not auth_header:
+        raise HTTPException(
+            status_code=http_status.UNAUTHORIZED, detail="Missing or invalid authorization header"
+        )
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            resp = await client.get(
+                f"{settings.CREATORS_SERVICE_URL}/api/v1/creators/me",
+                headers={"Authorization": auth_header},
+            )
+            if resp.status_code == 200:
+                return
+            if resp.status_code == 404:
+                raise HTTPException(
+                    status_code=http_status.FORBIDDEN, detail="Creator profile not found"
+                )
+            raise HTTPException(
+                status_code=http_status.FORBIDDEN, detail="Creator verification failed"
+            )
+        except httpx.RequestError:
+            raise HTTPException(
+                status_code=http_status.FORBIDDEN, detail="Creator verification failed"
+            )
+
+
+async def get_current_user_payload(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=http_status.UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+    token = authorization.removeprefix("Bearer ")
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+        )
+        if payload.get("type") != "access":
+            raise HTTPException(
+                status_code=http_status.UNAUTHORIZED,
+                detail="Invalid token type",
+            )
+    except JWTError:
+        raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token")
+    return payload
+
+
+async def require_admin(
+    payload: Annotated[dict, Depends(get_current_user_payload)],
+) -> UUID:
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=http_status.FORBIDDEN, detail="Admin privileges required")
+    sub = str(payload.get("sub") or payload.get("user_id") or "")
+    if not sub:
+        raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token subject")
+    try:
+        return UUID(sub)
+    except ValueError:
+        raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token subject")
 
 
 async def get_current_user_id(
@@ -199,17 +272,42 @@ async def purchase_title(
     service: Annotated[BillingService, Depends(get_billing_service)],
     current_user: UUID = Depends(get_current_user_id),
 ):
-    """Record a pay-per-view (TVOD) purchase."""
     if request.user_id != current_user:
         raise HTTPException(
             status_code=http_status.FORBIDDEN,
             detail="You can only purchase content for your own account",
         )
     try:
-        purchase = await service.purchase_title(request.user_id, request.content_id)
-    except Exception as exc:
+        price = await service._fetch_content_price(request.content_id)
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"purchase_id": str(purchase.id), "status": "completed"}
+    try:
+        validate_currency(settings.DEFAULT_CURRENCY)
+    except CurrencyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        session = StripeClient.create_tvod_purchase_session(
+            request.user_id,
+            request.content_id,
+            price,
+            settings.STRIPE_SUCCESS_URL,
+            settings.STRIPE_CANCEL_URL,
+        )
+    except StripeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    sid = getattr(session, "id", None)
+    if sid is None and isinstance(session, dict):
+        sid = session.get("id")
+    url = getattr(session, "url", None)
+    if url is None and isinstance(session, dict):
+        url = session.get("url")
+    return {
+        "status": "pending",
+        "checkout_session_id": str(sid) if sid else None,
+        "checkout_url": url,
+        "price": str(price),
+        "currency": settings.DEFAULT_CURRENCY,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -285,14 +383,33 @@ async def get_pool_status(
 async def create_milestone(
     request: CreateMilestoneRequest,
     service: Annotated[BillingService, Depends(get_billing_service)],
+    payload: Annotated[dict, Depends(get_current_user_payload)],
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ):
     """Create a milestone commitment with 10/20/30/40 tranched funding."""
+    sub = str(payload.get("sub") or payload.get("user_id") or "")
+    try:
+        current_user = UUID(sub)
+    except ValueError:
+        raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token subject")
+    is_admin = payload.get("role") == "admin"
+    if request.creator_id != current_user and not is_admin:
+        raise HTTPException(
+            status_code=http_status.FORBIDDEN,
+            detail="You can only create milestones for your own account",
+        )
+    if not is_admin:
+        await _verify_creator(authorization)
     try:
         ms = await service.create_milestone(
             request.creator_id,
             request.project_title,
             request.total_commitment,
+            caller_id=current_user,
+            caller_is_admin=is_admin,
         )
+    except MilestoneAuthorizationError as exc:
+        raise HTTPException(status_code=http_status.FORBIDDEN, detail=str(exc)) from exc
     except BillingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
@@ -308,10 +425,15 @@ async def release_tranche(
     milestone_id: UUID,
     request: ReleaseTrancheRequest,
     service: Annotated[BillingService, Depends(get_billing_service)],
+    admin_id: Annotated[UUID, Depends(require_admin)],
 ):
     """Release a tranche after milestone verification."""
     try:
-        tranche = await service.release_tranche(milestone_id, request.tranche_number)
+        tranche = await service.release_tranche(
+            milestone_id, request.tranche_number, caller_id=admin_id, caller_is_admin=True
+        )
+    except MilestoneAuthorizationError as exc:
+        raise HTTPException(status_code=http_status.FORBIDDEN, detail=str(exc)) from exc
     except BillingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
@@ -326,10 +448,13 @@ async def release_tranche(
 async def kill_milestone(
     milestone_id: UUID,
     service: Annotated[BillingService, Depends(get_billing_service)],
+    admin_id: Annotated[UUID, Depends(require_admin)],
 ):
     """Kill a milestone — revert all unreleased tranches to the Creator Pool."""
     try:
-        ms = await service.kill_milestone(milestone_id)
+        ms = await service.kill_milestone(milestone_id, caller_id=admin_id, caller_is_admin=True)
+    except MilestoneAuthorizationError as exc:
+        raise HTTPException(status_code=http_status.FORBIDDEN, detail=str(exc)) from exc
     except BillingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {

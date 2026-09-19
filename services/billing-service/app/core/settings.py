@@ -109,6 +109,8 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     STRIPE_SUCCESS_URL: str = "https://wildframe.com/billing/success"
     STRIPE_CANCEL_URL: str = "https://wildframe.com/billing/cancel"
 
+    CREATORS_SERVICE_URL: str = "http://creators-service:8000"
+
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if running in production with default insecure secrets."""

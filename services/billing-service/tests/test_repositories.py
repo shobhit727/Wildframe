@@ -1,12 +1,13 @@
 import pytest
 from uuid import uuid4
 from decimal import Decimal
-from datetime import datetime, UTC
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from app.models import (
     Base,
     Subscription,
+    Purchase,
+    Invoice,
     RevenueTier,
     RegionFloor,
 )
@@ -34,7 +35,15 @@ def event_loop():
 async def test_engine(tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/test.db")
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(
+            Base.metadata.create_all,
+            tables=[
+                Subscription.__table__,
+                Purchase.__table__,
+                Invoice.__table__,
+                RegionFloor.__table__,
+            ],
+        )
     yield engine
     await engine.dispose()
 
@@ -91,7 +100,7 @@ async def test_invoice_repository_latest(db_session: AsyncSession):
     repo = InvoiceRepository(db_session)
     user_id = uuid4()
     # First invoice
-    inv1 = await repo.create(user_id, Decimal("10.00"))
+    await repo.create(user_id, Decimal("10.00"))
     await db_session.commit()
     # Slight delay to ensure different timestamps
     await db_session.flush()
@@ -107,10 +116,17 @@ async def test_invoice_repository_latest(db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_region_floor_repository(db_session: AsyncSession):
     repo = RegionFloorRepository(db_session)
-    floor = RegionFloor(region_code="US", floor_rate=Decimal("0.10"))
+    floor = RegionFloor(
+        region_code="US",
+        currency="USD",
+        floor_low=Decimal("0.10"),
+        floor_high=Decimal("0.20"),
+    )
     db_session.add(floor)
     await db_session.commit()
     fetched = await repo.get_by_region("US")
     assert fetched is not None
     assert fetched.region_code == "US"
-    assert fetched.floor_rate == Decimal("0.10")
+    assert fetched.currency == "USD"
+    assert fetched.floor_low == Decimal("0.10")
+    assert fetched.floor_high == Decimal("0.20")
