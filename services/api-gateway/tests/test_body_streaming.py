@@ -108,6 +108,8 @@ async def test_content_length_early_reject():
 
 @pytest.mark.asyncio
 async def test_decompression_bomb_rejected():
+    import gzip
+
     mw._GLOBAL_BODY_CURRENT = 0
     mw._GLOBAL_STREAM_COUNT = 0
     middleware = BodyLimitMiddleware(app=MagicMock())
@@ -118,15 +120,16 @@ async def test_decompression_bomb_rejected():
     middleware.max_header_field_size = 8192
     middleware.max_header_total_size = 65536
     middleware.max_decompression_ratio = 10
+    bomb = gzip.compress(b"a" * 500)
     headers = [
         ("content-type", "application/json"),
         ("content-encoding", "gzip"),
-        ("content-length", "20"),
+        ("content-length", str(len(bomb))),
     ]
-    req = _make_request(headers=headers, body_chunks=[b"x" * 5])
+    req = _make_request(headers=headers, body_chunks=[bomb])
     resp = await middleware.dispatch(req, _call_next_ok)
     assert resp.status_code == 413
-    assert b"decompression bomb" in resp.body.lower()
+    assert b"decompressed" in resp.body.lower() or b"bomb" in resp.body.lower()
 
 
 @pytest.mark.asyncio

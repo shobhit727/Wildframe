@@ -3,6 +3,7 @@
 import asyncio
 import ipaddress
 import logging
+import zlib
 from contextlib import asynccontextmanager
 from types import MappingProxyType
 
@@ -479,6 +480,72 @@ class HeaderSanitizerMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class _DeflateDecompressor:
+    def __init__(self) -> None:
+        self._obj = zlib.decompressobj()
+        self._tried_raw = False
+
+    def decompress(self, data: bytes) -> bytes:
+        try:
+            return self._obj.decompress(data)
+        except zlib.error as exc:
+            if not self._tried_raw and "incorrect header" in str(exc).lower():
+                self._tried_raw = True
+                self._obj = zlib.decompressobj(-15)
+                return self._obj.decompress(data)
+            raise
+
+    def flush(self) -> bytes:
+        try:
+            return self._obj.flush()
+        except Exception:
+            return b""
+
+
+def _create_decompressor(encoding: str):
+    enc = encoding.strip().lower()
+    if enc == "gzip":
+        return zlib.decompressobj(31)
+    if enc == "deflate":
+        return _DeflateDecompressor()
+    if enc == "br":
+        try:
+            import brotli
+
+            return brotli.Decompressor()
+        except ImportError:
+            try:
+                import brotlicffi as brotli  # type: ignore
+
+                return brotli.Decompressor()
+            except ImportError:
+                return None
+        except Exception:
+            return None
+    return None
+
+
+def _decompress_chunk(decompressor, chunk: bytes) -> bytes:
+    if decompressor is None:
+        return b""
+    if hasattr(decompressor, "decompress"):
+        return decompressor.decompress(chunk)
+    if hasattr(decompressor, "process"):
+        return decompressor.process(chunk)
+    return b""
+
+
+def _flush_decompressor(decompressor) -> bytes:
+    if decompressor is None:
+        return b""
+    if hasattr(decompressor, "flush"):
+        try:
+            return decompressor.flush()
+        except Exception:
+            return b""
+    return b""
+
+
 class BodyLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
@@ -548,20 +615,22 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                     )
             except ValueError:
                 cl = None
-        is_compressed = request.headers.get("content-encoding", "").lower() in (
-            "gzip",
-            "deflate",
-            "br",
-        )
-        if is_compressed and cl is not None and cl * self.max_decompression_ratio > body_limit:
-            return Response(
-                content=(
-                    f"Potential decompression bomb: {cl} * "
-                    f"{self.max_decompression_ratio} > {body_limit}"
-                ),
-                status_code=413,
-                headers={"X-Request-ID": request.headers.get("x-request-id", "")},
-            )
+        raw_enc = request.headers.get("content-encoding", "")
+        enc = ""
+        is_compressed = False
+        if raw_enc:
+            low = raw_enc.strip().lower()
+            if "," in low:
+                parts = [p.strip() for p in low.split(",") if p.strip()]
+                for p in reversed(parts):
+                    if p in ("gzip", "deflate", "br"):
+                        enc = p
+                        break
+                else:
+                    enc = low
+            else:
+                enc = low
+            is_compressed = enc in ("gzip", "deflate", "br")
         method = request.method
         has_body = method in ("POST", "PUT", "PATCH", "DELETE") or cl is not None
         if (
@@ -586,8 +655,11 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
             original_stream = request.stream
             limit = body_limit
             max_ratio = self.max_decompression_ratio
+            decompressor = _create_decompressor(enc) if is_compressed else None
+            decompressed_total = 0
 
             async def bounded_stream():
+                nonlocal decompressed_total
                 total = 0
                 async for chunk in original_stream():
                     if not chunk:
@@ -595,11 +667,34 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                     total += len(chunk)
                     if total > limit:
                         raise ValueError(f"Request body exceeds limit: {total} > {limit}")
-                    if is_compressed and total * max_ratio > limit:
-                        raise ValueError(
-                            f"Potential decompression bomb: {total} * {max_ratio} > {limit}"
-                        )
+                    if is_compressed:
+                        if decompressor is not None:
+                            try:
+                                out = _decompress_chunk(decompressor, chunk)
+                            except Exception as exc:
+                                raise ValueError(f"Invalid compressed body: {exc}") from exc
+                            decompressed_total += len(out)
+                            if decompressed_total > limit:
+                                raise ValueError(
+                                    f"Decompressed body exceeds limit: {decompressed_total} > {limit}"
+                                )
+                        else:
+                            if total * max_ratio > limit:
+                                raise ValueError(
+                                    f"Potential decompression bomb: {total} * {max_ratio} > {limit}"
+                                )
                     yield chunk
+                if is_compressed and decompressor is not None:
+                    try:
+                        out = _flush_decompressor(decompressor)
+                    except Exception as exc:
+                        raise ValueError(f"Invalid compressed body: {exc}") from exc
+                    if out:
+                        decompressed_total += len(out)
+                        if decompressed_total > limit:
+                            raise ValueError(
+                                f"Decompressed body exceeds limit: {decompressed_total} > {limit}"
+                            )
 
             request.stream = bounded_stream  # type: ignore[method-assign]
 
@@ -607,7 +702,12 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                 response = await call_next(request)
             except ValueError as exc:
                 msg = str(exc)
-                if "exceeds limit" in msg or "decompression bomb" in msg:
+                if (
+                    "exceeds limit" in msg
+                    or "decompression bomb" in msg
+                    or "Decompressed body" in msg
+                    or "Invalid compressed" in msg
+                ):
                     return Response(
                         content=msg,
                         status_code=413,
