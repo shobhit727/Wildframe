@@ -259,8 +259,7 @@ class BillingService:
     # TVOD purchases
     # -----------------------------------------------------------------------
 
-    async def _fetch_content_price(self, content_id: UUID) -> Decimal:
-        """Fetch the TVOD price for content from the content service."""
+    async def _fetch_content_details(self, content_id: UUID) -> tuple[Decimal, UUID]:
         content_service_url = "http://content-service:8000"
         async with httpx.AsyncClient(timeout=5.0) as client:
             try:
@@ -270,13 +269,26 @@ class BillingService:
                 price = data.get("price_usd")
                 if price is None:
                     raise ValueError(f"Content {content_id} does not have a TVOD price set")
-                return Decimal(str(price))
+                creator_raw = data.get("creator_id") or data.get("creatorId") or data.get("creator")
+                if not creator_raw:
+                    raise ValueError(f"Content {content_id} has no creator_id")
+                try:
+                    creator_id = UUID(str(creator_raw))
+                except ValueError:
+                    raise ValueError(f"Invalid creator_id for content {content_id}")
+                return Decimal(str(price)), creator_id
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 404:
                     raise ValueError(f"Content {content_id} not found")
-                raise ValueError(f"Failed to fetch content price: {e}")
+                raise ValueError(f"Failed to fetch content details: {e}")
             except Exception as e:
-                raise ValueError(f"Failed to fetch content price: {e}")
+                if isinstance(e, ValueError):
+                    raise
+                raise ValueError(f"Failed to fetch content details: {e}")
+
+    async def _fetch_content_price(self, content_id: UUID) -> Decimal:
+        price, _ = await self._fetch_content_details(content_id)
+        return price
 
     async def purchase_title(
         self,

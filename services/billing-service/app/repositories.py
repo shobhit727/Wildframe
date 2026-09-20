@@ -249,6 +249,11 @@ class PurchaseRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_stripe_payment_intent_id(self, pi_id: str) -> Purchase | None:
+        stmt = select(Purchase).where(Purchase.stripe_payment_intent_id == pi_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def create(
         self,
         user_id: UUID,
@@ -305,6 +310,11 @@ class InvoiceRepository:
 
     async def get_by_stripe_invoice_id(self, stripe_invoice_id: str) -> Invoice | None:
         stmt = select(Invoice).where(Invoice.stripe_invoice_id == stripe_invoice_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_by_purchase_id(self, purchase_id: UUID) -> Invoice | None:
+        stmt = select(Invoice).where(Invoice.purchase_id == purchase_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

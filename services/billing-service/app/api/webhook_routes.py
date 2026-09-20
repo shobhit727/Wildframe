@@ -248,30 +248,134 @@ async def _handle_payment_intent_succeeded(
     event: dict[str, Any],
     service: BillingService,
 ) -> None:
-    """Handle payment_intent.succeeded.
-
-    Triggers payout ledger accrual for the creator share of the
-    revenue. This is where the Sustenance Engine's >=55% creator
-    share is actually recorded.
-    """
     pi = event["data"]["object"]
-    amount_minor = pi.get("amount", 0)
-    currency = pi.get("currency", "usd").upper()
-    # Convert minor units to major using our money helper (precise).
-    from app.core.money import from_minor_units
+    pi_id = pi.get("id")
+    if not pi_id:
+        raise BillingError("Missing payment_intent id")
+    amount_minor = pi.get("amount")
+    if amount_minor is None:
+        amount_minor = pi.get("amount_received")
+    if amount_minor is None:
+        raise BillingError("Missing amount in payment_intent")
+    try:
+        amount_minor = int(amount_minor)
+    except (TypeError, ValueError) as exc:
+        raise BillingError(f"Invalid amount {amount_minor}") from exc
+    currency_raw = pi.get("currency") or ""
+    if not currency_raw:
+        raise BillingError("Missing currency in payment_intent")
+    currency = currency_raw.strip().upper()
+    try:
+        validate_currency(currency)
+    except CurrencyError as exc:
+        raise BillingError(str(exc)) from exc
+    if currency != settings.DEFAULT_CURRENCY:
+        raise BillingError(
+            f"Currency mismatch: expected {settings.DEFAULT_CURRENCY} got {currency}"
+        )
+    from app.core.money import from_minor_units, to_minor_units
 
     amount = from_minor_units(amount_minor, currency)
-
-    # Calculate creator share (>=55%).
     creator_share = BillingService.calculate_creator_share(amount)
-
-    # NOTE: In a real system we'd derive the creator_id from the
-    # content metadata. For now we log the accrual intent.
+    purchase = None
+    content_id = None
+    if hasattr(service.purchase_repo, "get_by_stripe_payment_intent_id"):
+        purchase = await service.purchase_repo.get_by_stripe_payment_intent_id(pi_id)
+    if purchase is not None:
+        content_id = purchase.content_id
+    else:
+        metadata = pi.get("metadata") or {}
+        content_id_str = metadata.get("content_id") or metadata.get("contentId")
+        if content_id_str:
+            try:
+                content_id = UUID(str(content_id_str))
+            except ValueError as exc:
+                raise BillingError(
+                    f"Invalid content_id in payment_intent metadata: {content_id_str}"
+                ) from exc
+        else:
+            raise BillingError(
+                "Missing content_id in payment_intent metadata and no purchase found for pi"
+            )
+    try:
+        canonical_price, authoritative_creator_id = await service._fetch_content_details(content_id)
+    except ValueError as exc:
+        raise BillingError(str(exc)) from exc
+    expected_minor = to_minor_units(canonical_price, currency)
+    if int(amount_minor) != expected_minor:
+        raise BillingError(
+            f"Amount mismatch: expected {expected_minor} got {amount_minor} for content {content_id}"
+        )
+    invoice = None
+    if purchase is not None:
+        try:
+            purchase_minor = to_minor_units(purchase.price, purchase.currency)
+        except CurrencyError as exc:
+            raise BillingError(str(exc)) from exc
+        if purchase_minor != expected_minor or purchase_minor != int(amount_minor):
+            raise BillingError(
+                f"Amount mismatch: purchase amount {purchase.price} vs payment {amount_minor}"
+            )
+        if purchase.currency.upper() != currency:
+            raise BillingError(
+                f"Currency mismatch: purchase currency {purchase.currency} vs payment {currency}"
+            )
+        if hasattr(service.inv_repo, "get_by_purchase_id"):
+            invoice = await service.inv_repo.get_by_purchase_id(purchase.id)
+        if invoice is not None:
+            try:
+                invoice_minor = to_minor_units(invoice.amount, invoice.currency)
+            except CurrencyError as exc:
+                raise BillingError(str(exc)) from exc
+            if invoice_minor != int(amount_minor):
+                raise BillingError(
+                    f"Invoice amount mismatch: expected {invoice_minor} got {amount_minor}"
+                )
+            if invoice.currency.upper() != currency:
+                raise BillingError(
+                    f"Currency mismatch: invoice currency {invoice.currency} vs payment {currency}"
+                )
+            if invoice.status != InvoiceStatus.PAID:
+                invoice.status = InvoiceStatus.PAID
+                invoice.paid_at = datetime.utcnow()
+    idem_key = f"pi:{pi_id}"
+    now = datetime.utcnow()
+    cycle_start = now
+    cycle_end = now
+    if purchase is not None:
+        try:
+            cycle_start = purchase.purchased_at or now
+        except AttributeError:
+            cycle_start = now
+        if invoice is not None:
+            try:
+                cycle_start = invoice.issued_at or cycle_start
+            except AttributeError:
+                pass
+    breakdown = {
+        "type": "tvod",
+        "content_id": str(content_id),
+        "payment_intent": pi_id,
+        "event_id": event.get("id"),
+        "gross": str(amount),
+        "currency": currency,
+    }
+    await service.accrue_payout(
+        creator_id=authoritative_creator_id,
+        amount=creator_share,
+        currency=currency,
+        idempotency_key=idem_key,
+        cycle_start=cycle_start,
+        cycle_end=cycle_end,
+        breakdown=breakdown,
+    )
     logger.info(
-        "Payout accrual triggered: gross=%s, creator_share=%s (event=%s)",
+        "Payout accrual created: gross=%s creator_share=%s creator=%s pi=%s event=%s",
         amount,
         creator_share,
-        event["id"],
+        authoritative_creator_id,
+        pi_id,
+        event.get("id"),
     )
 
 
