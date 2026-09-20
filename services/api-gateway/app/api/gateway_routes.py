@@ -4,8 +4,9 @@ import logging
 from typing import Annotated
 
 import httpx
-from app.middleware import ServiceRegistry, get_optional_user, get_shared_client
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+
+from app.middleware import ServiceRegistry, get_optional_user, get_shared_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -65,7 +66,7 @@ async def gateway_ready(request: Request):
         try:
             await asyncio.wait_for(redis_client.ping(), timeout=2.0)
             checks["redis"] = "ok"
-        except asyncio.TimeoutError:
+        except TimeoutError:
             checks["redis"] = "timeout"
             overall = "not_ready"
         except Exception:  # noqa: BLE001
@@ -115,20 +116,33 @@ async def proxy_request(
     from app.main import rate_limiter  # late import: set in startup
 
     service_name = service.split("/")[0]
-    client_key = (
-        str(current_user.get("sub"))
-        if current_user
-        else (request.client.host if request.client else "unknown")
+    raw_ip = (
+        request.headers.get("x-forwarded-for")
+        or request.headers.get("x-real-ip")
+        or (request.client.host if request.client else "unknown")
     )
-    if rate_limiter and not await rate_limiter.check_rate_limit(client_key, service_name, path):
-        raise _error_response(429, "Rate limit exceeded", request)
+    real_ip = raw_ip.split(",")[0].strip() if "," in raw_ip else raw_ip.strip()
+    account_id = (
+        str(current_user.get("sub"))
+        if current_user and current_user.get("sub")
+        else None
+    )
+    device_id = request.headers.get("x-device-id")
+    if rate_limiter:
+        allowed = await rate_limiter.check_rate_limit(
+            service_name, path, ip=real_ip, account_id=account_id, device_id=device_id
+        )
+        if not allowed:
+            raise _error_response(429, "Rate limit exceeded", request)
 
     # Forward request using shared AsyncClient (#123)
     client = get_shared_client()
     try:
         original_host = request.headers.get("host", "")
         headers = {
-            k: v for k, v in request.headers.items() if k.lower() not in _PROXY_AGENT_HEADERS
+            k: v
+            for k, v in request.headers.items()
+            if k.lower() not in _PROXY_AGENT_HEADERS
         }
         if original_host:
             headers["host"] = original_host
@@ -153,7 +167,9 @@ async def proxy_request(
 
     # Strip hop-by-hop headers that must not be relayed back to the client.
     payload_headers = {
-        k: v for k, v in response.headers.items() if k.lower() not in _HOP_BY_HOP_HEADERS
+        k: v
+        for k, v in response.headers.items()
+        if k.lower() not in _HOP_BY_HOP_HEADERS
     }
 
     return Response(

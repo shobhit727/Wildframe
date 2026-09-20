@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 _REDACTED_HEADERS = frozenset({"authorization", "cookie", "set-cookie"})
 _REDACTED_VALUE = "[REDACTED]"
 _CONTROL_CHARS = (
-    "".join(chr(c) for c in range(32) if c not in (9,)) + "\x7f"  # keep tab, drop the rest
+    "".join(chr(c) for c in range(32) if c not in (9,))
+    + "\x7f"  # keep tab, drop the rest
 )
 _CONTROL_TRANSLATION = str.maketrans({c: "?" for c in _CONTROL_CHARS})
 
@@ -69,7 +70,7 @@ def _sanitize_message(message: str) -> str:
 class HeaderRedactionFilter(logging.Filter):
     """Mask Authorization/Cookie/Set-Cookie values and sanitize messages."""
 
-    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
+    def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
         if msg:
             record.msg = _sanitize_message(msg)
@@ -147,62 +148,224 @@ def get_shared_client() -> httpx.AsyncClient:
 
 
 class RateLimiter:
-    """Rate limiting middleware with per-endpoint limits.
+    """Independent IP and account limits with burst and concurrency.
 
-    Limits are configured via settings (RATE_LIMIT_* per minute).
-    Key = user sub (if authenticated) or client IP.
-    Fail-closed for auth on Redis errors, fail-open otherwise.
+    Dimensions:
+    global: not enforced at gateway (downstream services handle global caps)
+    tenant: single-tenant deployment, no tenant key
+    user/account: per JWT sub when authenticated
+    IP: per derived real IP always enforced
+    device: per X-Device-Id header when present
     """
 
     def __init__(self, redis_client: redis.Redis):
         self.redis = redis_client
         from app.core.settings import settings
 
-        # Map service/endpoint -> limit per minute
         self.limits = {
             "auth": settings.RATE_LIMIT_AUTH,
             "search": settings.RATE_LIMIT_SEARCH,
-            "uploads": settings.RATE_LIMIT_UPLOAD_CREATE,  # create session
+            "uploads": settings.RATE_LIMIT_UPLOAD_CREATE,
             "reindex": settings.RATE_LIMIT_REINDEX,
             "default": settings.RATE_LIMIT_DEFAULT,
         }
-        # Special sub-limits for upload finalize (complete/abort)
         self._upload_finalize_limit = settings.RATE_LIMIT_UPLOAD_FINALIZE
+        self.burst_limits = {
+            "auth": settings.RATE_LIMIT_BURST_AUTH,
+            "search": settings.RATE_LIMIT_BURST_SEARCH,
+            "uploads": settings.RATE_LIMIT_BURST_UPLOAD_CREATE,
+            "reindex": settings.RATE_LIMIT_BURST_REINDEX,
+            "default": settings.RATE_LIMIT_BURST_DEFAULT,
+        }
+        self._burst_upload_finalize = settings.RATE_LIMIT_BURST_UPLOAD_FINALIZE
+        self._burst_window = settings.RATE_LIMIT_BURST_WINDOW
+        self.concurrency_limits = {
+            "auth": settings.RATE_LIMIT_CONCURRENCY_AUTH,
+            "search": settings.RATE_LIMIT_CONCURRENCY_SEARCH,
+            "uploads": settings.RATE_LIMIT_CONCURRENCY_UPLOAD_CREATE,
+            "reindex": settings.RATE_LIMIT_CONCURRENCY_REINDEX,
+            "default": settings.RATE_LIMIT_CONCURRENCY_DEFAULT,
+        }
+        self._concurrency_upload_finalize = (
+            settings.RATE_LIMIT_CONCURRENCY_UPLOAD_FINALIZE
+        )
+        self._concurrency_window = settings.RATE_LIMIT_CONCURRENCY_WINDOW
+        self._window = 60
 
     def _get_limit(self, service: str, path: str = "") -> int:
-        """Get rate limit for a service, with sub-endpoint overrides."""
-        # Upload finalize (complete/abort) has stricter limit
-        if service == "uploads" and (path.endswith("/complete") or path.endswith("/abort")):
+        if service == "uploads" and path.endswith(("/complete", "/abort")):
             return self._upload_finalize_limit
-        # Reindex is an expensive operation on search service
         if path.endswith("/reindex"):
             from app.core.settings import settings
 
             return self.limits.get("reindex", settings.RATE_LIMIT_REINDEX)
         return self.limits.get(service, self.limits["default"])
 
-    async def check_rate_limit(self, user_id: str, service: str, path: str = "") -> bool:
-        """Check if user has exceeded rate limit for service.
+    def _get_burst_limit(self, service: str, path: str = "") -> int | None:
+        if service == "uploads" and path.endswith(("/complete", "/abort")):
+            return self._burst_upload_finalize
+        if path.endswith("/reindex"):
+            return self.burst_limits.get("reindex")
+        if service in ("search", "uploads", "auth"):
+            return self.burst_limits.get(service)
+        return None
 
-        Fail-closed for auth on Redis errors, fail-open otherwise. Auth is
-        security-sensitive and must not be brute-forcible during an outage;
-        other services keep fail-open for availability.
-        """
-        key = f"rate_limit:{user_id}:{service}"
-        limit = self._get_limit(service, path)
+    def _get_concurrency_limit(self, service: str, path: str = "") -> int | None:
+        if service == "uploads" and path.endswith(("/complete", "/abort")):
+            return self._concurrency_upload_finalize
+        if path.endswith("/reindex"):
+            return self.concurrency_limits.get("reindex")
+        if service in ("search", "uploads", "auth"):
+            return self.concurrency_limits.get(service)
+        return None
 
+    async def _check_key(self, key: str, limit: int, window: int, service: str) -> bool:
         try:
             count = int(await self.redis.incr(key))
             if count == 1:
-                await self.redis.expire(key, 60)  # 1 minute window
+                await self.redis.expire(key, window)
         except Exception:  # noqa: BLE001
             if service == "auth":
-                logger.warning("Rate limiter Redis error for %s; denying request", service)
+                logger.warning(
+                    "Rate limiter Redis error for %s; denying request", service
+                )
                 return False
             logger.warning("Rate limiter Redis error for %s; allowing request", service)
             return True
-
         return count <= limit
+
+    async def _check_dual(
+        self,
+        ip: str,
+        service: str,
+        path: str = "",
+        account_id: str | None = None,
+        device_id: str | None = None,
+    ) -> bool:
+        limit = self._get_limit(service, path)
+        if not await self._check_key(
+            f"rate_limit:ip:{ip}:{service}", limit, self._window, service
+        ):
+            return False
+        if account_id and not await self._check_key(
+            f"rate_limit:account:{account_id}:{service}",
+            limit,
+            self._window,
+            service,
+        ):
+            return False
+        if device_id and not await self._check_key(
+            f"rate_limit:device:{device_id}:{service}", limit, self._window, service
+        ):
+            return False
+        burst_limit = self._get_burst_limit(service, path)
+        if burst_limit is not None:
+            if not await self._check_key(
+                f"rate_limit:burst:ip:{ip}:{service}",
+                burst_limit,
+                self._burst_window,
+                service,
+            ):
+                return False
+            if account_id and not await self._check_key(
+                f"rate_limit:burst:account:{account_id}:{service}",
+                burst_limit,
+                self._burst_window,
+                service,
+            ):
+                return False
+            if device_id and not await self._check_key(
+                f"rate_limit:burst:device:{device_id}:{service}",
+                burst_limit,
+                self._burst_window,
+                service,
+            ):
+                return False
+        conc_limit = self._get_concurrency_limit(service, path)
+        if conc_limit is not None:
+            if not await self._check_key(
+                f"rate_limit:concurrent:ip:{ip}:{service}",
+                conc_limit,
+                self._concurrency_window,
+                service,
+            ):
+                return False
+            if account_id and not await self._check_key(
+                f"rate_limit:concurrent:account:{account_id}:{service}",
+                conc_limit,
+                self._concurrency_window,
+                service,
+            ):
+                return False
+            if device_id and not await self._check_key(
+                f"rate_limit:concurrent:device:{device_id}:{service}",
+                conc_limit,
+                self._concurrency_window,
+                service,
+            ):
+                return False
+        return True
+
+    async def check_rate_limits(
+        self,
+        ip: str,
+        service: str,
+        path: str = "",
+        account_id: str | None = None,
+        device_id: str | None = None,
+    ) -> bool:
+        return await self._check_dual(ip, service, path, account_id, device_id)
+
+    async def check_rate_limit(self, *args, **kwargs) -> bool:
+        ip = kwargs.pop("ip", None)
+        account_id = kwargs.pop("account_id", None)
+        device_id = kwargs.pop("device_id", None)
+        user_id_kw = kwargs.pop("user_id", None)
+        if account_id is None and user_id_kw is not None:
+            account_id = user_id_kw
+        service_kw = kwargs.pop("service", None)
+        path_kw = kwargs.pop("path", "")
+
+        if ip is not None or account_id is not None or device_id is not None:
+            if service_kw is not None:
+                service = service_kw
+            elif len(args) >= 1:
+                service = args[0]
+            else:
+                raise TypeError("service required")
+            if path_kw != "" or "path" in kwargs:
+                path = path_kw
+            elif len(args) >= 2:
+                path = args[1]
+            else:
+                path = ""
+            if ip is None:
+                ip = "unknown"
+            return await self._check_dual(ip, service, path, account_id, device_id)
+        user_id = None
+        service = None
+        path = ""
+        if len(args) >= 1:
+            user_id = args[0]
+        if len(args) >= 2:
+            service = args[1]
+        if len(args) >= 3:
+            path = args[2]
+        if user_id_kw is not None:
+            user_id = user_id_kw
+        if service_kw is not None:
+            service = service_kw
+        elif "service" in kwargs:
+            service = kwargs["service"]
+        if "path" in kwargs:
+            path = kwargs["path"]
+        elif path_kw != "":
+            path = path_kw
+        if user_id is None or service is None:
+            return True
+        limit = self._get_limit(service, path)
+        key = f"rate_limit:{user_id}:{service}"
+        return await self._check_key(key, limit, self._window, service)
 
 
 def _trusted_proxies() -> list[str]:
@@ -287,7 +450,9 @@ class HeaderSanitizerMiddleware(BaseHTTPMiddleware):
         new_headers["x-forwarded-for"] = real_ip
         new_headers["x-real-ip"] = real_ip
         scope = dict(request.scope)
-        scope["headers"] = [(k.lower().encode(), v.encode()) for k, v in new_headers.items()]
+        scope["headers"] = [
+            (k.lower().encode(), v.encode()) for k, v in new_headers.items()
+        ]
         if hasattr(request, "_headers"):
             del request._headers
         request.scope = scope
@@ -317,7 +482,9 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
         self.max_decompression_ratio = settings.MAX_DECOMPRESSION_RATIO
 
         # Uploads service uses multipart — larger cap
-        self.max_multipart_body = settings.MAX_REQUEST_BODY_SIZE * 2  # 10MB for multipart
+        self.max_multipart_body = (
+            settings.MAX_REQUEST_BODY_SIZE * 2
+        )  # 10MB for multipart
 
     async def dispatch(self, request: Request, call_next):
         # Check header limits early (#417, #418, #419)
@@ -331,7 +498,10 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
 
         total_header_size = 0
         for k, v in request.headers.items():
-            if len(k) > self.max_header_field_size or len(v) > self.max_header_field_size:
+            if (
+                len(k) > self.max_header_field_size
+                or len(v) > self.max_header_field_size
+            ):
                 return Response(
                     content=f"Header field too large (max {self.max_header_field_size})",
                     status_code=431,
@@ -357,13 +527,19 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                     return Response(
                         content=f"Duplicate header not allowed: {lowered.decode('latin-1')}",
                         status_code=400,
-                        headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+                        headers={
+                            "X-Request-ID": request.headers.get("x-request-id", "")
+                        },
                     )
 
         # Determine body limit based on content type and service
         content_type = request.headers.get("content-type", "").lower()
         is_multipart = content_type.startswith("multipart/")
-        service = request.url.path.strip("/").split("/")[0] if request.url.path.strip("/") else ""
+        service = (
+            request.url.path.strip("/").split("/")[0]
+            if request.url.path.strip("/")
+            else ""
+        )
         body_limit = (
             self.max_multipart_body
             if (is_multipart or service == "uploads")
@@ -379,7 +555,9 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                     return Response(
                         content=f"Request body too large: {cl} > {body_limit}",
                         status_code=413,
-                        headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+                        headers={
+                            "X-Request-ID": request.headers.get("x-request-id", "")
+                        },
                     )
             except ValueError:
                 pass  # Invalid content-length, let streaming handle it
@@ -398,10 +576,17 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
             chunks.append(chunk)
 
         # Decompression bomb check for compressed content
-        if request.headers.get("content-encoding", "").lower() in ("gzip", "deflate", "br"):
+        if request.headers.get("content-encoding", "").lower() in (
+            "gzip",
+            "deflate",
+            "br",
+        ):
             # Heuristic: if compressed size * ratio > limit, likely bomb
             compressed_size = total
-            if compressed_size > 0 and compressed_size * self.max_decompression_ratio > body_limit:
+            if (
+                compressed_size > 0
+                and compressed_size * self.max_decompression_ratio > body_limit
+            ):
                 return Response(
                     content=(
                         f"Potential decompression bomb: {compressed_size} * "
@@ -427,7 +612,7 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
         try:
             if request.headers.get("authorization"):
                 response.headers["Cache-Control"] = "private, no-store"
-        except Exception:  # noqa: BLE001 - header stamping must never break proxying
+        except Exception:  # noqa: BLE001, S110
             pass
 
         # Stream response body with limit enforcement (#449, #517, #518, #629)
@@ -558,7 +743,7 @@ class AuthenticationMiddleware:
                 options={"require": ["exp"]},
             )
             return payload
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("Token verification failed", exc_info=True)
             return None
 

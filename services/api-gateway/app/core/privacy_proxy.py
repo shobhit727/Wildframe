@@ -16,7 +16,19 @@ logger = logging.getLogger(__name__)
 _NOTICE_CACHE: dict[str, tuple[float, dict]] = {}
 _CACHE_TTL = 300
 
-VALID_JURISDICTIONS = {"EU", "US", "IN", "GLOBAL", "US-CA", "CA", "BR", "JP", "AU", "SG", "UK"}
+VALID_JURISDICTIONS = {
+    "EU",
+    "US",
+    "IN",
+    "GLOBAL",
+    "US-CA",
+    "CA",
+    "BR",
+    "JP",
+    "AU",
+    "SG",
+    "UK",
+}
 
 
 def resolve_jurisdiction(
@@ -36,7 +48,9 @@ def resolve_jurisdiction(
         normalized = x_jurisdiction.strip().upper()
         if normalized in VALID_JURISDICTIONS:
             return normalized
-        logger.warning(f"Unknown jurisdiction header: {x_jurisdiction}, falling back to GLOBAL")
+        logger.warning(
+            f"Unknown jurisdiction header: {x_jurisdiction}, falling back to GLOBAL"
+        )
     # Fallback: could add GeoIP lookup here; default to GLOBAL
     # For now, respect X-Jurisdiction if present, else GLOBAL
     return x_jurisdiction.upper() if x_jurisdiction else "GLOBAL"

@@ -6,10 +6,8 @@ from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
-from wildframe_observability.wire import wire_observability
+from fastapi.responses import JSONResponse, Response
 
 from app.api.gateway_routes import router as gateway_router
 
@@ -23,6 +21,7 @@ from app.middleware import (
     install_header_redaction,
     shared_client_lifespan,
 )
+from wildframe_observability.wire import wire_observability
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +77,7 @@ async def lifespan(app: FastAPI):
                     if _in_flight_requests == 0:
                         break
                 await asyncio.sleep(0.1)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(
             "Shutdown drain timeout after %ds; %d requests still in flight",
             _MAX_DRAIN_SECONDS,
@@ -145,7 +144,7 @@ def create_app() -> FastAPI:
             try:
                 await asyncio.wait_for(redis.ping(), timeout=2.0)
                 checks["redis"] = "ok"
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 checks["redis"] = "timeout"
                 overall = "not_ready"
             except Exception as e:  # noqa: BLE001
@@ -169,7 +168,9 @@ def create_app() -> FastAPI:
     app.include_router(gateway_router)
 
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
-    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
+    wire_observability(
+        app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL
+    )
 
     # Middleware to track in-flight requests for graceful shutdown (#426)
     @app.middleware("http")

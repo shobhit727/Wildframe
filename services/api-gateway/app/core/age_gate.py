@@ -41,4 +41,8 @@ def check_age_gate(
     if x_is_minor == "true":
         logger.info(f"Minor access to {path} j={jurisdiction} minor_age={minor_age}")
         # Could require parental consent header here
-    return {"age_verified": True, "is_minor": x_is_minor == "true", "jurisdiction": jurisdiction}
+    return {
+        "age_verified": True,
+        "is_minor": x_is_minor == "true",
+        "jurisdiction": jurisdiction,
+    }
