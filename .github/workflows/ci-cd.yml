@@ -3,10 +3,11 @@
 # CI: lint -> test -> security -> build smoke.
 # CD: build immutable images -> deploy to Kubernetes with Helm -> verify rollouts.
 #
-# Supply-chain hardening (audit #393/#392/#496/#405/#235/#638):
+# Supply-chain hardening (audit #393/#392/#496/#405/#235/#638/#809):
 # - All third-party actions are pinned to immutable commit SHAs (tags in comments).
 # - Top-level permissions default to contents:read; jobs override explicitly.
 # - Dependency vulnerability scan fails CI on CRITICAL/HIGH findings.
+# - Supply Chain Guard (#809) enforces SHA pinning and rejects scanner suppressions that hide private keys.
 
 name: CI/CD
 
@@ -37,6 +38,40 @@ env:
     uploads-service admin-service
 
 jobs:
+  supply-chain-guard:
+    name: Supply Chain Guard (#809)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Verify action pinning and scanner suppressions
+        run: python .github/scripts/verify-supply-chain.py
+
+      - name: Report active scanner suppressions
+        if: always()
+        run: |
+          echo "## Active Scanner Suppressions (#809)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "--- .trivy.yaml ---" >> "$GITHUB_STEP_SUMMARY"
+          cat .trivy.yaml >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "missing" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "--- .trivyignore ---" >> "$GITHUB_STEP_SUMMARY"
+          cat .trivyignore >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "missing" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "--- workflow skip-dirs/skip-files ---" >> "$GITHUB_STEP_SUMMARY"
+          grep -R -n "skip-" .github/workflows/ >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "none" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          python .github/scripts/verify-supply-chain.py >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
+
   backend-lint:
     name: Backend Lint
     runs-on: ubuntu-latest
@@ -341,7 +376,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-report
           path: playwright-report
