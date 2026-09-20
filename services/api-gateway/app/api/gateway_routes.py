@@ -122,11 +122,7 @@ async def proxy_request(
         or (request.client.host if request.client else "unknown")
     )
     real_ip = raw_ip.split(",")[0].strip() if "," in raw_ip else raw_ip.strip()
-    account_id = (
-        str(current_user.get("sub"))
-        if current_user and current_user.get("sub")
-        else None
-    )
+    account_id = str(current_user.get("sub")) if current_user and current_user.get("sub") else None
     device_id = request.headers.get("x-device-id")
     if rate_limiter:
         allowed = await rate_limiter.check_rate_limit(
@@ -140,9 +136,7 @@ async def proxy_request(
     try:
         original_host = request.headers.get("host", "")
         headers = {
-            k: v
-            for k, v in request.headers.items()
-            if k.lower() not in _PROXY_AGENT_HEADERS
+            k: v for k, v in request.headers.items() if k.lower() not in _PROXY_AGENT_HEADERS
         }
         if original_host:
             headers["host"] = original_host
@@ -150,13 +144,20 @@ async def proxy_request(
         if request.url.query:
             forward_url = f"{forward_url}?{request.url.query}"
 
-        # Use request.stream() to avoid buffering full body (BodyLimitMiddleware already read it)
-        body = await request.body()
+        if request.method in ("POST", "PUT", "PATCH"):
+
+            async def body_stream():
+                async for chunk in request.stream():
+                    yield chunk
+
+            content = body_stream()
+        else:
+            content = None
         response = await client.request(
             method=request.method,
             url=forward_url,
             headers=headers,
-            content=body if request.method in ["POST", "PUT", "PATCH"] else None,
+            content=content,
         )
     except httpx.TimeoutException:
         logger.error(f"Timeout calling {url}{path}")
@@ -165,11 +166,8 @@ async def proxy_request(
         logger.error(f"Error proxying request to {url}{path}: {e}")
         raise _error_response(502, "Bad gateway", request)
 
-    # Strip hop-by-hop headers that must not be relayed back to the client.
     payload_headers = {
-        k: v
-        for k, v in response.headers.items()
-        if k.lower() not in _HOP_BY_HOP_HEADERS
+        k: v for k, v in response.headers.items() if k.lower() not in _HOP_BY_HOP_HEADERS
     }
 
     return Response(

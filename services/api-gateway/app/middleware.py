@@ -1,5 +1,6 @@
 """API Gateway - routing, load balancing, authentication, request hardening."""
 
+import asyncio
 import ipaddress
 import logging
 from contextlib import asynccontextmanager
@@ -20,8 +21,7 @@ logger = logging.getLogger(__name__)
 _REDACTED_HEADERS = frozenset({"authorization", "cookie", "set-cookie"})
 _REDACTED_VALUE = "[REDACTED]"
 _CONTROL_CHARS = (
-    "".join(chr(c) for c in range(32) if c not in (9,))
-    + "\x7f"  # keep tab, drop the rest
+    "".join(chr(c) for c in range(32) if c not in (9,)) + "\x7f"  # keep tab, drop the rest
 )
 _CONTROL_TRANSLATION = str.maketrans({c: "?" for c in _CONTROL_CHARS})
 
@@ -98,6 +98,33 @@ def install_header_redaction() -> None:
 # Module-level shared AsyncClient for upstream requests (#123).
 # Initialized on startup, closed on shutdown. Limits honor settings.
 _shared_client: httpx.AsyncClient | None = None
+
+_GLOBAL_BODY_LOCK = asyncio.Lock()
+_GLOBAL_BODY_CURRENT = 0
+_GLOBAL_STREAM_COUNT = 0
+
+
+async def _acquire_global_budget(reserve: int) -> bool:
+    global _GLOBAL_BODY_CURRENT, _GLOBAL_STREAM_COUNT
+    from app.core.settings import settings
+
+    max_bytes = getattr(settings, "GATEWAY_GLOBAL_BODY_BUDGET_BYTES", 50 * 1024 * 1024)
+    max_streams = getattr(settings, "GATEWAY_MAX_CONCURRENT_BODIES", 20)
+    async with _GLOBAL_BODY_LOCK:
+        if _GLOBAL_BODY_CURRENT + reserve > max_bytes:
+            return False
+        if _GLOBAL_STREAM_COUNT + 1 > max_streams:
+            return False
+        _GLOBAL_BODY_CURRENT += reserve
+        _GLOBAL_STREAM_COUNT += 1
+        return True
+
+
+async def _release_global_budget(reserve: int) -> None:
+    global _GLOBAL_BODY_CURRENT, _GLOBAL_STREAM_COUNT
+    async with _GLOBAL_BODY_LOCK:
+        _GLOBAL_BODY_CURRENT = max(0, _GLOBAL_BODY_CURRENT - reserve)
+        _GLOBAL_STREAM_COUNT = max(0, _GLOBAL_STREAM_COUNT - 1)
 
 
 @asynccontextmanager
@@ -186,9 +213,7 @@ class RateLimiter:
             "reindex": settings.RATE_LIMIT_CONCURRENCY_REINDEX,
             "default": settings.RATE_LIMIT_CONCURRENCY_DEFAULT,
         }
-        self._concurrency_upload_finalize = (
-            settings.RATE_LIMIT_CONCURRENCY_UPLOAD_FINALIZE
-        )
+        self._concurrency_upload_finalize = settings.RATE_LIMIT_CONCURRENCY_UPLOAD_FINALIZE
         self._concurrency_window = settings.RATE_LIMIT_CONCURRENCY_WINDOW
         self._window = 60
 
@@ -226,9 +251,7 @@ class RateLimiter:
                 await self.redis.expire(key, window)
         except Exception:  # noqa: BLE001
             if service == "auth":
-                logger.warning(
-                    "Rate limiter Redis error for %s; denying request", service
-                )
+                logger.warning("Rate limiter Redis error for %s; denying request", service)
                 return False
             logger.warning("Rate limiter Redis error for %s; allowing request", service)
             return True
@@ -243,9 +266,7 @@ class RateLimiter:
         device_id: str | None = None,
     ) -> bool:
         limit = self._get_limit(service, path)
-        if not await self._check_key(
-            f"rate_limit:ip:{ip}:{service}", limit, self._window, service
-        ):
+        if not await self._check_key(f"rate_limit:ip:{ip}:{service}", limit, self._window, service):
             return False
         if account_id and not await self._check_key(
             f"rate_limit:account:{account_id}:{service}",
@@ -450,9 +471,7 @@ class HeaderSanitizerMiddleware(BaseHTTPMiddleware):
         new_headers["x-forwarded-for"] = real_ip
         new_headers["x-real-ip"] = real_ip
         scope = dict(request.scope)
-        scope["headers"] = [
-            (k.lower().encode(), v.encode()) for k, v in new_headers.items()
-        ]
+        scope["headers"] = [(k.lower().encode(), v.encode()) for k, v in new_headers.items()]
         if hasattr(request, "_headers"):
             del request._headers
         request.scope = scope
@@ -461,15 +480,6 @@ class HeaderSanitizerMiddleware(BaseHTTPMiddleware):
 
 
 class BodyLimitMiddleware(BaseHTTPMiddleware):
-    """Enforce request body and header limits (#231, #315, #417, #418, #419, #449, #517, #518, #629).
-
-    - MAX_REQUEST_BODY_SIZE: reject 413 before buffering full body
-    - MAX_HEADER_COUNT/FIELD/TOTAL: reject 431
-    - Service-level caps: multipart (uploads) vs JSON (default)
-    - Response body streaming with MAX_RESPONSE_BODY_SIZE cap (502/504)
-    - Decompression bomb protection (MAX_DECOMPRESSION_RATIO)
-    """
-
     def __init__(self, app):
         super().__init__(app)
         from app.core.settings import settings
@@ -480,14 +490,10 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
         self.max_header_field_size = settings.MAX_HEADER_FIELD_SIZE
         self.max_header_total_size = settings.MAX_HEADER_TOTAL_SIZE
         self.max_decompression_ratio = settings.MAX_DECOMPRESSION_RATIO
-
-        # Uploads service uses multipart — larger cap
-        self.max_multipart_body = (
-            settings.MAX_REQUEST_BODY_SIZE * 2
-        )  # 10MB for multipart
+        self.max_multipart_body = settings.MAX_REQUEST_BODY_SIZE * 2
+        self.chunk_size = getattr(settings, "GATEWAY_BODY_STREAM_CHUNK_SIZE", 65536)
 
     async def dispatch(self, request: Request, call_next):
-        # Check header limits early (#417, #418, #419)
         header_count = len(request.headers)
         if header_count > self.max_header_count:
             return Response(
@@ -495,13 +501,9 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                 status_code=431,
                 headers={"X-Request-ID": request.headers.get("x-request-id", "")},
             )
-
         total_header_size = 0
         for k, v in request.headers.items():
-            if (
-                len(k) > self.max_header_field_size
-                or len(v) > self.max_header_field_size
-            ):
+            if len(k) > self.max_header_field_size or len(v) > self.max_header_field_size:
                 return Response(
                     content=f"Header field too large (max {self.max_header_field_size})",
                     status_code=431,
@@ -514,10 +516,6 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                     status_code=431,
                     headers={"X-Request-ID": request.headers.get("x-request-id", "")},
                 )
-
-        # Duplicate security-sensitive headers must be rejected, not merged
-        # (#520): downstream layers may parse a different occurrence than the
-        # one the gateway authorized. ASGI exposes duplicates in raw headers.
         _seen: dict[bytes, int] = {}
         for raw_k, _ in request.headers.raw:
             lowered = raw_k.lower()
@@ -527,27 +525,18 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                     return Response(
                         content=f"Duplicate header not allowed: {lowered.decode('latin-1')}",
                         status_code=400,
-                        headers={
-                            "X-Request-ID": request.headers.get("x-request-id", "")
-                        },
+                        headers={"X-Request-ID": request.headers.get("x-request-id", "")},
                     )
-
-        # Determine body limit based on content type and service
         content_type = request.headers.get("content-type", "").lower()
         is_multipart = content_type.startswith("multipart/")
-        service = (
-            request.url.path.strip("/").split("/")[0]
-            if request.url.path.strip("/")
-            else ""
-        )
+        service = request.url.path.strip("/").split("/")[0] if request.url.path.strip("/") else ""
         body_limit = (
             self.max_multipart_body
             if (is_multipart or service == "uploads")
             else self.max_request_body
         )
-
-        # Read body in chunks, enforcing limit before full buffering (#231, #417)
         content_length = request.headers.get("content-length")
+        cl: int | None = None
         if content_length:
             try:
                 cl = int(content_length)
@@ -555,106 +544,120 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                     return Response(
                         content=f"Request body too large: {cl} > {body_limit}",
                         status_code=413,
-                        headers={
-                            "X-Request-ID": request.headers.get("x-request-id", "")
-                        },
+                        headers={"X-Request-ID": request.headers.get("x-request-id", "")},
                     )
             except ValueError:
-                pass  # Invalid content-length, let streaming handle it
-
-        # Stream body with limit enforcement
-        chunks = []
-        total = 0
-        async for chunk in request.stream():
-            total += len(chunk)
-            if total > body_limit:
-                return Response(
-                    content=f"Request body exceeds limit: {total} > {body_limit}",
-                    status_code=413,
-                    headers={"X-Request-ID": request.headers.get("x-request-id", "")},
-                )
-            chunks.append(chunk)
-
-        # Decompression bomb check for compressed content
-        if request.headers.get("content-encoding", "").lower() in (
+                cl = None
+        is_compressed = request.headers.get("content-encoding", "").lower() in (
             "gzip",
             "deflate",
             "br",
+        )
+        if is_compressed and cl is not None and cl * self.max_decompression_ratio > body_limit:
+            return Response(
+                content=(
+                    f"Potential decompression bomb: {cl} * "
+                    f"{self.max_decompression_ratio} > {body_limit}"
+                ),
+                status_code=413,
+                headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+            )
+        method = request.method
+        has_body = method in ("POST", "PUT", "PATCH", "DELETE") or cl is not None
+        if (
+            has_body
+            and request.headers.get("content-length") is None
+            and method in ("POST", "PUT", "PATCH")
         ):
-            # Heuristic: if compressed size * ratio > limit, likely bomb
-            compressed_size = total
-            if (
-                compressed_size > 0
-                and compressed_size * self.max_decompression_ratio > body_limit
-            ):
-                return Response(
-                    content=(
-                        f"Potential decompression bomb: {compressed_size} * "
-                        f"{self.max_decompression_ratio} > {body_limit}"
-                    ),
-                    status_code=413,
-                    headers={"X-Request-ID": request.headers.get("x-request-id", "")},
-                )
-
-        # Reconstruct request with buffered body
-        body = b"".join(chunks)
-        scope = dict(request.scope)
-        scope["body"] = body
-        request.scope = scope
-        request._body = body
-
-        # Process request
-        response = await call_next(request)
-
-        # Authenticated responses are personalizable — never shared-cacheable
-        # (#526): stamp private/no-store so CDNs and browsers cannot retain
-        # one user's data for another.
+            has_body = True
+        reserve = 0
+        acquired = False
+        if has_body:
+            reserve = cl if cl is not None else body_limit
+            if reserve:
+                acquired = await _acquire_global_budget(reserve)
+                if not acquired:
+                    return Response(
+                        content="Global body budget exceeded",
+                        status_code=429,
+                        headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+                    )
         try:
-            if request.headers.get("authorization"):
-                response.headers["Cache-Control"] = "private, no-store"
-        except Exception:  # noqa: BLE001, S110
-            pass
+            original_stream = request.stream
+            limit = body_limit
+            max_ratio = self.max_decompression_ratio
 
-        # Stream response body with limit enforcement (#449, #517, #518, #629)
-        if isinstance(response, StreamingResponse):
-            return await self._stream_with_limit(response)
-        elif hasattr(response, "body") and response.body is not None:
-            body_len = len(response.body)
-            if body_len > self.max_response_body:
-                return Response(
-                    content=f"Response body too large: {body_len} > {self.max_response_body}",
-                    status_code=502,
-                    headers={"X-Request-ID": request.headers.get("x-request-id", "")},
-                )
+            async def bounded_stream():
+                total = 0
+                async for chunk in original_stream():
+                    if not chunk:
+                        continue
+                    total += len(chunk)
+                    if total > limit:
+                        raise ValueError(f"Request body exceeds limit: {total} > {limit}")
+                    if is_compressed and total * max_ratio > limit:
+                        raise ValueError(
+                            f"Potential decompression bomb: {total} * {max_ratio} > {limit}"
+                        )
+                    yield chunk
 
-        return response
+            request.stream = bounded_stream  # type: ignore[method-assign]
 
-    async def _stream_with_limit(self, response: StreamingResponse) -> Response:
-        """Stream response body with size limit, return 502 if exceeded."""
-        chunks: list[bytes] = []
-        total = 0
-        async for chunk in response.body_iterator:
-            if isinstance(chunk, bytes):
-                chunk_bytes = chunk
-            elif isinstance(chunk, str):
-                chunk_bytes = chunk.encode()
-            else:
-                chunk_bytes = bytes(chunk)
-            total += len(chunk_bytes)
-            if total > self.max_response_body:
-                return Response(
-                    content=f"Response body exceeds limit: {total} > {self.max_response_body}",
-                    status_code=502,
-                    headers={"X-Request-ID": response.headers.get("x-request-id", "")},
-                )
-            chunks.append(chunk_bytes)
+            try:
+                response = await call_next(request)
+            except ValueError as exc:
+                msg = str(exc)
+                if "exceeds limit" in msg or "decompression bomb" in msg:
+                    return Response(
+                        content=msg,
+                        status_code=413,
+                        headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+                    )
+                raise
+            try:
+                if request.headers.get("authorization"):
+                    response.headers["Cache-Control"] = "private, no-store"
+            except Exception:  # noqa: BLE001, S110
+                pass
+            if isinstance(response, StreamingResponse):
+                return self._stream_response_with_limit(response)
+            if hasattr(response, "body") and response.body is not None:
+                body_len = len(response.body)
+                if body_len > self.max_response_body:
+                    return Response(
+                        content=f"Response body too large: {body_len} > {self.max_response_body}",
+                        status_code=502,
+                        headers={"X-Request-ID": request.headers.get("x-request-id", "")},
+                    )
+            return response
+        finally:
+            if acquired and reserve:
+                await _release_global_budget(reserve)
 
-        body = b"".join(chunks)
-        return Response(
-            content=body,
+    def _stream_response_with_limit(self, response: StreamingResponse) -> StreamingResponse:
+        max_body = self.max_response_body
+        orig = response.body_iterator
+
+        async def limited():
+            total = 0
+            async for chunk in orig:
+                if isinstance(chunk, bytes):
+                    chunk_bytes = chunk
+                elif isinstance(chunk, str):
+                    chunk_bytes = chunk.encode()
+                else:
+                    chunk_bytes = bytes(chunk)
+                total += len(chunk_bytes)
+                if total > max_body:
+                    raise ValueError(f"Response body exceeds limit: {total} > {max_body}")
+                yield chunk_bytes
+
+        return StreamingResponse(
+            content=limited(),
             status_code=response.status_code,
             headers=dict(response.headers),
             media_type=response.media_type,
+            background=response.background,
         )
 
 
