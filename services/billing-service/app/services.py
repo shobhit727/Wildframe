@@ -34,7 +34,8 @@ import httpx
 from typing import Mapping
 from uuid import UUID
 
-from app.core.money import validate_currency
+from app.core.money import from_minor_units, validate_currency
+from app.core.stripe_client import StripeClient, StripeError
 from app.models import (
     CreatorPoolEntry,
     InvoiceStatus,
@@ -387,50 +388,188 @@ class BillingService:
         invoice_id: UUID | None = None,
         user_id: UUID | None = None,
         reason: str | None = None,
+        payment_intent_id: str | None = None,
+        stripe_invoice_id: str | None = None,
     ) -> Refund:
-        """Apply a refund idempotently (#191/#478).
-
-        Duplicate ``refund_id`` returns the existing record (no double-apply).
-        If ``invoice_id`` is provided, increments the invoice's
-        ``refunded_amount`` under a guarded UPDATE; on bounds violation
-        records a REJECTED refund and logs (does not raise — money has
-        already left Stripe). If no ``invoice_id`` / ``user_id`` can be
-        resolved, records the refund as PROCESSED for audit trail.
-        """
         validate_currency(currency)
         existing = await self.refund_repo.get_by_refund_id(refund_id)
         if existing:
             return existing
-
-        # Try to find the invoice if not provided.
-        if invoice_id is None:
-            if user_id is not None:
-                inv = await self.inv_repo.get_latest_for_user(user_id)
-                if inv:
-                    invoice_id = inv.id
-
-        if invoice_id is not None:
-            applied = await self.refund_repo.apply_to_invoice(invoice_id, amount)
-            status = RefundStatus.PROCESSED if applied else RefundStatus.REJECTED
-        else:
-            # No invoice to apply to — record only.
-            status = RefundStatus.PROCESSED
-
-        if invoice_id is not None and status == RefundStatus.REJECTED:
-            self._logger.warning(
-                "Refund %s rejected: would exceed invoice %s amount (refunded=%s, amount=%s)",
-                refund_id,
-                invoice_id,
-                amount,
-                amount,  # simplified for log
+        authoritative_amount = None
+        authoritative_currency = None
+        authoritative_charge = charge_id or None
+        authoritative_pi = payment_intent_id
+        authoritative_stripe_invoice = stripe_invoice_id
+        try:
+            stripe_refund = StripeClient.retrieve_refund(refund_id)
+            if stripe_refund:
+                amt = stripe_refund.get("amount")
+                cur = stripe_refund.get("currency")
+                if amt is not None and cur:
+                    acur = str(cur).upper()
+                    try:
+                        validate_currency(acur)
+                        authoritative_currency = acur
+                        authoritative_amount = from_minor_units(int(amt), acur)
+                    except Exception:
+                        pass
+                if stripe_refund.get("charge"):
+                    authoritative_charge = str(stripe_refund.get("charge"))
+                if stripe_refund.get("payment_intent"):
+                    authoritative_pi = str(stripe_refund.get("payment_intent"))
+                if authoritative_amount is not None and authoritative_currency is not None:
+                    if authoritative_amount != amount or authoritative_currency != currency.upper():
+                        self._logger.warning(
+                            "Refund %s amount mismatch webhook %s %s vs stripe %s %s",
+                            refund_id,
+                            amount,
+                            currency,
+                            authoritative_amount,
+                            authoritative_currency,
+                        )
+                        refund = await self.refund_repo.create(
+                            refund_id=refund_id,
+                            charge_id=authoritative_charge or charge_id,
+                            amount=amount,
+                            currency=currency,
+                            invoice_id=None,
+                            user_id=user_id,
+                            reason=reason,
+                            status=RefundStatus.PENDING_REVIEW,
+                        )
+                        return refund
+                    amount = authoritative_amount
+                    currency = authoritative_currency
+        except StripeError:
+            pass
+        except Exception:
+            pass
+        resolved_invoice = None
+        resolved_invoice_id = invoice_id
+        if resolved_invoice_id is not None:
+            resolved_invoice = await self.inv_repo.get(resolved_invoice_id)
+            if resolved_invoice is None:
+                resolved_invoice_id = None
+        if resolved_invoice_id is None:
+            if authoritative_stripe_invoice:
+                try:
+                    inv = await self.inv_repo.get_by_stripe_invoice_id(authoritative_stripe_invoice)
+                    if inv:
+                        resolved_invoice = inv
+                        resolved_invoice_id = inv.id
+                except Exception:
+                    pass
+            if resolved_invoice_id is None and authoritative_pi:
+                try:
+                    pur = await self.purchase_repo.get_by_stripe_payment_intent_id(authoritative_pi)
+                    if pur:
+                        inv = await self.inv_repo.get_by_purchase_id(pur.id)
+                        if inv:
+                            resolved_invoice = inv
+                            resolved_invoice_id = inv.id
+                except Exception:
+                    pass
+            if resolved_invoice_id is None and authoritative_charge:
+                try:
+                    charge_obj = StripeClient.retrieve_charge(authoritative_charge)
+                    if charge_obj:
+                        ci = charge_obj.get("invoice")
+                        cpi = charge_obj.get("payment_intent")
+                        if ci and resolved_invoice_id is None:
+                            try:
+                                inv = await self.inv_repo.get_by_stripe_invoice_id(str(ci))
+                                if inv:
+                                    resolved_invoice = inv
+                                    resolved_invoice_id = inv.id
+                            except Exception:
+                                pass
+                            if ci:
+                                authoritative_stripe_invoice = str(ci)
+                        if cpi:
+                            authoritative_pi = str(cpi)
+                            if resolved_invoice_id is None:
+                                try:
+                                    pur = await self.purchase_repo.get_by_stripe_payment_intent_id(
+                                        str(cpi)
+                                    )
+                                    if pur:
+                                        inv = await self.inv_repo.get_by_purchase_id(pur.id)
+                                        if inv:
+                                            resolved_invoice = inv
+                                            resolved_invoice_id = inv.id
+                                except Exception:
+                                    pass
+                except StripeError:
+                    pass
+                except Exception:
+                    pass
+            if resolved_invoice_id is None and authoritative_pi:
+                try:
+                    pur = await self.purchase_repo.get_by_stripe_payment_intent_id(authoritative_pi)
+                    if pur:
+                        inv = await self.inv_repo.get_by_purchase_id(pur.id)
+                        if inv:
+                            resolved_invoice = inv
+                            resolved_invoice_id = inv.id
+                except Exception:
+                    pass
+        if resolved_invoice_id is None or resolved_invoice is None:
+            if resolved_invoice_id is not None:
+                try:
+                    resolved_invoice = await self.inv_repo.get(resolved_invoice_id)
+                except Exception:
+                    resolved_invoice = None
+            if resolved_invoice is None:
+                refund = await self.refund_repo.create(
+                    refund_id=refund_id,
+                    charge_id=authoritative_charge or charge_id,
+                    amount=amount,
+                    currency=currency,
+                    invoice_id=None,
+                    user_id=user_id,
+                    reason=reason,
+                    status=RefundStatus.PENDING_REVIEW,
+                )
+                self._logger.warning(
+                    "Refund %s pending review: unresolved invoice charge=%s pi=%s",
+                    refund_id,
+                    authoritative_charge,
+                    authoritative_pi,
+                )
+                return refund
+        if resolved_invoice.currency.upper() != currency.upper():
+            refund = await self.refund_repo.create(
+                refund_id=refund_id,
+                charge_id=authoritative_charge or charge_id,
+                amount=amount,
+                currency=currency,
+                invoice_id=resolved_invoice_id,
+                user_id=user_id,
+                reason=reason,
+                status=RefundStatus.PENDING_REVIEW,
             )
-
+            self._logger.warning(
+                "Refund %s pending review: currency mismatch invoice=%s refund=%s",
+                refund_id,
+                resolved_invoice.currency,
+                currency,
+            )
+            return refund
+        applied = await self.refund_repo.apply_to_invoice(resolved_invoice_id, amount)
+        status = RefundStatus.PROCESSED if applied else RefundStatus.REJECTED
+        if status == RefundStatus.REJECTED:
+            self._logger.warning(
+                "Refund %s rejected: would exceed invoice %s amount %s",
+                refund_id,
+                resolved_invoice_id,
+                amount,
+            )
         refund = await self.refund_repo.create(
             refund_id=refund_id,
-            charge_id=charge_id,
+            charge_id=authoritative_charge or charge_id,
             amount=amount,
             currency=currency,
-            invoice_id=invoice_id,
+            invoice_id=resolved_invoice_id,
             user_id=user_id,
             reason=reason,
             status=status,

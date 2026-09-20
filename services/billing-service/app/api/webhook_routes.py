@@ -379,44 +379,56 @@ async def _handle_payment_intent_succeeded(
     )
 
 
-async def _handle_refund(
-    event: dict[str, Any],
+async def _process_single_refund_obj(
+    refund_obj: dict[str, Any],
     service: BillingService,
+    charge_fallback: str | None = None,
+    charge_obj: dict[str, Any] | None = None,
 ) -> None:
-    """Handle charge.refunded / refund.created.
-
-    Applies the refund idempotently to the latest invoice for the
-    customer (or the invoice linked via metadata).
-    """
-    obj = event["data"]["object"]
-    refund_id = obj.get("id")
+    refund_id = refund_obj.get("id")
     if not refund_id:
         return
-
-    charge_id = obj.get("charge") if event["type"] == "refund.created" else obj.get("id")
-    amount_minor = obj.get("amount", 0)
-    currency = obj.get("currency", "usd").upper()
-    reason = obj.get("reason")
-
+    charge_id = refund_obj.get("charge") or charge_fallback or ""
+    pi_id = refund_obj.get("payment_intent")
+    if not pi_id and charge_obj:
+        pi_id = charge_obj.get("payment_intent")
+    stripe_invoice_id = None
+    if charge_obj:
+        stripe_invoice_id = charge_obj.get("invoice")
+    amount_minor = refund_obj.get("amount")
+    if amount_minor is None:
+        amount_minor = refund_obj.get("amount_refunded", 0)
+    try:
+        amount_minor = int(amount_minor)
+    except Exception as exc:
+        raise BillingError(f"Invalid refund amount {amount_minor}") from exc
+    currency_raw = refund_obj.get("currency") or ""
+    if not currency_raw and charge_obj:
+        currency_raw = charge_obj.get("currency", "usd")
+    currency = (currency_raw or "usd").strip().upper()
+    try:
+        validate_currency(currency)
+    except CurrencyError as exc:
+        raise BillingError(str(exc)) from exc
     from app.core.money import from_minor_units
 
     amount = from_minor_units(amount_minor, currency)
-
-    # Try to resolve user_id / invoice_id from metadata or charge.
     user_id = None
     invoice_id = None
-    metadata = obj.get("metadata", {})
+    metadata = refund_obj.get("metadata") or {}
+    if not metadata and charge_obj:
+        metadata = charge_obj.get("metadata") or {}
     if metadata.get("user_id"):
-        user_id = UUID(metadata["user_id"])
+        try:
+            user_id = UUID(str(metadata["user_id"]))
+        except ValueError as exc:
+            raise BillingError(f"Invalid user_id {metadata['user_id']}") from exc
     if metadata.get("invoice_id"):
-        invoice_id = UUID(metadata["invoice_id"])
-
-    # Fallback: if charge has an invoice, use that.
-    if user_id is None and charge_id:
-        # Stripe charge doesn't directly carry invoice; we'd need to
-        # fetch it via Stripe SDK. For now rely on metadata.
-        pass
-
+        try:
+            invoice_id = UUID(str(metadata["invoice_id"]))
+        except ValueError as exc:
+            raise BillingError(f"Invalid invoice_id {metadata['invoice_id']}") from exc
+    reason = refund_obj.get("reason")
     await service.process_refund(
         refund_id=refund_id,
         charge_id=charge_id or "",
@@ -425,14 +437,59 @@ async def _handle_refund(
         invoice_id=invoice_id,
         user_id=user_id,
         reason=reason,
+        payment_intent_id=str(pi_id) if pi_id else None,
+        stripe_invoice_id=str(stripe_invoice_id) if stripe_invoice_id else None,
     )
     logger.info(
-        "Refund %s processed for charge %s (amount=%s %s, status inferred)",
+        "Refund %s processed for charge %s (amount=%s %s)",
         refund_id,
         charge_id,
         amount,
         currency,
     )
+
+
+async def _handle_refund(
+    event: dict[str, Any],
+    service: BillingService,
+) -> None:
+    event_type = event.get("type")
+    obj = event["data"]["object"]
+    if event_type == "refund.created":
+        await _process_single_refund_obj(obj, service)
+    elif event_type == "charge.refunded":
+        charge_id = obj.get("id")
+        refunds = obj.get("refunds")
+        data: list[dict[str, Any]] = []
+        if isinstance(refunds, dict):
+            data = refunds.get("data", []) or []
+        elif isinstance(refunds, list):
+            data = refunds
+        if data:
+            for refund_obj in data:
+                await _process_single_refund_obj(
+                    refund_obj, service, charge_fallback=charge_id, charge_obj=obj
+                )
+        else:
+            try:
+                charge_obj = StripeClient.retrieve_charge(str(charge_id))
+                refunds2 = charge_obj.get("refunds", {})
+                rdata: list[dict[str, Any]] = []
+                if isinstance(refunds2, dict):
+                    rdata = refunds2.get("data", []) or []
+                elif isinstance(refunds2, list):
+                    rdata = refunds2
+                if rdata:
+                    for refund_obj in rdata:
+                        await _process_single_refund_obj(
+                            refund_obj, service, charge_fallback=charge_id, charge_obj=charge_obj
+                        )
+                    return
+                logger.warning("charge.refunded %s has no refunds", charge_id)
+            except Exception as exc:
+                logger.warning(
+                    "charge.refunded %s without refunds data and lookup failed: %s", charge_id, exc
+                )
 
 
 # ---------------------------------------------------------------------------

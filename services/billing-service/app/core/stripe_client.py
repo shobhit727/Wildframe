@@ -276,3 +276,27 @@ class StripeClient:
         except _StripeError as exc:
             logger.error("Stripe transfer_to_creator failed: %s", exc)
             raise StripeError(f"Failed to transfer to creator: {exc}") from exc
+
+    @staticmethod
+    def retrieve_refund(refund_id: str) -> dict[str, Any]:
+        try:
+            obj = stripe.Refund.retrieve(refund_id)
+            return dict(obj) if not isinstance(obj, dict) else obj
+        except _StripeError as exc:
+            raise StripeError(f"Failed to retrieve refund {refund_id}: {exc}") from exc
+
+    @staticmethod
+    def retrieve_charge(charge_id: str) -> dict[str, Any]:
+        try:
+            obj = stripe.Charge.retrieve(charge_id)
+            return dict(obj) if not isinstance(obj, dict) else obj
+        except _StripeError as exc:
+            raise StripeError(f"Failed to retrieve charge {charge_id}: {exc}") from exc
+
+    @staticmethod
+    def retrieve_payment_intent(pi_id: str) -> dict[str, Any]:
+        try:
+            obj = stripe.PaymentIntent.retrieve(pi_id)
+            return dict(obj) if not isinstance(obj, dict) else obj
+        except _StripeError as exc:
+            raise StripeError(f"Failed to retrieve payment_intent {pi_id}: {exc}") from exc

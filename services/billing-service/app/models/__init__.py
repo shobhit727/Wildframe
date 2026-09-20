@@ -95,7 +95,8 @@ class StripeWebhookEvent(Base):
 
 class RefundStatus(str, Enum):
     PROCESSED = "processed"
-    REJECTED = "rejected"  # Refund could not be applied (bounds violation).
+    REJECTED = "rejected"
+    PENDING_REVIEW = "pending_review"
 
 
 class Refund(Base):
