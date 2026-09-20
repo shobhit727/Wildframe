@@ -63,6 +63,9 @@ def create_app() -> FastAPI:
         version=settings.SERVICE_VERSION,
         description="User profile and device management service",
         lifespan=lifespan,
+        docs_url=None if settings.ENVIRONMENT == "production" else "/docs",
+        redoc_url=None if settings.ENVIRONMENT == "production" else "/redoc",
+        openapi_url=None if settings.ENVIRONMENT == "production" else "/openapi.json",
     )
 
     # Configure CORS

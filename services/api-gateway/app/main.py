@@ -99,6 +99,9 @@ def create_app() -> FastAPI:
         version=settings.SERVICE_VERSION,
         description="API Gateway Service - Request routing, authentication, rate limiting",
         lifespan=lifespan,
+        docs_url=None if settings.ENVIRONMENT == "production" else "/docs",
+        redoc_url=None if settings.ENVIRONMENT == "production" else "/redoc",
+        openapi_url=None if settings.ENVIRONMENT == "production" else "/openapi.json",
     )
 
     # Middleware order (last added = first executed):
@@ -168,9 +171,7 @@ def create_app() -> FastAPI:
     app.include_router(gateway_router)
 
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
-    wire_observability(
-        app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL
-    )
+    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
 
     # Middleware to track in-flight requests for graceful shutdown (#426)
     @app.middleware("http")

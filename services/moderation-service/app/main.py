@@ -81,6 +81,9 @@ def create_app() -> FastAPI:
         version=settings.SERVICE_VERSION,
         description="Moderation Service",
         lifespan=lifespan,
+        docs_url=None if settings.ENVIRONMENT == "production" else "/docs",
+        redoc_url=None if settings.ENVIRONMENT == "production" else "/redoc",
+        openapi_url=None if settings.ENVIRONMENT == "production" else "/openapi.json",
     )
 
     @app.get("/health")

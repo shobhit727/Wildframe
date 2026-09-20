@@ -818,8 +818,6 @@ class AuthenticationMiddleware:
             "/ready",
             "/gateway/health",
             "/gateway/ready",
-            "/docs",
-            "/openapi.json",
         }
     )
 
@@ -852,10 +850,17 @@ class AuthenticationMiddleware:
 
     async def __call__(self, request: Request) -> dict | None:
         """Middleware to check authentication on protected routes."""
-        # Match public routes exactly or as a child path. Using startswith(path)
-        # alone would accidentally make paths such as /auth/login-anything public.
         request_path = request.url.path.rstrip("/") or "/"
-        if any(
+        from app.core.settings import settings
+
+        is_docs_path = request_path in (
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+        ) or request_path.startswith(("/docs/", "/redoc/", "/openapi.json/"))
+        if is_docs_path and settings.ENVIRONMENT == "production":
+            pass
+        elif any(
             request_path == path or request_path.startswith(f"{path}/")
             for path in self.PUBLIC_PATHS
         ):
