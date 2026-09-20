@@ -2,8 +2,10 @@
 # Wildframe hack-verification suite. Every check prints PASS/FAIL with evidence.
 set -u
 GW="${WF_API_URL:-https://localhost:8000}"
-DEMO_EMAIL="demo@wildframe.com"; DEMO_PASS="DemoPass123!"
+DEMO_EMAIL="${WILDFRAME_DEMO_EMAIL:-${DEMO_EMAIL:-demo@wildframe.com}}"
+DEMO_PASS="${WILDFRAME_DEMO_PASSWORD:-${DEMO_PASS:-${DEMO_PASSWORD:-}}}"
 HACK_EMAIL="hacker@wildframe.com"; HACK_PASS="HackerPass123!"
+if [ -z "$DEMO_PASS" ]; then echo "DEMO_PASS not set: export WILDFRAME_DEMO_PASSWORD (or DEMO_PASSWORD) to match seed_demo" >&2; exit 1; fi
 CURL="curl -sk"
 
 jq_get() { python3 -c "import json,sys;d=json.load(sys.stdin);print(eval(sys.argv[1]))" "$1" 2>/dev/null; }

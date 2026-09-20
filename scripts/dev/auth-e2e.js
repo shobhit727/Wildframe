@@ -1,5 +1,10 @@
 const { chromium } = require('playwright');
 
+const DEMO_EMAIL = process.env.WILDFRAME_DEMO_EMAIL || process.env.DEMO_EMAIL || 'demo@wildframe.com';
+const DEMO_PASSWORD =
+  process.env.WILDFRAME_DEMO_PASSWORD || process.env.DEMO_PASSWORD || process.env.DEMO_PASS;
+if (!DEMO_PASSWORD) throw new Error('demo password not set: export WILDFRAME_DEMO_PASSWORD to match seed_demo');
+
 async function login(page, host, email, pass) {
   await page.goto(`https://${host}:3000/login`, { waitUntil: 'networkidle' });
   await page.locator('input[type="email"]').first().fill(email);
@@ -46,7 +51,7 @@ async function login(page, host, email, pass) {
     const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
     const page = await ctx.newPage();
     try {
-      await login(page, new URL(process.env.WF_WEB_URL || 'https://localhost:3000').hostname, 'demo@wildframe.com', 'DemoPass123!');
+      await login(page, new URL(process.env.WF_WEB_URL || 'https://localhost:3000').hostname, DEMO_EMAIL, DEMO_PASSWORD);
       results.push('login via LAN host: OK -> ' + page.url());
     } catch (e) {
       results.push('login via LAN host: FAIL at ' + page.url());
@@ -59,7 +64,7 @@ async function login(page, host, email, pass) {
     const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
     const page = await ctx.newPage();
     try {
-      await login(page, 'localhost', 'demo@wildframe.com', 'DemoPass123!');
+      await login(page, 'localhost', DEMO_EMAIL, DEMO_PASSWORD);
       results.push('login via localhost: OK -> ' + page.url());
     } catch (e) {
       results.push('login via localhost: FAIL at ' + page.url());

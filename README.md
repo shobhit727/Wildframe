@@ -92,9 +92,13 @@ tables are created from the SQLAlchemy models):
 python scripts/init_schemas.py
 
 # Seed genres, movies, series, an SVOD subscription and a demo admin user.
-python scripts/seed_demo.py
-# → log in at https://localhost:3000/login with demo@wildframe.com / DemoPass123!
+# Credentials are env-driven; if WILDFRAME_DEMO_PASSWORD is not set a random password is generated and printed once.
+WILDFRAME_DEMO_EMAIL=demo@wildframe.com WILDFRAME_DEMO_PASSWORD='<choose-a-strong-password>' python scripts/seed_demo.py
+# → log in at https://localhost:3000/login with the email/password from your environment
 ```
+
+Seeding refuses when `ENVIRONMENT=production` or `DATABASE_URL` points outside disposable hosts
+(`localhost`, `127.0.0.1`, `postgres`) unless `DEV_SEED_ALLOWED=true`.
 
 Everything is TLS on the host: the Caddy proxy terminates HTTPS for every
 service port (`https://localhost:8000` = gateway, `:8001` auth, …) and the

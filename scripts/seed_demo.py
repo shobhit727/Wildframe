@@ -1,51 +1,175 @@
 """Seed the Wildframe local stack with demo data so the UI has real content.
 
-Hits each service directly on its host port (bypassing the gateway) for
-reliability:
+Hits each service through the gateway (TLS via Caddy):
 
-  auth-service      8001  -> /api/v1/auth/...
-  content-service   8003  -> /api/v1/...
+  auth-service      8000  -> /api/v1/auth/...
+  content-service   8000  -> /api/v1/...
 
 Creates: genres, a demo user, ~10 movies, 3 shows with seasons+episodes.
 Posters/backdrops use picsum.photos placeholder images so the UI renders.
+
+Demo credentials are environment-driven. Set WILDFRAME_DEMO_EMAIL /
+WILDFRAME_DEMO_PASSWORD (or DEMO_EMAIL / DEMO_PASSWORD / DEMO_PASS) before
+running. If no password is provided a random one is generated and printed
+once.
+
+Production guard: refuses to run when ENVIRONMENT=production or when
+DATABASE_URL points to a non-disposable host unless DEV_SEED_ALLOWED=true.
 """
+
+import os
+import secrets
+import sys
+from urllib.parse import urlparse
 
 import httpx
 
-# Host-facing ports are TLS-only via Caddy (AGENTS.md); go through the
-# gateway and skip self-signed verification for local seeding.
-GATEWAY = "https://localhost:8000"
-DEMO_USER_ID = "e4019888-fc5b-4264-9952-39c44f869686"  # demo@wildframe.com
-AUTH = f"{GATEWAY}/auth"      # gateway routes by first path segment
+GATEWAY = os.getenv("WF_API_URL") or os.getenv("WILDFRAME_GATEWAY") or "https://localhost:8000"
+DEMO_USER_ID = "e4019888-fc5b-4264-9952-39c44f869686"
+AUTH = f"{GATEWAY}/auth"
 CONTENT = f"{GATEWAY}/content"
-
-DEMO_EMAIL = "demo@wildframe.com"
-DEMO_PASSWORD = "DemoPass123!"
 
 BOLD, RED, GREEN, YELLOW, END = "\033[1m", "\033[31m", "\033[32m", "\033[33m", "\033[0m"
 
 
+def get_demo_email() -> str:
+    return os.getenv("WILDFRAME_DEMO_EMAIL") or os.getenv("DEMO_EMAIL") or "demo@wildframe.com"
+
+
+def get_demo_password() -> str:
+    pwd = (
+        os.getenv("WILDFRAME_DEMO_PASSWORD") or os.getenv("DEMO_PASSWORD") or os.getenv("DEMO_PASS")
+    )
+    if pwd:
+        return pwd
+    generated = secrets.token_urlsafe(16)
+    print(
+        f"  {YELLOW}generated demo password: {generated} (set WILDFRAME_DEMO_PASSWORD to reuse){END}"
+    )
+    return generated
+
+
+def _is_disposable_db_url(url: str | None) -> bool:
+    if not url:
+        return True
+    low = url.lower()
+    if "localhost" in low or "127.0.0.1" in low or "::1" in low:
+        return True
+    cleaned = url.replace("postgresql+asyncpg://", "postgresql://").replace(
+        "postgresql+psycopg2://", "postgresql://"
+    )
+    try:
+        parsed = urlparse(cleaned)
+        host = (parsed.hostname or "").lower()
+        if host in ("localhost", "127.0.0.1", "::1", "postgres"):
+            return True
+        if any(x in host for x in ("prod", "rds", "amazonaws", "aurora")):
+            return False
+        if host and host not in ("postgres",):
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def assert_seed_allowed() -> None:
+    env = (os.getenv("ENVIRONMENT") or os.getenv("ENV") or "").strip().lower()
+    override = os.getenv("DEV_SEED_ALLOWED", "").strip().lower() in ("1", "true", "yes")
+    if env == "production" and not override:
+        print(
+            "refusing to seed: ENVIRONMENT=production (set DEV_SEED_ALLOWED=true to override explicitly)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    db_url = os.getenv("DATABASE_URL")
+    if db_url and not _is_disposable_db_url(db_url) and not override:
+        print(
+            "refusing to seed: DATABASE_URL looks non-disposable; set DEV_SEED_ALLOWED=true to override",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
 def ok(msg: str) -> None:
-    print(f"  {GREEN}\u2714{END} {msg}")
+    print(f"  {GREEN}✔{END} {msg}")
 
 
 def warn(msg: str) -> None:
     print(f"  {RED}!{END} {msg}")
 
 
-DOCTYPES = ["Action", "Comedy", "Drama", "Sci-Fi", "Thriller", "Animation", "Documentary", "Fantasy"]
+DOCTYPES = [
+    "Action",
+    "Comedy",
+    "Drama",
+    "Sci-Fi",
+    "Thriller",
+    "Animation",
+    "Documentary",
+    "Fantasy",
+]
 
 MOVIES = [
-    ("The Last Signal", "action", "A deep-space relay officer intercepts a message that should not exist.", 129),
-    ("Midnight Heist", "thriller", "A crew of thieves plans the perfect score on a train crossing the Alps.", 111),
-    ("Laugh Track", "comedy", "A washed-up sitcom star bets everything on a living-room stand-up tour.", 104),
-    ("Prism", "sci-fi", "A physicist discovers light can carry memories — and someone is listening.", 138),
-    ("The Long Winter", "drama", "Two sisters keep a mountain lodge alive through the hardest winter on record.", 121),
-    ("Dust & Roses", "drama", "A florist in a post-industrial port town rebuilds her family's shop.", 97),
-    ("Feral", "thriller", "A wildlife photographer records a pack of wolves — and they start recording back.", 106),
-    ("Solar Winds", "documentary", "Riding the storms of our sun with the engineers of the Parker probes.", 89),
-    ("The Cartographer", "fantasy", "A mapmaker discovers the world she draws changes the one she lives in.", 133),
-    ("Paper Planes", "animation", "A paper airplane takes a child on a journey across a giant's desk.", 92),
+    (
+        "The Last Signal",
+        "action",
+        "A deep-space relay officer intercepts a message that should not exist.",
+        129,
+    ),
+    (
+        "Midnight Heist",
+        "thriller",
+        "A crew of thieves plans the perfect score on a train crossing the Alps.",
+        111,
+    ),
+    (
+        "Laugh Track",
+        "comedy",
+        "A washed-up sitcom star bets everything on a living-room stand-up tour.",
+        104,
+    ),
+    (
+        "Prism",
+        "sci-fi",
+        "A physicist discovers light can carry memories — and someone is listening.",
+        138,
+    ),
+    (
+        "The Long Winter",
+        "drama",
+        "Two sisters keep a mountain lodge alive through the hardest winter on record.",
+        121,
+    ),
+    (
+        "Dust & Roses",
+        "drama",
+        "A florist in a post-industrial port town rebuilds her family's shop.",
+        97,
+    ),
+    (
+        "Feral",
+        "thriller",
+        "A wildlife photographer records a pack of wolves — and they start recording back.",
+        106,
+    ),
+    (
+        "Solar Winds",
+        "documentary",
+        "Riding the storms of our sun with the engineers of the Parker probes.",
+        89,
+    ),
+    (
+        "The Cartographer",
+        "fantasy",
+        "A mapmaker discovers the world she draws changes the one she lives in.",
+        133,
+    ),
+    (
+        "Paper Planes",
+        "animation",
+        "A paper airplane takes a child on a journey across a giant's desk.",
+        92,
+    ),
 ]
 
 SHOWS = [
@@ -74,19 +198,18 @@ SHOWS = [
 
 
 def seed_subscription_and_moderation(user_id: str, token: str) -> None:
-    """Give the demo user an SVOD subscription and an active moderation row.
-
-    The billing page renders the plan grid either way, but a subscription makes
-    it show "currently on SVOD"; admin Users lists only rows from admin_db's
-    user_moderations, so seed one to make that table non-empty.
-    """
     import httpx as _hx
 
-    gw = GATEWAY  # https://localhost:8000
+    gw = GATEWAY
     headers = {"Authorization": f"Bearer {token}"}
     try:
-        r = _hx.post(f"{gw}/billing/api/v1/billing/subscribe/{user_id}",
-                     json={"tier": "svod"}, headers=headers, verify=False, timeout=15)
+        r = _hx.post(
+            f"{gw}/billing/api/v1/billing/subscribe/{user_id}",
+            json={"tier": "svod"},
+            headers=headers,
+            verify=False,
+            timeout=15,
+        )
         print("subscribe:", r.status_code)
     except Exception as exc:  # noqa: BLE001
         print("subscribe skipped:", exc)
@@ -104,13 +227,35 @@ def seed_subscription_and_moderation(user_id: str, token: str) -> None:
 
 
 def main() -> None:
-    print(f"{BOLD}Seeding Wildframe demo data{END}")
+    assert_seed_allowed()
+    demo_email = get_demo_email()
+    demo_password = get_demo_password()
+    is_generated = not (
+        os.getenv("WILDFRAME_DEMO_PASSWORD") or os.getenv("DEMO_PASSWORD") or os.getenv("DEMO_PASS")
+    )
+    print(f"{BOLD}Seeding Wildframe demo data for {demo_email}{END}")
+    if is_generated:
+        print(
+            f"  {YELLOW}using generated password (set WILDFRAME_DEMO_PASSWORD to make it stable){END}"
+        )
 
     with httpx.Client(timeout=30, verify=False) as client:
-        register_user(client)
-        token = login(client)
+        register_user(client, demo_email, demo_password)
+        token = login(client, demo_email, demo_password)
+        if not token:
+            warn("login failed — seeding halted")
+            return
+        user_id = DEMO_USER_ID
+        try:
+            r = client.get(f"{AUTH}/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+            if r.status_code == 200:
+                maybe = r.json().get("id")
+                if maybe:
+                    user_id = str(maybe)
+        except Exception:
+            pass
         client = auth_client(client, token)
-        seed_subscription_and_moderation(DEMO_USER_ID, token)
+        seed_subscription_and_moderation(user_id, token)
 
         genres = seed_genres(client)
         ok(f"{len(genres)} genres ready")
@@ -124,7 +269,9 @@ def main() -> None:
 
         for show in SHOWS:
             show_genres = [genres[x] for x in show["genres"]]
-            cid = create_content(client, show["title"], show["slug"], show["desc"], "series", show_genres)
+            cid = create_content(
+                client, show["title"], show["slug"], show["desc"], "series", show_genres
+            )
             if not cid:
                 warn(f"could not create series {show['title']}")
                 continue
@@ -161,10 +308,16 @@ def main() -> None:
                     )
                 ok(f"  Season {s_no} ({ep_count} episodes)")
 
-        print(
-            f"\n{BOLD}Done.{END}  Log in at https://localhost:3000/login with "
-            f"{DEMO_EMAIL} (password: see DEMO_PASSWORD in scripts/seed_demo.py)"
-        )
+        if is_generated:
+            print(
+                f"\n{BOLD}Done.{END}  Log in at https://localhost:3000/login with {demo_email} "
+                f"(password printed above; set WILDFRAME_DEMO_PASSWORD to make it stable)"
+            )
+        else:
+            print(
+                f"\n{BOLD}Done.{END}  Log in at https://localhost:3000/login with {demo_email} "
+                f"(password from WILDFRAME_DEMO_PASSWORD / DEMO_PASSWORD)"
+            )
 
 
 def seed_genres(client: httpx.Client) -> dict[str, dict]:
@@ -192,11 +345,10 @@ def seed_genres(client: httpx.Client) -> dict[str, dict]:
     return existing
 
 
-def login(client: httpx.Client) -> str | None:
-    """Login as the demo user and return the access token (admin-capable)."""
+def login(client: httpx.Client, email: str, password: str) -> str | None:
     r = client.post(
         f"{AUTH}/api/v1/auth/login",
-        json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD},
+        json={"email": email, "password": password},
     )
     if r.status_code == 200:
         return r.json().get("access_token")
@@ -205,22 +357,21 @@ def login(client: httpx.Client) -> str | None:
 
 
 def auth_client(client: httpx.Client, token: str | None) -> httpx.Client:
-    """Return a client with the admin bearer attached (or plain client)."""
     if token:
         client.headers["Authorization"] = f"Bearer {token}"
     return client
 
 
-def register_user(client: httpx.Client) -> None:
+def register_user(client: httpx.Client, email: str, password: str) -> None:
     payload = {
-        "email": DEMO_EMAIL,
-        "password": DEMO_PASSWORD,
+        "email": email,
+        "password": password,
         "first_name": "Demo",
         "last_name": "User",
     }
     r = client.post(f"{AUTH}/api/v1/auth/register", json=payload)
     if r.status_code in (200, 201):
-        ok(f"created demo user {DEMO_EMAIL}")
+        ok(f"created demo user {email}")
         return
     if r.status_code == 409 or (r.status_code == 400 and "exist" in r.text):
         ok("demo user already exists")

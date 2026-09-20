@@ -133,18 +133,18 @@ There is no migration framework — create tables and seed demo content with:
 
 ```bash
 python scripts/init_schemas.py     # Base.metadata.create_all per service
-python scripts/seed_demo.py        # genres, movies, series, SVOD sub, admin user
+WILDFRAME_DEMO_EMAIL=demo@wildframe.com WILDFRAME_DEMO_PASSWORD='<choose-a-strong-password>' python scripts/seed_demo.py
+# WILDFRAME_DEMO_PASSWORD also accepts DEMO_PASSWORD / DEMO_PASS; if unset a random password is generated and printed once
 ```
 
-Log in at `https://localhost:3000/login`:
+Log in at `https://localhost:3000/login` with the email/password from your environment
+(default email `demo@wildframe.com` when `WILDFRAME_DEMO_EMAIL` is not set; password is the
+value of `WILDFRAME_DEMO_PASSWORD` or the generated value printed by the seed script).
 
-| Field | Value |
-|---|---|
-| Email | `demo@wildframe.com` |
-| Password | `DemoPass123!` |
-
-The demo user carries the `admin` role (via `ADMIN_EMAILS` in the dev compose),
-so `/admin` is accessible.
+The demo user receives the `admin` role only via `ADMIN_EMAILS` in the dev compose
+(explicit local development). Seeding refuses to run when `ENVIRONMENT=production` or
+when `DATABASE_URL` points outside disposable hosts (`localhost`, `127.0.0.1`, `postgres`)
+unless `DEV_SEED_ALLOWED=true` is explicitly set.
 
 ---
 

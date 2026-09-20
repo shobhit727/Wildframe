@@ -325,7 +325,8 @@ Known frontend-only paths are documented in `tests/contract/test_route_drift.py`
 curl https://localhost:8000/health
 curl -X POST https://localhost:8000/auth/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"demo@wildframe.com","password":"DemoPass123!"}'
+  -d "{\"email\":\"${WILDFRAME_DEMO_EMAIL:-demo@wildframe.com}\",\"password\":\"${WILDFRAME_DEMO_PASSWORD:-<your-demo-password>}\"}"
+# password is env-driven; see scripts/seed_demo.py — never use a committed fixed demo password
 ```
 
 ---

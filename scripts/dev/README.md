@@ -39,8 +39,9 @@ WF_WEB_URL=https://192.168.1.14:3000 npm run auth
 npm run probe                       # API-level security checks
 ```
 
-Demo credentials come from `scripts/seed_demo.py`
-(`demo@wildframe.com` / `DemoPass123!`).
+Demo credentials come from `scripts/seed_demo.py` via environment
+(`WILDFRAME_DEMO_EMAIL` / `WILDFRAME_DEMO_PASSWORD`, also `DEMO_EMAIL` / `DEMO_PASSWORD` / `DEMO_PASS`).
+If `WILDFRAME_DEMO_PASSWORD` is not set a random password is generated and printed once by the seed script.
 
 ## Headless codec limitation
 

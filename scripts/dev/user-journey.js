@@ -2,6 +2,10 @@ const { chromium } = require('playwright');
 // Hosts are configurable: WF_WEB_URL / WF_API_URL (defaults suit the dev stack).
 const BASE = process.env.WF_WEB_URL || 'https://localhost:3000';
 const API = process.env.WF_API_URL || 'https://localhost:8000';
+const DEMO_EMAIL = process.env.WILDFRAME_DEMO_EMAIL || process.env.DEMO_EMAIL || 'demo@wildframe.com';
+const DEMO_PASSWORD =
+  process.env.WILDFRAME_DEMO_PASSWORD || process.env.DEMO_PASSWORD || process.env.DEMO_PASS;
+if (!DEMO_PASSWORD) throw new Error('demo password not set: export WILDFRAME_DEMO_PASSWORD to match seed_demo');
 
 const SHOT = (n) => `.tmp/ux/${n}.png`; // relative to repo root
 
@@ -32,8 +36,8 @@ const SHOT = (n) => `.tmp/ux/${n}.png`; // relative to repo root
   });
   // 2. login
   await step('login as demo', async () => {
-    await page.locator('input[type="email"]').first().fill('demo@wildframe.com');
-    await page.locator('input[type="password"]').first().fill('DemoPass123!');
+    await page.locator('input[type="email"]').first().fill(DEMO_EMAIL);
+    await page.locator('input[type="password"]').first().fill(DEMO_PASSWORD);
     await page.locator('button[type="submit"]').first().click();
     await page.waitForURL(/browse/, { timeout: 25000 });
     await page.waitForTimeout(3500);
@@ -109,8 +113,8 @@ const SHOT = (n) => `.tmp/ux/${n}.png`; // relative to repo root
   });
   // 10. login again
   await step('login again works', async () => {
-    await page.locator('input[type="email"]').first().fill('demo@wildframe.com');
-    await page.locator('input[type="password"]').first().fill('DemoPass123!');
+    await page.locator('input[type="email"]').first().fill(DEMO_EMAIL);
+    await page.locator('input[type="password"]').first().fill(DEMO_PASSWORD);
     await page.locator('button[type="submit"]').first().click();
     await page.waitForURL(/browse/, { timeout: 25000 });
   });
