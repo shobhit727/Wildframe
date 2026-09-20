@@ -45,6 +45,7 @@ pyotp = "^2.9.0"
 setuptools = ">=84,<86"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
 wildframe-compliance = {path = "../../packages/sdk/wildframe_compliance", develop = true}
+wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 
 [tool.poetry.group.dev.dependencies]
 aiosqlite = "^0.19.0"

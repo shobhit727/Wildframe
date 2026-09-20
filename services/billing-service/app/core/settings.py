@@ -1,12 +1,3 @@
-"""Configuration settings for the Billing Service (Sustenance Engine core).
-
-Key settings:
-  - CREATOR_SHARE_PERCENTAGE: contractual floor for creator share (>=55%)
-  - CREATOR_POOL_PERCENTAGE: % of net revenue flowing to Creator Pool
-  - MILESTONE_TRANCHE_PERCENTAGES: 10/20/30/40 split
-  - MAX_STAGE_ATTEMPTS: kill threshold for stalled milestones
-"""
-
 from decimal import Decimal
 
 from pydantic import model_validator
@@ -21,7 +12,6 @@ DEV_ENVIRONMENTS = {"", "development", "test"}
 DEV_DEFAULTS = {
     "DATABASE_URL": "postgresql+asyncpg://postgres:password@localhost:5432/billing_db",
     "REDIS_URL": "redis://localhost:6379/0",
-    "JWT_SECRET_KEY": "dev-secret-key-change-in-production-min-32-bytes",
 }
 
 KNOWN_INSECURE_DB_CREDENTIALS = (
@@ -29,19 +19,9 @@ KNOWN_INSECURE_DB_CREDENTIALS = (
     "wildframe:wildframe_dev_password",
     "postgres:password",
 )
-KNOWN_INSECURE_JWT_SECRETS = (
-    "dev-secret-key",
-    "dev-secret-key-change-in-production",
-    "dev-secret-key-change-in-production-min-32-bytes",
-    "your-secret-key-change-in-production",
-    "secret",
-    "changeme",
-)
 
 
 class Settings(ComplianceSettingsMixin, BaseSettings):
-    """Application settings loaded from environment / .env file."""
-
     SERVICE_NAME: str = "Billing"
     SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
@@ -49,8 +29,9 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     REDIS_URL: str | None = None
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
-    JWT_ALGORITHM: str = "HS256"
-    JWT_SECRET_KEY: str | None = None
+    JWT_ALGORITHM: str = "RS256"
+    JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
+    JWT_LEEWAY_SECONDS: int = 60
     JWT_EXPIRATION_MINUTES: int = 15
     DATABASE_POOL_SIZE: int = 5
     DATABASE_MAX_OVERFLOW: int = 5
@@ -111,18 +92,6 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
         if self.REDIS_URL is None:
             raise ValueError(
                 "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
-            )
-        if self.JWT_SECRET_KEY is None:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if self.JWT_SECRET_KEY in KNOWN_INSECURE_JWT_SECRETS:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if len(self.JWT_SECRET_KEY) < 32:
-            raise ValueError(
-                "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
             )
         if self.STRIPE_API_KEY.startswith("sk_test_"):
             raise ValueError("STRIPE_API_KEY must be a live key in production")

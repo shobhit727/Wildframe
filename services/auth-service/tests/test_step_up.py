@@ -6,6 +6,7 @@ import pytest
 from jose import jwt
 
 from app.core.settings import settings
+from app.security.jwks import get_jwks, get_private_key_pem
 from app.security import TokenManager, role_for_email
 from app.schemas import StepUpRequest
 
@@ -43,7 +44,7 @@ class TestTokenManagerStepUp:
         )
         payload = jwt.decode(
             token,
-            settings.JWT_SECRET_KEY,
+            get_jwks()["keys"][0],
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
@@ -66,14 +67,14 @@ class TestTokenManagerStepUp:
         step = TokenManager.create_admin_step_up_token(admin_user_id, admin_email, 0, ["pwd"])
         a_payload = jwt.decode(
             access,
-            settings.JWT_SECRET_KEY,
+            get_jwks()["keys"][0],
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
         )
         s_payload = jwt.decode(
             step,
-            settings.JWT_SECRET_KEY,
+            get_jwks()["keys"][0],
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
@@ -87,14 +88,14 @@ class TestTokenManagerStepUp:
         t2 = TokenManager.create_admin_step_up_token(admin_user_id, admin_email, 0, ["pwd"])
         p1 = jwt.decode(
             t1,
-            settings.JWT_SECRET_KEY,
+            get_jwks()["keys"][0],
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
         )
         p2 = jwt.decode(
             t2,
-            settings.JWT_SECRET_KEY,
+            get_jwks()["keys"][0],
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
@@ -129,7 +130,7 @@ class TestTokenManagerStepUp:
             "aud": settings.JWT_AUDIENCE,
             "jti": f"stepup_{admin_user_id}_{now.timestamp()}_test",
         }
-        token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+        token = jwt.encode(payload, get_private_key_pem(), algorithm=settings.JWT_ALGORITHM, headers={"kid": settings.JWT_KEY_ID})
         assert TokenManager.verify_token(token, token_type="admin_step_up") is None
 
 
@@ -189,7 +190,7 @@ class TestStepUpEndpoint:
         assert "step_up_token" in result
         payload = jwt.decode(
             result["step_up_token"],
-            settings.JWT_SECRET_KEY,
+            get_jwks()["keys"][0],
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
@@ -219,7 +220,7 @@ class TestStepUpEndpoint:
         assert "step_up_token" in result
         payload = jwt.decode(
             result["step_up_token"],
-            settings.JWT_SECRET_KEY,
+            get_jwks()["keys"][0],
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,

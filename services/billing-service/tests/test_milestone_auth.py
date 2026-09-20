@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from jose import jwt
+from tests._test_jwks import PRIVATE_PEM
 
 from app.core.settings import settings
 from app.main import create_app
@@ -21,7 +22,7 @@ def _token(user_id, role="user"):
         "aud": settings.JWT_AUDIENCE,
         "iss": settings.JWT_ISSUER,
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
 
 
 @pytest.mark.asyncio

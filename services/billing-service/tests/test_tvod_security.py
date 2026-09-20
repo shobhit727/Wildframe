@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 from jose import jwt
+from tests._test_jwks import PRIVATE_PEM
 
 from app.api.webhook_routes import _handle_checkout_session_completed
 from app.core.settings import settings
@@ -21,7 +22,7 @@ def _token(user_id):
         "aud": settings.JWT_AUDIENCE,
         "iss": settings.JWT_ISSUER,
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
 
 
 def _session_event(

@@ -1,8 +1,9 @@
 from http import HTTPStatus as http_status
 
 import httpx
-from jose import JWTError, jwt
+from jose import JWTError
 
+from app.core.jwt_verifier import verify_token as verify_jwt_token
 from app.core.settings import settings
 
 """Billing service API routes.
@@ -117,18 +118,7 @@ async def get_current_user_payload(
         )
     token = authorization.removeprefix("Bearer ")
     try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=http_status.UNAUTHORIZED,
-                detail="Invalid token type",
-            )
+        payload = await verify_jwt_token(token, expected_type="access")
     except JWTError:
         raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token")
     await _enforce_auth_version(authorization, payload)
@@ -159,18 +149,7 @@ async def get_current_user_id(
         )
     token = authorization.removeprefix("Bearer ")
     try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=http_status.UNAUTHORIZED,
-                detail="Invalid token type",
-            )
+        payload = await verify_jwt_token(token, expected_type="access")
     except JWTError:
         raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token")
     await _enforce_auth_version(authorization, payload)

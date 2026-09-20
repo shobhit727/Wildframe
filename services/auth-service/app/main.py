@@ -242,6 +242,12 @@ def create_app() -> FastAPI:
             "openapi": "/openapi.json",
         }
 
+    @app.get("/.well-known/jwks.json", tags=["Auth"])
+    async def jwks_endpoint():
+        from app.security.jwks import get_jwks
+
+        return get_jwks()
+
     # Include API routes
     from app.api.routes import router as api_router
 

@@ -134,15 +134,24 @@ class TestTokenManager:
         """Test verification of expired token."""
         user_id = str(uuid4())
 
-        # Create token with immediate expiration
-        expires = datetime.now(UTC) - timedelta(seconds=1)
-        payload = {"sub": user_id, "exp": expires, "iat": datetime.now(UTC), "type": "access"}
-
-        import jwt
         from app.core.settings import settings
 
-        expired_token = jwt.encode(
-            payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+        expires = datetime.now(UTC) - timedelta(seconds=70)
+        payload = {
+            "sub": user_id,
+            "user_id": user_id,
+            "type": "access",
+            "aud": settings.JWT_AUDIENCE,
+            "iss": settings.JWT_ISSUER,
+            "exp": expires,
+            "iat": datetime.now(UTC),
+        }
+
+        from app.security.jwks import get_private_key_pem
+        from jose import jwt as _jwt
+
+        expired_token = _jwt.encode(
+            payload, get_private_key_pem(), algorithm=settings.JWT_ALGORITHM, headers={"kid": settings.JWT_KEY_ID}
         )
 
         result = TokenManager.verify_token(expired_token, token_type="access")
@@ -169,13 +178,22 @@ class TestTokenManager:
         assert header.get("kid") == settings.JWT_KEY_ID
 
     def test_overlap_secret_verifies_during_rotation(self, monkeypatch):
-        """#138/#442: tokens signed with the previous key keep verifying for
-        the overlap window; after retirement they are rejected."""
-        import bcrypt  # noqa: F401  (ensure security module fully imported)
+        import base64
+        import json
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.hazmat.primitives import serialization
         from app.core.settings import settings
+        from app.security.jwks import reset_cache
 
+        def _b64(n: int) -> str:
+            b = n.to_bytes((n.bit_length() + 7)//8, "big")
+            return base64.urlsafe_b64encode(b).decode().rstrip("=")
+
+        prev_priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        prev_pem = prev_priv.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
+        nums = prev_priv.public_key().public_numbers()
+        prev_jwk = {"kty":"RSA","kid":"k0","use":"sig","alg":"RS256","n":_b64(nums.n),"e":_b64(nums.e)}
         user_id = str(uuid4())
-        old_secret = "previous-rotation-secret"
         now = datetime.now(UTC)
         payload = {
             "sub": user_id,
@@ -187,19 +205,14 @@ class TestTokenManager:
             "aud": settings.JWT_AUDIENCE,
         }
         from jose import jwt as _jwt
-
-        old_token = _jwt.encode(payload, old_secret, algorithm=settings.JWT_ALGORITHM)
-
-        # Without overlap configured: rejected.
+        old_token = _jwt.encode(payload, prev_pem, algorithm="RS256", headers={"kid":"k0"})
         assert TokenManager.verify_token(old_token) is None
-
-        # Overlap configured: accepted.
-        monkeypatch.setattr(settings, "JWT_PREVIOUS_SECRETS", old_secret)
+        monkeypatch.setattr(settings, "JWT_PREVIOUS_JWKS", json.dumps([prev_jwk]))
+        reset_cache()
         decoded = TokenManager.verify_token(old_token)
         assert decoded is not None and decoded["sub"] == user_id
-
-        # Retired (overlap removed): rejected again.
-        monkeypatch.setattr(settings, "JWT_PREVIOUS_SECRETS", "")
+        monkeypatch.setattr(settings, "JWT_PREVIOUS_JWKS", "")
+        reset_cache()
         assert TokenManager.verify_token(old_token) is None
 
 

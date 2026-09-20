@@ -41,6 +41,8 @@ COPY services/auth-service /app
 
 # Copy SDK directly into app
 COPY packages/sdk/wildframe_observability /app/wildframe_observability
+COPY packages/sdk/wildframe_compliance/wildframe_compliance /app/wildframe_compliance
+COPY packages/sdk/wildframe_auth /app/wildframe_auth
 
 # Create logs directory
 RUN mkdir -p logs
@@ -74,6 +76,8 @@ COPY services/auth-service /app
 
 # Copy SDK directly into app
 COPY packages/sdk/wildframe_observability /app/wildframe_observability
+COPY packages/sdk/wildframe_compliance/wildframe_compliance /app/wildframe_compliance
+COPY packages/sdk/wildframe_auth /app/wildframe_auth
 
 # Create logs directory and set permissions
 RUN mkdir -p logs && chown -R appuser:appuser /app

@@ -1,6 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from tests._test_jwks import JWKS
+
 
 @pytest.fixture(autouse=True)
 def _mock_auth_introspection():
@@ -13,4 +15,5 @@ def _mock_auth_introspection():
     mock_client.get = AsyncMock(return_value=mock_resp)
     with patch("httpx.AsyncClient", return_value=mock_client):
         with patch("app.api.billing_routes.httpx.AsyncClient", return_value=mock_client):
-            yield
+            with patch("app.core.jwt_verifier.get_cached_jwks", new=AsyncMock(return_value=JWKS)):
+                yield

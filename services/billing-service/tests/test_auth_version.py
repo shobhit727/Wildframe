@@ -6,6 +6,7 @@ import httpx
 import pytest
 from fastapi import HTTPException
 from jose import jwt
+from tests._test_jwks import PRIVATE_PEM
 
 from app.api.billing_routes import get_current_user_id, get_current_user_payload
 from app.core.settings import settings
@@ -23,7 +24,7 @@ def _token(av=2, token_type="access", sub=None):
         "exp": datetime.now(UTC) + timedelta(minutes=15),
         "iat": datetime.now(UTC),
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
 
 
 def _mock_client(resp=None, exc=None):

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["poetry-core>=1.7.0"]
+build-backend = "poetry.core.masonry.api"
+
+[project]
+name = "wildframe-auth"
+version = "1.0.0"
+description = "Shared JWT verification via JWKS for Wildframe"
+
+[tool.poetry]
+name = "wildframe-auth"
+version = "1.0.0"
+description = "Shared JWT verification via JWKS"
+authors = ["Wildframe Team <engineering@wildframe.com>"]
+license = "Proprietary"
+packages = [{include = "wildframe_auth"}]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.16"
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+cryptography = "^42.0.0"
+httpx = "^0.25.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=7.4,<10.0"
+pytest-asyncio = "^0.21.0"
+black = ">=23.11,<27.0"
+isort = "^5.12.0"
+mypy = "^1.7.0"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.11"
