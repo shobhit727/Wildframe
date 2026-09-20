@@ -287,7 +287,10 @@ jobs:
 
       - name: Install dependencies
         working-directory: .
-        run: npm ci --legacy-peer-deps --no-audit --no-fund
+        run: npm ci --legacy-peer-deps --no-fund
+
+      - name: Frontend dependency audit (SCA gate)
+        run: npm audit --audit-level=high
 
       - name: Lint
         run: npm run lint
@@ -323,7 +326,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: .
-        run: npm ci --legacy-peer-deps --no-audit --no-fund
+        run: npm ci --legacy-peer-deps --no-fund
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
