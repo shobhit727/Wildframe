@@ -31,6 +31,8 @@ from app.schemas import (
     MFAVerifyRequest,
     RefreshTokenRequest,
     ResendVerificationRequest,
+    StepUpRequest,
+    StepUpResponse,
     TokenResponse,
     UserLoginRequest,
     UserRegisterRequest,
@@ -748,3 +750,47 @@ async def disable_mfa(
     await db.commit()
     logger.info(f"MFA disabled for user: {user.email}")
     return {"message": "MFA disabled successfully"}
+
+
+@router.post("/step-up", response_model=StepUpResponse)
+async def step_up(
+    request: StepUpRequest,
+    http_request: Request,
+    user_id: Annotated[UUID, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    client_ip = http_request.client.host if http_request.client else "unknown"
+    if not await allow(
+        f"stepup:ip:{client_ip}",
+        max_requests=settings.STEP_UP_RATE_LIMIT_ATTEMPTS,
+        window_seconds=settings.STEP_UP_RATE_LIMIT_WINDOW,
+    ) or not await allow(
+        f"stepup:user:{user_id}",
+        max_requests=settings.STEP_UP_RATE_LIMIT_ATTEMPTS,
+        window_seconds=settings.STEP_UP_RATE_LIMIT_WINDOW,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many step-up attempts. Try again later.",
+        )
+    user = await UserRepository(db).get_by_id(user_id)
+    if not user or role_for_email(user.email) != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
+        )
+    if not PasswordManager.verify_password(request.password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
+    amr: list[str] = ["pwd"]
+    if user.mfa_enabled:
+        if not request.mfa_code:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="MFA code required")
+        secret = SecretCipher.decrypt(user.mfa_secret) if user.mfa_secret else ""
+        if not secret or not pyotp.TOTP(secret).verify(request.mfa_code, valid_window=1):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid MFA code")
+        amr.append("mfa")
+    token = TokenManager.create_admin_step_up_token(user.id, user.email, user.auth_version, amr)
+    return StepUpResponse(
+        step_up_token=token,
+        expires_in=settings.STEP_UP_EXPIRATION_MINUTES * 60,
+        token_type="bearer",
+    ).model_dump()

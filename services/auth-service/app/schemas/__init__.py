@@ -224,6 +224,17 @@ class ResendVerificationRequest(BaseModel):
     email: EmailStr
 
 
+class StepUpRequest(BaseModel):
+    password: str = Field(..., min_length=1)
+    mfa_code: str | None = Field(None, min_length=6)
+
+
+class StepUpResponse(BaseModel):
+    step_up_token: str
+    expires_in: int
+    token_type: str = "bearer"
+
+
 class ErrorResponse(BaseModel):
     """Error response.
 

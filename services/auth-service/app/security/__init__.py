@@ -7,9 +7,11 @@ import base64
 import hashlib
 import json
 import logging
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
+
 import bcrypt
 from app.core.settings import settings
 from jose import JWTError, jwt
@@ -336,6 +338,40 @@ class TokenManager:
         except Exception:  # noqa: BLE001
             return None
         return None
+
+    @staticmethod
+    def create_admin_step_up_token(
+        user_id: UUID,
+        email: str,
+        auth_version: int,
+        amr: list[str],
+        scope: str = "admin:destructive",
+    ) -> str:
+        now = datetime.now(UTC)
+        exp_minutes = getattr(settings, "STEP_UP_EXPIRATION_MINUTES", 5)
+        expires_at = now + timedelta(minutes=exp_minutes)
+        payload = {
+            "sub": str(user_id),
+            "user_id": str(user_id),
+            "email": email,
+            "role": "admin",
+            "type": "admin_step_up",
+            "av": auth_version,
+            "arv": settings.ADMIN_ROLE_VERSION,
+            "amr": amr,
+            "scope": scope,
+            "iat": now,
+            "exp": expires_at,
+            "iss": settings.JWT_ISSUER,
+            "aud": settings.JWT_AUDIENCE,
+            "jti": f"stepup_{user_id}_{now.timestamp()}_{uuid.uuid4().hex[:8]}",
+        }
+        return jwt.encode(
+            payload,
+            _jwt_secret(),
+            algorithm=settings.JWT_ALGORITHM,
+            headers={"kid": settings.JWT_KEY_ID},
+        )
 
     @staticmethod
     def hash_token(token: str) -> str:

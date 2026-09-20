@@ -109,6 +109,9 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     # Email verification rate limit (#69/#140)
     EMAIL_VERIFY_RATE_LIMIT_ATTEMPTS: int = 10
     EMAIL_VERIFY_RATE_LIMIT_WINDOW: int = 3600
+    STEP_UP_EXPIRATION_MINUTES: int = 5
+    STEP_UP_RATE_LIMIT_ATTEMPTS: int = 5
+    STEP_UP_RATE_LIMIT_WINDOW: int = 900
 
     # CORS Configuration
     CORS_ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001"]

@@ -1,7 +1,9 @@
+import asyncio
 from datetime import UTC, datetime
 
 from typing import Annotated
 
+import redis.asyncio as redis
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,23 +61,35 @@ async def get_current_admin_id(
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-# Step-up reauth (#613): destructive admin actions (content removal, user
-# suspension/ban) require proof of a recent login. auth-service has no
-# dedicated reauth endpoint, so the X-Admin-Reauth header carries the access
-# token itself and must have been issued (iat) within REAUTH_MAX_AGE_SECONDS.
-REAUTH_MAX_AGE_SECONDS: int = 600  # 10 minutes
+_stepup_jti_seen: set[str] = set()
+_stepup_jti_lock = asyncio.Lock()
+
+
+async def _consume_stepup_jti(jti: str, exp: int | float | None) -> bool:
+    if settings.REDIS_URL:
+        try:
+            client = await redis.from_url(settings.REDIS_URL, decode_responses=True)
+            ttl = 300
+            if isinstance(exp, (int, float)):
+                ttl = max(1, int(exp - datetime.now(UTC).timestamp()))
+            ok = await client.set(f"stepup:jti:{jti}", "1", nx=True, ex=ttl)
+            await client.aclose()
+            if ok is None or ok is False:
+                return True
+            return False
+        except Exception:
+            pass
+    async with _stepup_jti_lock:
+        if jti in _stepup_jti_seen:
+            return True
+        _stepup_jti_seen.add(jti)
+        return False
 
 
 async def verify_admin_reauth(
     admin_id: Annotated[str, Depends(get_current_admin_id)],
     x_admin_reauth: Annotated[str | None, Header(alias="X-Admin-Reauth")] = None,
 ) -> str:
-    """Step-up reauth gate for destructive admin actions.
-
-    Requires ``X-Admin-Reauth`` holding the admin's access token issued
-    within the last 10 minutes, for the same admin identity. 403 for a
-    different admin, 401 for missing/expired/invalid step-up proof.
-    """
     if not x_admin_reauth:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -87,10 +101,11 @@ async def verify_admin_reauth(
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
         )
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid reauth token")
-    if payload.get("type") != "access":
+    if payload.get("type") != "admin_step_up":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid reauth token type"
         )
@@ -98,20 +113,29 @@ async def verify_admin_reauth(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
         )
+    if int(payload.get("arv") or 0) != settings.ADMIN_ROLE_VERSION:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
+        )
     if str(payload.get("sub") or payload.get("user_id")) != admin_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Reauth token admin mismatch"
         )
-    iat = payload.get("iat")
-    if not isinstance(iat, (int, float)):
+    if payload.get("scope") != "admin:destructive":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient scope")
+    amr = payload.get("amr") or []
+    if "pwd" not in amr:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Reauth token missing issued-at claim",
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Insufficient authentication strength"
         )
-    if datetime.now(UTC).timestamp() - iat > REAUTH_MAX_AGE_SECONDS:
+    jti = payload.get("jti")
+    if not isinstance(jti, str) or not jti:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Reauth token expired: log in again",
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Reauth token missing jti"
+        )
+    if await _consume_stepup_jti(jti, payload.get("exp")):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Reauth token already used"
         )
     return admin_id
 
