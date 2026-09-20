@@ -1,5 +1,6 @@
 """API Gateway - routing, load balancing, authentication, request hardening."""
 
+import ipaddress
 import logging
 from contextlib import asynccontextmanager
 from types import MappingProxyType
@@ -204,50 +205,92 @@ class RateLimiter:
         return count <= limit
 
 
+def _trusted_proxies() -> list[str]:
+    from app.core.settings import settings
+
+    raw = getattr(settings, "TRUSTED_PROXIES", "") or ""
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if str(x).strip()]
+    if isinstance(raw, str):
+        return [p.strip() for p in raw.split(",") if p.strip()]
+    return []
+
+
+def _is_trusted_ip(ip_str: str, trusted: list[str]) -> bool:
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    for entry in trusted:
+        entry = entry.strip()
+        if not entry:
+            continue
+        if "/" in entry:
+            try:
+                net = ipaddress.ip_network(entry, strict=False)
+                if ip in net:
+                    return True
+            except ValueError:
+                continue
+        else:
+            try:
+                if ip == ipaddress.ip_address(entry):
+                    return True
+            except ValueError:
+                if ip_str == entry:
+                    return True
+    return False
+
+
+def _derive_real_ip(socket_ip: str, xff_header: str | None) -> str:
+    from app.core.settings import settings
+
+    trust_proxy = bool(getattr(settings, "TRUST_PROXY", False))
+    if not trust_proxy:
+        return socket_ip
+    trusted = _trusted_proxies()
+    is_peer_trusted = True if not trusted else _is_trusted_ip(socket_ip, trusted)
+    if not is_peer_trusted:
+        return socket_ip
+    if not xff_header:
+        return socket_ip
+    parts = [p.strip() for p in xff_header.split(",") if p.strip()]
+    if not parts:
+        return socket_ip
+    for ip in reversed(parts):
+        if not trusted:
+            try:
+                ipaddress.ip_address(ip)
+                return ip
+            except ValueError:
+                continue
+        else:
+            if not _is_trusted_ip(ip, trusted):
+                try:
+                    ipaddress.ip_address(ip)
+                    return ip
+                except ValueError:
+                    continue
+    return socket_ip
+
+
 class HeaderSanitizerMiddleware(BaseHTTPMiddleware):
-    """Strip/rewrite client-supplied headers at the edge (#314, #522, #625).
-
-    - X-Forwarded-For: append client IP to trusted chain, drop client value
-    - X-Real-IP: replace with client IP
-    - X-User-*: drop entirely (identity headers must come from auth)
-    - X-Correlation-ID / X-Request-ID: always regenerate server-side
-    """
-
     async def dispatch(self, request: Request, call_next):
-        # Get client IP
-        client_ip = request.client.host if request.client else "unknown"
-
-        # Build new headers dict with sanitized values
+        socket_ip = request.client.host if request.client else "unknown"
+        existing_xff = request.headers.get("x-forwarded-for")
+        real_ip = _derive_real_ip(socket_ip, existing_xff)
         new_headers = {}
         for key, value in request.headers.items():
-            key_lower = key.lower()
-            if key_lower in _STRIP_HEADERS:
-                continue  # drop client-supplied value
+            if key.lower() in _STRIP_HEADERS:
+                continue
             new_headers[key] = value
-
-        # Rewrite X-Forwarded-For: append client IP to existing (trusted) chain
-        # If no existing XFF, start new chain with client IP
-        existing_xff = request.headers.get("x-forwarded-for")
-        if existing_xff:
-            new_headers["x-forwarded-for"] = f"{existing_xff}, {client_ip}"
-        else:
-            new_headers["x-forwarded-for"] = client_ip
-
-        # Rewrite X-Real-IP to client IP
-        new_headers["x-real-ip"] = client_ip
-
-        # Create a new request with sanitized headers
-        # We can't mutate request.headers directly (immutable), so we use scope
-        scope = request.scope
-        scope = dict(scope)
+        new_headers["x-forwarded-for"] = real_ip
+        new_headers["x-real-ip"] = real_ip
+        scope = dict(request.scope)
         scope["headers"] = [(k.lower().encode(), v.encode()) for k, v in new_headers.items()]
-
-        # Use the modified scope for the rest of the request
-        # Delete _headers to force re-parse (setting to None doesn't work due to hasattr check)
         if hasattr(request, "_headers"):
             del request._headers
         request.scope = scope
-
         response = await call_next(request)
         return response
 

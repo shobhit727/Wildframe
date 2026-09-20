@@ -71,6 +71,8 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     RATE_LIMIT_UPLOAD_FINALIZE: int = 60
     RATE_LIMIT_REINDEX: int = 20
     RATE_LIMIT_DEFAULT: int = 1000
+    TRUST_PROXY: bool = False
+    TRUSTED_PROXIES: str = ""
 
     @model_validator(mode="before")
     @classmethod
