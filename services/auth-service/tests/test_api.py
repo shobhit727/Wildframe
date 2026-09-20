@@ -216,7 +216,7 @@ class TestAuthEndpoints:
 
         # Get current user
         response = client.get(
-            "/api/v1/users/me",
+            "/api/v1/auth/me",
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
@@ -227,14 +227,14 @@ class TestAuthEndpoints:
 
     def test_get_current_user_no_token(self, client):
         """Test getting current user without token."""
-        response = client.get("/api/v1/users/me")
+        response = client.get("/api/v1/auth/me")
 
         assert response.status_code == 401
 
     def test_get_current_user_invalid_token(self, client):
         """Test getting current user with invalid token."""
         response = client.get(
-            "/api/v1/users/me",
+            "/api/v1/auth/me",
             headers={"Authorization": "Bearer invalid.token.here"},
         )
 

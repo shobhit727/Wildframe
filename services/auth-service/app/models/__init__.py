@@ -98,20 +98,6 @@ class User(Base, BaseModel):
         DateTime(timezone=True),
         nullable=True,
     )
-    email_verification_code: Mapped[str | None] = mapped_column(
-        String(6),
-        nullable=True,
-    )
-    email_verification_code_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    # Single-use email verification token JTI (hashed) — consumed on verify
-    email_verification_token_jti: Mapped[str | None] = mapped_column(
-        String(64),
-        nullable=True,
-        index=True,
-    )
 
     # Login tracking
     last_login_at: Mapped[datetime | None] = mapped_column(
@@ -151,7 +137,6 @@ class User(Base, BaseModel):
         nullable=False,
     )
     mfa_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    backup_codes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Indexes for common queries
     __table_args__ = (

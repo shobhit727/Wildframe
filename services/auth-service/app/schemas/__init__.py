@@ -199,12 +199,6 @@ class VerifyEmailRequest(BaseModel):
     token: str
 
 
-class MFASetupRequest(BaseModel):
-    """MFA setup request."""
-
-    method: str = Field(..., description="MFA method (totp, sms)")
-
-
 class MFAVerifyRequest(BaseModel):
     """MFA verification request."""
 

@@ -219,14 +219,12 @@ class TestNoRecoveryCodes:
         assert set(setup.json().keys()) == {"secret", "totp_uri"}
 
     async def test_no_plaintext_codes_written_to_user_row(self, client, db_session):
-        from sqlalchemy import select
-
         from app.models import User
 
         email = "mfa-nocodes2@example.com"
         await _enable_mfa(client, email)
-        user = (await db_session.execute(select(User).where(User.email == email))).scalar_one()
-        assert user.backup_codes is None
+        assert not hasattr(User, "backup_codes")
+        assert "backup_codes" not in User.__table__.columns
 
 
 @pytest.mark.asyncio

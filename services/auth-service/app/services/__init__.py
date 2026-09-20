@@ -1,7 +1,6 @@
 """Service layer for Auth Service."""
 
 import logging
-import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -466,67 +465,3 @@ class AuthService:
         await self.token_repo.commit()
         logger.info(f"Password changed for user: {user.email}; revoked {revoked} refresh token(s)")
         return True
-
-    async def send_email_verification(self, user_id: UUID) -> dict:
-        """Send email verification code to user."""
-        user = await self.user_repo.get_by_id(user_id)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
-            )
-
-        if user.email_verified:
-            return {"message": "Email already verified"}
-
-        # Generate verification code
-        code = f"{secrets.randbelow(1000000):06d}"
-        expires_at = datetime.now(UTC) + timedelta(hours=24)
-
-        # Store code in user record with dedicated fields
-        user.email_verification_code = code
-        user.email_verification_code_expires_at = expires_at
-        await self.user_repo.commit()
-
-        # TODO: Send email with code
-        logger.info(f"Email verification code sent to {user.email}: {code}")
-
-        return {"message": "Verification code sent"}
-
-    async def verify_email(self, user_id: UUID, code: str) -> dict:
-        """Verify email verification code."""
-        user = await self.user_repo.get_by_id(user_id)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
-            )
-
-        if user.email_verified:
-            return {"message": "Email already verified"}
-
-        # Check code
-        stored_code = user.email_verification_code
-        expires_at = user.email_verification_code_expires_at
-
-        if not stored_code or stored_code != code:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid verification code",
-            )
-
-        if expires_at is None or datetime.now(UTC) > expires_at:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Verification code expired",
-            )
-
-        # Mark email as verified
-        user.email_verified = True
-        user.email_verified_at = datetime.now(UTC)
-        user.email_verification_code = None  # Clear code
-        user.email_verification_code_expires_at = None  # Clear expiry
-        await self.user_repo.commit()
-
-        logger.info(f"Email verified for user: {user.email}")
-        return {"message": "Email verified successfully"}

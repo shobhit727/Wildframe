@@ -48,12 +48,9 @@ def make_user(**overrides):
     u.login_attempts = 0
     u.locked_until = None
     u.email_verified = False
-    u.email_verification_code = None
-    u.email_verification_code_expires_at = None
     u.mfa_enabled = False
     u.auth_version = 0
     u.mfa_secret = None
-    u.backup_codes = None
     u.role = "user"
     for k, v in overrides.items():
         setattr(u, k, v)
@@ -217,73 +214,6 @@ class TestUserBranches:
         result = await service.change_password(user.id, "password123", "newpass123")
 
         assert result is True
-        repos["user_repo"].commit.assert_awaited_once()
-
-
-class TestEmailVerificationBranches:
-    async def test_send_missing_user_404(self, service, repos):
-        repos["user_repo"].get_by_id.return_value = None
-
-        with pytest.raises(HTTPException) as exc:
-            await service.send_email_verification(uuid4())
-
-        assert exc.value.status_code == 404
-
-    async def test_send_when_already_verified(self, service, repos):
-        user = make_user(email_verified=True)
-        repos["user_repo"].get_by_id.return_value = user
-
-        result = await service.send_email_verification(user.id)
-
-        assert "already verified" in result["message"]
-
-    async def test_send_sets_code_and_expiry(self, service, repos):
-        user = make_user()
-        repos["user_repo"].get_by_id.return_value = user
-
-        await service.send_email_verification(user.id)
-
-        assert user.email_verification_code is not None
-        assert user.email_verification_code_expires_at is not None
-        repos["user_repo"].commit.assert_awaited_once()
-
-    async def test_verify_wrong_code_400(self, service, repos):
-        user = make_user(email_verification_code="123456")
-        repos["user_repo"].get_by_id.return_value = user
-
-        with pytest.raises(HTTPException) as exc:
-            await service.verify_email(user.id, "000000")
-
-        assert exc.value.status_code == 400
-
-    async def test_verify_expired_code_400(self, service, repos):
-        from datetime import UTC, datetime
-
-        user = make_user(
-            email_verification_code="123456",
-            email_verification_code_expires_at=datetime.now(UTC) - timedelta(hours=1),
-        )
-        repos["user_repo"].get_by_id.return_value = user
-
-        with pytest.raises(HTTPException) as exc:
-            await service.verify_email(user.id, "123456")
-
-        assert exc.value.status_code == 400
-
-    async def test_verify_success_clears_code(self, service, repos):
-        from datetime import UTC, datetime
-
-        user = make_user(
-            email_verification_code="123456",
-            email_verification_code_expires_at=datetime.now(UTC) + timedelta(hours=1),
-        )
-        repos["user_repo"].get_by_id.return_value = user
-
-        result = await service.verify_email(user.id, "123456")
-
-        assert "verified" in result["message"]
-        assert user.email_verified is True
-        assert user.email_verification_code is None
         repos["user_repo"].commit.assert_awaited_once()
 
 

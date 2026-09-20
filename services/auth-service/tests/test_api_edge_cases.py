@@ -86,7 +86,7 @@ class TestLogoutEdgeCases:
         assert response.status_code == 204
 
         # The blacklisted access token must now be rejected.
-        me = client.get("/api/v1/users/me", headers=registered["headers"])
+        me = client.get("/api/v1/auth/me", headers=registered["headers"])
         assert me.status_code == 401
 
     def test_logout_without_token_or_body_returns_401(self, client):
@@ -239,7 +239,7 @@ class TestMfaEdgeCases:
 class TestChangePasswordEdgeCases:
     def test_change_password_wrong_current_password_returns_401(self, client, registered):
         response = client.post(
-            "/api/v1/users/change-password",
+            "/api/v1/auth/change-password",
             json={"current_password": "WrongPass456!", "new_password": "NewSecurePass789!"},
             headers=registered["headers"],
         )
