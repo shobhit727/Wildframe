@@ -128,6 +128,16 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "KAFKA_BOOTSTRAP_SERVERS must be set explicitly when ENVIRONMENT is not development."
             )
+        if (
+            not self.MEDIA_PIPELINE_ADAPTERS
+            or self.MEDIA_PIPELINE_ADAPTERS.strip() == ""
+            or self.MEDIA_PIPELINE_ADAPTERS.strip() == "stub"
+        ):
+            raise ValueError(
+                "MEDIA_PIPELINE_ADAPTERS must be set to a production adapter "
+                "(e.g. 'ffmpeg') when ENVIRONMENT is production; 'stub' is "
+                "only allowed in development/test environments."
+            )
         return self
 
 
