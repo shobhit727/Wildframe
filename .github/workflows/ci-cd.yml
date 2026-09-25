@@ -147,6 +147,19 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     strategy:
       fail-fast: false
       matrix:
@@ -209,6 +222,8 @@ jobs:
 
       - name: Run tests with coverage
         working-directory: services/${{ matrix.service }}
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/test_db
         run: |
           set -euo pipefail
           PYTHONPATH="$PWD:${PYTHONPATH:-}" poetry run pytest tests --asyncio-mode=auto -q --cov=app --cov-report=term-missing:skip-covered
@@ -216,6 +231,8 @@ jobs:
       - name: Print slowest tests
         if: always()
         working-directory: services/${{ matrix.service }}
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/test_db
         run: |
           PYTHONPATH="$PWD:${PYTHONPATH:-}" poetry run pytest tests --asyncio-mode=auto --durations=20 -q
 

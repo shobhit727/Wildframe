@@ -115,6 +115,6 @@ def _is_uuid_like(value: str) -> bool:
 
 def _normalize_endpoint(path: str) -> str:
     """Normalize endpoint path for metrics labeling."""
-    # Replace UUID-like segments with placeholder
+    # Replace UUID-like segments with {id} placeholder
     import re
-    return re.sub(r'/[0-9a-f-]{36}(/|$)', r'/{uuid}\1', path, flags=re.IGNORECASE)
+    return re.sub(r'/[0-9a-f-]{36}(/|$)', r'/{id}\1', path, flags=re.IGNORECASE)
