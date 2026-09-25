@@ -359,20 +359,24 @@ class AdminService:
         self, total_users: int | None = None, suspended_users: int | None = None
     ) -> dict:
         flagged_content = await self.db.scalar(
-            select(func.count()).select_from(ContentModeration).where(
-                ContentModeration.is_active == True, ContentModeration.status == "flagged"
+            select(func.count())
+            .select_from(ContentModeration)
+            .where(
+                ContentModeration.is_active.is_(True),
+                ContentModeration.status == "flagged",
             )
         )
         active_alerts = await self.db.scalar(
-            select(func.count()).select_from(SystemAlert).where(
-                SystemAlert.is_active == True, SystemAlert.acknowledged == False
-            )
+            select(func.count())
+            .select_from(SystemAlert)
+            .where(SystemAlert.is_active.is_(True), SystemAlert.acknowledged.is_(False))
         )
         return {
             "total_users": total_users,
             "active_users": (
                 total_users - suspended_users
-                if total_users is not None and suspended_users is not None else None
+                if total_users is not None and suspended_users is not None
+                else None
             ),
             "suspended_users": suspended_users,
             "flagged_content": flagged_content,

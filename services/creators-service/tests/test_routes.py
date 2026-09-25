@@ -146,7 +146,9 @@ class TestFloorBalanceLedger:
         response = client.get("/api/v1/creators/me/floor")
 
         assert response.status_code == 200
-        assert response.json()["per_minute_amount"] == 0.02
+        # per_minute_amount is a Decimal (Numeric(20, 8) column); Pydantic v2
+        # serializes Decimal to a JSON string to keep decimal precision.
+        assert response.json()["per_minute_amount"] == "0.02"
 
     def test_get_floor_missing_returns_404(self, client, service):
         service.get_floor.return_value = None

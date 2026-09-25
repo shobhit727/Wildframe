@@ -18,11 +18,6 @@ def auth_user_id():
     return uuid4()
 
 
-@pytest.fixture(autouse=True)
-def override_auth():
-    yield
-
-
 @pytest.fixture
 def client(auth_user_id):
     app = create_app()
@@ -32,7 +27,7 @@ def client(auth_user_id):
     # want to assert on the service (e.g. TestSendNotification) replace this
     # override with their own via `app.dependency_overrides[get_notif_service]`.
     default_service = MagicMock()
-    default_service.send_notification = AsyncMock()
+    default_service.send_notification = AsyncMock(return_value={"status": "sent"})
     default_service.get_unread = AsyncMock(return_value=[])
     default_service.mark_as_read = AsyncMock(return_value=True)
     app.dependency_overrides[get_notif_service] = lambda: default_service
@@ -44,7 +39,7 @@ def client(auth_user_id):
 @pytest.fixture
 def service():
     mock = MagicMock()
-    mock.send_notification = AsyncMock()
+    mock.send_notification = AsyncMock(return_value={"status": "sent"})
     return mock
 
 
@@ -66,15 +61,34 @@ class TestSendNotification:
                 "user_id": str(user_id),
                 "title": "New episode",
                 "message": "Stranger Things S5 is out",
-                "channel": "email",
+                "channel": "in-app",
             },
         )
 
         assert response.status_code == 200
         assert response.json() == {"status": "sent"}
         service.send_notification.assert_awaited_once_with(
-            user_id, "New episode", "Stranger Things S5 is out", "email"
+            user_id, "New episode", "Stranger Things S5 is out", "in-app"
         )
+
+    def test_send_email_channel_is_forbidden(self, client, service, auth_user_id):
+        client.app.dependency_overrides[get_notif_service] = override(service)
+
+        response = client.post(
+            "/api/v1/notifications/send",
+            json={
+                "user_id": str(auth_user_id),
+                "title": "New episode",
+                "message": "Stranger Things S5 is out",
+                "channel": "email",
+            },
+        )
+
+        # The route rejects email without a verified recipient before the
+        # service is reached, so nothing is delivered and nothing persists.
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Email delivery requires a verified account recipient"
+        service.send_notification.assert_not_awaited()
 
     def test_send_defaults_to_in_app_channel(self, client, service, auth_user_id):
         client.app.dependency_overrides[get_notif_service] = override(service)

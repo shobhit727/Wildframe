@@ -113,22 +113,26 @@ class UploadChunkRepository:
     async def expired_sessions(self, now: datetime) -> list[UploadSession]:
         """Sessions still in flight past their expiry (stale and safe to reap)."""
         result = await self.session.execute(
-            select(UploadSession).where(
+            select(UploadSession)
+            .where(
                 UploadSession.expires_at < now,
                 UploadSession.status.in_(
                     [UploadSessionStatus.INITIATED, UploadSessionStatus.UPLOADING]
                 ),
-            ).with_for_update(skip_locked=True)
+            )
+            .with_for_update(skip_locked=True)
         )
         return list(result.scalars().all())
 
     async def uncleaned_aborted(self, now: datetime, grace: timedelta) -> list[UploadSession]:
         """Aborted sessions whose storage cleanup never completed (retry)."""
         result = await self.session.execute(
-            select(UploadSession).where(
+            select(UploadSession)
+            .where(
                 UploadSession.status == UploadSessionStatus.ABORTED,
                 UploadSession.storage_cleaned_at.is_(None),
                 UploadSession.updated_at < now - grace,
-            ).with_for_update(skip_locked=True)
+            )
+            .with_for_update(skip_locked=True)
         )
         return list(result.scalars().all())

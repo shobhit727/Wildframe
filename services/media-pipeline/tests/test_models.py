@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
@@ -13,6 +14,7 @@ from app.models import (
     PipelineJob,
     PipelineJobStatus,
     PipelineStageLog,
+    PipelineStageStatus,
     StreamingQualityProfile,
     TranscodingJob,
     TranscodingStatus,
@@ -27,7 +29,7 @@ def session():
         if not url:
             postgres = stack.enter_context(PostgresContainer("postgres:15"))
             url = postgres.get_connection_url()
-        engine = create_engine(url)
+        engine = create_engine(make_url(url).set(drivername="postgresql+psycopg2"))
         stack.callback(engine.dispose)
         Base.metadata.create_all(engine)
         connection = stack.enter_context(engine.connect())
@@ -116,7 +118,15 @@ def test_quality_profile_defaults_and_codecs(session):
 
 def test_pipeline_stage_log_defaults(session):
     job = persist(session, PipelineJob(content_id=uuid4(), upload_session_id=uuid4()))
-    log = persist(session, PipelineStageLog(job_id=job.id, stage="encode"))
+    log = persist(
+        session,
+        PipelineStageLog(
+            job_id=job.id,
+            stage="encode",
+            status=PipelineStageStatus.SUCCESS,
+        ),
+    )
+    assert log.status == PipelineStageStatus.SUCCESS
     assert log.duration_ms == 0
     assert log.message is None
     assert log.created_at is not None

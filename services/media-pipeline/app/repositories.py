@@ -66,9 +66,11 @@ class PipelineJobRepository:
         self, before: datetime, status: PipelineJobStatus | None = None
     ) -> list[PipelineJob]:
         """Return jobs with leased_at < before (optionally filtered by status)."""
-        stmt = select(PipelineJob).where(
-            PipelineJob.leased_at.is_not(None), PipelineJob.leased_at < before
-        ).with_for_update(skip_locked=True)
+        stmt = (
+            select(PipelineJob)
+            .where(PipelineJob.leased_at.is_not(None), PipelineJob.leased_at < before)
+            .with_for_update(skip_locked=True)
+        )
         if status is not None:
             stmt = stmt.where(PipelineJob.status == status)
         result = await self.session.execute(stmt)

@@ -193,7 +193,9 @@ def create_app() -> FastAPI:
         return await call_next(request)
 
     wire_observability(
-        app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL,
+        app,
+        service_name=settings.SERVICE_NAME,
+        log_level=settings.LOG_LEVEL,
         register_metrics=False,
     )
 

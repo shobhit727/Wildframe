@@ -162,10 +162,7 @@ class UploadService:
         session_id = uuid4()
         upload_id = None
         if total_chunks > 1:
-            upload_id = await self.storage.begin_upload(
-                session_id=str(session_id), mime=safe_mime
-            )
-
+            upload_id = await self.storage.begin_upload(session_id=str(session_id), mime=safe_mime)
 
         now = datetime.now(UTC)
         session = UploadSession(
@@ -189,8 +186,10 @@ class UploadService:
             await self.repo.session.rollback()
             try:
                 await self.storage.cleanup_upload(
-                    session_id=str(session_id), chunk_keys=[],
-                    final_key=storage_key_for(str(session_id), None), upload_id=upload_id,
+                    session_id=str(session_id),
+                    chunk_keys=[],
+                    final_key=storage_key_for(str(session_id), None),
+                    upload_id=upload_id,
                 )
             except Exception:
                 logger.exception("failed to clean unpersisted upload %s", session_id)
@@ -199,12 +198,16 @@ class UploadService:
         uploads: list[PresignedUpload] = []
         try:
             for index in range(total_chunks):
-                uploads.append(await self.storage.create_upload(
-                    session_id=str(session_id), filename=safe_filename, mime=safe_mime,
-                    chunk_index=index if total_chunks > 1 else None,
-                    expected_size=self._expected_chunk_size(session, index),
-                    upload_id=upload_id,
-                ))
+                uploads.append(
+                    await self.storage.create_upload(
+                        session_id=str(session_id),
+                        filename=safe_filename,
+                        mime=safe_mime,
+                        chunk_index=index if total_chunks > 1 else None,
+                        expected_size=self._expected_chunk_size(session, index),
+                        upload_id=upload_id,
+                    )
+                )
         except Exception:
             await self.abort(session_id, reason="upload URL generation failed")
             raise
@@ -263,7 +266,9 @@ class UploadService:
         # Authoritative storage check: the object must exist with the exact
         # byte count this index is supposed to hold.
         metadata = await self.storage.get_chunk_metadata(
-            session_id=str(session_id), index=index, total_chunks=session.total_chunks,
+            session_id=str(session_id),
+            index=index,
+            total_chunks=session.total_chunks,
             upload_id=session.multipart_upload_id,
         )
         if metadata is None:
@@ -371,10 +376,7 @@ class UploadService:
             raise UploadError(f"storage completion failed: {exc}") from exc
 
         # Checksum: the server-computed digest is the only authority.
-        if (
-            session.checksum_sha256
-            and session.checksum_sha256 != final_metadata.checksum_sha256
-        ):
+        if session.checksum_sha256 and session.checksum_sha256 != final_metadata.checksum_sha256:
             raise UploadError(
                 f"checksum mismatch for session {session_id}: expected "
                 f"{session.checksum_sha256}, storage computed "

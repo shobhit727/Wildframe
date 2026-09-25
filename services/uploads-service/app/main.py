@@ -49,6 +49,8 @@ class BodySizeLimitMiddleware:
             return {"type": "http.request", "body": bytes(body), "more_body": False}
 
         await self.app(scope, replay, send)
+
+
 logger = logging.getLogger(__name__)
 
 # Graceful shutdown state (#426)
@@ -239,7 +241,9 @@ def create_app() -> FastAPI:
     app.add_middleware(BodySizeLimitMiddleware, max_bytes=6291456)
 
     wire_observability(
-        app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL,
+        app,
+        service_name=settings.SERVICE_NAME,
+        log_level=settings.LOG_LEVEL,
         register_metrics=False,
     )
 

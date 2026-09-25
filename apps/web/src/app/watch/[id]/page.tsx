@@ -40,7 +40,12 @@ function WatchContent({ contentId }: { contentId: string }) {
   const [sessionId, setSessionId] = useState<string>('');
   const [selectedEpisode, setSelectedEpisode] = useState<{ id: string; number: number } | null>(null);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const [isStarting, setIsStarting] = useState(true);
+  // Identifies the playback request a resolved session belongs to. The spinner
+  // is derived from it during render, so switching episode/content/user starts a
+  // new session without the effect writing state synchronously.
+  const sessionKey = `${contentId}:${selectedEpisode?.id ?? ''}:${user?.id ?? ''}`;
+  const [startedKey, setStartedKey] = useState<string | null>(null);
+  const isStarting = startedKey !== sessionKey;
   const [inMyList, setInMyList] = useState(() => !!user && isInMyList(contentId, user.id));
 
   // Fetch content details
@@ -78,7 +83,6 @@ function WatchContent({ contentId }: { contentId: string }) {
     if (!isAuthenticated || !user || !contentId) return;
 
     let cancelled = false;
-    setIsStarting(true);
 
     const startSession = async () => {
       try {
@@ -98,7 +102,7 @@ function WatchContent({ contentId }: { contentId: string }) {
           setStreamUrl(DEMO_HLS_URL);
         }
         setSessionId(session.id);
-        setIsStarting(false);
+        setStartedKey(sessionKey);
       } catch {
         if (cancelled) return;
         toast.error('Failed to start playback. Please try again.');
@@ -111,7 +115,7 @@ function WatchContent({ contentId }: { contentId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [contentId, selectedEpisode?.id, user?.id, isAuthenticated, router]);
+  }, [contentId, selectedEpisode?.id, user?.id, isAuthenticated, router, sessionKey]);
 
   const similarContent: Content[] = useMemo(
     () => (similarData || []).filter((c) => c.id !== contentId).slice(0, 12).map(normalizeContent),
@@ -119,9 +123,9 @@ function WatchContent({ contentId }: { contentId: string }) {
   );
 
   const selectEpisode = (episodeId: string, number: number) => {
+    // sessionKey changes with the episode, which flips isStarting back on.
     setSelectedEpisode({ id: episodeId, number });
     setSessionId('');
-    setIsStarting(true);
   };
 
   const toggleMyList = () => {

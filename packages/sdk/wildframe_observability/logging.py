@@ -106,11 +106,7 @@ def _redact_secrets(value: Any, depth: int = 0) -> Any:
         return "<max-depth>"
     if isinstance(value, dict):
         return {
-            k: (
-                "***REDACTED***"
-                if _is_sensitive_field(k)
-                else _redact_secrets(v, depth + 1)
-            )
+            k: ("***REDACTED***" if _is_sensitive_field(k) else _redact_secrets(v, depth + 1))
             for k, v in value.items()
         }
     if isinstance(value, (list, tuple, set)):

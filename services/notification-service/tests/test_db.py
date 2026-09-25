@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -18,7 +19,7 @@ from app.main import create_app
 from app.models import Base
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_env(tmp_path):
     test_engine = create_async_engine(
         f"sqlite+aiosqlite:///{tmp_path}/test.db",
@@ -165,30 +166,36 @@ class TestIdempotency:
 
 class TestPreferenceGating:
     def test_disabled_channel_is_skipped_server_side(self, client, auth_user_id):
-        resp = client.put("/api/v1/notifications/preferences", json={"email_enabled": False})
+        resp = client.put("/api/v1/notifications/preferences", json={"sms_enabled": False})
         assert resp.status_code == 200
-        assert resp.json()["email_enabled"] is False
-        assert client.get("/api/v1/notifications/preferences").json()["email_enabled"] is False
+        assert resp.json()["sms_enabled"] is False
+        assert client.get("/api/v1/notifications/preferences").json()["sms_enabled"] is False
 
-        # Email-only send: skipped, nothing persisted.
-        result = send(client, auth_user_id, channel="email").json()
+        # SMS-only send: skipped, nothing persisted.
+        result = send(client, auth_user_id, channel="sms").json()
         assert result["status"] == "skipped"
         assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
             "count": 0
         }
 
-        # Multi-channel: email skipped, in-app still delivered.
-        result = send(client, auth_user_id, channels=["email", "in-app"]).json()
+        # Multi-channel: sms skipped, in-app still delivered.
+        result = send(client, auth_user_id, channels=["sms", "in-app"]).json()
         assert result["status"] == "partial"
         assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
             "count": 1
         }
 
-    def test_unknown_preference_field_rejected(self, client):
-        assert (
-            client.put("/api/v1/notifications/preferences", json={"spam": True}).status_code == 422
-        )
-        assert client.put("/api/v1/notifications/preferences", json={}).status_code == 422
+    def test_email_delivery_forbidden_without_verified_recipient(self, client, auth_user_id):
+        # The route refuses email before the service is reached, so no channel
+        # preference (enabled or not) can turn it into a send.
+        resp = send(client, auth_user_id, channel="email")
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "Email delivery requires a verified account recipient"
+        assert send(client, auth_user_id, channels=["in-app", "email"]).status_code == 403
+        assert send(client, auth_user_id, email_address="user@example.com").status_code == 403
+        assert client.get(f"/api/v1/notifications/unread-count/{auth_user_id}").json() == {
+            "count": 0
+        }
 
 
 class TestChannelIsolationAndRetry:

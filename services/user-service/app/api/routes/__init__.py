@@ -28,11 +28,9 @@ from app.schemas import (
 from app.security.manager import TokenManager
 from app.services import UserService
 
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
 
 
 async def get_current_user_id(

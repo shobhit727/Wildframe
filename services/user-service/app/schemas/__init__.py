@@ -20,7 +20,9 @@ class UserProfileUpdateRequest(BaseModel):
     newsletter_subscribed: bool | None = None
     marketing_emails: bool | None = None
 
-    @field_validator("bio", "language", "public_profile", "newsletter_subscribed", "marketing_emails")
+    @field_validator(
+        "bio", "language", "public_profile", "newsletter_subscribed", "marketing_emails"
+    )
     @classmethod
     def reject_null_nonnullable_fields(cls, value):
         if value is None:

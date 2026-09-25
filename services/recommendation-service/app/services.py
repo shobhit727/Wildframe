@@ -195,7 +195,9 @@ class RecommendationService:
             return cached[:limit]
 
         prefs = await self.pref_repo.get_or_create(user_id)
-        recommendations = await self.rec_repo.get_for_user(user_id, settings.MAX_RECOMMENDATION_LIMIT)
+        recommendations = await self.rec_repo.get_for_user(
+            user_id, settings.MAX_RECOMMENDATION_LIMIT
+        )
         if recommendations:
             latest_generated = await self.rec_repo.latest_created_at(user_id)
             if latest_generated is not None and latest_generated >= prefs.updated_at:
@@ -211,10 +213,14 @@ class RecommendationService:
                 return result[:limit]
         try:
             await self.generate(
-                user_id, prefs.liked_genres or [], prefs.disliked_genres or [],
+                user_id,
+                prefs.liked_genres or [],
+                prefs.disliked_genres or [],
                 settings.MAX_RECOMMENDATION_LIMIT,
             )
-            recommendations = await self.rec_repo.get_for_user(user_id, settings.MAX_RECOMMENDATION_LIMIT)
+            recommendations = await self.rec_repo.get_for_user(
+                user_id, settings.MAX_RECOMMENDATION_LIMIT
+            )
         except Exception:
             logger.exception("Recommendation generation failed; returning stored rows")
         result = [
@@ -355,7 +361,9 @@ class RecommendationService:
         await _cache_invalidate(user_id)
         try:
             await self.generate(
-                user_id, prefs.liked_genres or [], prefs.disliked_genres or [],
+                user_id,
+                prefs.liked_genres or [],
+                prefs.disliked_genres or [],
                 settings.MAX_RECOMMENDATION_LIMIT,
             )
         except Exception:

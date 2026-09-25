@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from app.api.routes import (
     get_current_user_id as streaming_user_di,
     get_streaming_service,
+    require_admin as streaming_require_admin,
     require_self as streaming_require_self,
 )
 from app.main import app
@@ -30,7 +31,7 @@ def auth_user_id():
 
 @pytest.fixture
 def fake_service():
-    return MagicMock()
+    return AsyncMock()
 
 
 async def _echo_path_self(request: Request) -> UUID:
@@ -42,6 +43,7 @@ def override_deps(fake_service, auth_user_id):
     app.dependency_overrides[get_streaming_service] = lambda: fake_service
     app.dependency_overrides[streaming_require_self] = _echo_path_self
     app.dependency_overrides[streaming_user_di] = lambda: auth_user_id
+    app.dependency_overrides[streaming_require_admin] = lambda: auth_user_id
     yield
     app.dependency_overrides.clear()
 

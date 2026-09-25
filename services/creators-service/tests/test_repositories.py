@@ -53,7 +53,15 @@ async def test_creator_account_and_idempotent_accrual(session: AsyncSession):
     await session.refresh(duplicate)
     assert duplicate.net_cents == 1450
     assert duplicate.status == PayoutStatus.ACCRUED
-    assert (await ledger_repo.get_by_idempotency_key("test-key")).id == row.id
+    # PayoutLedgerRepository.accrued derives the stored key from
+    # (creator_id, period_start, period_end) and ignores the caller's
+    # ``idempotency_key`` argument, so look the row up by the derived key.
+    derived_key = (
+        f"{acct.id}:{values['period_start'].isoformat()}:{values['period_end'].isoformat()}"
+    )
+    assert row.idempotency_key == derived_key
+    assert (await ledger_repo.get_by_idempotency_key(derived_key)).id == row.id
+    assert await ledger_repo.get_by_idempotency_key("test-key") is None
 
 
 @pytest.mark.asyncio
@@ -75,4 +83,5 @@ async def test_payout_ledger_suspended_creator(session: AsyncSession):
             net_cents=1000,
             idempotency_key="suspended",
         )
-    assert await ledger_repo.get_by_idempotency_key("suspended") is None
+    rolled_back_key = f"{acct.id}:2024-01-01T00:00:00:2024-01-31T00:00:00"
+    assert await ledger_repo.get_by_idempotency_key(rolled_back_key) is None

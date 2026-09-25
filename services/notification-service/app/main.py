@@ -191,7 +191,9 @@ def create_app() -> FastAPI:
 
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
     wire_observability(
-        app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL,
+        app,
+        service_name=settings.SERVICE_NAME,
+        log_level=settings.LOG_LEVEL,
         register_metrics=False,
     )
 

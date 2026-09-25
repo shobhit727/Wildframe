@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 import sqlalchemy
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -14,7 +15,7 @@ from app.repositories import NotificationRepository
 from app.models import NotificationPreference
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def session(tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/models.db")
     async with engine.begin() as connection:
@@ -111,8 +112,10 @@ async def test_notification_repository_deduplication(session: AsyncSession):
     """Creating twice with same event_id returns the same notification row."""
     repo = NotificationRepository(session)
     event = uuid.uuid4()
-    n1 = await repo.create(uuid.uuid4(), "A", "B", channel="email", event_id=event)
-    n2 = await repo.create(uuid.uuid4(), "C", "D", channel="email", event_id=event)
+    n1, created_first = await repo.create(uuid.uuid4(), "A", "B", channel="email", event_id=event)
+    n2, created_again = await repo.create(uuid.uuid4(), "C", "D", channel="email", event_id=event)
+    assert created_first is True
+    assert created_again is False
     assert n1.id == n2.id
     # Ensure only one row persisted
     result = await session.execute(select(Notification).where(Notification.event_id == event))

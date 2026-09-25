@@ -154,8 +154,7 @@ async def proxy_request(
                 chunks.append(chunk)
             payload = Response(content=b"".join(chunks), status_code=response.status_code)
             connection_headers = {
-                name.strip().lower()
-                for name in response.headers.get("connection", "").split(",")
+                name.strip().lower() for name in response.headers.get("connection", "").split(",")
             }
             excluded_headers = _HOP_BY_HOP_HEADERS | connection_headers | {"content-length"}
             payload.raw_headers.extend(
@@ -172,4 +171,3 @@ async def proxy_request(
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error proxying request to {url}{path}: {e}")
         raise _error_response(502, "Bad gateway", request)
-

@@ -121,7 +121,8 @@ class CreatorPoolBalanceRepository:
 
     async def get_or_create(self, creator_id: UUID) -> CreatorPoolBalance:
         await self.session.execute(
-            insert(CreatorPoolBalance).values(creator_id=creator_id)
+            insert(CreatorPoolBalance)
+            .values(creator_id=creator_id)
             .on_conflict_do_nothing(index_elements=[CreatorPoolBalance.creator_id])
         )
         bal = await self.get_for_creator(creator_id)
@@ -136,7 +137,9 @@ class CreatorPoolBalanceRepository:
             stmt.on_conflict_do_update(
                 index_elements=[CreatorPoolBalance.creator_id],
                 set_={"contributed_cents": CreatorPoolBalance.contributed_cents + cents},
-            ).returning(CreatorPoolBalance).execution_options(populate_existing=True)
+            )
+            .returning(CreatorPoolBalance)
+            .execution_options(populate_existing=True)
         )
         bal = result.scalar_one()
         await self.session.commit()
@@ -147,10 +150,12 @@ class CreatorPoolBalanceRepository:
         if cents < 0:
             raise ValueError("accrual must be nonnegative")
         stmt = insert(CreatorPoolBalance).values(creator_id=creator_id, accrued_cents=cents)
-        await self.session.execute(stmt.on_conflict_do_update(
-            index_elements=[CreatorPoolBalance.creator_id],
-            set_={"accrued_cents": CreatorPoolBalance.accrued_cents + cents},
-        ))
+        await self.session.execute(
+            stmt.on_conflict_do_update(
+                index_elements=[CreatorPoolBalance.creator_id],
+                set_={"accrued_cents": CreatorPoolBalance.accrued_cents + cents},
+            )
+        )
 
 
 class MilestoneRepository:
@@ -277,37 +282,60 @@ class PayoutLedgerRepository:
         period_start, period_end = utc_naive(period_start), utc_naive(period_end)
         if period_end <= period_start:
             raise ValueError("period_end must follow period_start")
-        if min(view_minutes, floor_cents, pool_topup_cents, share_cents, stripe_fee_cents, net_cents) < 0:
+        if (
+            min(
+                view_minutes,
+                floor_cents,
+                pool_topup_cents,
+                share_cents,
+                stripe_fee_cents,
+                net_cents,
+            )
+            < 0
+        ):
             raise ValueError("payout amounts must be nonnegative")
         try:
             result = await self.session.execute(
-                select(CreatorAccount).where(CreatorAccount.id == creator_id)
-                .with_for_update().execution_options(populate_existing=True)
+                select(CreatorAccount)
+                .where(CreatorAccount.id == creator_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
             creator = result.scalar_one_or_none()
             if creator is None or not creator.is_active:
                 raise CreatorSuspendedError(f"Creator {creator_id} is suspended or does not exist")
             result = await self.session.execute(
-                insert(PayoutLedger).values(
+                insert(PayoutLedger)
+                .values(
                     creator_id=creator_id,
                     idempotency_key=f"{creator_id}:{period_start.isoformat()}:{period_end.isoformat()}",
-                    period_start=period_start, period_end=period_end,
-                    view_minutes=view_minutes, floor_cents=floor_cents,
-                    pool_topup_cents=pool_topup_cents, share_cents=share_cents,
-                    stripe_fee_cents=stripe_fee_cents, net_cents=net_cents,
+                    period_start=period_start,
+                    period_end=period_end,
+                    view_minutes=view_minutes,
+                    floor_cents=floor_cents,
+                    pool_topup_cents=pool_topup_cents,
+                    share_cents=share_cents,
+                    stripe_fee_cents=stripe_fee_cents,
+                    net_cents=net_cents,
                     status=PayoutStatus.ACCRUED,
-                ).on_conflict_do_nothing().returning(PayoutLedger)
+                )
+                .on_conflict_do_nothing()
+                .returning(PayoutLedger)
             )
             row = result.scalar_one_or_none()
             if row is None:
-                result = await self.session.execute(select(PayoutLedger).where(
-                    PayoutLedger.creator_id == creator_id,
-                    PayoutLedger.period_start == period_start,
-                    PayoutLedger.period_end == period_end,
-                ))
+                result = await self.session.execute(
+                    select(PayoutLedger).where(
+                        PayoutLedger.creator_id == creator_id,
+                        PayoutLedger.period_start == period_start,
+                        PayoutLedger.period_end == period_end,
+                    )
+                )
                 row = result.scalar_one()
             else:
-                await CreatorPoolBalanceRepository(self.session).accrue(creator_id, pool_topup_cents)
+                await CreatorPoolBalanceRepository(self.session).accrue(
+                    creator_id, pool_topup_cents
+                )
             await self.session.commit()
             return row
         except BaseException:

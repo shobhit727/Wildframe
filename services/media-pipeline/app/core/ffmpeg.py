@@ -116,21 +116,30 @@ async def run_process(
         raise CommandFailure("resource ceilings cannot be negative")
     try:
         proc = await asyncio.create_subprocess_exec(
-            *argv, stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            env=env, cwd=cwd, start_new_session=True,
+            *argv,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+            cwd=cwd,
+            start_new_session=True,
             preexec_fn=_child_rlimit(memory_limit_bytes, max_file_bytes),
         )
     except OSError as exc:
         raise CommandFailure(f"failed to start {argv[0]}: {exc}") from exc
     assert proc.stdout is not None and proc.stderr is not None
-    readers = [asyncio.create_task(_read_capped(stream, max_pipe_bytes))
-               for stream in (proc.stdout, proc.stderr)]
+    readers = [
+        asyncio.create_task(_read_capped(stream, max_pipe_bytes))
+        for stream in (proc.stdout, proc.stderr)
+    ]
 
     def check_disk() -> None:
         if disk_root and disk_quota_bytes:
-            size = sum(os.path.getsize(os.path.join(root, name))
-                       for root, _, files in os.walk(disk_root) for name in files)
+            size = sum(
+                os.path.getsize(os.path.join(root, name))
+                for root, _, files in os.walk(disk_root)
+                for name in files
+            )
             if size >= disk_quota_bytes:
                 raise OutputLimitExceeded("job disk quota reached")
 
@@ -449,7 +458,10 @@ class FFmpegPackager(Packager):
     """Package every encoded video and its optional audio as HLS and DASH."""
 
     def __init__(
-        self, *, ffmpeg_bin: str = "ffmpeg", timeout: float = 3600.0,
+        self,
+        *,
+        ffmpeg_bin: str = "ffmpeg",
+        timeout: float = 3600.0,
         memory_limit_bytes: int | None = None,
         work_root: str = "/tmp/wildframe/work",
         quarantine_root: str = "/tmp/wildframe/quarantine",
@@ -469,17 +481,22 @@ class FFmpegPackager(Packager):
             _require_local_input(path, self.work_root, self.quarantine_root)
         return sorted(inputs.items())
 
-    async def _package(self, args: list[str], manifest: str, job_root: str,
-                       timeout: float | None) -> None:
+    async def _package(
+        self, args: list[str], manifest: str, job_root: str, timeout: float | None
+    ) -> None:
         from app.core.stages import require_artifact
 
         code, _, stderr, _, _ = await run_process(
             [self.ffmpeg_bin, "-y", "-v", "error", "-threads", "1", *args],
-            timeout=timeout or self.timeout, memory_limit_bytes=self.memory_limit_bytes,
-            disk_root=job_root, disk_quota_bytes=self.disk_quota_bytes,
+            timeout=timeout or self.timeout,
+            memory_limit_bytes=self.memory_limit_bytes,
+            disk_root=job_root,
+            disk_quota_bytes=self.disk_quota_bytes,
         )
         if code:
-            raise CommandFailure(f"ffmpeg packaging failed: {stderr.decode(errors='replace')[:400]}")
+            raise CommandFailure(
+                f"ffmpeg packaging failed: {stderr.decode(errors='replace')[:400]}"
+            )
         require_artifact(manifest)
         from app.core.security import validate_manifest_no_origin_urls
 
@@ -493,15 +510,35 @@ class FFmpegPackager(Packager):
         master_lines = ["#EXTM3U", "#EXT-X-VERSION:3"]
         for index, (bitrate, source) in enumerate(renditions):
             playlist = os.path.join(out_dir, f"index_{index}.m3u8")
-            await self._package([
-                "-i", source, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
-                "-f", "hls", "-hls_time", "6", "-hls_playlist_type", "vod",
-                "-hls_segment_filename", os.path.join(out_dir, f"seg_{index}_%06d.ts"),
+            await self._package(
+                [
+                    "-i",
+                    source,
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a:0?",
+                    "-c",
+                    "copy",
+                    "-f",
+                    "hls",
+                    "-hls_time",
+                    "6",
+                    "-hls_playlist_type",
+                    "vod",
+                    "-hls_segment_filename",
+                    os.path.join(out_dir, f"seg_{index}_%06d.ts"),
+                    playlist,
+                ],
                 playlist,
-            ], playlist, job_root, timeout)
+                job_root,
+                timeout,
+            )
             # Conservative peak allowance includes mux overhead and AAC audio.
-            master_lines += [f"#EXT-X-STREAM-INF:BANDWIDTH={(bitrate + 128) * 1200}",
-                             os.path.basename(playlist)]
+            master_lines += [
+                f"#EXT-X-STREAM-INF:BANDWIDTH={(bitrate + 128) * 1200}",
+                os.path.basename(playlist),
+            ]
         master = os.path.join(out_dir, "master.m3u8")
         with open(master, "w", encoding="utf-8") as handle:
             handle.write("\n".join(master_lines) + "\n")
@@ -518,7 +555,20 @@ class FFmpegPackager(Packager):
             args += ["-i", source]
         for index in range(len(renditions)):
             args += ["-map", f"{index}:v:0"]
-        args += ["-map", "0:a:0?", "-c", "copy", "-f", "dash", "-seg_duration", "6",
-                 "-use_template", "1", "-use_timeline", "1", manifest]
+        args += [
+            "-map",
+            "0:a:0?",
+            "-c",
+            "copy",
+            "-f",
+            "dash",
+            "-seg_duration",
+            "6",
+            "-use_template",
+            "1",
+            "-use_timeline",
+            "1",
+            manifest,
+        ]
         await self._package(args, manifest, job_root, timeout)
         return manifest

@@ -82,11 +82,17 @@ async def require_admin(
     """Require a verified, current administrator role for operational mutations."""
     try:
         payload = jwt.decode(
-            authorization.removeprefix("Bearer "), settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM], audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER, options={"require_exp": True},
+            authorization.removeprefix("Bearer "),
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            options={"require_exp": True},
         )
-        if payload.get("role") != "admin" or int(payload.get("arv") or 0) != settings.ADMIN_ROLE_VERSION:
+        if (
+            payload.get("role") != "admin"
+            or int(payload.get("arv") or 0) != settings.ADMIN_ROLE_VERSION
+        ):
             raise HTTPException(status_code=403, detail="Administrator privileges required")
     except (JWTError, TypeError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid token")

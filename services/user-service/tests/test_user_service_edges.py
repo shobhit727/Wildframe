@@ -84,18 +84,14 @@ class TestDeviceErrors:
         from app.schemas import UserDeviceUpdateRequest
 
         service.device_repo.update.return_value = None
-
         with pytest.raises(HTTPException) as exc:
-            await service.update_device(uuid4(), UserDeviceUpdateRequest(device_name="x"))
-
+            await service.update_device(uuid4(), UserDeviceUpdateRequest(device_name="x"), uuid4())
         assert exc.value.status_code == 404
 
     async def test_deactivate_device_missing_raises_404(self, service):
         service.device_repo.mark_device_inactive.return_value = None
-
         with pytest.raises(HTTPException) as exc:
-            await service.deactivate_device(uuid4())
-
+            await service.deactivate_device(uuid4(), uuid4())
         assert exc.value.status_code == 404
 
     async def test_remove_device_success(self, service):

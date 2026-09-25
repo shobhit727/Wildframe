@@ -352,7 +352,9 @@ class MediaPipelineService:
             self._creator_concurrency[creator_id] += 1
 
     def _decrement_concurrency(self, content_id: UUID, creator_id: UUID | None = None) -> None:
-        MediaPipelineService._global_active_jobs = max(0, MediaPipelineService._global_active_jobs - 1)
+        MediaPipelineService._global_active_jobs = max(
+            0, MediaPipelineService._global_active_jobs - 1
+        )
         self._content_concurrency[content_id] = max(0, self._content_concurrency[content_id] - 1)
         if creator_id is not None:
             self._creator_concurrency[creator_id] = max(
@@ -443,13 +445,17 @@ class MediaPipelineService:
         # Check idempotency key first (unique index at DB level too).
         existing_by_key = await self.job_repo.get_by_idempotency_key(idempotency_key)
         if existing_by_key is not None:
-            self._validate_job_identity(existing_by_key, content_id, upload_session_id, storage_key, creator_id)
+            self._validate_job_identity(
+                existing_by_key, content_id, upload_session_id, storage_key, creator_id
+            )
             return existing_by_key
 
         # Back-compat: also check upload_session_id.
         existing_by_upload = await self.job_repo.get_by_upload_session(upload_session_id)
         if existing_by_upload is not None:
-            self._validate_job_identity(existing_by_upload, content_id, upload_session_id, storage_key, creator_id)
+            self._validate_job_identity(
+                existing_by_upload, content_id, upload_session_id, storage_key, creator_id
+            )
             return existing_by_upload
 
         # Concurrency limits (including per-creator quota #488/#545).
@@ -493,8 +499,11 @@ class MediaPipelineService:
 
     @staticmethod
     def _validate_job_identity(
-        job: PipelineJob, content_id: UUID, upload_session_id: UUID,
-        storage_key: str, creator_id: UUID | None,
+        job: PipelineJob,
+        content_id: UUID,
+        upload_session_id: UUID,
+        storage_key: str,
+        creator_id: UUID | None,
     ) -> None:
         context = job.context or {}
         if (

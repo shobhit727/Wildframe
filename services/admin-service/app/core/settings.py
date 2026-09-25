@@ -2,7 +2,6 @@ from functools import lru_cache
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
-
 from wildframe_compliance.jurisdiction import Jurisdiction
 from wildframe_compliance.settings import ComplianceSettingsMixin
 

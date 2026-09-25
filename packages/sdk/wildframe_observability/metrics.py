@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import time
 from typing import Callable
-
 from prometheus_client import Counter, Histogram, Gauge
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -66,7 +65,12 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         self.service_name = service_name
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        method = request.method if request.method in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE", "CONNECT"} else "OTHER"
+        method = (
+            request.method
+            if request.method
+            in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE", "CONNECT"}
+            else "OTHER"
+        )
         path = request.url.path
 
         # Skip metrics for the /metrics endpoint itself to avoid recursion.
@@ -102,19 +106,31 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         return response  # type: ignore[no-any-return]
 
 
-
 def _is_uuid_like(value: str) -> bool:
     """Check if a string looks like a UUID."""
     import re
+
     uuid_pattern = re.compile(
-        r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-        re.IGNORECASE
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
     )
     return bool(uuid_pattern.match(value))
 
 
 def _normalize_endpoint(path: str) -> str:
-    """Normalize endpoint path for metrics labeling."""
-    # Replace UUID-like segments with {id} placeholder
-    import re
-    return re.sub(r'/[0-9a-f-]{36}(/|$)', r'/{id}\1', path, flags=re.IGNORECASE)
+    """Normalize endpoint path for metrics labeling.
+    Replace any UUID-like or numeric segment with `{id}`.
+    """
+    parts = path.split("/")
+    normalized: list[str] = []
+    for part in parts:
+        if part == "":
+            normalized.append("")
+            continue
+        if part.isdigit() or _is_uuid_like(part):
+            normalized.append("{id}")
+        else:
+            normalized.append(part)
+    result = "/".join(normalized)
+    if not result.startswith("/"):
+        result = "/" + result
+    return result

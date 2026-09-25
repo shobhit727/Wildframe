@@ -140,7 +140,6 @@ class UserDeviceRepository(BaseRepository):
                 if hasattr(device, key) and value is not None:
                     setattr(device, key, value)
 
-            # Update last_active_at if updating general device status
             if any(k in kwargs for k in ["is_active", "ip_address"]):
                 device.last_active_at = datetime.now(UTC)  # type: ignore[assignment]
 

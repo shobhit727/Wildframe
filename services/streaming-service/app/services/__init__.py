@@ -117,7 +117,9 @@ class StreamingService:
                 return session
             if request.status == PlaybackSessionStatus.ACTIVE and session.status != request.status:
                 if active_count >= settings.MAX_ACTIVE_SESSIONS:
-                    raise HTTPException(status_code=409, detail="Maximum concurrent sessions reached")
+                    raise HTTPException(
+                        status_code=409, detail="Maximum concurrent sessions reached"
+                    )
             if request.status in terminal:
                 update_data["ended_at"] = datetime.now(UTC).replace(tzinfo=None)
             session = await self.playback_repo.update(session_id, **update_data)

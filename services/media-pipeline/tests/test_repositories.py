@@ -17,6 +17,7 @@ from app.models import (
     PipelineJob,
     PipelineJobStatus,
     PipelineStageLog,
+    PipelineStageStatus,
 )
 from app.repositories import (
     PipelineJobRepository,
@@ -125,12 +126,14 @@ async def test_stage_log_record_and_list(db_session: AsyncSession):
     log1 = PipelineStageLog(
         job_id=job.id,
         stage="ingest",
+        status=PipelineStageStatus.SUCCESS,
         duration_ms=123,
         message="ingest ok",
     )
     log2 = PipelineStageLog(
         job_id=job.id,
         stage="encode",
+        status=PipelineStageStatus.FAILED,
         duration_ms=456,
         message="encode ok",
     )
@@ -141,7 +144,10 @@ async def test_stage_log_record_and_list(db_session: AsyncSession):
     assert len(logs) == 2
     stages = {log_entry.stage for log_entry in logs}
     assert stages == {"ingest", "encode"}
-    assert {log_entry.stage: (log_entry.duration_ms, log_entry.message) for log_entry in logs} == {
-        "ingest": (123, "ingest ok"),
-        "encode": (456, "encode ok"),
+    assert {
+        log_entry.stage: (log_entry.status, log_entry.duration_ms, log_entry.message)
+        for log_entry in logs
+    } == {
+        "ingest": (PipelineStageStatus.SUCCESS, 123, "ingest ok"),
+        "encode": (PipelineStageStatus.FAILED, 456, "encode ok"),
     }

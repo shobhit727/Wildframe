@@ -30,6 +30,16 @@ class FakeRepo:
         self.chunks: dict[UUID, list[UploadChunk]] = {}
         self.enqueued_events: list[dict] = []
 
+        # simple transaction stub for UploadService expectations
+        class _SimpleSession:
+            async def commit(self) -> None:
+                return None
+
+            async def rollback(self) -> None:
+                return None
+
+        self.session = _SimpleSession()
+
     async def create(self, session: UploadSession) -> UploadSession:
         self.sessions[session.id] = session
         self.chunks.setdefault(session.id, [])
