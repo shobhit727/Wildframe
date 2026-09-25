@@ -101,3 +101,20 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
         return response  # type: ignore[no-any-return]
 
+
+
+def _is_uuid_like(value: str) -> bool:
+    """Check if a string looks like a UUID."""
+    import re
+    uuid_pattern = re.compile(
+        r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+        re.IGNORECASE
+    )
+    return bool(uuid_pattern.match(value))
+
+
+def _normalize_endpoint(path: str) -> str:
+    """Normalize endpoint path for metrics labeling."""
+    # Replace UUID-like segments with placeholder
+    import re
+    return re.sub(r'/[0-9a-f-]{36}(/|$)', r'/{uuid}\1', path, flags=re.IGNORECASE)
