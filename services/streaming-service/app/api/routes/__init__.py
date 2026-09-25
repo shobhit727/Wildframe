@@ -51,6 +51,7 @@ async def get_current_user_id(
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
+            options={"require_exp": True},
         )
         # Token-type separation (#221): refresh tokens share the audience but
         # must never be accepted as access tokens.
@@ -68,10 +69,28 @@ async def get_current_user_id(
         )
     try:
         return UUID(sub)
-    except ValueError:
+    except (TypeError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
         )
+
+
+async def require_admin(
+    current_user: Annotated[UUID, Depends(get_current_user_id)],
+    authorization: Annotated[str, Header(alias="Authorization")],
+) -> UUID:
+    """Require a verified, current administrator role for operational mutations."""
+    try:
+        payload = jwt.decode(
+            authorization.removeprefix("Bearer "), settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM], audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER, options={"require_exp": True},
+        )
+        if payload.get("role") != "admin" or int(payload.get("arv") or 0) != settings.ADMIN_ROLE_VERSION:
+            raise HTTPException(status_code=403, detail="Administrator privileges required")
+    except (JWTError, TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return current_user
 
 
 async def get_current_user_id_or_none(
@@ -215,7 +234,7 @@ async def end_playback_session(
 async def generate_manifest(
     request: ManifestGenerationRequest,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
-    current_user: Annotated[UUID, Depends(get_current_user_id)],
+    current_user: Annotated[UUID, Depends(require_admin)],
 ):
     """Generate video manifest for streaming (requires authentication)."""
     return await service.generate_manifest(request)
@@ -231,7 +250,11 @@ async def get_manifest(
     manifest = await service.get_manifest(manifest_id)
     if not manifest:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manifest not found")
-    return manifest
+    await service.require_manifest_session(current_user, manifest.episode_id, manifest.content_id)
+    return JSONResponse(
+        content=VideoManifestResponse.model_validate(manifest).model_dump(mode="json"),
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @router.get("/episodes/{episode_id}/manifest", response_model=VideoManifestResponse)
@@ -254,26 +277,23 @@ async def get_episode_manifest(
                 detail="Invalid or expired signed URL",
             )
         # Verify session is valid for playback (user binding via session)
-        if not await service.check_session_valid_for_playback(session_id, current_user):
+        if not await service.check_session_valid_for_playback(session_id, current_user, episode_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Session expired or revoked",
             )
     else:
-        # Regular auth path - could add entitlement check here (#587)
         if current_user is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Missing or invalid authorization header",
             )
-        if settings.ENTITLEMENT_CHECK_ENABLED:
-            # Light entitlement check - in real impl, check user subscription tier
-            # For now, we just ensure user is authenticated (done by get_current_user_id)
-            pass
 
     manifest = await service.get_manifest_for_episode(episode_id, protocol)
     if not manifest:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manifest not found")
+    if not (session_id and signature and expires):
+        await service.require_manifest_session(current_user, episode_id, manifest.content_id)
     # Authorized media must not be cached by shared intermediaries: a cached
     # copy would keep serving after session revocation until CDN TTL expires
     # (#528/#526). Private + no-store keeps CDNs and browsers honest.
@@ -292,6 +312,7 @@ async def get_episode_manifest(
 async def create_transcoding_job(
     request: TranscodingJobCreateRequest,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
+    current_user: Annotated[UUID, Depends(require_admin)],
 ):
     """Create a transcoding job."""
     return await service.create_transcoding_job(request)
@@ -322,6 +343,7 @@ async def update_transcoding_progress(
     job_id: UUID,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
     progress_percent: Annotated[int, Query(ge=0, le=100)],
+    current_user: Annotated[UUID, Depends(require_admin)],
     error_message: Annotated[str | None, Query()] = None,
 ):
     """Update transcoding progress."""
@@ -340,6 +362,7 @@ async def update_transcoding_progress(
 async def create_quality_profile(
     request: QualityProfileCreateRequest,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
+    current_user: Annotated[UUID, Depends(require_admin)],
 ):
     """Create quality profile."""
     return await service.create_quality_profile(request)
@@ -372,6 +395,7 @@ async def list_quality_profiles_for_bandwidth(
 async def create_cdn_region(
     request: CDNRegionCreateRequest,
     service: Annotated[StreamingService, Depends(get_streaming_service)],
+    current_user: Annotated[UUID, Depends(require_admin)],
 ):
     """Create CDN region."""
     return await service.create_cdn_region(request)
@@ -485,13 +509,15 @@ async def create_signed_playback_url(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only generate signed URLs for your own sessions",
         )
-    if session.status != "active":
+    if not await service.check_session_valid_for_playback(request.session_id, current_user):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Session is not active",
         )
 
-    signed_url, expires_at = service.generate_signed_url(request)
+    if session.content_id != request.content_id or session.episode_id is None:
+        raise HTTPException(status_code=409, detail="Session does not match the requested asset")
+    signed_url, expires_at = service.generate_signed_url(request, session.episode_id)
     return SignedPlaybackUrlResponse(
         signed_url=signed_url,
         expires_at=expires_at,

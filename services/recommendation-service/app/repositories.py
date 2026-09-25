@@ -1,11 +1,10 @@
 """Recommendation service repositories."""
 
-from typing import cast
 from uuid import UUID
 
 from sqlalchemy import delete, desc, select
-from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.models import Recommendation, UserPreferences
 
@@ -19,9 +18,17 @@ class UserPreferencesRepository:
         result = await self.session.execute(stmt)
         pref = result.scalar_one_or_none()
         if not pref:
-            pref = UserPreferences(user_id=user_id)
-            self.session.add(pref)
-            await self.session.flush()
+            try:
+                async with self.session.begin_nested():
+                    pref = UserPreferences(user_id=user_id)
+                    self.session.add(pref)
+                    await self.session.flush()
+            except IntegrityError:
+                # A concurrent first request may have inserted this user's row.
+                result = await self.session.execute(stmt)
+                pref = result.scalar_one_or_none()
+                if pref is None:
+                    raise
         return pref
 
 
@@ -68,12 +75,16 @@ class RecommendationRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def delete_for_content(self, content_id: UUID) -> int:
-        """Evict every stored recommendation for a title (all users).
+    async def delete_for_content(self, content_id: UUID) -> list[UUID]:
+        """Evict rows for a title, returning affected users for cache eviction.
 
         Called from the content.deleted / content.unpublished event
         handlers; idempotent (deleting absent rows is a no-op) (#228 F3).
         """
-        stmt = delete(Recommendation).where(Recommendation.content_id == content_id)
-        result = cast(CursorResult, await self.session.execute(stmt))
-        return result.rowcount
+        stmt = (
+            delete(Recommendation)
+            .where(Recommendation.content_id == content_id)
+            .returning(Recommendation.user_id)
+        )
+        result = await self.session.execute(stmt)
+        return list(set(result.scalars().all()))

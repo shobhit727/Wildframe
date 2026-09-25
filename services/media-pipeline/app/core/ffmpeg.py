@@ -84,24 +84,17 @@ async def _read_capped(stream: asyncio.StreamReader, limit: int) -> tuple[bytes,
     return captured, total
 
 
-def _child_rlimit(memory_limit_bytes: int | None):
-    """Build a ``preexec_fn`` that bounds the child's address space (#218).
-
-    Runs inside the forked child before exec; must be fork-safe (no
-    allocations, no locks, no Python-visible exceptions).
-    """
+def _child_rlimit(memory_limit_bytes: int | None, max_file_bytes: int = 0):
+    """Apply kernel-enforced address-space and per-file output ceilings."""
     import resource
 
     def _apply() -> None:
-        try:
-            limit = memory_limit_bytes
-            if limit is None:
-                return
-            resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
-        except (ValueError, OSError):
-            pass  # best-effort: the wall-clock/timeout bounds still apply
+        if memory_limit_bytes:
+            resource.setrlimit(resource.RLIMIT_AS, (memory_limit_bytes, memory_limit_bytes))
+        if max_file_bytes:
+            resource.setrlimit(resource.RLIMIT_FSIZE, (max_file_bytes, max_file_bytes))
 
-    return _apply if memory_limit_bytes else None
+    return _apply if memory_limit_bytes or max_file_bytes else None
 
 
 async def run_process(
@@ -112,79 +105,64 @@ async def run_process(
     cwd: str | None = None,
     max_pipe_bytes: int = MAX_PIPE_CAPTURE_BYTES,
     memory_limit_bytes: int | None = None,
+    max_file_bytes: int = 0,
+    disk_root: str | None = None,
+    disk_quota_bytes: int = 0,
 ) -> tuple[int, bytes, bytes, int, int]:
-    """Run ``argv`` with hard execution bounds.
+    """Run bounded pipes/process tree; kill and reap before draining on failure."""
+    if not argv or not isinstance(argv[0], str) or timeout <= 0:
+        raise CommandFailure("nonempty argv and positive timeout required")
+    if max_file_bytes < 0 or disk_quota_bytes < 0:
+        raise CommandFailure("resource ceilings cannot be negative")
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *argv, stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            env=env, cwd=cwd, start_new_session=True,
+            preexec_fn=_child_rlimit(memory_limit_bytes, max_file_bytes),
+        )
+    except OSError as exc:
+        raise CommandFailure(f"failed to start {argv[0]}: {exc}") from exc
+    assert proc.stdout is not None and proc.stderr is not None
+    readers = [asyncio.create_task(_read_capped(stream, max_pipe_bytes))
+               for stream in (proc.stdout, proc.stderr)]
 
-    Returns ``(returncode, stdout_tail, stderr_tail, stdout_total, stderr_total)``.
+    def check_disk() -> None:
+        if disk_root and disk_quota_bytes:
+            size = sum(os.path.getsize(os.path.join(root, name))
+                       for root, _, files in os.walk(disk_root) for name in files)
+            if size >= disk_quota_bytes:
+                raise OutputLimitExceeded("job disk quota reached")
 
-    * Never uses a shell: ``create_subprocess_exec(argv)``.
-    * ``timeout`` is enforced by ``asyncio.wait_for``; on expiry the process
-      group is killed (SIGKILL after SIGTERM grace) so no child lingers.
-    * On cancellation (e.g. an orchestrator shutdown mid-stage) the child is
-      killed the same way — no orphaned ffmpeg processes.
-    * Pipe reads are capped at ``max_pipe_bytes``.
-    * ``memory_limit_bytes`` (when set) bounds the child's address space via
-      ``RLIMIT_AS`` applied in a fork-safe ``preexec_fn`` (#218).
+    async def collect() -> tuple[int, bytes, bytes, int, int]:
+        while proc.returncode is None:
+            check_disk()
+            await asyncio.sleep(0.1)
+        check_disk()
+        stdout, stderr = await asyncio.gather(*readers)
+        return proc.returncode, stdout[0], stderr[0], stdout[1], stderr[1]
 
-    Raises ``CommandTimeout`` on wall-clock expiry, ``CommandFailure`` when the
-    process cannot be started.
-    """
-    if not argv or not isinstance(argv[0], str):
-        raise CommandFailure("run_process requires a non-empty argv array")
-
-    proc: asyncio.subprocess.Process | None = None
-
-    async def _spawn_and_wait() -> tuple[int, bytes, bytes, int, int]:
-        nonlocal proc
+    async def cleanup() -> None:
+        # Kill the group even when its leader exited: descendants may hold pipes.
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *argv,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-                cwd=cwd,
-                start_new_session=True,  # own process group -> kill the whole tree
-                preexec_fn=_child_rlimit(memory_limit_bytes),
-            )
-        except OSError as exc:
-            raise CommandFailure(f"failed to start {argv[0]}: {exc}") from exc
-
-        assert proc.stdout is not None and proc.stderr is not None
-        stdout_task = asyncio.ensure_future(_read_capped(proc.stdout, max_pipe_bytes))
-        stderr_task = asyncio.ensure_future(_read_capped(proc.stderr, max_pipe_bytes))
-        try:
-            returncode = await proc.wait()
-        finally:
-            stdout_bytes, stdout_total = await stdout_task
-            stderr_bytes, stderr_total = await stderr_task
-        return returncode, stdout_bytes, stderr_bytes, stdout_total, stderr_total
-
-    async def _kill() -> None:
-        if proc is None or proc.returncode is not None:
-            return
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            await asyncio.wait_for(proc.wait(), timeout=5)
-        except (ProcessLookupError, asyncio.TimeoutError, ChildProcessError):
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except (ProcessLookupError, ChildProcessError):
-                pass
-        except Exception:  # noqa: BLE001 - a kill failure must never mask the timeout
-            logger.exception(
-                "failed to kill subprocess group for pid %s", getattr(proc, "pid", "?")
-            )
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        for reader in readers:
+            reader.cancel()
+        await asyncio.gather(*readers, return_exceptions=True)
+        await proc.wait()
 
     try:
-        return await asyncio.wait_for(_spawn_and_wait(), timeout=timeout)
-    except asyncio.TimeoutError as exc:
-        await _kill()
-        raise CommandTimeout(
-            f"command {' '.join(argv[:3])}… exceeded {timeout:g}s wall-clock budget"
-        ) from exc
-    except asyncio.CancelledError:
-        await _kill()
+        return await asyncio.wait_for(collect(), timeout=timeout)
+    except BaseException as exc:
+        cleanup_task = asyncio.create_task(cleanup())
+        try:
+            await asyncio.shield(cleanup_task)
+        except asyncio.CancelledError:
+            await cleanup_task
+        if isinstance(exc, asyncio.TimeoutError):
+            raise CommandTimeout(f"command exceeded {timeout:g}s wall-clock budget") from exc
         raise
 
 
@@ -195,6 +173,19 @@ def _require_local_input(path: str, work_root: str, quarantine_root: str) -> Non
             f"refusing non-local media input {path!r}: only files inside the "
             "job work/quarantine directories are accepted"
         )
+    if not os.path.isfile(path) or os.path.getsize(path) == 0:
+        raise UnsafeInput(f"missing or empty media input: {path!r}")
+
+
+def _output_job_root(out_dir: str, work_root: str) -> str:
+    """Require outputs below a job directory, not the shared work root."""
+    root = os.path.realpath(work_root)
+    target = os.path.realpath(out_dir)
+    if os.path.commonpath([root, target]) != root or target == root:
+        raise UnsafeInput("output directory escapes work root")
+    job_root = os.path.join(root, os.path.relpath(target, root).split(os.sep)[0])
+    os.makedirs(target, mode=0o700, exist_ok=True)
+    return job_root
 
 
 class FFprobeMetadataExtractor(MetadataExtractor):
@@ -237,7 +228,9 @@ class FFprobeMetadataExtractor(MetadataExtractor):
             raise CommandFailure(
                 f"ffprobe failed (exit {returncode}): {stderr.decode(errors='replace')[:400]}"
             )
-        return self._parse(stderr if False else _stdout)
+        if _st_total > MAX_PROBE_OUTPUT_BYTES:
+            raise CommandFailure("ffprobe output exceeded capture limit")
+        return self._parse(_stdout)
 
     def _parse(self, stdout: bytes) -> dict[str, Any]:
         import json
@@ -300,6 +293,7 @@ class FFmpegMultiBitrateEncoder(MultiBitrateEncoder):
         memory_limit_bytes: int | None = None,
         work_root: str = "/tmp/wildframe/work",
         quarantine_root: str = "/tmp/wildframe/quarantine",
+        disk_quota_bytes: int = 0,
     ) -> None:
         self.ffmpeg_bin = ffmpeg_bin
         self.timeout = timeout
@@ -309,6 +303,7 @@ class FFmpegMultiBitrateEncoder(MultiBitrateEncoder):
         self.memory_limit_bytes = memory_limit_bytes
         self.work_root = work_root
         self.quarantine_root = quarantine_root
+        self.disk_quota_bytes = disk_quota_bytes
 
     async def encode(
         self,
@@ -321,11 +316,14 @@ class FFmpegMultiBitrateEncoder(MultiBitrateEncoder):
         max_output_bytes: int | None = None,
     ) -> dict[int, str]:
         _require_local_input(path, self.work_root, self.quarantine_root)
-        os.makedirs(out_dir, mode=0o700, exist_ok=True)
+        job_root = _output_job_root(out_dir, self.work_root)
+        if not bitrates or any(type(br) is not int or br <= 0 for br in bitrates):
+            raise UnsafeInput("positive integer rendition bitrates required")
         # The adapter's configured thread count is the hard ceiling: a caller
         # (or ctx) can never raise it above the per-job cap (#218).
         threads = min(cpu_threads or self.cpu_threads, self.cpu_threads)
-        size_cap = max_output_bytes or self.max_output_bytes
+        caps = [cap for cap in (max_output_bytes, self.max_output_bytes) if cap]
+        size_cap = min(caps) if caps else 0
         outputs: dict[int, str] = {}
         for bitrate in bitrates:
             out_path = os.path.join(out_dir, f"v_{bitrate}.mp4")
@@ -346,18 +344,31 @@ class FFmpegMultiBitrateEncoder(MultiBitrateEncoder):
             argv += [
                 "-map",
                 "0:v:0",
+                "-map",
+                "0:a:0?",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
                 "-c:v",
                 "libx264",
                 "-b:v",
                 f"{bitrate}k",
                 "-preset",
                 "veryfast",
+                "-threads",
+                str(threads),
+                "-force_key_frames",
+                "expr:gte(t,n_forced*6)",
                 out_path,
             ]
             returncode, _stdout, stderr, _st, _err = await run_process(
                 argv,
                 timeout=timeout or self.timeout,
                 memory_limit_bytes=self.memory_limit_bytes,
+                max_file_bytes=size_cap,
+                disk_root=job_root,
+                disk_quota_bytes=self.disk_quota_bytes,
             )
             if returncode != 0:
                 raise CommandFailure(
@@ -387,16 +398,18 @@ class FFmpegThumbnailGenerator(ThumbnailGenerator):
         memory_limit_bytes: int | None = None,
         work_root: str = "/tmp/wildframe/work",
         quarantine_root: str = "/tmp/wildframe/quarantine",
+        disk_quota_bytes: int = 0,
     ) -> None:
         self.ffmpeg_bin = ffmpeg_bin
         self.timeout = timeout
         self.memory_limit_bytes = memory_limit_bytes
         self.work_root = work_root
         self.quarantine_root = quarantine_root
+        self.disk_quota_bytes = disk_quota_bytes
 
     async def generate(self, path: str, out_dir: str, *, timeout: float | None = None) -> list[str]:
         _require_local_input(path, self.work_root, self.quarantine_root)
-        os.makedirs(out_dir, mode=0o700, exist_ok=True)
+        job_root = _output_job_root(out_dir, self.work_root)
         out_path = os.path.join(out_dir, "poster.jpg")
         argv = [
             self.ffmpeg_bin,
@@ -419,6 +432,8 @@ class FFmpegThumbnailGenerator(ThumbnailGenerator):
             argv,
             timeout=timeout or self.timeout,
             memory_limit_bytes=self.memory_limit_bytes,
+            disk_root=job_root,
+            disk_quota_bytes=self.disk_quota_bytes,
         )
         if returncode != 0:
             raise CommandFailure(
@@ -430,128 +445,80 @@ class FFmpegThumbnailGenerator(ThumbnailGenerator):
         return [out_path]
 
 
-class FFmpegHlsPackager(Packager):
-    """Real HLS packager: relative segment URLs only, manifest validated."""
+class FFmpegPackager(Packager):
+    """Package every encoded video and its optional audio as HLS and DASH."""
 
     def __init__(
-        self,
-        *,
-        ffmpeg_bin: str = "ffmpeg",
-        timeout: float = 3600.0,
+        self, *, ffmpeg_bin: str = "ffmpeg", timeout: float = 3600.0,
         memory_limit_bytes: int | None = None,
         work_root: str = "/tmp/wildframe/work",
         quarantine_root: str = "/tmp/wildframe/quarantine",
+        disk_quota_bytes: int = 0,
     ) -> None:
         self.ffmpeg_bin = ffmpeg_bin
         self.timeout = timeout
         self.memory_limit_bytes = memory_limit_bytes
         self.work_root = work_root
         self.quarantine_root = quarantine_root
+        self.disk_quota_bytes = disk_quota_bytes
+
+    def _inputs(self, inputs: dict[int, str]) -> list[tuple[int, str]]:
+        if not inputs or any(type(br) is not int or br <= 0 for br in inputs):
+            raise UnsafeInput("positive integer rendition bitrates required")
+        for path in inputs.values():
+            _require_local_input(path, self.work_root, self.quarantine_root)
+        return sorted(inputs.items())
+
+    async def _package(self, args: list[str], manifest: str, job_root: str,
+                       timeout: float | None) -> None:
+        from app.core.stages import require_artifact
+
+        code, _, stderr, _, _ = await run_process(
+            [self.ffmpeg_bin, "-y", "-v", "error", "-threads", "1", *args],
+            timeout=timeout or self.timeout, memory_limit_bytes=self.memory_limit_bytes,
+            disk_root=job_root, disk_quota_bytes=self.disk_quota_bytes,
+        )
+        if code:
+            raise CommandFailure(f"ffmpeg packaging failed: {stderr.decode(errors='replace')[:400]}")
+        require_artifact(manifest)
+        from app.core.security import validate_manifest_no_origin_urls
+
+        validate_manifest_no_origin_urls(manifest)
 
     async def package_hls(
         self, inputs: dict[int, str], out_dir: str, *, timeout: float | None = None
     ) -> str:
-        os.makedirs(out_dir, mode=0o700, exist_ok=True)
-        for path in inputs.values():
-            _require_local_input(path, self.work_root, self.quarantine_root)
-        master = os.path.join(out_dir, "master.m3u8")
-        # One fixed-argv ffmpeg per rendition; all paths are server-generated.
-        for index, source in enumerate(sorted(inputs.values())):
-            seg_pattern = os.path.join(out_dir, f"seg_{index}_%03d.ts")
+        renditions = self._inputs(inputs)
+        job_root = _output_job_root(out_dir, self.work_root)
+        master_lines = ["#EXTM3U", "#EXT-X-VERSION:3"]
+        for index, (bitrate, source) in enumerate(renditions):
             playlist = os.path.join(out_dir, f"index_{index}.m3u8")
-            argv = [
-                self.ffmpeg_bin,
-                "-y",
-                "-v",
-                "error",
-                "-threads",
-                "1",
-                "-i",
-                source,
-                "-c",
-                "copy",
-                "-f",
-                "hls",
-                "-hls_time",
-                "6",
-                "-hls_playlist_type",
-                "vod",
-                "-hls_segment_filename",
-                seg_pattern,
+            await self._package([
+                "-i", source, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
+                "-f", "hls", "-hls_time", "6", "-hls_playlist_type", "vod",
+                "-hls_segment_filename", os.path.join(out_dir, f"seg_{index}_%06d.ts"),
                 playlist,
-            ]
-            returncode, _stdout, stderr, _st, _err = await run_process(
-                argv,
-                timeout=timeout or self.timeout,
-                memory_limit_bytes=self.memory_limit_bytes,
-            )
-            if returncode != 0:
-                raise CommandFailure(
-                    f"ffmpeg HLS package failed (exit {returncode}): "
-                    f"{stderr.decode(errors='replace')[:400]}"
-                )
-        # ffmpeg wrote per-rendition playlists; validate the caller-facing
-        # artifact and refuse absolute origin URLs (#283).
-        from app.core.security import validate_manifest_no_origin_urls
-
-        validate_manifest_no_origin_urls(master)
+            ], playlist, job_root, timeout)
+            # Conservative peak allowance includes mux overhead and AAC audio.
+            master_lines += [f"#EXT-X-STREAM-INF:BANDWIDTH={(bitrate + 128) * 1200}",
+                             os.path.basename(playlist)]
+        master = os.path.join(out_dir, "master.m3u8")
+        with open(master, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(master_lines) + "\n")
         return master
-
-
-class FFmpegDashPackager(Packager):
-    """Real DASH packager: fixed argv, validated manifest, relative URLs."""
-
-    def __init__(
-        self,
-        *,
-        ffmpeg_bin: str = "ffmpeg",
-        timeout: float = 3600.0,
-        memory_limit_bytes: int | None = None,
-        work_root: str = "/tmp/wildframe/work",
-        quarantine_root: str = "/tmp/wildframe/quarantine",
-    ) -> None:
-        self.ffmpeg_bin = ffmpeg_bin
-        self.timeout = timeout
-        self.memory_limit_bytes = memory_limit_bytes
-        self.work_root = work_root
-        self.quarantine_root = quarantine_root
 
     async def package_dash(
         self, inputs: dict[int, str], out_dir: str, *, timeout: float | None = None
     ) -> str:
-        os.makedirs(out_dir, mode=0o700, exist_ok=True)
-        for path in inputs.values():
-            _require_local_input(path, self.work_root, self.quarantine_root)
+        renditions = self._inputs(inputs)
+        job_root = _output_job_root(out_dir, self.work_root)
         manifest = os.path.join(out_dir, "manifest.mpd")
-        source = sorted(inputs.values())[0]
-        argv = [
-            self.ffmpeg_bin,
-            "-y",
-            "-v",
-            "error",
-            "-threads",
-            "1",
-            "-i",
-            source,
-            "-c",
-            "copy",
-            "-f",
-            "dash",
-            "-seg_duration",
-            "6",
-            manifest,
-        ]
-        returncode, _stdout, stderr, _st, _err = await run_process(
-            argv,
-            timeout=timeout or self.timeout,
-            memory_limit_bytes=self.memory_limit_bytes,
-        )
-        if returncode != 0:
-            raise CommandFailure(
-                f"ffmpeg DASH package failed (exit {returncode}): "
-                f"{stderr.decode(errors='replace')[:400]}"
-            )
-        from app.core.security import validate_manifest_no_origin_urls
-
-        validate_manifest_no_origin_urls(manifest)
+        args: list[str] = []
+        for _, source in renditions:
+            args += ["-i", source]
+        for index in range(len(renditions)):
+            args += ["-map", f"{index}:v:0"]
+        args += ["-map", "0:a:0?", "-c", "copy", "-f", "dash", "-seg_duration", "6",
+                 "-use_template", "1", "-use_timeline", "1", manifest]
+        await self._package(args, manifest, job_root, timeout)
         return manifest

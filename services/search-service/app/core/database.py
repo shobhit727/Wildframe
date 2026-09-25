@@ -69,5 +69,5 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     if DatabaseManager.session_factory is None:
         await DatabaseManager.init()
     assert DatabaseManager.session_factory is not None
-    async with DatabaseManager.session_factory() as session:
+    async with DatabaseManager.session_factory.begin() as session:
         yield session

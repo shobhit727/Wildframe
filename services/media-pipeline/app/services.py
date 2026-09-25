@@ -72,7 +72,7 @@ import shutil
 import time
 from collections import defaultdict
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.core.events import Event, EventPublisher, get_event_publisher
 from app.core.settings import settings
@@ -215,7 +215,7 @@ class MediaPipelineService:
         self.max_attempts = max_attempts
         self.backoff_base = backoff_base
         self.backoff_cap = backoff_cap
-        self.worker_id = worker_id or f"worker-{os.getpid()}"
+        self.worker_id = f"{worker_id or os.getpid()}-{uuid4()}"
 
         # Build the port instances once, selected by settings.
         self._ports = self._build_ports()
@@ -229,8 +229,8 @@ class MediaPipelineService:
     def _build_ports(self) -> dict[str, Any]:
         """Build the port instances based on the active adapter selection."""
         if settings.MEDIA_PIPELINE_ADAPTERS == "ffmpeg":
-            from app.core.ffmpeg import (  # type: ignore[attr-defined]
-                FFmpegMetadataExtractor,
+            from app.core.ffmpeg import (
+                FFprobeMetadataExtractor,
                 FFmpegMultiBitrateEncoder,
                 FFmpegPackager,
                 FFmpegThumbnailGenerator,
@@ -246,7 +246,7 @@ class MediaPipelineService:
 
             return {
                 "virus_scanner": ClamavScanner(),
-                "metadata_extractor": FFmpegMetadataExtractor(),
+                "metadata_extractor": FFprobeMetadataExtractor(),
                 "thumbnail_generator": FFmpegThumbnailGenerator(
                     memory_limit_bytes=settings.PIPELINE_MAX_MEMORY_BYTES,
                 ),
@@ -314,32 +314,22 @@ class MediaPipelineService:
                 )
 
     async def _acquire_lease(self, job: PipelineJob) -> bool:
-        """Try to acquire a lease on the job. Returns True on success."""
+        """Lock the job for this transaction before examining its lease."""
+        locked = await self.job_repo.lock(job.id)
+        if locked is None:
+            return False
+        if locked.status in (PipelineJobStatus.COMPLETED, PipelineJobStatus.FAILED):
+            return False
         now = datetime.now(UTC)
-        # If we already hold the lease, refresh it.
-        if job.leased_by == self.worker_id:
-            job.leased_at = now  # type: ignore[assignment]
-            await self.job_repo.save(job)
-            return True
-
-        # Check for stale lease (another worker died).
-        if job.leased_at is not None:
-            lease_age = (now - job.leased_at).total_seconds()
-            if lease_age < settings.PIPELINE_JOB_LEASE_SECONDS:
-                # Lease is still valid and held by someone else.
+        if locked.leased_at is not None:
+            leased_at = locked.leased_at
+            if leased_at.tzinfo is None:
+                leased_at = leased_at.replace(tzinfo=UTC)
+            if (now - leased_at).total_seconds() < settings.PIPELINE_JOB_LEASE_SECONDS:
                 return False
-            # Lease is stale — we can steal it.
-            logger.warning(
-                "stealing stale lease on job %s (held by %s, age %.1fs)",
-                job.id,
-                job.leased_by,
-                lease_age,
-            )
-
-        # Acquire the lease.
-        job.leased_by = self.worker_id
-        job.leased_at = now  # type: ignore[assignment]
-        await self.job_repo.save(job)
+        locked.leased_by = self.worker_id
+        locked.leased_at = now
+        await self.job_repo.save(locked)
         return True
 
     async def _release_lease(self, job: PipelineJob) -> None:
@@ -356,13 +346,13 @@ class MediaPipelineService:
             await self.job_repo.save(job)
 
     def _increment_concurrency(self, content_id: UUID, creator_id: UUID | None = None) -> None:
-        self._global_active_jobs += 1
+        MediaPipelineService._global_active_jobs += 1
         self._content_concurrency[content_id] += 1
         if creator_id is not None:
             self._creator_concurrency[creator_id] += 1
 
     def _decrement_concurrency(self, content_id: UUID, creator_id: UUID | None = None) -> None:
-        self._global_active_jobs = max(0, self._global_active_jobs - 1)
+        MediaPipelineService._global_active_jobs = max(0, MediaPipelineService._global_active_jobs - 1)
         self._content_concurrency[content_id] = max(0, self._content_concurrency[content_id] - 1)
         if creator_id is not None:
             self._creator_concurrency[creator_id] = max(
@@ -393,7 +383,7 @@ class MediaPipelineService:
     # Disk quota helper.
     # ------------------------------------------------------------------
     def _check_disk_quota(self, job: PipelineJob) -> None:
-        """Best-effort check of per-job disk usage against quota."""
+        """Reject jobs exceeding their configured disk quota."""
         if settings.PIPELINE_DISK_QUOTA_BYTES <= 0:
             return
         work_root = settings.PIPELINE_WORK_ROOT
@@ -411,13 +401,8 @@ class MediaPipelineService:
                         except OSError:
                             pass
         if total > settings.PIPELINE_DISK_QUOTA_BYTES:
-            # We don't fail the job here — just log. The real enforcement
-            # happens in the ffmpeg adapters via output size caps.
-            logger.warning(
-                "job %s disk usage %d bytes exceeds quota %d",
-                job.id,
-                total,
-                settings.PIPELINE_DISK_QUOTA_BYTES,
+            raise PipelineNonRetryable(
+                f"job disk usage {total} bytes exceeds quota {settings.PIPELINE_DISK_QUOTA_BYTES}"
             )
 
     # ------------------------------------------------------------------
@@ -458,11 +443,13 @@ class MediaPipelineService:
         # Check idempotency key first (unique index at DB level too).
         existing_by_key = await self.job_repo.get_by_idempotency_key(idempotency_key)
         if existing_by_key is not None:
+            self._validate_job_identity(existing_by_key, content_id, upload_session_id, storage_key, creator_id)
             return existing_by_key
 
         # Back-compat: also check upload_session_id.
         existing_by_upload = await self.job_repo.get_by_upload_session(upload_session_id)
         if existing_by_upload is not None:
+            self._validate_job_identity(existing_by_upload, content_id, upload_session_id, storage_key, creator_id)
             return existing_by_upload
 
         # Concurrency limits (including per-creator quota #488/#545).
@@ -504,6 +491,20 @@ class MediaPipelineService:
         await self.job_repo.session.commit()
         return job
 
+    @staticmethod
+    def _validate_job_identity(
+        job: PipelineJob, content_id: UUID, upload_session_id: UUID,
+        storage_key: str, creator_id: UUID | None,
+    ) -> None:
+        context = job.context or {}
+        if (
+            job.content_id != content_id
+            or job.upload_session_id != upload_session_id
+            or context.get("storage_key") != storage_key
+            or context.get("_creator_id") != (str(creator_id) if creator_id else None)
+        ):
+            raise IdempotencyConflict("Idempotency key or upload is already in use")
+
     def _build_context(self, job: PipelineJob, *, storage_key: str) -> dict[str, Any]:
         """Assemble the per-job context dict with injected ports."""
         return {
@@ -513,7 +514,7 @@ class MediaPipelineService:
             "storage_key": storage_key,
             "quarantine_root": settings.PIPELINE_QUARANTINE_ROOT,
             "work_root": settings.PIPELINE_WORK_ROOT,
-            "stage_timeout_seconds": settings.PIPELINE_STAGE_TIMEOUT_SECONDS,
+            "stage_timeout": settings.PIPELINE_STAGE_TIMEOUT_SECONDS,
             "max_cpu_threads": settings.PIPELINE_MAX_CPU_THREADS,
             "max_output_bytes": settings.PIPELINE_MAX_OUTPUT_BYTES,
             # Ports — selected by MEDIA_PIPELINE_ADAPTERS in _build_ports().
@@ -579,6 +580,12 @@ class MediaPipelineService:
         # Increment concurrency counters now that we're actively running.
         creator_id_str = job.context.get("_creator_id")
         creator_id = UUID(creator_id_str) if creator_id_str else None
+        try:
+            await self._check_concurrency_limits(job.content_id, creator_id)
+        except ConcurrencyLimitExceeded:
+            await self._release_lease(job)
+            await self.job_repo.session.commit()
+            raise
         self._increment_concurrency(job.content_id, creator_id)
         try:
             for stage_name in self.registry.order:
@@ -657,9 +664,6 @@ class MediaPipelineService:
 
                 # Reset circuit breaker on success.
                 self._record_stage_success(stage_name)
-
-                # Disk quota check after each stage.
-                self._check_disk_quota(job)
 
                 # Emit the stage's success event via the transactional outbox.
                 if stage.success_event:
@@ -742,7 +746,9 @@ class MediaPipelineService:
 
             start = time.monotonic()
             try:
-                ctx = await stage.run(ctx)
+                async with asyncio.timeout(settings.PIPELINE_STAGE_TIMEOUT_SECONDS):
+                    ctx = await stage.run(ctx)
+                self._check_disk_quota(job)
                 duration_ms = int((time.monotonic() - start) * 1000)
                 await self._record_stage(
                     job,

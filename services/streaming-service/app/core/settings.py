@@ -20,6 +20,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_ISSUER: str = "wildframe-auth"
     JWT_AUDIENCE: str = "wildframe-api"
+    ADMIN_ROLE_VERSION: int = 0
     JWT_EXPIRATION_MINUTES: int = 15
 
     # Database pool budget (#64/#129): pool_size=5, max_overflow=5 limits
@@ -55,15 +56,17 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Fail fast if running in production with default insecure secrets."""
-        default_secrets = [
+        default_secrets = {
             "your-secret-key-change-in-production",
             "dev-secret-key",
-        ]
-        if self.ENVIRONMENT == "production" and self.JWT_SECRET_KEY in default_secrets:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value in production. "
-                "Refusing to start with default insecure secret."
-            )
+            "dev-secret-key-change-in-production",
+            "dev-playback-signing-secret-change-in-production",
+        }
+        if self.ENVIRONMENT == "production":
+            for name in ("JWT_SECRET_KEY", "PLAYBACK_URL_SIGNING_SECRET"):
+                secret = getattr(self, name).strip()
+                if not secret or secret in default_secrets:
+                    raise ValueError(f"{name} must be a non-default secret in production")
         return self
 
     class Config:

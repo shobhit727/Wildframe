@@ -91,11 +91,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   },
 
   logout: async () => {
-    try {
-      await apiClient.logout();
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
+    await apiClient.logout();
     // Drop all cached query data so the next session starts fresh.
     queryClient.clear();
     set({

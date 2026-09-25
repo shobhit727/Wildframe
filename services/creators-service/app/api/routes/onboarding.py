@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.onboarding import CreatorOnboarding
+from app.models import CreatorOnboarding
 from app.schemas.onboarding import OnboardingCreate, OnboardingResponse
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])

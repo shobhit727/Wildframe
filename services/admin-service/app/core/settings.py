@@ -25,6 +25,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
     LOG_LEVEL: str = "INFO"
+    METRICS_TOKEN: str = ""
 
     # Compliance: Admin service has global admin access
     compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
@@ -50,8 +51,11 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
         default_secrets = [
             "your-secret-key-change-in-production",
             "dev-secret-key",
+            "dev-secret-key-change-in-production",
         ]
-        if self.ENVIRONMENT == "production" and self.JWT_SECRET_KEY in default_secrets:
+        if self.ENVIRONMENT == "production" and (
+            not self.JWT_SECRET_KEY.strip() or self.JWT_SECRET_KEY in default_secrets
+        ):
             raise ValueError(
                 "JWT_SECRET_KEY must be set to a strong random value in production. "
                 "Refusing to start with default insecure secret."

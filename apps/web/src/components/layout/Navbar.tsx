@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks';
 import { useRouter, usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { toast } from 'sonner';
 
 // Search icon keeps the navigation independent from an icon package.
 function SearchIcon({ className = 'w-4 h-4' }: { className?: string }) {
@@ -90,8 +91,12 @@ export function Navbar({ onSearchChange }: NavbarProps) {
   };
 
   const handleLogout = async () => {
-    await logout();
-    router.push('/login');
+    try {
+      await logout();
+      router.push('/login');
+    } catch {
+      toast.error('Could not sign out. Please try again.');
+    }
   };
 
   return (

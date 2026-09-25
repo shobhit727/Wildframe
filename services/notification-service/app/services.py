@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 TITLE_MAX_LENGTH = 255
 MESSAGE_MAX_LENGTH = 1000
 
+_EMAIL_QUOTA = EmailQuotaTracker(settings.EMAIL_DAILY_QUOTA)
+
 _CHANNEL_PREF_ATTR = {
     "in-app": "in_app_enabled",
     "email": "email_enabled",
@@ -36,7 +38,7 @@ class NotificationService:
         quota_tracker: EmailQuotaTracker | None = None,
     ):
         self.notif_repo = notif_repo
-        self._quota_tracker = quota_tracker or EmailQuotaTracker(settings.EMAIL_DAILY_QUOTA)
+        self._quota_tracker = quota_tracker if quota_tracker is not None else _EMAIL_QUOTA
 
     async def send_notification(
         self,
@@ -72,16 +74,18 @@ class NotificationService:
         if not enabled:
             return {"status": "skipped"}
 
-        notif = await self.notif_repo.create(user_id, title, message, primary_channel, event_id)
+        notif, created = await self.notif_repo.create(
+            user_id, title, message, primary_channel, event_id
+        )
+        if not created:
+            return {"status": notif.delivery_status}
         outcomes = await self._dispatch(
             notif, enabled, email_address=email_address, template=template
         )
+        outcomes.update({name: "skipped: preference disabled" for name in skipped})
         self._record_outcomes(notif, outcomes)
         await self.notif_repo.session.commit()
 
-        # "partial" if some requested channels were skipped/disabled
-        if skipped and notif.delivery_status == "sent":
-            return {"status": "partial"}
         return {"status": notif.delivery_status}
 
     async def retry_delivery(self, notification_id: UUID, user_id: UUID) -> dict | None:
@@ -104,6 +108,10 @@ class NotificationService:
         pref = await self.notif_repo.get_preference(user_id)
         retryable = []
         for name in failed:
+            if name == "email":
+                # Recipient/template are not persisted; never silently retry a
+                # different message or convert a failed email into a skip.
+                continue
             if self._preference_allows(pref, name):
                 retryable.append(name)
             else:
@@ -115,15 +123,7 @@ class NotificationService:
             )
             outcomes.update(new_outcomes)
 
-        notif.delivery_errors = json.dumps(outcomes)  # type: ignore[assignment]
-        failed_after = [o for o in outcomes.values() if o.startswith("failed")]
-        if not failed_after:
-            notif.delivery_status = "sent"  # type: ignore[assignment]
-            notif.delivered_at = utcnow_naive()  # type: ignore[assignment]
-        elif len(failed_after) == len(outcomes):
-            notif.delivery_status = "failed"  # type: ignore[assignment]
-        else:
-            notif.delivery_status = "partial"  # type: ignore[assignment]
+        self._record_outcomes(notif, outcomes)
         await self.notif_repo.session.commit()
         return {"status": notif.delivery_status}
 
@@ -172,14 +172,15 @@ class NotificationService:
     @staticmethod
     def _record_outcomes(notif, outcomes: dict[str, str]) -> None:
         notif.delivery_errors = json.dumps(outcomes)
-        failed = [o for o in outcomes.values() if o.startswith("failed")]
-        if not failed:
-            notif.delivery_status = "sent"
-            notif.delivered_at = utcnow_naive()
-        elif len(failed) == len(outcomes):
-            notif.delivery_status = "failed"
+        sent = sum(outcome == "sent" for outcome in outcomes.values())
+        failed = any(outcome.startswith("failed") for outcome in outcomes.values())
+        if sent:
+            notif.delivery_status = "sent" if sent == len(outcomes) else "partial"
+            if notif.delivered_at is None:
+                notif.delivered_at = utcnow_naive()
         else:
-            notif.delivery_status = "partial"
+            notif.delivery_status = "failed" if failed else "skipped"
+            notif.delivered_at = None
 
     async def get_unread(self, user_id: UUID, limit: int | None = None, offset: int = 0):
         """Return unread notifications belonging to the user."""

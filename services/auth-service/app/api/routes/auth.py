@@ -49,10 +49,7 @@ rate_limiter = RateLimiter()
 
 # Enumeration-safe message used by the verification-resent flow (#54):
 # identical for unknown, verified and unverified addresses.
-_ENUMERATION_SAFE_MESSAGE = (
-    "If an account exists with this email and has not yet been verified, "
-    "a new verification email has been sent."
-)
+_ENUMERATION_SAFE_MESSAGE = "Verification request processed; no email was sent."
 
 
 async def _get_user_locked(db: AsyncSession, user_id: UUID) -> User:
@@ -581,13 +578,10 @@ async def resend_verification(
     request_obj: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    """Send a new email verification token for an existing, unverified account.
+    """Issue a development verification token; production delivery is unavailable.
 
-    Enumeration-resistant (#54): the response is identical whether the
-    email is unknown, verified, or unverified. Abuse controls: per-IP and
-    per-email quotas plus a cooldown between sends (Redis-backed, fail-open).
-    In dev the token is returned so the flow is exercisable without an email
-    provider; in production it is never returned to the caller.
+    Production fails uniformly before account lookup rather than claiming an
+    undelivered email was sent. Per-IP/email quotas and cooldown remain active.
     """
     email = request.email.strip().lower()
     client_ip = request_obj.client.host if request_obj.client else "unknown"
@@ -602,6 +596,12 @@ async def resend_verification(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many requests. Try again later.",
+        )
+
+    if settings.ENVIRONMENT == "production":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Email verification delivery is unavailable",
         )
 
     user_repo = UserRepository(db)

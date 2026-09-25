@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
  * GET /auth-session
  * Use the HttpOnly refresh cookie to obtain a fresh access token from the auth service.
  * Called on page load (hydrate) and by the axios 401 interceptor.
- * Returns { access_token, refresh_token? } on success; 401 if no session or refresh failed.
+ * Returns { access_token } on success; 401 if no session or refresh failed.
  *
  * The backend rotates refresh tokens on every use (single-use). Concurrent
  * GETs carrying the same cookie would otherwise burn the token twice — the
@@ -63,6 +63,7 @@ export async function GET() {
 
 function buildRefreshResponse(result: { status: number; body: unknown; setCookie: string | null }) {
   const res = NextResponse.json(result.body as Record<string, unknown>, { status: result.status });
+  res.headers.set('Cache-Control', 'no-store');
   if (result.setCookie) res.headers.set('Set-Cookie', result.setCookie);
   return res;
 }
@@ -103,7 +104,6 @@ async function doRefresh(raw: string): Promise<{ status: number; body: unknown; 
 
     const body: Record<string, unknown> = {
       access_token: accessToken,
-      refresh_token: typeof data?.refresh_token === 'string' ? data.refresh_token : null,
     };
 
     // Rotate refresh token if the backend issued a new one
@@ -120,9 +120,35 @@ async function doRefresh(raw: string): Promise<{ status: number; body: unknown; 
 
 /**
  * DELETE /auth-session
- * Clear the HttpOnly refresh cookie (logout).
+ * Revoke the cookie-held refresh token and access token before clearing the cookie.
  */
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
+  const raw = (await cookies()).get(REFRESH_COOKIE)?.value;
+  const authorization = request.headers.get('Authorization');
+  try {
+    if (raw) {
+      const response = await secureFetch(`${API_BASE_URL}/auth/api/v1/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: decodeURIComponent(raw) }),
+      });
+      if (!response.ok && response.status !== 401) {
+        return NextResponse.json({ error: 'logout_failed' }, { status: 502 });
+      }
+    }
+    if (authorization) {
+      const response = await secureFetch(`${API_BASE_URL}/auth/api/v1/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: authorization },
+        body: 'null',
+      });
+      if (!response.ok && response.status !== 401) {
+        return NextResponse.json({ error: 'logout_failed' }, { status: 502 });
+      }
+    }
+  } catch {
+    return NextResponse.json({ error: 'auth_unreachable' }, { status: 502 });
+  }
   const res = NextResponse.json({ ok: true });
   res.headers.set('Set-Cookie', `${REFRESH_COOKIE}=; ${buildRefreshCookieHeader({ maxAge: 0 })}`);
   return res;
@@ -161,7 +187,8 @@ async function secureFetch(
         res.on('data', (c: Buffer) => chunks.push(c));
         res.on('end', () => {
           const text = Buffer.concat(chunks).toString('utf8');
-          resolve(new Response(text, { status: res.statusCode ?? 502 }));
+          const status = res.statusCode ?? 502;
+          resolve(new Response(status === 204 || status === 205 || status === 304 ? null : text, { status }));
         });
       },
     );

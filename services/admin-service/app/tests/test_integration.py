@@ -200,7 +200,9 @@ class TestSystemAlertIntegration:
             request.alert_type, request.severity, request.message, request.service
         )
 
-        acknowledged = await admin_service.acknowledge_alert(alert["id"], "admin-user")
+        acknowledged = await admin_service.acknowledge_alert(
+            alert["id"], "admin-user", "127.0.0.1"
+        )
 
         assert acknowledged["id"] == alert["id"]
         assert acknowledged["acknowledged"] is True

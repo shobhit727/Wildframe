@@ -3,6 +3,7 @@ import uuid
 """Creators service models."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import Enum
 from uuid import uuid4
 
@@ -10,7 +11,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    Float,
+    Numeric,
     Index,
     Integer,
     String,
@@ -98,8 +99,7 @@ class CreatorAccount(Base):
 class EffectiveFloor(Base):
     """Per-creator living-wage floor (per finished minute, in payout currency).
 
-    One active row per creator (enforced via unique creator_id). History is
-    preserved because each adjustment inserts a new row with a later
+    History is preserved by inserting each adjustment with a later
     effective_from; get_floor_for_creator returns the latest by effective_from.
     """
 
@@ -107,9 +107,9 @@ class EffectiveFloor(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     creator_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), nullable=False, unique=True, index=True
+        UUID(as_uuid=True), nullable=False, index=True
     )
-    per_minute_amount: Mapped[float] = mapped_column(Float, nullable=False)
+    per_minute_amount: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
     effective_from: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=lambda: datetime.now(UTC).replace(tzinfo=None)
@@ -235,7 +235,7 @@ class PayoutLedger(Base):
         CheckConstraint("floor_cents >= 0", name="ck_ledger_floor_non_negative"),
         CheckConstraint("pool_topup_cents >= 0", name="ck_ledger_pool_non_negative"),
         CheckConstraint("share_cents >= 0", name="ck_ledger_share_non_negative"),
-        Index("ix_ledger_creator_period", "creator_id", "period_start", "period_end"),
+        Index("ix_ledger_creator_period", "creator_id", "period_start", "period_end", unique=True),
     )
 
 

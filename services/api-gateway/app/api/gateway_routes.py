@@ -4,6 +4,7 @@ import logging
 from typing import Annotated
 
 import httpx
+from app.core.settings import settings
 from app.middleware import ServiceRegistry, get_optional_user, get_shared_client
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
@@ -23,6 +24,7 @@ _HOP_BY_HOP_HEADERS = frozenset(
         "proxy-authenticate",
         "proxy-authorization",
         "te",
+        "trailer",
         "trailers",
         "upgrade",
     }
@@ -136,14 +138,34 @@ async def proxy_request(
         if request.url.query:
             forward_url = f"{forward_url}?{request.url.query}"
 
-        # Use request.stream() to avoid buffering full body (BodyLimitMiddleware already read it)
         body = await request.body()
-        response = await client.request(
+        async with client.stream(
             method=request.method,
             url=forward_url,
             headers=headers,
-            content=body if request.method in ["POST", "PUT", "PATCH"] else None,
-        )
+            content=body,
+        ) as response:
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in response.aiter_raw():
+                total += len(chunk)
+                if total > settings.MAX_RESPONSE_BODY_SIZE:
+                    raise _error_response(502, "Response body too large", request)
+                chunks.append(chunk)
+            payload = Response(content=b"".join(chunks), status_code=response.status_code)
+            connection_headers = {
+                name.strip().lower()
+                for name in response.headers.get("connection", "").split(",")
+            }
+            excluded_headers = _HOP_BY_HOP_HEADERS | connection_headers | {"content-length"}
+            payload.raw_headers.extend(
+                (name.lower(), value)
+                for name, value in response.headers.raw
+                if name.decode("latin-1").lower() not in excluded_headers
+            )
+            return payload
+    except HTTPException:
+        raise
     except httpx.TimeoutException:
         logger.error(f"Timeout calling {url}{path}")
         raise _error_response(504, "Service timeout", request)
@@ -151,14 +173,3 @@ async def proxy_request(
         logger.error(f"Error proxying request to {url}{path}: {e}")
         raise _error_response(502, "Bad gateway", request)
 
-    # Strip hop-by-hop headers that must not be relayed back to the client.
-    payload_headers = {
-        k: v for k, v in response.headers.items() if k.lower() not in _HOP_BY_HOP_HEADERS
-    }
-
-    return Response(
-        content=response.content,
-        status_code=response.status_code,
-        headers=payload_headers,
-        media_type=response.headers.get("content-type"),
-    )

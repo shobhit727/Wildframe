@@ -420,12 +420,9 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
             chunks.append(chunk_bytes)
 
         body = b"".join(chunks)
-        return Response(
-            content=body,
-            status_code=response.status_code,
-            headers=dict(response.headers),
-            media_type=response.media_type,
-        )
+        buffered = Response(content=body, status_code=response.status_code)
+        buffered.raw_headers = list(response.raw_headers)
+        return buffered
 
 
 class ServiceRegistry:
@@ -504,13 +501,13 @@ class AuthenticationMiddleware:
             if scheme.lower() != "bearer":
                 return None
 
-            # Require an expiration claim so tokens without an expiry cannot
-            # become effectively permanent bearer credentials.
+            # Optional identity extraction only; upstream services enforce audience.
+            # Expiry remains mandatory even at this transparent proxy boundary.
             payload = jwt.decode(
                 token,
                 self.jwt_secret,
                 algorithms=["HS256"],
-                options={"require": ["exp"]},
+                options={"require": ["exp"], "verify_aud": False},
             )
             return payload
         except Exception:  # noqa: BLE001

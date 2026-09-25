@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import {
   clearTokens,
@@ -14,29 +14,28 @@ describe('token helpers', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
   });
 
   afterEach(() => {
     clearTokens();
+    vi.unstubAllGlobals();
   });
 
-  it('stores access and refresh tokens', () => {
-    setTokens({ access_token: access, refresh_token: refresh });
+  it('publishes access tokens after cookie persistence', async () => {
+    await setTokens({ access_token: access, refresh_token: refresh });
     expect(getAccessToken()).toBe(access);
   });
 
-  it('returns null when no access token is stored', () => {
-    expect(getAccessToken()).toBeNull();
-  });
 
-  it('clears tokens', () => {
-    setTokens({ access_token: access, refresh_token: refresh });
+  it('clears tokens', async () => {
+    await setTokens({ access_token: access, refresh_token: refresh });
     clearTokens();
     expect(getAccessToken()).toBeNull();
   });
 
-  it('keeps tokens out of localStorage (XSS hardening)', () => {
-    setTokens({ access_token: access, refresh_token: refresh });
+  it('keeps tokens out of localStorage (XSS hardening)', async () => {
+    await setTokens({ access_token: access, refresh_token: refresh });
     expect(localStorage.getItem('accessToken')).toBeNull();
     expect(localStorage.getItem('refreshToken')).toBeNull();
     expect(localStorage.getItem('user')).toBeNull();

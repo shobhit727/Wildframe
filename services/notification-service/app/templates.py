@@ -19,9 +19,9 @@ _TEMPLATES: dict[str, tuple[str, str, str]] = {
         "{message}",
     ),
     "welcome": (
-        "Welcome to Wildframe, {name}!",
-        "<h2>Welcome to Wildframe, {name}!</h2><p>{message}</p>",
-        "Welcome to Wildframe, {name}! {message}",
+        "Welcome to Wildframe!",
+        "<h2>Welcome to Wildframe!</h2><p>{message}</p>",
+        "Welcome to Wildframe! {message}",
     ),
     "new_episode": (
         "New episode: {title}",

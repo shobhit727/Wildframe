@@ -110,9 +110,21 @@ def create_app() -> FastAPI:
                     )
             except ValueError:
                 pass
+        body = bytearray()
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > MAX_BODY_SIZE:
+                return JSONResponse(
+                    content={"detail": "Request body too large"},
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                )
+            body.extend(chunk)
+        request._body = bytes(body)
         return await call_next(request)
 
-    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
+    wire_observability(
+        app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL,
+        register_metrics=False,
+    )
 
     # Gate /metrics behind admin token (#469)
     from fastapi import Depends, Header, HTTPException

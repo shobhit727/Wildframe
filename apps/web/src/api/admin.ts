@@ -1,6 +1,6 @@
 /**
  * Admin API helpers — mirror services/admin-service/app/api/routes/admin.py.
- * Uses the shared in-memory access token (via getAccessToken) for Authorization.
+ * Uses the shared authenticated transport and single-flight token refresh.
  */
 import type {
   AdminUser,
@@ -20,67 +20,47 @@ export interface ListParams {
   offset?: number;
 }
 
-// The backend client exposes `client` privately; re-create a thin wrapper that
-// reuses the same baseURL + interceptor behavior via a fresh axios instance.
-import axios from 'axios';
-import { getAccessToken } from './client';
-
-// Same host-derived base as the main client so LAN-IP browsing does not
-// send admin calls to localhost (CORS failure).
-import { API_BASE_URL as baseURL } from './client';
-
-function authHeaders() {
-  const token = getAccessToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-function api() {
-  return axios.create({ baseURL, timeout: 15000 });
-}
+import { apiClient } from './client';
 
 // ---- User moderation ----
 export async function listUsers(params: ListParams & { status?: string; search?: string } = {}) {
   // Backend: GET /api/admin/users/moderated?status=&limit=&offset=
   // We also support a client-side `search` filter (applied in the UI) since the
   // backend endpoint does not expose a query param for it.
-  const { data } = await api().get<AdminUser[]>('/admin/api/v1/admin/users/moderated', {
+  const { data } = await apiClient.client.get<AdminUser[]>('/admin/api/v1/admin/users/moderated', {
     params: { limit: params.limit ?? 50, offset: params.offset ?? 0, status: params.status || undefined },
-    headers: authHeaders(),
   });
   return data;
 }
 
 export async function moderateUser(user_id: string, status: UserStatus, reason?: string) {
-  const { data } = await api().post('/admin/api/v1/admin/users/moderate', {
+  const { data } = await apiClient.client.post('/admin/api/v1/admin/users/moderate', {
     user_id,
     status,
     reason,
-  }, { headers: authHeaders() });
+  });
   return data;
 }
 
 // ---- Content flags ----
 export async function listFlags(params: ListParams = {}) {
-  const { data } = await api().get<ContentFlag[]>('/admin/api/v1/admin/content/flagged', {
+  const { data } = await apiClient.client.get<ContentFlag[]>('/admin/api/v1/admin/content/flagged', {
     params: { limit: params.limit ?? 50, offset: params.offset ?? 0 },
-    headers: authHeaders(),
   });
   return data;
 }
 
 export async function resolveFlag(content_id: string, status: ContentStatus) {
-  const { data } = await api().post('/admin/api/v1/admin/content/resolve', null, {
+  const { data } = await apiClient.client.post('/admin/api/v1/admin/content/resolve', null, {
     params: { content_id, status },
-    headers: authHeaders(),
   });
   return data;
 }
 
 // ---- System alerts ----
 export async function listAlerts(params: ListParams = {}) {
-  const { data } = await api().get<SystemAlert[]>('/admin/api/v1/admin/alerts', {
+  const { data } = await apiClient.client.get<SystemAlert[]>('/admin/api/v1/admin/alerts', {
     params: { limit: params.limit ?? 50 },
-    headers: authHeaders(),
   });
   return data;
 }
@@ -91,32 +71,25 @@ export async function createAlert(input: {
   message: string;
   service: string;
 }) {
-  const { data } = await api().post('/admin/api/v1/admin/alerts', input, {
-    headers: authHeaders(),
-  });
+  const { data } = await apiClient.client.post('/admin/api/v1/admin/alerts', input);
   return data;
 }
 
 export async function acknowledgeAlert(alert_id: number) {
-  const { data } = await api().post(`/admin/api/v1/admin/alerts/${alert_id}/acknowledge`, null, {
-    headers: authHeaders(),
-  });
+  const { data } = await apiClient.client.post(`/admin/api/v1/admin/alerts/${alert_id}/acknowledge`);
   return data;
 }
 
 // ---- System config ----
 export async function listConfigs(params: ListParams = {}) {
-  const { data } = await api().get<SystemConfig[]>('/admin/api/v1/admin/config', {
+  const { data } = await apiClient.client.get<SystemConfig[]>('/admin/api/v1/admin/config', {
     params: { limit: params.limit ?? 100 },
-    headers: authHeaders(),
   });
   return data;
 }
 
 export async function getConfig(key: string) {
-  const { data } = await api().get<SystemConfig>(`/admin/api/v1/admin/config/${key}`, {
-    headers: authHeaders(),
-  });
+  const { data } = await apiClient.client.get<SystemConfig>(`/admin/api/v1/admin/config/${key}`);
   return data;
 }
 
@@ -126,9 +99,7 @@ export async function setConfig(input: {
   config_type: ConfigType;
   description?: string;
 }) {
-  const { data } = await api().post('/admin/api/v1/admin/config', input, {
-    headers: authHeaders(),
-  });
+  const { data } = await apiClient.client.post('/admin/api/v1/admin/config', input);
   return data;
 }
 
@@ -136,16 +107,15 @@ export async function setConfig(input: {
 export async function listAuditLogs(params: { admin_id?: string; resource_type?: string; resource_id?: string; limit?: number } = {}) {
   const { admin_id, resource_type, resource_id, limit = 50 } = params;
   if (admin_id) {
-    const { data } = await api().get<AuditLog[]>(`/admin/api/v1/admin/audit/admin/${admin_id}`, {
+    const { data } = await apiClient.client.get<AuditLog[]>(`/admin/api/v1/admin/audit/admin/${admin_id}`, {
       params: { limit },
-      headers: authHeaders(),
     });
     return data;
   }
   if (resource_type && resource_id) {
-    const { data } = await api().get<AuditLog[]>(
+    const { data } = await apiClient.client.get<AuditLog[]>(
       `/admin/api/v1/admin/audit/resource/${resource_type}/${resource_id}`,
-      { params: { limit }, headers: authHeaders() },
+      { params: { limit } },
     );
     return data;
   }
@@ -154,8 +124,6 @@ export async function listAuditLogs(params: { admin_id?: string; resource_type?:
 
 // ---- System stats ----
 export async function getSystemStats() {
-  const { data } = await api().get<SystemStats>('/admin/api/v1/admin/stats', {
-    headers: authHeaders(),
-  });
+  const { data } = await apiClient.client.get<SystemStats>('/admin/api/v1/admin/stats');
   return data;
 }

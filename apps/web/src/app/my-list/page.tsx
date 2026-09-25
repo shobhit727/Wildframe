@@ -9,12 +9,12 @@ import { HomeShell } from '@/components/layout/HomeShell';
 import { useIsAuthenticated, useUser } from '@/hooks';
 import { Content } from '@/types';
 
-const MY_LIST_KEY = 'wildframe_my_list';
 
-function readMyList(): string[] {
-  if (typeof window === 'undefined') return [];
+function readMyList(userId?: string): string[] {
+  if (typeof window === 'undefined' || !userId) return [];
   try {
-    return JSON.parse(localStorage.getItem(MY_LIST_KEY) || '[]') as string[];
+    const list: unknown = JSON.parse(localStorage.getItem(`wildframe_my_list:${userId}`) || '[]');
+    return Array.isArray(list) ? list.filter((id): id is string => typeof id === 'string') : [];
   } catch {
     return [];
   }
@@ -34,11 +34,11 @@ export default function MyListPage() {
   });
 
   // My List — local watchlist (no backend watchlist endpoint yet)
-  const cached = useMemo(() => readMyList(), []);
+  const cached = readMyList(user?.id);
   const { data: myListData, isLoading: myListLoading } = useQuery({
-    queryKey: ['my-list', cached.join(','), listVersion],
+    queryKey: ['my-list', user?.id, cached.join(','), listVersion],
     queryFn: async () => {
-      const ids = readMyList();
+      const ids = readMyList(user?.id);
       const items = await Promise.all(
         ids.map(async (id) => {
           try {
@@ -50,7 +50,7 @@ export default function MyListPage() {
       );
       return items.filter(Boolean) as Awaited<ReturnType<typeof apiClient.getContentById>>[];
     },
-    enabled: isAuthenticated && cached.length > 0,
+    enabled: isAuthenticated && !!user && cached.length > 0,
   });
 
   const continueWatching = useMemo(
@@ -69,8 +69,9 @@ export default function MyListPage() {
   const myList: Content[] = useMemo(() => (myListData || []).map(normalizeContent), [myListData]);
 
   const removeFromList = (id: string) => {
-    const list = readMyList().filter((x) => x !== id);
-    localStorage.setItem(MY_LIST_KEY, JSON.stringify(list));
+    if (!user) return;
+    const list = readMyList(user.id).filter((x) => x !== id);
+    localStorage.setItem(`wildframe_my_list:${user.id}`, JSON.stringify(list));
     setListVersion((v) => v + 1);
   };
 

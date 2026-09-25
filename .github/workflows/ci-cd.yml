@@ -427,10 +427,11 @@ jobs:
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          exit-code: "0"
+          exit-code: "1"
           skip-dirs: "apps/web/node_modules,apps/web/.next,node_modules,.git,.github,docs,tests,scripts,.cache,.github,__pycache__,*.pyc,*.pyo,*.pyd"
 
       - name: Upload Trivy results
+        if: always()
         uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
         with:
           sarif_file: trivy-results.sarif
@@ -485,7 +486,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.service }}
           tags: |
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,format=long
             type=ref,event=branch
       - name: Build and push immutable image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -523,7 +524,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/web-app
           tags: |
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,format=long
             type=ref,event=branch
       - name: Build and push frontend image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -560,7 +561,7 @@ jobs:
       - name: Configure AWS credentials with OIDC
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
       - name: Update EKS kubeconfig
         run: aws eks update-kubeconfig --name wildframe-staging --region us-east-1
@@ -592,7 +593,7 @@ jobs:
       - name: Verify service health endpoints
         run: |
           set -euo pipefail
-          kubectl -n wildframe-staging run wildframe-smoke --rm --restart=Never \
+          kubectl -n wildframe-staging run wildframe-smoke --rm --attach=true --restart=Never \
             --image=curlimages/curl:8.16.0 -- \
             sh -ec 'for svc in api-gateway auth-service user-service content-service streaming-service admin-service media-pipeline creators-service moderation-service uploads-service search-service analytics-service billing-service recommendation-service notification-service; do curl --fail --silent --show-error --max-time 10 "http://$svc/health" >/dev/null; done'
 
@@ -623,7 +624,7 @@ jobs:
       - name: Configure AWS credentials with OIDC
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
       - name: Update EKS kubeconfig
         run: aws eks update-kubeconfig --name wildframe-production --region us-east-1
@@ -655,7 +656,7 @@ jobs:
       - name: Verify service health endpoints
         run: |
           set -euo pipefail
-          kubectl -n wildframe-production run wildframe-smoke --rm --restart=Never \
+          kubectl -n wildframe-production run wildframe-smoke --rm --attach=true --restart=Never \
             --image=curlimages/curl:8.16.0 -- \
             sh -ec 'for svc in api-gateway auth-service user-service content-service streaming-service admin-service media-pipeline creators-service moderation-service uploads-service search-service analytics-service billing-service recommendation-service notification-service; do curl --fail --silent --show-error --max-time 10 "http://$svc/health" >/dev/null; done'
       - name: Deployment summary

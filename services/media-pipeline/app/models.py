@@ -119,6 +119,9 @@ class PipelineStageLog(Base):
         index=True,
     )
     stage = Column(String(50), nullable=False)
+    status: Mapped[PipelineStageStatus] = mapped_column(
+        SQLEnum(PipelineStageStatus), nullable=False
+    )
     duration_ms = Column(Integer, nullable=False, default=0)
     message = Column(Text, nullable=True)
     created_at = Column(

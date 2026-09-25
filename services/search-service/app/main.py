@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -42,8 +42,6 @@ async def lifespan(app: FastAPI):
     from app.core.event_consumer import run_content_sync_consumer
     from app.api.search_routes import es_client
 
-    consumer_task = asyncio.create_task(run_content_sync_consumer(es_client()))
-
     if settings.EVENT_PUBLISHER == "kafka":
         from wildframe_events.dlq_retention import apply_dlq_retention
 
@@ -64,18 +62,22 @@ async def lifespan(app: FastAPI):
     # disappears from search without a manual reindex (#227).
     await start_event_subscriber()
 
+    consumer_task = asyncio.create_task(run_content_sync_consumer(es_client()))
+
     logger.info("All startup checks passed")
 
-    yield
+    try:
+        yield
+    finally:
+        consumer_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await consumer_task
 
-    consumer_task.cancel()
-
-    # Shutdown
-    logger.info(f"Shutting down {settings.SERVICE_NAME}")
-    await stop_event_subscriber()
-    await DatabaseManager.close()
-    await close_es_client()
-    logger.info("Shutdown complete")
+        logger.info(f"Shutting down {settings.SERVICE_NAME}")
+        await stop_event_subscriber()
+        await DatabaseManager.close()
+        await close_es_client()
+        logger.info("Shutdown complete")
 
 
 def create_app() -> FastAPI:

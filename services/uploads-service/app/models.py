@@ -77,6 +77,7 @@ class UploadSession(Base):
         index=True,
     )
     storage_key = Column(String(1024), nullable=True)
+    multipart_upload_id = Column(String(1024), nullable=True)
     checksum_sha256 = Column(String(64), nullable=True)
     chunk_size = Column(BigInteger, nullable=False)
     total_chunks = Column(Integer, nullable=False)

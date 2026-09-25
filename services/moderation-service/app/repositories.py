@@ -8,7 +8,8 @@ and persists rows.
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -20,6 +21,10 @@ from app.models import (
 )
 
 
+class DuplicateContentFlag(Exception):
+    """The reporter has already flagged this content."""
+
+
 class ContentFlagRepository:
     """Persistence for content flags."""
 
@@ -27,9 +32,22 @@ class ContentFlagRepository:
         self.session = session
 
     async def create(self, flag: ContentFlag) -> ContentFlag:
-        self.session.add(flag)
-        await self.session.flush()
-        return flag
+        result = await self.session.execute(
+            insert(ContentFlag)
+            .values(
+                content_id=flag.content_id,
+                content_creator_id=flag.content_creator_id,
+                flag_reason=flag.flag_reason,
+                reported_by=flag.reported_by,
+                status=flag.status,
+            )
+            .on_conflict_do_nothing(constraint="uq_content_flag_content_reporter")
+            .returning(ContentFlag)
+        )
+        created = result.scalar_one_or_none()
+        if created is None:
+            raise DuplicateContentFlag("content already reported by this user")
+        return created
 
     async def get(self, flag_id: UUID) -> ContentFlag | None:
         result = await self.session.execute(select(ContentFlag).where(ContentFlag.id == flag_id))
@@ -112,6 +130,12 @@ class CreatorStrikeRepository:
 
     def __init__(self, session: AsyncSession):
         self.session = session
+
+    async def lock_creator(self, creator_id: UUID) -> None:
+        """Serialize first and later strikes until transaction commit/rollback."""
+        # A stable signed 64-bit key; collisions only serialize unrelated creators.
+        key = int.from_bytes(creator_id.bytes[:8], byteorder="big", signed=True)
+        await self.session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
 
     async def create(self, strike: CreatorStrike) -> CreatorStrike:
         self.session.add(strike)

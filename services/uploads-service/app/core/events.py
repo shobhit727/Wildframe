@@ -137,13 +137,21 @@ class KafkaEventPublisher(EventPublisher):
             # aiokafka in environments that use the in-memory publisher.
             from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
 
-            self._producer = AIOKafkaProducer(
+            producer = AIOKafkaProducer(
                 bootstrap_servers=self.bootstrap_servers,
                 client_id=self.client_id,
                 value_serializer=lambda v: json.dumps(v).encode("utf-8"),
                 key_serializer=lambda k: k.encode("utf-8") if k else None,
             )
-            await self._producer.start()
+            try:
+                await producer.start()
+            except BaseException:
+                try:
+                    await producer.stop()
+                except Exception:
+                    logger.exception("failed to clean producer after startup failure")
+                raise
+            self._producer = producer
         return self._producer
 
     async def publish(self, event: Event) -> None:

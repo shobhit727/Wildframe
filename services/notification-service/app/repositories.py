@@ -26,16 +26,12 @@ class NotificationRepository:
         message: str,
         channel: str = "in-app",
         event_id: UUID | None = None,
-    ) -> Notification:
-        """Create a notification, deduplicated on event_id.
-
-        Re-sending the same domain event id returns the existing row instead of
-        creating a duplicate notification (idempotency under retries).
-        """
+    ) -> tuple[Notification, bool]:
+        """Return the notification and whether this transaction created it."""
         if event_id is not None:
             existing = await self.get_by_event_id(event_id)
             if existing is not None:
-                return existing
+                return existing, False
         notif = Notification(
             user_id=user_id, title=title, message=message, channel=channel, event_id=event_id
         )
@@ -47,9 +43,9 @@ class NotificationRepository:
             await self.session.rollback()
             existing = await self.get_by_event_id(event_id)  # type: ignore[arg-type]
             if existing is not None:
-                return existing
+                return existing, False
             raise
-        return notif
+        return notif, True
 
     async def get_by_event_id(self, event_id: UUID) -> Notification | None:
         stmt = select(Notification).where(Notification.event_id == event_id)

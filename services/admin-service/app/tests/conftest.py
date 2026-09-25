@@ -34,8 +34,11 @@ def create_tables():
     async def _create_all():
         from app.models.admin import Base
 
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+        finally:
+            await engine.dispose()
 
     asyncio.run(_create_all())
 

@@ -87,6 +87,11 @@ async def send_notification(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="You can only act on your own account"
         )
+    if email_address is not None or "email" in (channels or [channel]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email delivery requires a verified account recipient",
+        )
     kwargs: dict = {}
     if event_id is not None:
         kwargs["event_id"] = event_id
@@ -96,10 +101,7 @@ async def send_notification(
         kwargs["email_address"] = email_address
     if template != "generic":
         kwargs["template"] = template
-    result = await service.send_notification(user_id, title, message, channel, **kwargs)
-    if isinstance(result, dict):
-        return result
-    return {"status": "sent"}  # type: ignore[unreachable]
+    return await service.send_notification(user_id, title, message, channel, **kwargs)
 
 
 @router.get("/unread/{user_id}")

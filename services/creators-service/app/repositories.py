@@ -1,9 +1,11 @@
 """Creators service repositories."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -21,6 +23,11 @@ from app.models import (
     PayoutStatus,
     TrancheStatus,
 )
+
+
+def utc_naive(value: datetime) -> datetime:
+    """Interpret naive values as UTC, normalize aware values before persistence."""
+    return value.astimezone(UTC).replace(tzinfo=None) if value.tzinfo else value
 
 
 class CreatorAccountRepository:
@@ -84,7 +91,7 @@ class EffectiveFloorRepository:
     async def set_floor(
         self,
         creator_id: UUID,
-        per_minute_amount: float,
+        per_minute_amount: Decimal,
         currency: str = "USD",
         reason: str | None = None,
     ) -> EffectiveFloor:
@@ -113,26 +120,37 @@ class CreatorPoolBalanceRepository:
         return result.scalar_one_or_none()
 
     async def get_or_create(self, creator_id: UUID) -> CreatorPoolBalance:
+        await self.session.execute(
+            insert(CreatorPoolBalance).values(creator_id=creator_id)
+            .on_conflict_do_nothing(index_elements=[CreatorPoolBalance.creator_id])
+        )
         bal = await self.get_for_creator(creator_id)
-        if bal is None:
-            bal = CreatorPoolBalance(creator_id=creator_id)
-            self.session.add(bal)
-            await self.session.flush()
+        await self.session.commit()
         return bal
 
     async def record_contribution(self, creator_id: UUID, cents: int) -> CreatorPoolBalance:
-        bal = await self.get_or_create(creator_id)
-        bal.contributed_cents += cents
-        await self.session.flush()
+        if cents < 0:
+            raise ValueError("contribution must be nonnegative")
+        stmt = insert(CreatorPoolBalance).values(creator_id=creator_id, contributed_cents=cents)
+        result = await self.session.execute(
+            stmt.on_conflict_do_update(
+                index_elements=[CreatorPoolBalance.creator_id],
+                set_={"contributed_cents": CreatorPoolBalance.contributed_cents + cents},
+            ).returning(CreatorPoolBalance).execution_options(populate_existing=True)
+        )
+        bal = result.scalar_one()
         await self.session.commit()
         return bal
 
-    async def accrue(self, creator_id: UUID, cents: int) -> CreatorPoolBalance:
-        bal = await self.get_or_create(creator_id)
-        bal.accrued_cents += cents
-        await self.session.flush()
-        await self.session.commit()
-        return bal
+    async def accrue(self, creator_id: UUID, cents: int) -> None:
+        """Increment within the caller's ledger transaction; never commit separately."""
+        if cents < 0:
+            raise ValueError("accrual must be nonnegative")
+        stmt = insert(CreatorPoolBalance).values(creator_id=creator_id, accrued_cents=cents)
+        await self.session.execute(stmt.on_conflict_do_update(
+            index_elements=[CreatorPoolBalance.creator_id],
+            set_={"accrued_cents": CreatorPoolBalance.accrued_cents + cents},
+        ))
 
 
 class MilestoneRepository:
@@ -255,45 +273,46 @@ class PayoutLedgerRepository:
         net_cents: int,
         idempotency_key: str,
     ) -> PayoutLedger:
-        """Idempotent accrual. If a row with this idempotency_key already exists,
-        return it unchanged so the same period never double-counts.
-
-        Trade-off: we do a read-then-insert rather than relying purely on the
-        unique constraint + catch, because the service layer needs to know
-        whether THIS call created the row (to emit billing.payout.accrued) vs.
-        observed an already-accrued period. The unique constraint remains the
-        last line of defense against races.
-
-        Raises CreatorSuspendedError if the creator is not active.
-        """
-        existing = await self.get_by_idempotency_key(idempotency_key)
-        if existing is not None:
-            return existing
-
-        # Check if creator is active before creating ledger row
-        stmt = select(CreatorAccount).where(CreatorAccount.id == creator_id)
-        result = await self.session.execute(stmt)
-        creator = result.scalar_one_or_none()
-        if creator is None or not creator.is_active:
-            raise CreatorSuspendedError(f"Creator {creator_id} is suspended or does not exist")
-
-        row = PayoutLedger(
-            creator_id=creator_id,
-            idempotency_key=idempotency_key,
-            period_start=period_start,
-            period_end=period_end,
-            view_minutes=view_minutes,
-            floor_cents=floor_cents,
-            pool_topup_cents=pool_topup_cents,
-            share_cents=share_cents,
-            stripe_fee_cents=stripe_fee_cents,
-            net_cents=net_cents,
-            status=PayoutStatus.ACCRUED,
-        )
-        self.session.add(row)
-        await self.session.flush()
-        await self.session.commit()
-        return row
+        """Insert a period once; credit its pool balance in the same transaction."""
+        period_start, period_end = utc_naive(period_start), utc_naive(period_end)
+        if period_end <= period_start:
+            raise ValueError("period_end must follow period_start")
+        if min(view_minutes, floor_cents, pool_topup_cents, share_cents, stripe_fee_cents, net_cents) < 0:
+            raise ValueError("payout amounts must be nonnegative")
+        try:
+            result = await self.session.execute(
+                select(CreatorAccount).where(CreatorAccount.id == creator_id)
+                .with_for_update().execution_options(populate_existing=True)
+            )
+            creator = result.scalar_one_or_none()
+            if creator is None or not creator.is_active:
+                raise CreatorSuspendedError(f"Creator {creator_id} is suspended or does not exist")
+            result = await self.session.execute(
+                insert(PayoutLedger).values(
+                    creator_id=creator_id,
+                    idempotency_key=f"{creator_id}:{period_start.isoformat()}:{period_end.isoformat()}",
+                    period_start=period_start, period_end=period_end,
+                    view_minutes=view_minutes, floor_cents=floor_cents,
+                    pool_topup_cents=pool_topup_cents, share_cents=share_cents,
+                    stripe_fee_cents=stripe_fee_cents, net_cents=net_cents,
+                    status=PayoutStatus.ACCRUED,
+                ).on_conflict_do_nothing().returning(PayoutLedger)
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                result = await self.session.execute(select(PayoutLedger).where(
+                    PayoutLedger.creator_id == creator_id,
+                    PayoutLedger.period_start == period_start,
+                    PayoutLedger.period_end == period_end,
+                ))
+                row = result.scalar_one()
+            else:
+                await CreatorPoolBalanceRepository(self.session).accrue(creator_id, pool_topup_cents)
+            await self.session.commit()
+            return row
+        except BaseException:
+            await self.session.rollback()
+            raise
 
 
 class InboundEventRepository:
@@ -319,7 +338,7 @@ class InboundEventRepository:
         row = await self.session.get(InboundEvent, event_id)
         if row is not None:
             row.status = InboundEventStatus.PROCESSED
-            row.processed_at = datetime.now(UTC)
+            row.processed_at = datetime.now(UTC).replace(tzinfo=None)
             await self.session.flush()
 
     async def mark_failed(self, event_id: UUID) -> None:
@@ -334,6 +353,7 @@ class InboundEventRepository:
             .where(InboundEvent.status == InboundEventStatus.PENDING)
             .order_by(InboundEvent.created_at.asc(), InboundEvent.id.asc())
             .limit(limit)
+            .with_for_update(skip_locked=True)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

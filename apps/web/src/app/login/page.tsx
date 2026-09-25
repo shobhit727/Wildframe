@@ -11,8 +11,10 @@ import { getApiErrorMessage } from '@/api/client';
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-  const { login, isLoading } = useAuth();
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaStep, setMfaStep] = useState(false);
+  const [errors, setErrors] = useState<{ email?: string; password?: string; mfa?: string }>({});
+  const { login, verifyMfa, isLoading } = useAuth();
   const router = useRouter();
 
   const validate = (): boolean => {
@@ -33,15 +35,29 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validate()) return;
+    if (isLoading || (!mfaStep && !validate())) return;
+    setErrors({});
 
     try {
-      await login(email, password);
+      if (mfaStep) {
+        if (!mfaCode.trim()) {
+          setErrors({ mfa: 'Enter a verification code' });
+          return;
+        }
+        await verifyMfa(mfaCode.trim());
+      } else if (await login(email, password) === 'mfa') {
+        setMfaStep(true);
+        setPassword('');
+        toast.info('Two-step verification required');
+        return;
+      }
       toast.success('Welcome back!');
       router.push('/browse');
     } catch (error) {
-      const msg = getApiErrorMessage(error, 'Invalid email or password. Please try again.');
-      setErrors({ password: msg });
+      const msg = mfaStep
+        ? getApiErrorMessage(error, 'Invalid verification code', 'Invalid verification code')
+        : getApiErrorMessage(error, 'Invalid email or password. Please try again.');
+      setErrors(mfaStep ? { mfa: msg } : { password: msg });
       toast.error(msg);
     }
   };
@@ -65,6 +81,28 @@ export default function LoginPage() {
           <h1 className="text-3xl font-bold text-white mb-7">Sign In</h1>
 
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            {mfaStep ? (
+              <div>
+                <label htmlFor="mfa-code" className="text-gray-400 text-sm">
+                  Authenticator or backup code
+                </label>
+                <input
+                  id="mfa-code"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value)}
+                  autoComplete="one-time-code"
+                  className={inputClass('mfa')}
+                  aria-invalid={!!errors.mfa}
+                />
+                {errors.mfa && <p role="alert" className="text-[#e87c03] text-[13px] mt-1.5">{errors.mfa}</p>}
+                <button type="button" disabled={isLoading} className="text-gray-400 text-sm mt-3" onClick={() => {
+                  setMfaStep(false);
+                  setMfaCode('');
+                  setErrors({});
+                }}>Back to sign in</button>
+              </div>
+            ) : (
+              <>
             <div>
               <label htmlFor="email" className="sr-only">
                 Email
@@ -110,13 +148,15 @@ export default function LoginPage() {
                 </p>
               )}
             </div>
+              </>
+            )}
 
             <button
               type="submit"
               disabled={isLoading}
               className="w-full bg-[#E50914] hover:bg-[#f40612] text-white py-3.5 rounded font-semibold transition-colors disabled:opacity-50"
             >
-              {isLoading ? 'Signing in...' : 'Sign In'}
+              {isLoading ? 'Signing in...' : mfaStep ? 'Verify' : 'Sign In'}
             </button>
           </form>
 

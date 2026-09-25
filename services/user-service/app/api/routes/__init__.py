@@ -28,17 +28,11 @@ from app.schemas import (
 from app.security.manager import TokenManager
 from app.services import UserService
 
-from app.api.routes.privacy import router as privacy_router
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-router.include_router(privacy_router)
-
-logger = logging.getLogger(__name__)
-
-router = APIRouter()
 
 
 async def get_current_user_id(
@@ -232,7 +226,7 @@ async def update_device(
     user_service: Annotated[UserService, Depends(get_user_service)],
 ) -> UserDeviceResponse:
     """Update device settings."""
-    return await user_service.update_device(device_id, request)
+    return await user_service.update_device(device_id, request, _user)
 
 
 @router.post(
@@ -247,7 +241,7 @@ async def deactivate_device(
     user_service: Annotated[UserService, Depends(get_user_service)],
 ) -> UserDeviceResponse:
     """Deactivate device."""
-    return await user_service.deactivate_device(device_id)
+    return await user_service.deactivate_device(device_id, _user)
 
 
 @router.delete(
@@ -262,7 +256,7 @@ async def remove_device(
     user_service: Annotated[UserService, Depends(get_user_service)],
 ) -> None:
     """Remove device."""
-    await user_service.remove_device(device_id)
+    await user_service.remove_device(device_id, _user)
 
 
 # Preferences endpoints
