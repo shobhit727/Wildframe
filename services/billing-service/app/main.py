@@ -199,7 +199,7 @@ def create_app() -> FastAPI:
                 pass
         return await call_next(request)
 
-    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
+    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL, register_metrics=False)
 
     # Gate /metrics behind admin token (#469)
     from fastapi import Depends, Header, HTTPException
