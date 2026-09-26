@@ -151,6 +151,7 @@ class UserResponse(BaseModel):
     email_verified: bool
     last_login_at: datetime | None
     created_at: datetime
+    auth_version: int = 0
     role: str = "user"
 
     model_config = ConfigDict(

@@ -4,12 +4,14 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 import redis.asyncio as redis
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
-from jose import JWTError, jwt
+from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
+from wildframe_auth.verifier import get_cached_jwks, verify_token as verify_jwt_token
 
 from app.core.database import get_db
-from app.core.settings import settings
+from app.core.settings import DEV_ENVIRONMENTS, settings
 from app.schemas.admin import (
     AdminAuditLogResponse,
     ContentModerationRequest,
@@ -27,38 +29,80 @@ from app.services.admin import AdminService
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 
+async def _decode_token(token: str, expected_type: str = "access") -> dict:
+    try:
+        jwks = await get_cached_jwks(settings.JWT_JWKS_URL)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Token verification is unavailable",
+        ) from exc
+    try:
+        return verify_jwt_token(
+            token,
+            jwks,
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            expected_type=expected_type,
+        )
+    except JWTError as exc:
+        raise HTTPException(status_code=401, detail="Invalid token") from exc
+
+
+async def _enforce_auth_version(authorization: str, payload: dict) -> None:
+    token_version = payload.get("av")
+    if type(token_version) is not int:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            response = await client.get(
+                f"{settings.AUTH_SERVICE_URL}/api/v1/auth/me",
+                headers={"Authorization": authorization},
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Auth service unavailable",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
+    if response.status_code >= 500:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Auth service unavailable",
+        )
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    try:
+        current_version = response.json()["auth_version"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=401, detail="Invalid token payload") from exc
+    if type(current_version) is not int:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+    if current_version != token_version:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
 async def get_current_admin_id(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization.replace("Bearer ", "")
+    payload = await _decode_token(token)
+    await _enforce_auth_version(authorization, payload)
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
     try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
-        # Token-type separation (#221): refresh tokens share the audience but
-        # must never be accepted as access tokens.
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-            )
-        if payload.get("role") != "admin":
-            # Least privilege: a token without the admin role claim (plain user
-            # or API-key-scoped identity) must never inherit admin privileges.
-            raise HTTPException(status_code=403, detail="Admin privileges required")
-        if int(payload.get("arv") or 0) != settings.ADMIN_ROLE_VERSION:
-            # #81/#101: role revocation is immediate — a token minted before
-            # ADMIN_ROLE_VERSION was bumped must not retain admin access.
-            raise HTTPException(status_code=403, detail="Admin privileges required")
-        return str(payload.get("sub") or payload.get("user_id"))
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        role_version = int(payload.get("arv") or 0)
+    except (TypeError, ValueError):
+        role_version = -1
+    if role_version != settings.ADMIN_ROLE_VERSION:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    subject = payload.get("sub") or payload.get("user_id")
+    if not isinstance(subject, str) or not subject:
+        raise HTTPException(status_code=401, detail="Invalid token subject")
+    return subject
 
 
 _stepup_jti_seen: set[str] = set()
@@ -66,49 +110,43 @@ _stepup_jti_lock = asyncio.Lock()
 
 
 async def _consume_stepup_jti(jti: str, exp: int | float | None) -> bool:
-    if settings.REDIS_URL:
-        try:
-            client = await redis.from_url(settings.REDIS_URL, decode_responses=True)
-            ttl = 300
-            if isinstance(exp, (int, float)):
-                ttl = max(1, int(exp - datetime.now(UTC).timestamp()))
-            ok = await client.set(f"stepup:jti:{jti}", "1", nx=True, ex=ttl)
-            await client.aclose()
-            if ok is None or ok is False:
+    if not settings.REDIS_URL:
+        if settings.ENVIRONMENT not in DEV_ENVIRONMENTS:
+            raise RuntimeError("Shared replay protection is not configured")
+        async with _stepup_jti_lock:
+            if jti in _stepup_jti_seen:
                 return True
+            _stepup_jti_seen.add(jti)
             return False
-        except Exception:
-            pass
-    async with _stepup_jti_lock:
-        if jti in _stepup_jti_seen:
-            return True
-        _stepup_jti_seen.add(jti)
-        return False
+    client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+    ttl = 300
+    if isinstance(exp, (int, float)):
+        ttl = max(1, int(exp - datetime.now(UTC).timestamp()))
+    try:
+        ok = await client.set(f"stepup:jti:{jti}", "1", nx=True, ex=ttl)
+        return ok is None or ok is False
+    finally:
+        await client.aclose()
 
 
 async def verify_admin_reauth(
     admin_id: Annotated[str, Depends(get_current_admin_id)],
     x_admin_reauth: Annotated[str | None, Header(alias="X-Admin-Reauth")] = None,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> str:
     if not x_admin_reauth:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Step-up authentication required: X-Admin-Reauth header missing",
         )
-    try:
-        payload = jwt.decode(
-            x_admin_reauth,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid reauth token")
-    if payload.get("type") != "admin_step_up":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid reauth token type"
-        )
+    payload = await _decode_token(x_admin_reauth, expected_type="admin_step_up")
+    if authorization:
+        access_payload = await _decode_token(authorization.removeprefix("Bearer "))
+        if payload.get("av") != access_payload.get("av"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Reauth token has been revoked",
+            )
     if payload.get("role") != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
@@ -133,7 +171,14 @@ async def verify_admin_reauth(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Reauth token missing jti"
         )
-    if await _consume_stepup_jti(jti, payload.get("exp")):
+    try:
+        was_used = await _consume_stepup_jti(jti, payload.get("exp"))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Step-up replay protection is unavailable",
+        ) from exc
+    if was_used:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Reauth token already used"
         )
