@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
 )
 import pytest
-import pytest_asynciofrom app.models import (
+import pytest_asyncio
+from app.models import (
     Base,
     PipelineJob,
     PipelineJobStatus,
