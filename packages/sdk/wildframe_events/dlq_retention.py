@@ -47,7 +47,7 @@ async def apply_dlq_retention(
             ctx = ssl.create_default_context(cafile=env_ca)
             ssl_context = ctx
         elif security_protocol in ("SSL", "SASL_SSL"):
-            insecure = os.getenv("KAFKA_SSL_INSECURE", "true").lower() not in ("false", "0", "no")
+            insecure = os.getenv("KAFKA_SSL_INSECURE", "false").lower() not in ("false", "0", "no")
             if insecure:
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False

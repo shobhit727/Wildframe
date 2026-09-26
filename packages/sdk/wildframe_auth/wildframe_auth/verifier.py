@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 ALLOWED_ALGORITHMS = {"RS256"}
 REQUIRED_CLAIMS = {"exp", "iat", "iss", "aud", "sub", "type"}
+AUTH_VERSIONED_TYPES = {"access", "admin_step_up"}
 
 _jwks_cache: dict | None = None
 _jwks_cache_expiry: float = 0
@@ -59,8 +60,15 @@ def verify_token(
         raise
     except JWTError:
         raise
+    missing = REQUIRED_CLAIMS.difference(payload)
+    if missing:
+        raise JWTError(f"missing required claims: {', '.join(sorted(missing))}")
     if payload.get("type") != expected_type:
         raise JWTError(f"invalid type expected {expected_type}")
+    if expected_type in AUTH_VERSIONED_TYPES:
+        auth_version = payload.get("av")
+        if isinstance(auth_version, bool) or not isinstance(auth_version, int):
+            raise JWTError("invalid auth version claim")
     return payload
 
 
