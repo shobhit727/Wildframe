@@ -126,16 +126,17 @@ async def proxy_request(
     real_ip = raw_ip.split(",")[0].strip() if "," in raw_ip else raw_ip.strip()
     account_id = str(current_user.get("sub")) if current_user and current_user.get("sub") else None
     device_id = request.headers.get("x-device-id")
+    concurrency_lease: str | None = None
     if rate_limiter:
-        allowed = await rate_limiter.check_rate_limit(
-            service_name, path, ip=real_ip, account_id=account_id, device_id=device_id
+        allowed, concurrency_lease = await rate_limiter.acquire_rate_limits(
+            real_ip, service_name, path, account_id=account_id, device_id=device_id
         )
         if not allowed:
             raise _error_response(429, "Rate limit exceeded", request)
 
     # Forward request using shared AsyncClient (#123)
-    client = get_shared_client()
     try:
+        client = get_shared_client()
         original_host = request.headers.get("host", "")
         headers = {
             k: v for k, v in request.headers.items() if k.lower() not in _PROXY_AGENT_HEADERS
@@ -201,3 +202,13 @@ async def proxy_request(
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error proxying request to {url}{path}: {e}")
         raise _error_response(502, "Bad gateway", request)
+    finally:
+        if rate_limiter and concurrency_lease:
+            await rate_limiter.release_rate_limits(
+                concurrency_lease,
+                real_ip,
+                service_name,
+                path,
+                account_id=account_id,
+                device_id=device_id,
+            )

@@ -108,15 +108,17 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
             )
-        if self.JWT_SECRET_KEY is None:
+        if self.JWT_SECRET_KEY is None or not self.JWT_SECRET_KEY.strip():
             raise ValueError(
                 "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
             )
-        if self.JWT_SECRET_KEY in KNOWN_INSECURE_JWT_SECRETS:
+        if self.JWT_SECRET_KEY != self.JWT_SECRET_KEY.strip():
+            raise ValueError("JWT_SECRET_KEY must not contain leading or trailing whitespace.")
+        if self.JWT_SECRET_KEY.strip() in KNOWN_INSECURE_JWT_SECRETS:
             raise ValueError(
                 "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
             )
-        if len(self.JWT_SECRET_KEY) < 32:
+        if len(self.JWT_SECRET_KEY.strip()) < 32:
             raise ValueError(
                 "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
             )
