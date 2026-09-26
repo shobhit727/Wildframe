@@ -103,7 +103,7 @@ async def apply_dlq_retention(
         for t in dlq:
             if t in missing:
                 continue
-            resource = ConfigResource(ConfigResource.Type.TOPIC, t)
+            resource = ConfigResource("topic", t)  # Use the stable string form; aiokafka 0.14 removed ConfigResource.Type.
             resource.set_config("retention.ms", str(DLQ_RETENTION_MS))
             resource.set_config("segment.ms", str(DLQ_SEGMENT_MS))
             try:
