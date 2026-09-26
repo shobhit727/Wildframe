@@ -894,9 +894,12 @@ class AuthenticationMiddleware:
             "/redoc",
             "/openapi.json",
         ) or request_path.startswith(("/docs/", "/redoc/", "/openapi.json/"))
-        if is_docs_path and settings.ENVIRONMENT == "production":
-            pass
-        elif any(
+        if is_docs_path:
+            if settings.ENVIRONMENT == "production":
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+            # Documentation is intentionally public only outside production.
+            return None
+        if any(
             request_path == path or request_path.startswith(f"{path}/")
             for path in self.PUBLIC_PATHS
         ):
