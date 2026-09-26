@@ -149,7 +149,7 @@ def create_app() -> FastAPI:
         if not db_ok:
             overall = "not_ready"
         try:
-            redis_client = await redis.from_url(settings.REDIS_URL)
+            redis_client = redis.from_url(settings.REDIS_URL)
             await asyncio.wait_for(redis_client.ping(), timeout=2.0)
             await redis_client.close()
             checks["redis"] = "ok"
