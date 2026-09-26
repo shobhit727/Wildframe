@@ -35,6 +35,9 @@ class ContentFlagRepository:
         result = await self.session.execute(
             insert(ContentFlag)
             .values(
+                # Preserve an explicitly supplied UUID; otherwise SQLAlchemy's default
+                # generates one in the normal path.
+                id=flag.id,
                 content_id=flag.content_id,
                 content_creator_id=flag.content_creator_id,
                 flag_reason=flag.flag_reason,
