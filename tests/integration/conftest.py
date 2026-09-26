@@ -33,7 +33,13 @@ import pytest
 GATEWAY_URL = os.environ.get("WILDFRAME_GATEWAY_URL", "https://localhost:8000")
 JWT_SECRET = os.environ.get("WILDFRAME_JWT_SECRET", "dev-secret-key")
 STRIPE_WEBHOOK_SECRET = os.environ.get(
-    "WILDFRAME_STRIPE_WEBHOOK_SECRET", "whsec_default_change_me"
+    "WILDFRAME_STRIPE_WEBHOOK_SECRET", "whsec_dev_wildframe"
+)
+JWT_PRIVATE_KEY_FILE = Path(
+    os.environ.get(
+        "WILDFRAME_JWT_PRIVATE_KEY_FILE",
+        "apps/web/certificates/wildframe-jwt-private.pem",
+    )
 )
 
 # Caddy proxies each service's host port with TLS (see AGENTS.md -> HTTPS/TLS).
