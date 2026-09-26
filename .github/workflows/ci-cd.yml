@@ -636,6 +636,17 @@ jobs:
             --docker-username="${{ github.actor }}" \
             --docker-password="$GHCR_TOKEN" \
             --dry-run=client -o yaml | kubectl apply -f -
+      - name: Provision runtime secret
+        env:
+          JWT_SECRET: ${{ secrets.WILDFRAME_JWT_SECRET }}
+          POSTGRES_PASSWORD: ${{ secrets.WILDFRAME_POSTGRES_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Keep runtime credentials out of Helm values and Git while making
+          # the chart's existingSecret contract real before deployment.
+          test -n "$JWT_SECRET" && test -n "$POSTGRES_PASSWORD"
+          kubectl -n wildframe-staging create secret generic wildframe-runtime             --from-literal=JWT_SECRET_KEY="$JWT_SECRET"             --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD"             --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Deploy with Helm
         run: |
           helm upgrade --install wildframe-staging infrastructure/helm/wildframe \
@@ -699,6 +710,16 @@ jobs:
             --docker-username="${{ github.actor }}" \
             --docker-password="$GHCR_TOKEN" \
             --dry-run=client -o yaml | kubectl apply -f -
+      - name: Provision runtime secret
+        env:
+          JWT_SECRET: ${{ secrets.WILDFRAME_JWT_SECRET }}
+          POSTGRES_PASSWORD: ${{ secrets.WILDFRAME_POSTGRES_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # The production chart references the same Secret contract.
+          test -n "$JWT_SECRET" && test -n "$POSTGRES_PASSWORD"
+          kubectl -n wildframe-production create secret generic wildframe-runtime             --from-literal=JWT_SECRET_KEY="$JWT_SECRET"             --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD"             --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Deploy with Helm
         run: |
           helm upgrade --install wildframe-prod infrastructure/helm/wildframe \
