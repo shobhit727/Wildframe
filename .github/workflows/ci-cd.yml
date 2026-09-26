@@ -383,6 +383,10 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      - name: Generate development TLS certificates
+        working-directory: .
+        run: bash scripts/generate-dev-certs.sh
+
       - name: Build
         run: npm run build
 
