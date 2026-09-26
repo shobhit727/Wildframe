@@ -11,7 +11,7 @@ import httpx
 import redis.asyncio as redis
 from fastapi import HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
-from jose import JWTError, jwt
+from jose import JWTError
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
@@ -854,8 +854,8 @@ class AuthenticationMiddleware:
         }
     )
 
-    def __init__(self, jwt_secret: str):
-        self.jwt_secret = jwt_secret
+    def __init__(self, jwks_url: str):
+        self.jwks_url = jwks_url
 
     async def verify_token(self, request: Request) -> dict | None:
         """Verify a JWT token from the Authorization header."""
