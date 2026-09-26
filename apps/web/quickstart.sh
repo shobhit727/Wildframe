@@ -1,11 +1,12 @@
 #!/bin/bash
 # Wildframe Frontend Quick Start
+set -e
 
 echo "🚀 Wildframe Frontend Quick Start"
 echo "=================================="
 
 # Navigate to frontend
-cd /home/ph03n1x/Wildframe/apps/web
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
 # Install dependencies
 echo "📦 Installing dependencies..."
@@ -13,10 +14,9 @@ npm install
 
 # Create .env.local
 echo "🔧 Setting up environment..."
-cp .env.local.example .env.local
-cat <<'EOF' >> .env.local
-NEXT_PUBLIC_API_URL=https://localhost:8000
-EOF
+if [ ! -e .env.local ]; then
+  cp .env.local.example .env.local
+fi
 
 # Start dev server
 echo "🎬 Starting dev server..."

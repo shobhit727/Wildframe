@@ -51,9 +51,11 @@ async def _handle_content_gone(event: DomainEvent, action: str) -> None:
         logger.warning("database not initialized; skipping %s eviction", action)
         return
     async with factory() as session:
-        removed = await RecommendationRepository(session).delete_for_content(content_uuid)
+        users = await RecommendationRepository(session).delete_for_content(content_uuid)
         await session.commit()
-        logger.info("content %s %s -> removed=%s", content_id, action, removed)
+    for user_id in users:
+        await _cache_invalidate(user_id)
+    logger.info("content %s %s -> affected_users=%s", content_id, action, len(users))
 
 
 async def _handle_content_deleted(event: DomainEvent) -> None:

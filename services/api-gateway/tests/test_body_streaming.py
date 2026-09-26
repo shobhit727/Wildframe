@@ -256,6 +256,61 @@ async def test_response_streaming_limit():
     assert caught is True
 
 
+class _FakeRawHeaders(dict):
+    """Dict that also exposes httpx's ``.raw`` list of (bytes, bytes) pairs."""
+
+    @property
+    def raw(self):
+        return [(k.encode("latin-1"), str(v).encode("latin-1")) for k, v in self.items()]
+
+
+class _FakeStreamResponse:
+    def __init__(self, body=b"", status_code=200, headers=None):
+        self._body = body
+        self.status_code = status_code
+        self.headers = _FakeRawHeaders(headers or {"content-type": "application/json"})
+
+    async def aiter_raw(self):
+        if self._body:
+            yield self._body
+
+
+class _FakeStreamContext:
+    """Async context manager mimicking ``httpx.AsyncClient.stream``.
+
+    The request body is drained on ``__aenter__`` because real httpx sends the
+    request before the response is available.
+    """
+
+    def __init__(self, response, content=None, captured=None):
+        self._response = response
+        self._content = content
+        self._captured = captured
+
+    async def __aenter__(self):
+        if self._content is not None:
+            body = b""
+            async for chunk in self._content:
+                body += chunk
+            self._captured["body"] = body
+        return self._response
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+def _make_fake_stream(captured, body):
+    def fake_stream(method=None, url=None, headers=None, content=None, **kwargs):
+        captured["content"] = content
+        captured["method"] = method
+        captured["url"] = url
+        return _FakeStreamContext(
+            _FakeStreamResponse(body=body), content=content, captured=captured
+        )
+
+    return fake_stream
+
+
 @pytest.mark.asyncio
 async def test_proxy_forwarding_uses_streaming():
     from app.main import app
@@ -267,23 +322,7 @@ async def test_proxy_forwarding_uses_streaming():
     mock_client = MagicMock()
     captured = {}
 
-    async def fake_request(method, url, headers, content=None):
-        if content is not None:
-            body = b""
-            async for chunk in content:
-                body += chunk
-            captured["body"] = body
-            captured["method"] = method
-            captured["url"] = url
-        else:
-            captured["body"] = None
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.content = b'{"ok": true}'
-        mock_resp.headers = {"content-type": "application/json"}
-        return mock_resp
-
-    mock_client.request = fake_request
+    mock_client.stream = _make_fake_stream(captured, b'{"ok": true}')
     with patch("app.middleware.get_shared_client", return_value=mock_client):
         with patch("app.api.gateway_routes.get_shared_client", return_value=mock_client):
             with TestClient(app, base_url="http://test") as client:
@@ -318,15 +357,7 @@ async def test_proxy_get_has_no_body_stream():
     mock_client = MagicMock()
     captured = {}
 
-    async def fake_request(method, url, headers, content=None):
-        captured["content"] = content
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.content = b"[]"
-        mock_resp.headers = {"content-type": "application/json"}
-        return mock_resp
-
-    mock_client.request = fake_request
+    mock_client.stream = _make_fake_stream(captured, b"[]")
     with patch("app.middleware.get_shared_client", return_value=mock_client):
         with patch("app.api.gateway_routes.get_shared_client", return_value=mock_client):
             with TestClient(app, base_url="http://test") as client:

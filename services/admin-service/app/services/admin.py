@@ -1,10 +1,14 @@
 import logging
+import time
+
+from sqlalchemy import func, select
 
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secrets import is_sensitive_config_key, mask_value
+from app.models.admin import ContentModeration, SystemAlert
 from app.repositories.admin import (
     AdminAuditLogRepository,
     ContentModerationRepository,
@@ -15,10 +19,20 @@ from app.repositories.admin import (
 
 # Hard ceiling for any list/bulk read, independent of route-level limits.
 MAX_LIST_LIMIT = 1000
+_STARTED_AT = time.monotonic()
 
 
 def _clamp_limit(limit: int, maximum: int = MAX_LIST_LIMIT) -> int:
     return max(0, min(limit, maximum))
+
+
+def _moderated_at_iso(value: datetime | str | None) -> str:
+    # moderated_at is a DateTime column, so rows read back carry a datetime.
+    # Accept an already-serialized string unchanged; fall back to "now" when
+    # unset, matching the previous truthiness check.
+    if not value:
+        return datetime.now(UTC).isoformat()
+    return value if isinstance(value, str) else value.isoformat()
 
 
 logger = logging.getLogger(__name__)
@@ -51,15 +65,12 @@ class AdminService:
                         user_id,
                         status,
                         moderated_by,
-                        (
-                            existing.moderated_at.isoformat()
-                            if existing.moderated_at
-                            else datetime.now(UTC).isoformat()
-                        ),
+                        _moderated_at_iso(existing.moderated_at),
                     )
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception("failed to republish user.moderated for %s", user_id)
+                raise
             return self._serialize_user_moderation(existing)
 
         moderation = await self.user_repo.update_status(user_id, status, reason, moderated_by)
@@ -69,10 +80,11 @@ class AdminService:
         await self.audit_repo.create(
             moderated_by, f"user_moderation_{status}", "user", user_id, reason, ip_address
         )
+        await self.db.commit()
 
         # Notify auth-service so suspension/ban is enforced at the login
-        # boundary (admin_db and auth_db are separate by design). Publishing
-        # failures must not roll back the moderation itself.
+        # boundary (admin_db and auth_db are separate by design). Failures
+        # remain visible to callers; durable delivery requires an outbox.
         from app.core.events import get_event_publisher, user_moderated_event
 
         try:
@@ -81,15 +93,12 @@ class AdminService:
                     user_id,
                     status,
                     moderated_by,
-                    (
-                        moderation.moderated_at.isoformat()
-                        if moderation.moderated_at
-                        else datetime.now(UTC).isoformat()
-                    ),
+                    _moderated_at_iso(moderation.moderated_at),
                 )
             )
-        except Exception:  # noqa: BLE001 - delivery retried on next moderation
+        except Exception:
             logger.exception("failed to publish user.moderated for %s", user_id)
+            raise
 
         return self._serialize_user_moderation(moderation)
 
@@ -141,6 +150,7 @@ class AdminService:
         await self.audit_repo.create(
             flagged_by, "content_flagged", "content", content_id, reason, ip_address
         )
+        await self.db.commit()
         return self._serialize_content_moderation(moderation)
 
     @staticmethod
@@ -159,17 +169,14 @@ class AdminService:
     async def resolve_content_flag(
         self, content_id: str, status: str, resolved_by: str, ip_address: str
     ) -> dict | None:
-        existing = await self.content_repo.get_by_content_id(content_id)
-        if existing is None:
-            return None
-        if existing.status == status:
-            # Idempotent re-resolution: no row rewrite, no duplicate audit.
-            return self._serialize_content_moderation(existing)
-
         moderation = await self.content_repo.update_status(content_id, status, resolved_by)
+        if moderation is None:
+            existing = await self.content_repo.get_by_content_id(content_id)
+            return self._serialize_content_moderation(existing) if existing else None
         await self.audit_repo.create(
             resolved_by, f"content_resolved_{status}", "content", content_id, None, ip_address
         )
+        await self.db.commit()
         return self._serialize_content_moderation(moderation)
 
     async def list_flagged_content(self, limit: int = 50, offset: int = 0) -> list[dict]:
@@ -198,9 +205,7 @@ class AdminService:
                 changes=f"severity={severity}",
                 ip_address=ip_address,
             )
-        else:
-            # No audit row to commit for: persist the mutation alone.
-            await self.db.commit()
+        await self.db.commit()
         return {
             "id": alert.id,
             "alert_type": alert.alert_type,
@@ -239,6 +244,7 @@ class AdminService:
                 changes=None,
                 ip_address=ip_address,
             )
+            await self.db.commit()
             return {
                 "id": alert.id,
                 "alert_type": alert.alert_type,
@@ -277,7 +283,7 @@ class AdminService:
         sensitive = is_sensitive_config_key(key)
         config = await self.config_repo.get_by_key(key)
         if config:
-            config = await self.config_repo.update(key, value, admin_id)
+            config = await self.config_repo.update(key, value, admin_id, config_type, description)
         else:
             config = await self.config_repo.create(key, value, config_type, description, admin_id)
 
@@ -286,6 +292,7 @@ class AdminService:
         await self.audit_repo.create(
             admin_id, "config_updated", "config", key, f"value={logged_value}", ip_address
         )
+        await self.db.commit()
         return self._serialize_config(config, sensitive)
 
     @staticmethod
@@ -349,15 +356,31 @@ class AdminService:
         ]
 
     # System Stats
-    async def get_system_stats(self, total_users: int = 0, suspended_users: int = 0) -> dict:
-        flagged_content = await self.content_repo.list_by_status("flagged", _clamp_limit(1000))
-        alerts = await self.alert_repo.list_unacknowledged(_clamp_limit(1000))
-
+    async def get_system_stats(
+        self, total_users: int | None = None, suspended_users: int | None = None
+    ) -> dict:
+        flagged_content = await self.db.scalar(
+            select(func.count())
+            .select_from(ContentModeration)
+            .where(
+                ContentModeration.is_active.is_(True),
+                ContentModeration.status == "flagged",
+            )
+        )
+        active_alerts = await self.db.scalar(
+            select(func.count())
+            .select_from(SystemAlert)
+            .where(SystemAlert.is_active.is_(True), SystemAlert.acknowledged.is_(False))
+        )
         return {
             "total_users": total_users,
-            "active_users": total_users - suspended_users,
+            "active_users": (
+                total_users - suspended_users
+                if total_users is not None and suspended_users is not None
+                else None
+            ),
             "suspended_users": suspended_users,
-            "flagged_content": len(flagged_content),
-            "active_alerts": len([a for a in alerts if not a.acknowledged]),
-            "system_uptime_hours": 99.9,
+            "flagged_content": flagged_content,
+            "active_alerts": active_alerts,
+            "system_uptime_hours": (time.monotonic() - _STARTED_AT) / 3600,
         }

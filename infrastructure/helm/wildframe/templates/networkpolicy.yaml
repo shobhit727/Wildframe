@@ -1,8 +1,7 @@
 # Per-service NetworkPolicy: each workload only reaches the infra it needs
 # (DNS, Redis, Kafka, Jaeger agent, Postgres when it has a db) and only
-# accepts app traffic from api-gateway (plus the ingress controller for
-# api-gateway itself). Infra pods are addressed by the labels used by the
-# cluster topology (app: postgres / redis / kafka / jaeger-agent).
+# accepts app traffic from api-gateway and implemented content clients.
+# Infra pods use app: postgres / redis / kafka / jaeger-agent / elasticsearch.
 # 
 # DNS egress (issue #346): restricted to kube-system/kube-dns.
 # External RDS/ElastiCache egress (issues #347/#348): when
@@ -29,7 +28,7 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          name: {{ $.Values.ingress.controllerNamespace }}
+          kubernetes.io/metadata.name: {{ $.Values.ingress.controllerNamespace }}
     ports:
     - protocol: TCP
       port: {{ $svc.containerPort }}
@@ -38,6 +37,13 @@ spec:
     - podSelector:
         matchLabels:
           app: api-gateway
+    {{- if eq $name "content-service" }}
+    {{- range (list "analytics-service" "billing-service" "recommendation-service" "search-service") }}
+    - podSelector:
+        matchLabels:
+          app: {{ . }}
+    {{- end }}
+    {{- end }}
     ports:
     - protocol: TCP
       port: {{ $svc.containerPort }}
@@ -111,12 +117,25 @@ spec:
       port: {{ $.Values.infra.postgresPort }}
   {{- end }}
   {{- end }}
-  # Intra-service traffic (e.g. service mesh, peer health checks)
+  {{- if eq $name "search-service" }}
   - to:
     - podSelector:
         matchLabels:
-          app.kubernetes.io/name: {{ include "wildframe.name" $ }}
+          app: elasticsearch
     ports:
     - protocol: TCP
-      port: {{ $svc.containerPort }}
+      port: 9200
+  {{- end }}
+  # NetworkPolicy matches destination pod ports, not the Service's port.
+  {{- range $target, $targetSvc := $.Values.services }}
+  {{- if or (eq $name "api-gateway") (and (eq $target "content-service") (has $name (list "analytics-service" "billing-service" "recommendation-service" "search-service"))) }}
+  - to:
+    - podSelector:
+        matchLabels:
+          app: {{ $target }}
+    ports:
+    - protocol: TCP
+      port: {{ $targetSvc.containerPort }}
+  {{- end }}
+  {{- end }}
 {{- end }}

@@ -16,7 +16,10 @@ export function Row({ title, items, variant = 'poster', showProgress }: RowProps
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
-  const checkScroll = () => {
+  // Chevron visibility mirrors the DOM scroll box, so it is only ever written
+  // from a callback (frame/scroll/resize) — a write in the effect body would
+  // trigger a cascading render.
+  const syncChevrons = () => {
     const el = scrollRef.current;
     if (!el) return;
     setCanScrollLeft(el.scrollLeft > 10);
@@ -24,14 +27,17 @@ export function Row({ title, items, variant = 'poster', showProgress }: RowProps
   };
 
   useEffect(() => {
-    checkScroll();
     const el = scrollRef.current;
     if (!el) return;
-    el.addEventListener('scroll', checkScroll, { passive: true });
-    window.addEventListener('resize', checkScroll);
+    // Measure once the first layout is done, so the chevrons are correct
+    // before any scroll/resize event fires.
+    const frame = requestAnimationFrame(syncChevrons);
+    el.addEventListener('scroll', syncChevrons, { passive: true });
+    window.addEventListener('resize', syncChevrons);
     return () => {
-      el.removeEventListener('scroll', checkScroll);
-      window.removeEventListener('resize', checkScroll);
+      cancelAnimationFrame(frame);
+      el.removeEventListener('scroll', syncChevrons);
+      window.removeEventListener('resize', syncChevrons);
     };
   }, [items]);
 

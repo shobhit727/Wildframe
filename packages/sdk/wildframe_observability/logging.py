@@ -86,8 +86,10 @@ REDACT_FIELDS: frozenset[str] = frozenset(
 )
 
 
-def _is_sensitive_field(key: str) -> bool:
-    """Return True if the field name (case-insensitive) is a secret field."""
+def _is_sensitive_field(key: Any) -> bool:
+    """Return True if a string field name is a secret field."""
+    if not isinstance(key, str):
+        return False
     normalized = key.lower().replace("-", "").replace("_", "")
     redacted = {f.replace("-", "").replace("_", "") for f in REDACT_FIELDS}
     return normalized in redacted
@@ -103,16 +105,11 @@ def _redact_secrets(value: Any, depth: int = 0) -> Any:
     if depth > 10:
         return "<max-depth>"
     if isinstance(value, dict):
-        redacted_keys = {f.replace("-", "").replace("_", "") for f in REDACT_FIELDS}
         return {
-            k: (
-                "***REDACTED***"
-                if k.lower().replace("-", "").replace("_", "") in redacted_keys
-                else _redact_secrets(v, depth + 1)
-            )
+            k: ("***REDACTED***" if _is_sensitive_field(k) else _redact_secrets(v, depth + 1))
             for k, v in value.items()
         }
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple, set)):
         return [_redact_secrets(item, depth + 1) for item in value]
     return value
 
@@ -218,9 +215,8 @@ class JSONFormatter(logging.Formatter):
                 continue
             if key == "extra" and isinstance(value, dict):
                 # Also support the test pattern: record.extra = {...}
-                for k, v in value.items():
-                    # Redact secret fields, then sanitize for log injection.
-                    v = _redact_secrets(v)
+                for k, v in _redact_secrets(value).items():
+                    # Redact the mapping before emitting sensitive scalar fields.
                     log_entry[_sanitize_for_log(k)] = _sanitize_for_log(v)
                 continue
             # Redact secret fields based on key name, then sanitize for log injection.

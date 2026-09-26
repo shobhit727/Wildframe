@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class UserProfileUpdateRequest(BaseModel):
@@ -19,6 +19,15 @@ class UserProfileUpdateRequest(BaseModel):
     public_profile: bool | None = None
     newsletter_subscribed: bool | None = None
     marketing_emails: bool | None = None
+
+    @field_validator(
+        "bio", "language", "public_profile", "newsletter_subscribed", "marketing_emails"
+    )
+    @classmethod
+    def reject_null_nonnullable_fields(cls, value):
+        if value is None:
+            raise ValueError("Field cannot be null")
+        return value
 
     model_config = ConfigDict(
         json_schema_extra={

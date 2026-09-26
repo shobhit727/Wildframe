@@ -10,10 +10,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.pool import NullPool
-
-from app.models import Base as _Base
-
-Base = _Base
+from app.core.settings import settings
 
 
 class DatabaseManager:

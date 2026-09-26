@@ -8,7 +8,7 @@ import { ReactNode, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
 import { useAuth, useIsAdmin, useUser } from '@/hooks';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
@@ -88,8 +88,12 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
 
   const handleLogout = async () => {
-    await logout();
-    router.push('/login');
+    try {
+      await logout();
+      router.push('/login');
+    } catch {
+      toast.error('Could not sign out. Please try again.');
+    }
   };
 
   return (

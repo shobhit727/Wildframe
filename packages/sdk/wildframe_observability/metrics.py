@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import time
 from typing import Callable
-
 from prometheus_client import Counter, Histogram, Gauge
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -66,7 +65,12 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         self.service_name = service_name
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        method = request.method
+        method = (
+            request.method
+            if request.method
+            in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE", "CONNECT"}
+            else "OTHER"
+        )
         path = request.url.path
 
         # Skip metrics for the /metrics endpoint itself to avoid recursion.
@@ -82,9 +86,9 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             duration = time.monotonic() - start
             ACTIVE_REQUESTS.labels(service=self.service_name).dec()
 
-            # Normalize the endpoint to avoid label cardinality explosion
-            # from path params (e.g. /users/123 → /users/{id}).
-            endpoint = _normalize_endpoint(path)
+            # Routing populates the template only after dispatch. Unmatched paths
+            # share one label, never a client-controlled URL segment.
+            endpoint = getattr(request.scope.get("route"), "path", "unmatched")
 
             REQUEST_COUNT.labels(
                 method=method,
@@ -102,23 +106,31 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         return response  # type: ignore[no-any-return]
 
 
+def _is_uuid_like(value: str) -> bool:
+    """Check if a string looks like a UUID."""
+    import re
+
+    uuid_pattern = re.compile(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+    )
+    return bool(uuid_pattern.match(value))
+
+
 def _normalize_endpoint(path: str) -> str:
-    """Collapse path segments that look like UUIDs or numeric IDs.
-
-    /users/550e8400-e29b-41d4-a716-446655440000 → /users/{id}
-    /content/42 → /content/{id}
+    """Normalize endpoint path for metrics labeling.
+    Replace any UUID-like or numeric segment with `{id}`.
     """
-    parts = []
-    for segment in path.split("/"):
-        if not segment:
+    parts = path.split("/")
+    normalized: list[str] = []
+    for part in parts:
+        if part == "":
+            normalized.append("")
             continue
-        if _is_uuid_like(segment) or segment.isdigit():
-            parts.append("{id}")
+        if part.isdigit() or _is_uuid_like(part):
+            normalized.append("{id}")
         else:
-            parts.append(segment)
-    return "/" + "/".join(parts) if parts else "/"
-
-
-def _is_uuid_like(s: str) -> bool:
-    """Heuristic: does this segment look like a UUID?"""
-    return len(s) >= 8 and "-" in s
+            normalized.append(part)
+    result = "/".join(normalized)
+    if not result.startswith("/"):
+        result = "/" + result
+    return result

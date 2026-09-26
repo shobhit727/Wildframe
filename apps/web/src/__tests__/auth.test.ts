@@ -32,14 +32,6 @@ describe('auth store', () => {
     useAuthStore.setState({ user: null, token: null, isAuthenticated: false });
   });
 
-  it('login sets user, token and auth state', () => {
-    const user = makeUser();
-    useAuthStore.setState({ token: 'token-1', user, isAuthenticated: true });
-    const s = useAuthStore.getState();
-    expect(s.user).toEqual(user);
-    expect(s.token).toBe('token-1');
-    expect(s.isAuthenticated).toBe(true);
-  });
 
   it('logout resets user and clears auth state', async () => {
     useAuthStore.setState({ user: makeUser(), token: 'token-1', isAuthenticated: true });

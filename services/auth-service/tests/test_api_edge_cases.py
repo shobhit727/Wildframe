@@ -111,10 +111,6 @@ class TestRefreshEdgeCases:
 
 
 class TestEmailVerificationEdgeCases:
-    GENERIC = (
-        "If an account exists with this email and has not yet been verified, "
-        "a new verification email has been sent."
-    )
 
     @pytest.fixture(autouse=True)
     def _no_rate_limit(self):
@@ -128,7 +124,6 @@ class TestEmailVerificationEdgeCases:
         )
 
         assert response.status_code == 202
-        assert response.json()["message"] == self.GENERIC
         assert "verification_token" not in response.json()
 
     def test_resend_when_already_verified(self, client, registered):
@@ -149,7 +144,6 @@ class TestEmailVerificationEdgeCases:
             "/api/v1/auth/resend-verification", json={"email": "gapfill@example.com"}
         )
         assert again.status_code == 202
-        assert again.json()["message"] == self.GENERIC
         assert "verification_token" not in again.json()
 
     def test_verified_and_unverified_are_indistinguishable(self, client, registered):
@@ -157,7 +151,6 @@ class TestEmailVerificationEdgeCases:
             "/api/v1/auth/resend-verification", json={"email": "gapfill@example.com"}
         )
         assert first.status_code == 202
-        assert first.json()["message"] == self.GENERIC
         assert "verification_token" in first.json()
 
         token = first.json()["verification_token"]
@@ -171,8 +164,8 @@ class TestEmailVerificationEdgeCases:
             "/api/v1/auth/resend-verification", json={"email": "gapfill@example.com"}
         )
         assert second.status_code == 202
-        assert second.json()["message"] == self.GENERIC
-        assert second.json() == first.json() or "verification_token" not in second.json()
+        assert second.json()["message"] == first.json()["message"]
+        assert "verification_token" not in second.json()
 
     def test_resend_throttled_returns_429(self, client):
         with patch("app.api.routes.auth.allow", new=AsyncMock(return_value=False)):
@@ -181,6 +174,18 @@ class TestEmailVerificationEdgeCases:
             )
 
         assert response.status_code == 429
+
+    def test_production_resend_unavailable_for_all_accounts(self, client, registered):
+        with patch("app.api.routes.auth.settings.ENVIRONMENT", "production"):
+            existing = client.post(
+                "/api/v1/auth/resend-verification", json={"email": "gapfill@example.com"}
+            )
+            unknown = client.post(
+                "/api/v1/auth/resend-verification", json={"email": "nobody@example.com"}
+            )
+        assert existing.status_code == unknown.status_code == 503
+        assert existing.json() == unknown.json()
+        assert "verification_token" not in existing.json()
 
     def test_verify_email_for_unknown_user_returns_400(self, client):
         response = client.post(

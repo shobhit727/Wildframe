@@ -66,7 +66,7 @@ class UserProfileRepository(BaseRepository):
                 return None
 
             for key, value in kwargs.items():
-                if hasattr(profile, key) and value is not None:
+                if hasattr(profile, key):
                     setattr(profile, key, value)
 
             await self.flush()
@@ -129,18 +129,17 @@ class UserDeviceRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def update(self, device_id: UUID, **kwargs) -> UserDevice | None:
+    async def update(self, device_id: UUID, user_id: UUID, **kwargs) -> UserDevice | None:
         """Update device."""
         try:
             device = await self.get_by_id(device_id)
-            if not device:
+            if not device or device.user_id != user_id:
                 return None
 
             for key, value in kwargs.items():
                 if hasattr(device, key) and value is not None:
                     setattr(device, key, value)
 
-            # Update last_active_at if updating general device status
             if any(k in kwargs for k in ["is_active", "ip_address"]):
                 device.last_active_at = datetime.now(UTC)  # type: ignore[assignment]
 
@@ -152,15 +151,15 @@ class UserDeviceRepository(BaseRepository):
             logger.error(f"Error updating device: {e!s}")
             raise
 
-    async def mark_device_inactive(self, device_id: UUID) -> UserDevice | None:
+    async def mark_device_inactive(self, device_id: UUID, user_id: UUID) -> UserDevice | None:
         """Mark device as inactive."""
-        return await self.update(device_id, is_active=False)
+        return await self.update(device_id, user_id, is_active=False)
 
-    async def delete(self, device_id: UUID) -> bool:
+    async def delete(self, device_id: UUID, user_id: UUID) -> bool:
         """Delete device."""
         try:
             device = await self.get_by_id(device_id)
-            if device:
+            if device and device.user_id == user_id:
                 await self.session.delete(device)
                 await self.flush()
                 logger.info(f"Deleted device: {device_id}")
@@ -266,4 +265,4 @@ class UserSubscriptionProfileRepository(BaseRepository):
             raise
 
 
-from .dsar import DSARRepository
+from .dsar import DSARRepository as DSARRepository

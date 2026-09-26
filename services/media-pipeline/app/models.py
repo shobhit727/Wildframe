@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, UTC
 from enum import Enum
+from typing import Any
 
 """Media pipeline service models.
 
@@ -61,7 +62,7 @@ class PipelineJob(Base):
 
     __tablename__ = "pipeline_jobs"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     content_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     upload_session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), nullable=False, index=True
@@ -70,7 +71,7 @@ class PipelineJob(Base):
         String(128), nullable=True, unique=True, index=True
     )
     current_stage = Column(String(100), nullable=True)
-    status = Column(  # type: ignore[var-annotated]
+    status: Mapped[PipelineJobStatus] = mapped_column(
         SQLEnum(PipelineJobStatus),
         default=PipelineJobStatus.PENDING,
         nullable=False,
@@ -83,10 +84,10 @@ class PipelineJob(Base):
     error = Column(Text, nullable=True)
     # Per-job mutable state passed between stages. Persisted as JSONB so the
     # orchestrator can resume across requests (see app.services.advance()).
-    context = Column(JSONB, nullable=False, default=dict)
+    context: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     started_at = Column(DateTime(timezone=True), nullable=True)
     leased_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    leased_at = Column(DateTime(timezone=True), nullable=True)
+    leased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -119,6 +120,9 @@ class PipelineStageLog(Base):
         index=True,
     )
     stage = Column(String(50), nullable=False)
+    status: Mapped[PipelineStageStatus] = mapped_column(
+        SQLEnum(PipelineStageStatus), nullable=False
+    )
     duration_ms = Column(Integer, nullable=False, default=0)
     message = Column(Text, nullable=True)
     created_at = Column(
@@ -234,12 +238,14 @@ class VideoManifest(Base):
     episode_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     content_id = Column(UUID(as_uuid=True), nullable=False, index=True)
 
-    protocol = Column(SQLEnum(DeliveryProtocol), nullable=False)
+    protocol: Mapped[DeliveryProtocol] = mapped_column(SQLEnum(DeliveryProtocol), nullable=False)
     manifest_url = Column(String(500), nullable=False)
     manifest_content = Column(Text, nullable=False)
 
-    variants = Column(ARRAY(String), nullable=False, default=list)
-    available_bitrates = Column(ARRAY(Integer), nullable=False, default=list)
+    variants: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    available_bitrates: Mapped[list[int]] = mapped_column(
+        ARRAY(Integer), nullable=False, default=list
+    )
 
     include_subtitles = Column(Boolean, default=True)
     include_closed_captions = Column(Boolean, default=True)
@@ -247,6 +253,11 @@ class VideoManifest(Base):
     target_segment_duration_seconds = Column(Integer, default=10)
 
     generated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
 
 
 class StreamingQualityProfile(Base):
@@ -258,5 +269,16 @@ class StreamingQualityProfile(Base):
     __tablename__ = "streaming_quality_profile"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    bitrates = Column(ARRAY(Integer), nullable=False, default=list)
-    resolutions = Column(ARRAY(String), nullable=False, default=list)
+    bitrates: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False, default=list)
+    resolutions: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )

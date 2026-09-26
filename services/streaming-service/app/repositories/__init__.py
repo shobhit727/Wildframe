@@ -159,9 +159,14 @@ class PlaybackSessionRepository(BaseRepository):
         return result.scalar_one_or_none()
 
     async def mark_completed(self, session_id: UUID) -> PlaybackSession | None:
-        """Mark session as completed."""
-        from datetime import datetime
-
+        """End a session once under the same lock used by playback updates."""
+        session = await self.get_by_id(session_id)
+        if session is None:
+            return None
+        await self.count_active_sessions_locked(session.user_id)
+        await self.session.refresh(session)
+        if session.status in {PlaybackSessionStatus.COMPLETED, PlaybackSessionStatus.INTERRUPTED}:
+            return session
         return await self.update(
             session_id,
             status=PlaybackSessionStatus.COMPLETED,

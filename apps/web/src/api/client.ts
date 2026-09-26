@@ -55,8 +55,6 @@ function isAuthEndpoint(url: string | undefined): boolean {
  * This prevents XSS from extracting credentials.
  */
 let accessToken: string | null = null;
-// Transient refresh token held only between login response and cookie persistence.
-let refreshToken: string | null = null;
 
 /**
  * Remove any legacy localStorage/cookie tokens left by pre-HttpOnly builds.
@@ -82,26 +80,15 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
-export function getRefreshToken(): string | null {
-  // The refresh token is no longer stored client-side; it lives in an
-  // HttpOnly cookie managed by the /auth-session route handler.
-  // This getter exists for API compatibility and returns the transient
-  // in-memory value (usually null after the first persist).
-  return refreshToken;
-}
 
 async function persistRefreshToken(token: string): Promise<void> {
-  try {
-    await fetch('/auth-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: token }),
-      credentials: 'same-origin',
-    });
-  } catch {
-    // Session persistence is best-effort; auth still works via the login
-    // response until the next reload.
-  }
+  const response = await fetch('/auth-session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: token }),
+    credentials: 'same-origin',
+  });
+  if (!response.ok) throw new Error('Could not persist session');
 }
 
 /**
@@ -111,26 +98,15 @@ async function persistRefreshToken(token: string): Promise<void> {
  * router.push, leaving middleware to bounce hard navigations to /login).
  */
 export async function setTokens(tokens: AuthTokens): Promise<void> {
+  if (!tokens.access_token || !tokens.refresh_token) throw new Error('Invalid authentication response');
+  await persistRefreshToken(tokens.refresh_token);
   accessToken = tokens.access_token;
-  if (tokens.refresh_token) {
-    refreshToken = tokens.refresh_token;
-    await persistRefreshToken(tokens.refresh_token);
-  }
   sweepLegacyTokenStorage();
 }
 
 export function clearTokens(): void {
   accessToken = null;
-  refreshToken = null;
   sweepLegacyTokenStorage();
-  // Tell the server to drop the HttpOnly refresh cookie (best-effort).
-  if (typeof fetch === 'function') {
-    try {
-      void fetch('/auth-session', { method: 'DELETE', credentials: 'same-origin' }).catch(() => {});
-    } catch {
-      // Ignore synchronous fetch failures (e.g., jsdom in tests).
-    }
-  }
 }
 
 // ---- Normalization: backend DTOs -> UI types ----
@@ -193,7 +169,7 @@ export function getApiErrorMessage(
 let refreshPromise: Promise<string | null> | null = null;
 
 class APIClient {
-  private client: AxiosInstance;
+  readonly client: AxiosInstance;
 
   constructor() {
     this.client = axios.create({
@@ -301,11 +277,16 @@ class APIClient {
   }
 
   async logout() {
-    try {
-      await this.client.post('/auth/api/v1/auth/logout');
-    } finally {
-      clearTokens();
-    }
+    // Let any rotation commit its cookie before revoking that credential.
+    await refreshPromise;
+    const token = getAccessToken();
+    const response = await fetch('/auth-session', {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error('Could not end session. Please try again.');
+    clearTokens();
   }
 
   async getMe(): Promise<User> {

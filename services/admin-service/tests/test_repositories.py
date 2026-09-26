@@ -1,6 +1,5 @@
 import pytest
 import pytest_asyncio
-import sys
 import pathlib
 import importlib.util
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
@@ -52,7 +51,7 @@ async def db_session(tmp_path):
 @pytest.mark.asyncio
 async def test_user_moderation_crud(db_session: AsyncSession):
     repo = UserModerationRepository(db_session)
-    um = await repo.create(user_id="user1", status="active", reason=None, moderated_by="admin")
+    await repo.create(user_id="user1", status="active", reason=None, moderated_by="admin")
     fetched = await repo.get_by_user_id("user1")
     assert fetched and fetched.status == "active"
     await repo.update_status("user1", "banned", "spam", "admin2")
@@ -101,12 +100,12 @@ async def test_system_alert_crud(db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_system_config_crud(db_session: AsyncSession):
     repo = SystemConfigRepository(db_session)
-    cfg = await repo.create(
+    await repo.create(
         key="feature_x", value="on", config_type="bool", description=None, updated_by="admin"
     )
     fetched = await repo.get_by_key("feature_x")
     assert fetched and fetched.value == "on"
-    await repo.update("feature_x", "off", "admin2")
+    await repo.update("feature_x", "off", "admin2", "bool", None)
     updated = await repo.get_by_key("feature_x")
     assert updated and updated.value == "off"
     all_cfg = await repo.list_all()
@@ -126,7 +125,7 @@ async def test_admin_audit_log_append_only(db_session: AsyncSession):
         ip_address="127.0.0.1",
     )
     fetched = await repo.list_by_admin("admin")
-    assert any(l.id == log.id for l in fetched)
+    assert any(entry.id == log.id for entry in fetched)
     with pytest.raises(Exception):
         await repo.update()
     with pytest.raises(Exception):

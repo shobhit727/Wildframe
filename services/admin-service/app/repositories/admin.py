@@ -25,7 +25,7 @@ class UserModerationRepository:
             user_id=user_id, status=status, reason=reason, moderated_by=moderated_by
         )
         self.db.add(moderation)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(moderation)
         return moderation
 
@@ -62,7 +62,8 @@ class UserModerationRepository:
             moderation.status = status
             moderation.reason = reason
             moderation.moderated_by = moderated_by
-            await self.db.commit()
+            moderation.moderated_at = datetime.now(UTC)
+            await self.db.flush()
             await self.db.refresh(moderation)
         return moderation
 
@@ -87,7 +88,7 @@ class ContentModerationRepository:
             flagged_by=flagged_by,
         )
         self.db.add(moderation)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(moderation)
         return moderation
 
@@ -139,14 +140,24 @@ class ContentModerationRepository:
     async def update_status(
         self, content_id: str, status: str, resolved_by: str
     ) -> ContentModeration | None:
-        moderation = await self.get_by_content_id(content_id, for_update=True)
-        if moderation:
+        result = await self.db.execute(
+            select(ContentModeration)
+            .where(
+                ContentModeration.content_id == content_id,
+                ContentModeration.is_active == True,
+                ContentModeration.status == "flagged",
+            )
+            .order_by(desc(ContentModeration.created_at), ContentModeration.id.desc())
+            .with_for_update()
+        )
+        flags = list(result.scalars().all())
+        resolved_at = datetime.now(UTC)
+        for moderation in flags:
             moderation.status = status
             moderation.resolved_by = resolved_by
-            moderation.resolved_at = datetime.now(UTC) if status == "removed" else None
-            await self.db.commit()
-            await self.db.refresh(moderation)
-        return moderation
+            moderation.resolved_at = resolved_at
+        await self.db.flush()
+        return flags[0] if flags else None
 
 
 class SystemAlertRepository:
@@ -160,7 +171,7 @@ class SystemAlertRepository:
             alert_type=alert_type, severity=severity, message=message, service=service
         )
         self.db.add(alert)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(alert)
         return alert
 
@@ -192,7 +203,8 @@ class SystemAlertRepository:
         if alert and not alert.acknowledged:
             alert.acknowledged = True
             alert.acknowledged_by = admin_id
-            await self.db.commit()
+            alert.acknowledged_at = datetime.now(UTC)
+            await self.db.flush()
             await self.db.refresh(alert)
         return alert
 
@@ -212,7 +224,7 @@ class SystemConfigRepository:
             updated_by=updated_by,
         )
         self.db.add(config)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(config)
         return config
 
@@ -230,12 +242,16 @@ class SystemConfigRepository:
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def update(self, key: str, value: str, updated_by: str) -> SystemConfig | None:
+    async def update(
+        self, key: str, value: str, updated_by: str, config_type: str, description: str | None
+    ) -> SystemConfig | None:
         config = await self.get_by_key(key)
         if config:
             config.value = value
             config.updated_by = updated_by
-            await self.db.commit()
+            config.config_type = config_type
+            config.description = description
+            await self.db.flush()
             await self.db.refresh(config)
         return config
 
@@ -269,7 +285,7 @@ class AdminAuditLogRepository:
             ip_address=ip_address,
         )
         self.db.add(log)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(log)
         return log
 

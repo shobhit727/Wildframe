@@ -42,5 +42,5 @@ pytest-cov = "^4.1.0"
 pytest-mock = "^3.11.0"
 black = ">=23.11,<27.0"
 mypy = "^1.7.0"
-testcontainers = "^3.7.0"
+testcontainers = {version = "^3.7.0", extras = ["postgresql"]}
 httpx = "^0.25.0"

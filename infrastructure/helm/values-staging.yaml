@@ -11,8 +11,6 @@ infra:
   redisHost: "redis-master-staging"
   kafkaBootstrap: "kafka-staging:9092"
 
-secrets:
-  jwtSecret: "change-me-staging"
 
 ingress:
   enabled: true
@@ -25,3 +23,8 @@ resources:
   limits:
     cpu: 500m
     memory: 512Mi
+
+services:
+  api-gateway:
+    env:
+      CORS_ALLOWED_ORIGINS: '["https://staging.wildframe.com"]'

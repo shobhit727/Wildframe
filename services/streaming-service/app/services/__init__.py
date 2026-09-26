@@ -103,7 +103,25 @@ class StreamingService:
     ):
         """Update playback session."""
         try:
+            session = await self.playback_repo.get_by_id(session_id)
+            if session is None:
+                return None
+            active_count = await self.playback_repo.count_active_sessions_locked(session.user_id)
+            await self.session.refresh(session)
             update_data = request.model_dump(exclude_unset=True)
+            terminal = {PlaybackSessionStatus.COMPLETED, PlaybackSessionStatus.INTERRUPTED}
+            if session.status in terminal:
+                if request.status is not None and request.status != session.status:
+                    raise HTTPException(status_code=409, detail="Session has ended")
+                await self.playback_repo.commit()
+                return session
+            if request.status == PlaybackSessionStatus.ACTIVE and session.status != request.status:
+                if active_count >= settings.MAX_ACTIVE_SESSIONS:
+                    raise HTTPException(
+                        status_code=409, detail="Maximum concurrent sessions reached"
+                    )
+            if request.status in terminal:
+                update_data["ended_at"] = datetime.now(UTC).replace(tzinfo=None)
             session = await self.playback_repo.update(session_id, **update_data)
             await self.playback_repo.commit()
             return session
@@ -125,23 +143,24 @@ class StreamingService:
 
     # Signed playback URL operations (#489, #491)
 
-    def generate_signed_url(self, request: SignedPlaybackUrlRequest) -> tuple[str, datetime]:
+    def generate_signed_url(
+        self, request: SignedPlaybackUrlRequest, episode_id: UUID
+    ) -> tuple[str, datetime]:
         """Generate HMAC-signed playback URL.
 
-        Signature = HMAC(secret, session_id|content_id|expiry)
+        Signature = HMAC(secret, session_id|episode_id|expiry)
         """
         ttl = request.ttl_seconds or settings.PLAYBACK_URL_TTL_SECONDS
         expires_at = datetime.now(UTC) + timedelta(seconds=ttl)
         expires_unix = int(expires_at.timestamp())
 
-        # Create message: session_id|content_id|expiry
-        message = f"{request.session_id}|{request.content_id}|{expires_unix}".encode()
+        message = f"{request.session_id}|{episode_id}|{expires_unix}".encode()
         secret = settings.PLAYBACK_URL_SIGNING_SECRET.encode()
         signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
 
         # Build signed URL with query params
         signed_url = (
-            f"/api/v1/episodes/{request.content_id}/manifest"
+            f"/api/v1/episodes/{episode_id}/manifest"
             f"?session_id={request.session_id}"
             f"&signature={signature}"
             f"&expires={expires_unix}"
@@ -170,7 +189,7 @@ class StreamingService:
         return hmac.compare_digest(signature, expected_signature)
 
     async def check_session_valid_for_playback(
-        self, session_id: UUID, user_id: UUID | None
+        self, session_id: UUID, user_id: UUID | None, episode_id: UUID | None = None
     ) -> bool:
         """Check if session is valid for playback (not expired, not revoked).
 
@@ -183,12 +202,24 @@ class StreamingService:
             return False
         if user_id is not None and session.user_id != user_id:
             return False
+        if episode_id is not None and session.episode_id != episode_id:
+            return False
         if session.status != PlaybackSessionStatus.ACTIVE:
             return False
         # Check expiry
         if session.expires_at and datetime.now(UTC).replace(tzinfo=None) > session.expires_at:
             return False
         return True
+
+    async def require_manifest_session(
+        self, user_id: UUID, episode_id: UUID, content_id: UUID
+    ) -> None:
+        """Apply session revocation and asset binding to bearer manifest access."""
+        for session in await self.playback_repo.get_active_sessions(user_id):
+            if session.episode_id == episode_id and session.content_id == content_id:
+                if await self.check_session_valid_for_playback(session.id, user_id, episode_id):
+                    return
+        raise HTTPException(status_code=403, detail="An active session for this asset is required")
 
     async def generate_manifest(self, request: ManifestGenerationRequest):
         """Generate video manifest for streaming."""

@@ -19,7 +19,7 @@ export default function proxy(request: NextRequest) {
 
 
   // The auth session is tracked via the HttpOnly '__Host-wf_refresh' cookie set
-  // by /auth-session. Presence of this cookie indicates a valid session.
+  // by /auth-session. Presence is only an optimistic route hint, not authentication.
   const token = request.cookies.get('__Host-wf_refresh')?.value;
   const { pathname } = request.nextUrl;
 
@@ -31,13 +31,6 @@ export default function proxy(request: NextRequest) {
     return withCsp(NextResponse.redirect(new URL('/login', request.url)), csp);
   }
 
-  // Redirect authenticated users from auth pages
-  const authRoutes = ['/login', '/signup'];
-  const isAuthRoute = authRoutes.some((route) => pathname === route);
-
-  if (isAuthRoute && token) {
-    return withCsp(NextResponse.redirect(new URL('/browse', request.url)), csp);
-  }
 
   const res = NextResponse.next({ request: { headers: requestHeaders } });
   return withCsp(res, csp);

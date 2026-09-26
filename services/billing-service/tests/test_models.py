@@ -8,13 +8,11 @@ from app.models.payout_ledger import PayoutLedger
 from app.models import (
     Subscription,
     Purchase,
-    Invoice,
     Refund,
-    SubscriptionStatus,
-    InvoiceStatus,
     RefundStatus,
+    SubscriptionStatus,
 )
-from app.services import validate_transition, InvalidStateTransitionError, SUBSCRIPTION_TRANSITIONS
+from app.services import validate_transition, SUBSCRIPTION_TRANSITIONS
 
 
 def test_subscription_tier_defaults():

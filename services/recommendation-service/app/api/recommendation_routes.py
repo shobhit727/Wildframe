@@ -99,10 +99,15 @@ async def get_recommendations(
     return {"recommendations": recommendations, "total": len(recommendations)}
 
 
-def _validate_genre_list(name: str, genres: list | None) -> None:
-    """Reject unbounded preference lists (#228 F4)."""
+def _validate_genre_list(name: str, genres: object) -> None:
+    """Require bounded arrays of genre strings before persistence."""
     if genres is None:
         return
+    if not isinstance(genres, list) or any(not isinstance(genre, str) for genre in genres):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"{name} must be an array of strings",
+        )
     if len(genres) > settings.MAX_PREFERENCE_GENRES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -122,16 +127,15 @@ async def update_preferences(
     ``liked_genres`` / ``disliked_genres`` arrays (each bounded to
     ``MAX_PREFERENCE_GENRES``). Recommendations are regenerated afterwards.
     """
+    liked_genres: list | None = None
+    disliked_genres: list | None = None
     if isinstance(body, list):
         _validate_genre_list("liked_genres", body)
-        liked_genres = body or None
-        disliked_genres = None
+        liked_genres = body
     elif isinstance(body, dict):
         _validate_genre_list("liked_genres", body.get("liked_genres"))
         _validate_genre_list("disliked_genres", body.get("disliked_genres"))
         liked_genres = body.get("liked_genres")
         disliked_genres = body.get("disliked_genres")
-    else:
-        liked_genres = disliked_genres = None
     await service.update_preferences(user_id, liked_genres, disliked_genres)
     return {"status": "updated"}

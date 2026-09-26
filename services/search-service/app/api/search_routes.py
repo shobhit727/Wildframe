@@ -20,7 +20,6 @@ from app.core.settings import settings
 from app.repositories import SearchIndexRepository, SearchQueryRepository
 from app.services import (
     SearchService,
-    ContentCatalogClient,
     ReindexResult,
     CatalogFetchError,
     IndexingError,
@@ -92,7 +91,10 @@ async def search_content(
         except ValueError as e:
             raise _error(422, str(e))
 
-    result = await service.search(user_id, q, content_type, limit, search_after=search_after)
+    try:
+        result = await service.search(user_id, q, content_type, limit, search_after=search_after)
+    except ValueError as e:
+        raise _error(422, str(e)) from e
 
     next_cursor = None
     if result.next_sort is not None:
@@ -133,8 +135,7 @@ async def reindex(
 
     async with _reindex_lock:
         try:
-            catalog = ContentCatalogClient()
-            result: ReindexResult = await service.reindex_catalog(catalog)
+            result: ReindexResult = await service.reindex_catalog()
         except CatalogFetchError as e:
             raise _error(502, f"Content service unavailable: {e}") from e
         except IndexingError as e:

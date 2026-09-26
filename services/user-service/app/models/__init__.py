@@ -204,5 +204,5 @@ class UserSubscriptionProfile(Base):
     )
 
 
-from .child_account import ChildAccount
-from .dsar import DSARRequest
+from .child_account import ChildAccount as ChildAccount
+from .dsar import DSARRequest as DSARRequest

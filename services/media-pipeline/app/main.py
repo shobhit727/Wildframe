@@ -66,12 +66,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
 
     setup_logging()
-    setup_logging()
 
     # Bounded retention on DLQ topics (#553) — best-effort, never blocks.
     if settings.EVENT_PUBLISHER == "kafka":
-        import asyncio
-
         from wildframe_events.dlq_retention import apply_dlq_retention
 
         asyncio.create_task(

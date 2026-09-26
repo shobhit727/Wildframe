@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from app.api.routes import (
     get_current_user_id as streaming_user_di,
     get_streaming_service,
+    require_admin as streaming_require_admin,
     require_self as streaming_require_self,
 )
 from app.main import app
@@ -30,7 +31,7 @@ def auth_user_id():
 
 @pytest.fixture
 def fake_service():
-    return MagicMock()
+    return AsyncMock()
 
 
 async def _echo_path_self(request: Request) -> UUID:
@@ -42,6 +43,7 @@ def override_deps(fake_service, auth_user_id):
     app.dependency_overrides[get_streaming_service] = lambda: fake_service
     app.dependency_overrides[streaming_require_self] = _echo_path_self
     app.dependency_overrides[streaming_user_di] = lambda: auth_user_id
+    app.dependency_overrides[streaming_require_admin] = lambda: auth_user_id
     yield
     app.dependency_overrides.clear()
 
@@ -809,19 +811,35 @@ class TestSignedPlaybackUrl:
 
     def test_create_signed_url_returns_signed_url(self, client, fake_service, auth_user_id):
         session = make_playback_session(user_id=auth_user_id)
+        # The route binds the signed URL to the session's own asset (#528).
+        session.episode_id = uuid4()
         fake_service.get_playback_session = AsyncMock(return_value=session)
-        fake_service.generate_signed_url = lambda req: (
-            "/api/v1/episodes/test?sig=abc",
+        fake_service.generate_signed_url = lambda req, episode_id: (
+            f"/api/v1/episodes/{episode_id}?sig=abc",
             datetime.now(UTC) + timedelta(seconds=3600),
         )
 
         response = client.post(
             "/api/v1/playback-sessions/signed-url",
-            json={"session_id": str(session.id), "content_id": str(uuid4())},
+            json={"session_id": str(session.id), "content_id": str(session.content_id)},
         )
         assert response.status_code == 201
         assert "signed_url" in response.json()
         assert "expires_at" in response.json()
+
+    def test_create_signed_url_mismatched_asset_returns_409(
+        self, client, fake_service, auth_user_id
+    ):
+        session = make_playback_session(user_id=auth_user_id)
+        session.episode_id = uuid4()
+        fake_service.get_playback_session = AsyncMock(return_value=session)
+
+        response = client.post(
+            "/api/v1/playback-sessions/signed-url",
+            json={"session_id": str(session.id), "content_id": str(uuid4())},
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Session does not match the requested asset"
 
 
 class TestSessionExpiry:

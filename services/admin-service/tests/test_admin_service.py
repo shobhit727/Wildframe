@@ -403,7 +403,9 @@ class TestIdempotencyAndDedupe:
             created_at="2026-05-20",
         )
         admin_service.content_repo.get_by_content_id = AsyncMock(return_value=existing)
-        admin_service.content_repo.update_status = AsyncMock()
+        # Idempotent no-op: update_status() only flips rows still in "flagged",
+        # so with the flag already resolved it returns None.
+        admin_service.content_repo.update_status = AsyncMock(return_value=None)
         admin_service.audit_repo.create = AsyncMock()
 
         result = await admin_service.resolve_content_flag(
@@ -412,8 +414,11 @@ class TestIdempotencyAndDedupe:
 
         assert result["id"] == 9
         assert result["status"] == "removed"
-        admin_service.content_repo.update_status.assert_not_awaited()
+        admin_service.content_repo.update_status.assert_awaited_once_with(
+            "movie789", "removed", "admin2"
+        )
         admin_service.audit_repo.create.assert_not_awaited()
+        admin_service.db.commit.assert_not_awaited()
 
 
 class TestSecretMasking:
@@ -668,32 +673,27 @@ class TestConcurrencyLocks:
 
     @pytest.mark.asyncio
     async def test_resolve_content_flag_uses_for_update(self, admin_service):
-        # Mock get_by_content_id to return a flagged content on first call
-        # (the pre-check in resolve_content_flag), then return the same
-        # object on the second call (inside update_status with for_update=True).
+        # The row lock lives on update_status()'s own SELECT (with_for_update),
+        # not on a get_by_content_id() call: the latter is the unlocked
+        # fallback, reached only when no open flag was flipped.
         mock_content = MagicMock(id=1, content_id="movie1", status="flagged", is_active=True)
-        admin_service.content_repo.get_by_content_id = AsyncMock(
-            side_effect=[mock_content, mock_content]
-        )
-        # Don't mock update_status - let the real method run so it calls
-        # get_by_content_id with for_update=True.
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = [mock_content]
+        admin_service.db.execute = AsyncMock(return_value=result)
         admin_service.audit_repo.create = AsyncMock(return_value=None)
-        # Mock db commit/refresh since we're using a mocked DB
         admin_service.db.commit = AsyncMock()
-        admin_service.db.refresh = AsyncMock()
 
         await admin_service.resolve_content_flag("movie1", "removed", "admin1", "10.0.0.1")
 
-        # Verify get_by_content_id was called twice: once without for_update
-        # (pre-check), once with for_update=True (inside update_status).
-        get_calls = admin_service.content_repo.get_by_content_id.call_args_list
-        assert len(get_calls) == 2
-        # First call: pre-check, no for_update
-        assert get_calls[0].args[0] == "movie1"
-        assert "for_update" not in get_calls[0].kwargs
-        # Second call: inside update_status, with for_update=True
-        assert get_calls[1].args[0] == "movie1"
-        assert get_calls[1].kwargs.get("for_update") is True
+        # Exactly one statement issued, and it takes a row lock.
+        admin_service.db.execute.assert_awaited_once()
+        query = admin_service.db.execute.await_args.args[0]
+        assert "FOR UPDATE" in str(query)
+        # The locked row was actually flipped.
+        assert mock_content.status == "removed"
+        assert mock_content.resolved_by == "admin1"
+        admin_service.audit_repo.create.assert_awaited_once()
+        admin_service.db.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_get_config(self, admin_service):
@@ -780,16 +780,9 @@ class TestAuditLogs:
 class TestSystemStats:
     @pytest.mark.asyncio
     async def test_get_system_stats(self, admin_service):
-        admin_service.content_repo.list_by_status = AsyncMock(
-            return_value=[MagicMock() for _ in range(5)]
-        )
-        admin_service.alert_repo.list_unacknowledged = AsyncMock(
-            return_value=[
-                MagicMock(acknowledged=False),
-                MagicMock(acknowledged=False),
-                MagicMock(acknowledged=True),
-            ]
-        )
+        # get_system_stats() counts flagged content and unacknowledged alerts
+        # with two db.scalar() aggregates, not the repository list methods.
+        admin_service.db.scalar = AsyncMock(side_effect=[5, 2])
 
         result = await admin_service.get_system_stats(total_users=5000, suspended_users=50)
 

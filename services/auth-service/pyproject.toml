@@ -37,6 +37,7 @@ httpx = "^0.25.0"
 opentelemetry-api = "^1.20.0"
 opentelemetry-sdk = "^1.20.0"
 opentelemetry-exporter-jaeger = "^1.20.0"
+protobuf = ">=5.29.6,<6"
 opentelemetry-instrumentation-fastapi = "^0.49b0"
 opentelemetry-instrumentation-sqlalchemy = "^0.49b0"
 opentelemetry-instrumentation-redis = "^0.49b0"
@@ -79,12 +80,10 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = "aiokafka"
 ignore_missing_imports = true
-ignore_untyped = true
 
 [[tool.mypy.overrides]]
 module = "aiokafka.*"
 ignore_missing_imports = true
-ignore_untyped = true
 
 [[tool.mypy.overrides]]
 module = "aiokafka.consumer"

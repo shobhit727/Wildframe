@@ -32,6 +32,7 @@ from sqlalchemy import (
     Index,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy import (
     Enum as SQLEnum,
@@ -185,7 +186,18 @@ class ModerationDecision(Base):
     )
     __table_args__ = (
         Index("idx_decision_flag_created", "flag_id", "created_at"),
-        UniqueConstraint("flag_id", name="uq_moderation_decision_flag"),
+        Index(
+            "uq_moderation_decision_terminal",
+            "flag_id",
+            unique=True,
+            postgresql_where=text("decision <> 'ESCALATE'"),
+        ),
+        Index(
+            "uq_moderation_decision_escalation",
+            "flag_id",
+            unique=True,
+            postgresql_where=text("decision = 'ESCALATE'"),
+        ),
     )
 
 

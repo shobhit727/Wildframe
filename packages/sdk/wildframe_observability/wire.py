@@ -30,7 +30,7 @@ from wildframe_observability.middleware import (
 from wildframe_observability.metrics import MetricsMiddleware
 
 
-def _setup_tracing(service_name: str) -> None:
+def _setup_tracing(app: FastAPI, service_name: str) -> None:
     """Optionally init OpenTelemetry tracing to Jaeger.
 
     Gated on the JAEGER_ENABLED env var so services that install the SDK get
@@ -43,17 +43,18 @@ def _setup_tracing(service_name: str) -> None:
         from opentelemetry import trace
         from opentelemetry.exporter.jaeger.thrift import JaegerExporter  # type: ignore[import-not-found]
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # type: ignore[import-not-found]
+        from opentelemetry.sdk.resources import Resource
         from opentelemetry.sdk.trace import TracerProvider  # type: ignore[attr-defined]
         from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore[attr-defined]
 
         host = os.getenv("JAEGER_AGENT_HOST", "localhost")
         port = int(os.getenv("JAEGER_AGENT_PORT", "6831"))
-        provider = TracerProvider()
+        provider = TracerProvider(resource=Resource.create({"service.name": service_name}))
         provider.add_span_processor(
             BatchSpanProcessor(JaegerExporter(agent_host_name=host, agent_port=port))
         )
         trace.set_tracer_provider(provider)
-        FastAPIInstrumentor.instrument()
+        FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
     except Exception:  # noqa: BLE001 - observability must never crash the app
         pass
 
@@ -62,6 +63,8 @@ def wire_observability(
     app: FastAPI,
     service_name: str,
     log_level: str = "INFO",
+    *,
+    register_metrics: bool = True,
 ) -> None:
     """Add all observability middleware and endpoints to a FastAPI app.
 
@@ -72,12 +75,13 @@ def wire_observability(
         app: The FastAPI application instance.
         service_name: Used as a label on all Prometheus metrics and log entries.
         log_level: Log level string (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+        register_metrics: Disable when the service owns an authenticated scrape route.
     """
     # Set up structured JSON logging.
     obs_setup_logging(service_name=service_name, log_level=log_level)
 
     # Distributed tracing (Jaeger), gated on JAEGER_ENABLED env var.
-    _setup_tracing(service_name=service_name)
+    _setup_tracing(app, service_name=service_name)
 
     # Add middleware (order matters: last added = first executed).
     # CorrelationMiddleware runs first (outermost) to set contextvars
@@ -87,6 +91,9 @@ def wire_observability(
     app.add_middleware(CorrelationMiddleware)
 
     # Add Prometheus scrape endpoint.
+    if not register_metrics:
+        return
+
     @app.get("/metrics")
     async def metrics() -> Response:
         """Prometheus metrics endpoint."""

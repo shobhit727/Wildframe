@@ -33,9 +33,6 @@ spec:
     spec:
       restartPolicy: Never
       automountServiceAccountToken: {{ $.Values.automountServiceAccountToken }}
-      {{- if $.Values.serviceAccount.create }}
-      serviceAccountName: {{ $name }}
-      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -59,13 +56,13 @@ spec:
         env:
         - name: ENVIRONMENT
           value: {{ $svc.environment | default "production" }}
-        - name: DATABASE_URL
-          value: "postgresql+asyncpg://wildframe:$(POSTGRES_PASSWORD)@{{ $.Values.infra.postgresHost }}:{{ $.Values.infra.postgresPort }}/{{ $svc.db }}"
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
               name: {{ $.Values.secrets.existingSecret }}
               key: {{ $.Values.secrets.postgresPasswordKey }}
+        - name: DATABASE_URL
+          value: "postgresql+asyncpg://wildframe:$(POSTGRES_PASSWORD)@{{ $.Values.infra.postgresHost }}:{{ $.Values.infra.postgresPort }}/{{ $svc.db }}"
         {{- if $hook }}
         # Runs before app pods start; a failed migration aborts the release
         # (helm --atomic).

@@ -1,13 +1,17 @@
+import os
+from collections.abc import AsyncIterator
+from contextlib import ExitStack
+from datetime import datetime
+
 import pytest
+import pytest_asyncio
 from uuid import uuid4
 from decimal import Decimal
 
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from app.models import (
     Base,
-    Subscription,
-    Purchase,
-    Invoice,
     RevenueTier,
     RegionFloor,
 )
@@ -21,41 +25,36 @@ from app.repositories import (
 
 
 # ---------------------------------------------------------------------------
-# Fixtures – isolated SQLite DB per test (mirrors auth-service conftest)
+# Fixtures – disposable PostgreSQL with rollback isolation
 # ---------------------------------------------------------------------------
-def event_loop():
-    import asyncio
+@pytest_asyncio.fixture
+async def db_session() -> AsyncIterator[AsyncSession]:
+    """TEST_DATABASE_URL must name a disposable PostgreSQL test database."""
+    with ExitStack() as stack:
+        url = os.environ.get("TEST_DATABASE_URL")
+        if not url:
+            from testcontainers.postgres import PostgresContainer
 
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest.fixture
-async def test_engine(tmp_path):
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/test.db")
-    async with engine.begin() as conn:
-        await conn.run_sync(
-            Base.metadata.create_all,
-            tables=[
-                Subscription.__table__,
-                Purchase.__table__,
-                Invoice.__table__,
-                RegionFloor.__table__,
-            ],
-        )
-    yield engine
-    await engine.dispose()
-
-
-@pytest.fixture
-async def db_session(test_engine):
-    async_session_factory = async_sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
-    async with async_session_factory() as session:
-        yield session
-        await session.rollback()
+            postgres = stack.enter_context(PostgresContainer("postgres:15"))
+            url = postgres.get_connection_url()
+        engine = create_async_engine(make_url(url).set(drivername="postgresql+asyncpg"))
+        try:
+            async with engine.connect() as connection:
+                transaction = await connection.begin()
+                try:
+                    await connection.run_sync(Base.metadata.create_all)
+                    factory = async_sessionmaker(
+                        connection,
+                        class_=AsyncSession,
+                        expire_on_commit=False,
+                        join_transaction_mode="create_savepoint",
+                    )
+                    async with factory() as session:
+                        yield session
+                finally:
+                    await transaction.rollback()
+        finally:
+            await engine.dispose()
 
 
 # ---------------------------------------------------------------------------
@@ -99,13 +98,10 @@ async def test_purchase_repository(db_session: AsyncSession):
 async def test_invoice_repository_latest(db_session: AsyncSession):
     repo = InvoiceRepository(db_session)
     user_id = uuid4()
-    # First invoice
-    await repo.create(user_id, Decimal("10.00"))
-    await db_session.commit()
-    # Slight delay to ensure different timestamps
-    await db_session.flush()
-    # Second (newer) invoice
+    inv1 = await repo.create(user_id, Decimal("10.00"))
+    inv1.issued_at = datetime(2025, 1, 1)
     inv2 = await repo.create(user_id, Decimal("15.00"))
+    inv2.issued_at = datetime(2025, 1, 2)
     await db_session.commit()
     latest = await repo.get_latest_for_user(user_id)
     assert latest is not None

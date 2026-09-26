@@ -49,7 +49,7 @@ class PlaybackSessionUpdateRequest(BaseModel):
     """Playback session update request schema."""
 
     current_position_seconds: int | None = Field(None, ge=0)
-    status: str | None = None
+    status: str | None = Field(None, pattern="^(active|paused|completed|interrupted)$")
     resolution: str | None = None
     bitrate_kbps: int | None = Field(None, ge=100)
     buffer_health_seconds: float | None = None

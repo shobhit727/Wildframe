@@ -11,6 +11,7 @@ metadata:
   namespace: {{ $.Values.namespace }}
   labels:
     app: {{ $name }}
+spec:
   minAvailable: {{ (default dict $svc.pdb).minAvailable | default 1 }}
   selector:
     matchLabels:

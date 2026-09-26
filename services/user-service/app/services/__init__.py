@@ -148,10 +148,11 @@ class UserService:
         self,
         device_id: UUID,
         request: UserDeviceUpdateRequest,
+        user_id: UUID,
     ) -> UserDeviceResponse:
         """Update device settings."""
         update_data = request.model_dump(exclude_unset=True)
-        device = await self.device_repo.update(device_id, **update_data)
+        device = await self.device_repo.update(device_id, user_id, **update_data)
         if not device:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -161,9 +162,9 @@ class UserService:
         logger.info(f"Updated device: {device_id}")
         return UserDeviceResponse.from_orm(device)
 
-    async def deactivate_device(self, device_id: UUID) -> UserDeviceResponse:
+    async def deactivate_device(self, device_id: UUID, user_id: UUID) -> UserDeviceResponse:
         """Deactivate a device."""
-        device = await self.device_repo.mark_device_inactive(device_id)
+        device = await self.device_repo.mark_device_inactive(device_id, user_id)
         if not device:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -173,9 +174,9 @@ class UserService:
         logger.info(f"Deactivated device: {device_id}")
         return UserDeviceResponse.from_orm(device)
 
-    async def remove_device(self, device_id: UUID) -> bool:
+    async def remove_device(self, device_id: UUID, user_id: UUID) -> bool:
         """Remove device."""
-        success = await self.device_repo.delete(device_id)
+        success = await self.device_repo.delete(device_id, user_id)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -191,6 +192,7 @@ class UserService:
         preferences = await self.preference_repo.get_by_user_id(user_id)
         if not preferences:
             preferences = await self.preference_repo.create_default(user_id)
+            await self.preference_repo.commit()
         return UserPreferenceResponse.from_orm(preferences)
 
     async def update_preferences(

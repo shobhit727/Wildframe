@@ -13,6 +13,44 @@ from app.api.uploads_routes import router as uploads_router
 from app.core.database import DatabaseManager
 from app.core.settings import settings
 
+
+class BodySizeLimitMiddleware:
+    """Bound bytes received before the application parses an HTTP body."""
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            chunk = message.get("body", b"")
+            if len(body) + len(chunk) > self.max_bytes:
+                response = JSONResponse({"detail": "Request body too large"}, status_code=413)
+                await response(scope, receive, send)
+                return
+            body.extend(chunk)
+            if not message.get("more_body", False):
+                break
+
+        consumed = False
+
+        async def replay():
+            nonlocal consumed
+            if consumed:
+                return await receive()
+            consumed = True
+            return {"type": "http.request", "body": bytes(body), "more_body": False}
+
+        await self.app(scope, replay, send)
+
+
 logger = logging.getLogger(__name__)
 
 # Graceful shutdown state (#426)
@@ -199,24 +237,15 @@ def create_app() -> FastAPI:
 
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
 
-    # Request body size cap (#517): reject oversized payloads before parsing.
-    MAX_BODY_SIZE = 6291456  # bytes
+    # Request body size cap (#517), including chunked/headerless requests.
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=6291456)
 
-    @app.middleware("http")
-    async def limit_body_size(request: Request, call_next):
-        content_length = request.headers.get("content-length")
-        if content_length is not None:
-            try:
-                if int(content_length) > MAX_BODY_SIZE:
-                    return JSONResponse(
-                        content={"detail": "Request body too large"},
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    )
-            except ValueError:
-                pass
-        return await call_next(request)
-
-    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
+    wire_observability(
+        app,
+        service_name=settings.SERVICE_NAME,
+        log_level=settings.LOG_LEVEL,
+        register_metrics=False,
+    )
 
     # Gate /metrics behind admin token (#469)
     from fastapi import Depends, Header, HTTPException

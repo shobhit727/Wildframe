@@ -17,12 +17,11 @@ const VideoPlayer = dynamic(
   { ssr: false }
 );
 
-const MY_LIST_KEY = 'wildframe_my_list';
-
-function isInMyList(contentId: string): boolean {
+function isInMyList(contentId: string, userId: string): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    return (JSON.parse(localStorage.getItem(MY_LIST_KEY) || '[]') as string[]).includes(contentId);
+    const list: unknown = JSON.parse(localStorage.getItem(`wildframe_my_list:${userId}`) || '[]');
+    return Array.isArray(list) && list.includes(contentId);
   } catch {
     return false;
   }
@@ -30,15 +29,24 @@ function isInMyList(contentId: string): boolean {
 
 export default function WatchPage() {
   const params = useParams();
-  const contentId = params.id as string;
+  const user = useUser();
+  return <WatchContent key={`${params.id}:${user?.id ?? ''}`} contentId={params.id as string} />;
+}
+
+function WatchContent({ contentId }: { contentId: string }) {
   const isAuthenticated = useIsAuthenticated();
   const user = useUser();
   const router = useRouter();
   const [sessionId, setSessionId] = useState<string>('');
   const [selectedEpisode, setSelectedEpisode] = useState<{ id: string; number: number } | null>(null);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const [isStarting, setIsStarting] = useState(true);
-  const [inMyList, setInMyList] = useState(() => isInMyList(contentId));
+  // Identifies the playback request a resolved session belongs to. The spinner
+  // is derived from it during render, so switching episode/content/user starts a
+  // new session without the effect writing state synchronously.
+  const sessionKey = `${contentId}:${selectedEpisode?.id ?? ''}:${user?.id ?? ''}`;
+  const [startedKey, setStartedKey] = useState<string | null>(null);
+  const isStarting = startedKey !== sessionKey;
+  const [inMyList, setInMyList] = useState(() => !!user && isInMyList(contentId, user.id));
 
   // Fetch content details
   const { data: contentData } = useQuery({
@@ -73,7 +81,6 @@ export default function WatchPage() {
   // Start a real playback session against streaming-service.
   useEffect(() => {
     if (!isAuthenticated || !user || !contentId) return;
-    if (isStarting === false) return;
 
     let cancelled = false;
 
@@ -86,8 +93,6 @@ export default function WatchPage() {
           device_id: 'web-player',
         });
         if (cancelled) return;
-        setSessionId(session.id);
-        setIsStarting(false);
 
         if (selectedEpisode) {
           const manifest = await apiClient.getManifestForEpisode(selectedEpisode.id);
@@ -96,7 +101,9 @@ export default function WatchPage() {
         } else {
           setStreamUrl(DEMO_HLS_URL);
         }
-      } catch (error) {
+        setSessionId(session.id);
+        setStartedKey(sessionKey);
+      } catch {
         if (cancelled) return;
         toast.error('Failed to start playback. Please try again.');
         router.push('/browse');
@@ -108,7 +115,7 @@ export default function WatchPage() {
     return () => {
       cancelled = true;
     };
-  }, [contentId, selectedEpisode, user, isAuthenticated, router, isStarting]);
+  }, [contentId, selectedEpisode?.id, user?.id, isAuthenticated, router, sessionKey]);
 
   const similarContent: Content[] = useMemo(
     () => (similarData || []).filter((c) => c.id !== contentId).slice(0, 12).map(normalizeContent),
@@ -116,14 +123,17 @@ export default function WatchPage() {
   );
 
   const selectEpisode = (episodeId: string, number: number) => {
+    // sessionKey changes with the episode, which flips isStarting back on.
     setSelectedEpisode({ id: episodeId, number });
     setSessionId('');
-    setIsStarting(true);
   };
 
   const toggleMyList = () => {
+    if (!user) return;
     try {
-      const list = JSON.parse(localStorage.getItem(MY_LIST_KEY) || '[]') as string[];
+      const key = `wildframe_my_list:${user.id}`;
+      const stored: unknown = JSON.parse(localStorage.getItem(key) || '[]');
+      const list = Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string') : [];
       const idx = list.indexOf(contentId);
       if (idx >= 0) {
         list.splice(idx, 1);
@@ -132,7 +142,7 @@ export default function WatchPage() {
         list.push(contentId);
         toast.success('Added to My List');
       }
-      localStorage.setItem(MY_LIST_KEY, JSON.stringify(list));
+      localStorage.setItem(key, JSON.stringify(list));
       setInMyList(list.includes(contentId));
     } catch {
       toast.error('Could not update My List');

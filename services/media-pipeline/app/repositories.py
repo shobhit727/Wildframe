@@ -30,6 +30,15 @@ class PipelineJobRepository:
         result = await self.session.execute(select(PipelineJob).where(PipelineJob.id == job_id))
         return result.scalar_one_or_none()
 
+    async def lock(self, job_id: UUID) -> PipelineJob | None:
+        result = await self.session.execute(
+            select(PipelineJob)
+            .where(PipelineJob.id == job_id)
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_upload_session(self, upload_session_id: UUID) -> PipelineJob | None:
         result = await self.session.execute(
             select(PipelineJob).where(PipelineJob.upload_session_id == upload_session_id)
@@ -57,7 +66,11 @@ class PipelineJobRepository:
         self, before: datetime, status: PipelineJobStatus | None = None
     ) -> list[PipelineJob]:
         """Return jobs with leased_at < before (optionally filtered by status)."""
-        stmt = select(PipelineJob).where(PipelineJob.leased_at is not None, PipelineJob.leased_at < before)  # type: ignore[arg-type]
+        stmt = (
+            select(PipelineJob)
+            .where(PipelineJob.leased_at.is_not(None), PipelineJob.leased_at < before)
+            .with_for_update(skip_locked=True)
+        )
         if status is not None:
             stmt = stmt.where(PipelineJob.status == status)
         result = await self.session.execute(stmt)

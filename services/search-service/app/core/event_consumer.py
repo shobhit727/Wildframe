@@ -68,11 +68,6 @@ async def run_content_sync_consumer(es_client) -> None:
 
     factory = DatabaseManager.session_factory
     assert factory is not None, "DatabaseManager.session_factory not initialized"
-    search_service = SearchService(
-        es_client=es_client,
-        query_repo=SearchQueryRepository(factory()),
-        index_repo=SearchIndexRepository(factory()),
-    )
     catalog = ContentCatalogClient()
 
     consumer = AIOKafkaConsumer(
@@ -86,15 +81,19 @@ async def run_content_sync_consumer(es_client) -> None:
         await consumer.start()
         logger.info("content sync consumer started (%s) on %s", bootstrap, TOPICS)
         async for msg in consumer:
-            try:
-                import json
+            import json
+            from aiokafka.structs import TopicPartition
 
-                event = json.loads(msg.value.decode("utf-8"))
+            event = json.loads(msg.value.decode("utf-8"))
+            async with factory.begin() as session:
+                search_service = SearchService(
+                    es_client=es_client,
+                    query_repo=SearchQueryRepository(session),
+                    index_repo=SearchIndexRepository(session),
+                )
                 await _handle(catalog, search_service, event)
-            except Exception:  # noqa: BLE001 - never kill the consumer loop
-                logger.exception("failed to apply content event")
-            finally:
-                await consumer.commit()
+            # Stop on failure: a later commit must never skip an unapplied event.
+            await consumer.commit({TopicPartition(msg.topic, msg.partition): msg.offset + 1})
     except Exception:  # noqa: BLE001
         logger.exception("content sync consumer stopped")
     finally:

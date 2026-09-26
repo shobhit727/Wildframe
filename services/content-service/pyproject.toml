@@ -36,7 +36,7 @@ pytest = ">=7.4.3,<10.0.0"
 pytest-asyncio = "^0.21.1"
 pytest-cov = "^4.1.0"
 faker = "^20.1.0"
-testcontainers = "^3.7.0"
+testcontainers = {version = "^3.7.0", extras = ["postgresql"]}
 httpx = "^0.25.0"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
 

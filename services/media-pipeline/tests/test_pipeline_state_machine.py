@@ -24,7 +24,11 @@ from app.models import (
     PipelineStageLog,
     PipelineStageStatus,
 )
-from app.services import MediaPipelineService, PipelineNonRetryable
+from app.services import (
+    IdempotencyConflict,
+    MediaPipelineService,
+    PipelineNonRetryable,
+)
 
 # ---------------------------------------------------------------------------
 # In-memory fakes.
@@ -67,6 +71,10 @@ class FakeJobRepo:
         return job
 
     async def get(self, job_id: UUID):
+        return self.jobs.get(job_id)
+
+    async def lock(self, job_id: UUID):
+        """Mirror PipelineJobRepository.lock: fetch the job for update."""
         return self.jobs.get(job_id)
 
     async def get_by_upload_session(self, upload_session_id: UUID):
@@ -326,9 +334,21 @@ async def test_start_job_is_idempotent_per_upload_session():
     reg = _fresh_registry()
     service = make_service(reg)
     up = uuid4()
-    job1 = await service.start_job(content_id=uuid4(), upload_session_id=up, storage_key="k")
-    job2 = await service.start_job(content_id=uuid4(), upload_session_id=up, storage_key="k")
+    content = uuid4()
+    job1 = await service.start_job(content_id=content, upload_session_id=up, storage_key="k")
+    job2 = await service.start_job(content_id=content, upload_session_id=up, storage_key="k")
     assert job1.id == job2.id
+
+
+@pytest.mark.asyncio
+async def test_start_job_rejects_upload_session_reuse_for_other_content():
+    """The same upload session is idempotent only for the identical request."""
+    reg = _fresh_registry()
+    service = make_service(reg)
+    up = uuid4()
+    await service.start_job(content_id=uuid4(), upload_session_id=up, storage_key="k")
+    with pytest.raises(IdempotencyConflict):
+        await service.start_job(content_id=uuid4(), upload_session_id=up, storage_key="k")
 
 
 # ---------------------------------------------------------------------------

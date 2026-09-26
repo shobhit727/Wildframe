@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.payout import CreatorPayout
+from app.models import CreatorPayout
 from app.schemas.payout import PayoutCreate
 
 router = APIRouter(prefix="/payouts", tags=["payouts"])

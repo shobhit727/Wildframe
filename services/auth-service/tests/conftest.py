@@ -7,8 +7,6 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, patch
 
-# from uuid import uuid4  # unused, removed for lint
-
 service_root = Path(__file__).parents[1]
 sdk_root = service_root.parent.parent / "packages" / "sdk"
 for p in (str(service_root), str(sdk_root), str(sdk_root / "wildframe_compliance")):
@@ -16,7 +14,11 @@ for p in (str(service_root), str(sdk_root), str(sdk_root / "wildframe_compliance
         sys.path.insert(0, p)
 
 from app.models import Base, User
-from app.repositories import LoginAuditRepository, RefreshTokenRepository, UserRepository
+from app.repositories import (
+    LoginAuditRepository,
+    RefreshTokenRepository,
+    UserRepository,
+)
 from app.security import PasswordManager, TokenManager
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 

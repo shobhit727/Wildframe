@@ -144,33 +144,25 @@ class UploadService:
         checksum_sha256: str | None = None,
         chunk_size: int | None = None,
     ) -> tuple[UploadSession, list[PresignedUpload]]:
-        """Create an upload session and a pre-signed URL per chunk.
-
-        The full pre-signed plan is generated BEFORE the session row is
-        persisted: a storage failure part-way leaves no orphaned DB session
-        (issued URLs self-expire via their bounded TTL). Returns the persisted
-        session plus the list of pre-signed uploads the client should PUT each
-        chunk to (one entry per chunk).
-        """
+        """Persist the storage identity before returning signed chunk URLs."""
         safe_filename = self.normalize_filename(filename)
         safe_mime = self.validate_mime(mime)
         chosen_chunk_size, total_chunks = self.compute_chunk_plan(
             size_bytes, chunk_size or settings.DEFAULT_CHUNK_SIZE_BYTES
         )
-
-        # Generate the whole storage plan first (id is fixed up-front so keys
-        # are stable before the row exists).
+        if settings.STORAGE_BACKEND == "s3":
+            if total_chunks > 1 and chosen_chunk_size < 5 * 1024 * 1024:
+                raise UploadError("S3 multipart chunks must be at least 5 MiB")
+            if min(chosen_chunk_size, size_bytes) > 5 * 1024**3:
+                raise UploadError("S3 upload parts cannot exceed 5 GiB")
+        if checksum_sha256 is not None:
+            if not re.fullmatch(r"[0-9a-fA-F]{64}", checksum_sha256):
+                raise UploadError("checksum_sha256 must be a SHA-256 hex digest")
+            checksum_sha256 = checksum_sha256.lower()
         session_id = uuid4()
-        uploads: list[PresignedUpload] = []
-        for index in range(total_chunks):
-            uploads.append(
-                await self.storage.create_upload(
-                    session_id=str(session_id),
-                    filename=safe_filename,
-                    mime=safe_mime,
-                    chunk_index=index if total_chunks > 1 else None,
-                )
-            )
+        upload_id = None
+        if total_chunks > 1:
+            upload_id = await self.storage.begin_upload(session_id=str(session_id), mime=safe_mime)
 
         now = datetime.now(UTC)
         session = UploadSession(
@@ -180,13 +172,44 @@ class UploadService:
             mime=safe_mime,
             size_bytes=size_bytes,
             status=UploadSessionStatus.INITIATED,
+            multipart_upload_id=upload_id,
             checksum_sha256=checksum_sha256,
             chunk_size=chosen_chunk_size,
             total_chunks=total_chunks,
             uploaded_chunks=0,
             expires_at=now + timedelta(hours=settings.SESSION_EXPIRES_HOURS),
         )
-        await self.repo.create(session)
+        try:
+            await self.repo.create(session)
+            await self.repo.session.commit()
+        except Exception:
+            await self.repo.session.rollback()
+            try:
+                await self.storage.cleanup_upload(
+                    session_id=str(session_id),
+                    chunk_keys=[],
+                    final_key=storage_key_for(str(session_id), None),
+                    upload_id=upload_id,
+                )
+            except Exception:
+                logger.exception("failed to clean unpersisted upload %s", session_id)
+            raise
+
+        uploads: list[PresignedUpload] = []
+        try:
+            for index in range(total_chunks):
+                uploads.append(
+                    await self.storage.create_upload(
+                        session_id=str(session_id),
+                        filename=safe_filename,
+                        mime=safe_mime,
+                        chunk_index=index if total_chunks > 1 else None,
+                        upload_id=upload_id,
+                    )
+                )
+        except Exception:
+            await self.abort(session_id, reason="upload URL generation failed")
+            raise
 
         logger.info(
             "created upload session %s for creator %s: %d bytes in %d chunk(s)",
@@ -220,7 +243,7 @@ class UploadService:
         read from object-storage metadata, and a chunk whose stored bytes do
         not match the expected size for its index is rejected.
         """
-        session = await self.repo.get(session_id)
+        session = await self.repo.get_for_update(session_id)
         if session is None:
             raise UploadError(f"upload session {session_id} not found")
         if session.status in (
@@ -241,10 +264,14 @@ class UploadService:
 
         # Authoritative storage check: the object must exist with the exact
         # byte count this index is supposed to hold.
-        chunk_key = storage_key_for(str(session_id), index)
-        metadata = await self.storage.get_object_metadata(storage_key=chunk_key)
+        metadata = await self.storage.get_chunk_metadata(
+            session_id=str(session_id),
+            index=index,
+            total_chunks=session.total_chunks,
+            upload_id=session.multipart_upload_id,
+        )
         if metadata is None:
-            raise UploadError(f"chunk {index} object {chunk_key} not found in storage")
+            raise UploadError(f"chunk {index} not found in storage")
         expected_size = self._expected_chunk_size(session, index)
         if metadata.size_bytes != expected_size:
             raise UploadError(
@@ -266,6 +293,7 @@ class UploadService:
             session.status = UploadSessionStatus.UPLOADING  # type: ignore[assignment]
         session.uploaded_chunks = await self.repo.count_chunks(session_id)  # type: ignore[assignment]
         await self.repo.save(session)
+        await self.repo.session.commit()
 
         logger.info(
             "registered chunk %d/%d for session %s (%d bytes)",
@@ -308,7 +336,7 @@ class UploadService:
         Completion is idempotent: completing an already-complete session
         returns the stored session without re-emitting the event.
         """
-        session = await self.repo.get(session_id)
+        session = await self.repo.get_for_update(session_id)
         if session is None:
             raise UploadError(f"upload session {session_id} not found")
         if session.status == UploadSessionStatus.COMPLETE:
@@ -324,19 +352,12 @@ class UploadService:
             missing = sorted(set(expected) - set(received))
             raise UploadError(f"session {session_id} missing chunks: {missing}")
 
-        # Re-read authoritative metadata at finalization (never trust client
-        # state): every chunk object must exist with the expected byte count.
-        chunk_keys = [storage_key_for(str(session_id), index) for index in expected]
-        for index, chunk_key in zip(expected, chunk_keys):
-            metadata = await self.storage.get_object_metadata(storage_key=chunk_key)
-            if metadata is None:
-                raise UploadError(f"chunk {index} object {chunk_key} missing at completion")
-            expected_size = self._expected_chunk_size(session, index)
-            if metadata.size_bytes != expected_size:
-                raise UploadError(
-                    f"chunk {index} size mismatch at completion: storage has "
-                    f"{metadata.size_bytes} bytes, expected {expected_size}"
-                )
+        # The adapter verifies every part and supports retry after storage committed
+        # but the database transaction failed.
+        chunk_keys = [
+            storage_key_for(str(session_id), index if session.total_chunks > 1 else None)
+            for index in expected
+        ]
 
         final_key = storage_key_for(str(session_id), None)
         try:
@@ -346,17 +367,14 @@ class UploadService:
                 final_key=final_key,
                 size_bytes=session.size_bytes,  # type: ignore[arg-type]
                 mime=session.mime,  # type: ignore[arg-type]
+                upload_id=session.multipart_upload_id,
             )
         except StorageError as exc:
             # Session stays retryable — completion failure is not a success.
             raise UploadError(f"storage completion failed: {exc}") from exc
 
         # Checksum: the server-computed digest is the only authority.
-        if (
-            session.checksum_sha256
-            and final_metadata.checksum_sha256
-            and session.checksum_sha256 != final_metadata.checksum_sha256
-        ):
+        if session.checksum_sha256 and session.checksum_sha256 != final_metadata.checksum_sha256:
             raise UploadError(
                 f"checksum mismatch for session {session_id}: expected "
                 f"{session.checksum_sha256}, storage computed "
@@ -390,6 +408,7 @@ class UploadService:
                 "total_chunks": session.total_chunks,
             },
         )
+        await self.repo.session.commit()
         logger.info("completed upload session %s", session.id)
         return session
 
@@ -405,7 +424,7 @@ class UploadService:
         already-aborted session triggers another storage-cleanup attempt but
         does not re-emit the event.
         """
-        session = await self.repo.get(session_id)
+        session = await self.repo.get_for_update(session_id)
         if session is None:
             raise UploadError(f"upload session {session_id} not found")
         if session.status == UploadSessionStatus.COMPLETE:
@@ -427,6 +446,7 @@ class UploadService:
                     "reason": reason,
                 },
             )
+        await self.repo.session.commit()
         logger.info("aborted upload session %s (%s)", session.id, reason)
         return session
 
@@ -445,6 +465,7 @@ class UploadService:
                 session_id=str(session.id),
                 chunk_keys=chunk_keys,
                 final_key=final_key,
+                upload_id=session.multipart_upload_id,
             )
         except Exception:  # noqa: BLE001 - reaper retries via storage_cleaned_at
             logger.exception("storage cleanup failed for session %s; will retry", session.id)
@@ -481,6 +502,7 @@ class UploadService:
                 )
                 continue
             await self.repo.mark_dispatched(row.id)  # type: ignore[arg-type]
+        await self.repo.session.commit()
         return len(rows)
 
     async def reap_expired(self) -> int:
@@ -509,4 +531,5 @@ class UploadService:
         for session in await self.repo.uncleaned_aborted(now, grace):
             await self._cleanup_storage(session)
             touched += 1
+        await self.repo.session.commit()
         return touched

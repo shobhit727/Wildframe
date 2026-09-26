@@ -243,8 +243,9 @@ class TestSignedUrlBranches:
     async def test_generate_signed_url(self, service):
         from app.schemas import SignedPlaybackUrlRequest
 
+        episode_id = uuid4()
         request = SignedPlaybackUrlRequest(session_id=uuid4(), content_id=uuid4(), ttl_seconds=3600)
-        signed_url, expires_at = service.generate_signed_url(request)
+        signed_url, expires_at = service.generate_signed_url(request, episode_id)
 
         assert "session_id=" in signed_url
         assert "signature=" in signed_url

@@ -5,7 +5,7 @@
  * the request before Set-Cookie committed, so the next hard navigation
  * bounced to /login (middleware saw no wf_refresh cookie).
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fetchMock = vi.fn();
 
@@ -34,6 +34,11 @@ describe('setTokens awaits cookie persistence', () => {
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
   });
+  afterEach(async () => {
+    const { clearTokens } = await import('@/api/client');
+    clearTokens();
+    vi.unstubAllGlobals();
+  });
 
   it('login() resolves only after the cookie POST completes', async () => {
     let resolveCookie: (v?: unknown) => void = () => {};
@@ -44,21 +49,28 @@ describe('setTokens awaits cookie persistence', () => {
         })
     );
 
-    const { apiClient } = await import('@/api/client');
+    const { apiClient, getAccessToken } = await import('@/api/client');
     const pending = apiClient.login('demo@wildframe.com', 'DemoPass123!');
+    let completed = false;
+    void pending.then(() => { completed = true; });
 
     // Give the microtask queue a tick: the cookie POST is in-flight.
     await Promise.resolve();
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/auth-session',
-      expect.objectContaining({ method: 'POST' })
-    );
+    expect(completed).toBe(false);
+    expect(getAccessToken()).toBeNull();
 
     // Resolve the cookie write, then login() may settle.
     resolveCookie();
     await pending;
 
-    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body ?? '{}'));
-    expect(body.refresh_token).toBe('refresh-456');
+    expect(completed).toBe(true);
+    expect(getAccessToken()).toBe('access-123');
+  });
+
+  it('does not authenticate when cookie persistence fails', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 500 }));
+    const { apiClient, getAccessToken } = await import('@/api/client');
+    await expect(apiClient.login('demo@wildframe.com', 'DemoPass123!')).rejects.toThrow();
+    expect(getAccessToken()).toBeNull();
   });
 });

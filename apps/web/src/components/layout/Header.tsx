@@ -3,14 +3,19 @@
 import Link from 'next/link';
 import { useAuth } from '@/hooks';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 
 export function Header() {
   const { user, logout, isAuthenticated } = useAuth();
   const router = useRouter();
 
   const handleLogout = async () => {
-    await logout();
-    router.push('/login');
+    try {
+      await logout();
+      router.push('/login');
+    } catch {
+      toast.error('Could not sign out. Please try again.');
+    }
   };
 
   return (

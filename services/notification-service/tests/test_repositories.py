@@ -3,15 +3,16 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 
-from app.models import Base, Notification, NotificationPreference
+from app.models import Base, Notification
 from app.repositories import NotificationRepository
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def session(tmp_path) -> AsyncSession:
     """Async SQLite session for isolated repository tests."""
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/repo_test.db")
@@ -27,13 +28,16 @@ async def session(tmp_path) -> AsyncSession:
 async def test_create_and_retrieve(session: AsyncSession):
     repo = NotificationRepository(session)
     user = uuid4()
-    notif = await repo.create(user, "Title", "Msg", channel="in_app")
+    notif, created = await repo.create(user, "Title", "Msg", channel="in_app")
+    assert created is True
     fetched = await repo.get_by_id(notif.id, user)
     assert fetched is not None and fetched.title == "Title"
     # deduplication via event_id
     event = uuid4()
-    n1 = await repo.create(user, "A", "B", event_id=event)
-    n2 = await repo.create(user, "C", "D", event_id=event)
+    n1, created_first = await repo.create(user, "A", "B", event_id=event)
+    n2, created_again = await repo.create(user, "C", "D", event_id=event)
+    assert created_first is True
+    assert created_again is False
     assert n1.id == n2.id
 
 
@@ -57,7 +61,7 @@ async def test_mark_as_read_scoped(session: AsyncSession):
     repo = NotificationRepository(session)
     user = uuid4()
     other = uuid4()
-    notif = await repo.create(user, "T", "M")
+    notif, _ = await repo.create(user, "T", "M")
     assert await repo.mark_as_read(notif.id, user) is True
     # other user cannot mark
     assert await repo.mark_as_read(notif.id, other) is False
@@ -68,7 +72,7 @@ async def test_soft_delete_idempotent(session: AsyncSession):
     repo = NotificationRepository(session)
     user = uuid4()
     other = uuid4()
-    notif = await repo.create(user, "Del", "Msg")
+    notif, _ = await repo.create(user, "Del", "Msg")
     assert await repo.soft_delete(notif.id, user) is True
     # second call still True (idempotent)
     assert await repo.soft_delete(notif.id, user) is True

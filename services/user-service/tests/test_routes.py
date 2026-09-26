@@ -277,13 +277,13 @@ class TestDeviceRoutes:
         assert response.status_code == 200
         assert response.json()["is_active"] is False
 
-    def test_remove_device_returns_204(self, client, fake_service, device_id):
+    def test_remove_device_returns_204(self, client, fake_service, device_id, user_id):
         fake_service.remove_device = AsyncMock(return_value=None)
 
         response = client.delete(f"/api/v1/devices/{device_id}")
 
         assert response.status_code == 204
-        fake_service.remove_device.assert_awaited_once_with(device_id)
+        fake_service.remove_device.assert_awaited_once_with(device_id, user_id)
 
 
 class TestPreferenceRoutes:

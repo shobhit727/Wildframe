@@ -23,12 +23,12 @@ the assembled checksum matches, then flips to ``complete`` and emits
 
 from datetime import UTC, datetime
 from enum import Enum
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
     BigInteger,
-    Column,
     DateTime,
     ForeignKey,
     Index,
@@ -65,29 +65,30 @@ class UploadSession(Base):
 
     __tablename__ = "upload_sessions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    filename = Column(String(512), nullable=False)
-    mime = Column(String(127), nullable=False)
-    size_bytes = Column(BigInteger, nullable=False)
-    status = Column(  # type: ignore[var-annotated]
+    filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    mime: Mapped[str] = mapped_column(String(127), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[UploadSessionStatus] = mapped_column(
         SQLEnum(UploadSessionStatus),
         default=UploadSessionStatus.INITIATED,
         nullable=False,
         index=True,
     )
-    storage_key = Column(String(1024), nullable=True)
-    checksum_sha256 = Column(String(64), nullable=True)
-    chunk_size = Column(BigInteger, nullable=False)
-    total_chunks = Column(Integer, nullable=False)
-    uploaded_chunks = Column(Integer, default=0, nullable=False)
-    expires_at = Column(DateTime(timezone=True), nullable=False)
-    created_at = Column(
+    storage_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    multipart_upload_id: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    chunk_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    total_chunks: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_chunks: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         nullable=False,
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
@@ -96,7 +97,9 @@ class UploadSession(Base):
 
     # Set when object-storage cleanup for this session has fully succeeded
     # (sessions aborted or expired re-run cleanup until this is set).
-    storage_cleaned_at = Column(DateTime(timezone=True), nullable=True)
+    storage_cleaned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         Index("idx_upload_session_creator", "creator_id", "status"),
@@ -109,20 +112,20 @@ class UploadChunk(Base):
 
     __tablename__ = "upload_chunks"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("upload_sessions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    index = Column(Integer, nullable=False)
-    size_bytes = Column(BigInteger, nullable=False)
-    etag = Column(String(255), nullable=True)
+    index: Mapped[int] = mapped_column(Integer, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    etag: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Server-verified digest of the stored chunk bytes (from storage
     # metadata), never a client assertion.
-    checksum_sha256 = Column(String(64), nullable=True)
-    received_at = Column(
+    checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         nullable=False,
@@ -143,19 +146,19 @@ class OutboxEvent(Base):
 
     __tablename__ = "outbox_events"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    topic = Column(String(127), nullable=False)
-    event_key = Column(String(255), nullable=False)
-    payload = Column(JSON, nullable=False)
-    status = Column(  # type: ignore[var-annotated]
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    topic: Mapped[str] = mapped_column(String(127), nullable=False)
+    event_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    status: Mapped[OutboxEventStatus] = mapped_column(
         SQLEnum(OutboxEventStatus),
         default=OutboxEventStatus.PENDING,
         nullable=False,
         index=True,
     )
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         nullable=False,
     )
-    dispatched_at = Column(DateTime(timezone=True), nullable=True)
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -2,7 +2,6 @@ from functools import lru_cache
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
-
 from wildframe_compliance.jurisdiction import Jurisdiction
 from wildframe_compliance.settings import ComplianceSettingsMixin
 
@@ -45,6 +44,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
     LOG_LEVEL: str = "INFO"
+    METRICS_TOKEN: str = ""
 
     compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
     compliance_additional_jurisdictions: list[Jurisdiction] = [
@@ -71,6 +71,18 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
+        """Fail fast when running outside development with default insecure secrets.
+
+        Two complementary hardening layers are enforced here. The explicit
+        per-setting chain below rejects missing values, known-insecure
+        credentials and secrets, and short JWT keys. The upstream production
+        guard additionally rejects empty or whitespace-only secrets and its
+        ``default_secrets`` list; every entry on that list
+        ("your-secret-key-change-in-production", "dev-secret-key",
+        "dev-secret-key-change-in-production") is a member of
+        KNOWN_INSECURE_JWT_SECRETS, so it stays enforced without duplicating
+        the list here.
+        """
         if self.ENVIRONMENT in DEV_ENVIRONMENTS:
             return self
         if self.DATABASE_URL is None:
@@ -87,7 +99,12 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
             )
-        if self.JWT_SECRET_KEY in KNOWN_INSECURE_JWT_SECRETS:
+        # Upstream guard: also reject empty / whitespace-only secrets.
+        if not self.JWT_SECRET_KEY.strip():
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
+            )
+        if self.JWT_SECRET_KEY.strip() in KNOWN_INSECURE_JWT_SECRETS:
             raise ValueError(
                 "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
             )

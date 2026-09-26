@@ -6,6 +6,7 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
+from app.core.settings import settings
 from app.middleware import ServiceRegistry, get_optional_user, get_shared_client
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ _HOP_BY_HOP_HEADERS = frozenset(
         "proxy-authenticate",
         "proxy-authorization",
         "te",
+        "trailer",
         "trailers",
         "upgrade",
     }
@@ -144,6 +146,11 @@ async def proxy_request(
         if request.url.query:
             forward_url = f"{forward_url}?{request.url.query}"
 
+        # Stream the request body instead of buffering it: BodyLimitMiddleware
+        # has already replaced request.stream() with a generator that enforces
+        # the byte budget and the decompression-bomb ratio, so reading it here
+        # never materialises the whole body (#231, #417). Methods outside this
+        # set send no content at all.
         if request.method in ("POST", "PUT", "PATCH"):
 
             async def body_stream():
@@ -153,26 +160,44 @@ async def proxy_request(
             content = body_stream()
         else:
             content = None
-        response = await client.request(
+
+        async with client.stream(
             method=request.method,
             url=forward_url,
             headers=headers,
             content=content,
-        )
+        ) as response:
+            # Count the upstream response as it arrives so an oversized or
+            # endless body is refused instead of being fully buffered here.
+            # Everything below must happen inside the context manager — the
+            # response is closed on exit.
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in response.aiter_raw():
+                total += len(chunk)
+                if total > settings.MAX_RESPONSE_BODY_SIZE:
+                    raise _error_response(502, "Response body too large", request)
+                chunks.append(chunk)
+            payload = Response(content=b"".join(chunks), status_code=response.status_code)
+            # Header names the upstream listed in Connection are hop-by-hop for
+            # this hop too, and content-length is ours to recompute from the
+            # bytes we actually buffered.
+            connection_headers = {
+                name.strip().lower() for name in response.headers.get("connection", "").split(",")
+            }
+            excluded_headers = _HOP_BY_HOP_HEADERS | connection_headers | {"content-length"}
+            # Copy raw (not .items()) so duplicate fields survive verbatim.
+            payload.raw_headers.extend(
+                (name.lower(), value)
+                for name, value in response.headers.raw
+                if name.decode("latin-1").lower() not in excluded_headers
+            )
+            return payload
+    except HTTPException:
+        raise
     except httpx.TimeoutException:
         logger.error(f"Timeout calling {url}{path}")
         raise _error_response(504, "Service timeout", request)
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error proxying request to {url}{path}: {e}")
         raise _error_response(502, "Bad gateway", request)
-
-    payload_headers = {
-        k: v for k, v in response.headers.items() if k.lower() not in _HOP_BY_HOP_HEADERS
-    }
-
-    return Response(
-        content=response.content,
-        status_code=response.status_code,
-        headers=payload_headers,
-        media_type=response.headers.get("content-type"),
-    )

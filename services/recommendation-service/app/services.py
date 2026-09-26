@@ -112,6 +112,7 @@ class ContentCatalogClient:
     ):
         self.base_url = base_url.rstrip("/")
         self.client = httpx.AsyncClient(
+            base_url=self.base_url,
             timeout=timeout,
             limits=httpx.Limits(
                 max_connections=max_connections, max_keepalive_connections=max_keepalive
@@ -194,7 +195,9 @@ class RecommendationService:
             return cached[:limit]
 
         prefs = await self.pref_repo.get_or_create(user_id)
-        recommendations = await self.rec_repo.get_for_user(user_id, limit)
+        recommendations = await self.rec_repo.get_for_user(
+            user_id, settings.MAX_RECOMMENDATION_LIMIT
+        )
         if recommendations:
             latest_generated = await self.rec_repo.latest_created_at(user_id)
             if latest_generated is not None and latest_generated >= prefs.updated_at:
@@ -207,12 +210,17 @@ class RecommendationService:
                     for r in recommendations
                 ]
                 await _cache_set(user_id, result)
-                return result
+                return result[:limit]
         try:
             await self.generate(
-                user_id, prefs.liked_genres or [], prefs.disliked_genres or [], limit
+                user_id,
+                prefs.liked_genres or [],
+                prefs.disliked_genres or [],
+                settings.MAX_RECOMMENDATION_LIMIT,
             )
-            recommendations = await self.rec_repo.get_for_user(user_id, limit)
+            recommendations = await self.rec_repo.get_for_user(
+                user_id, settings.MAX_RECOMMENDATION_LIMIT
+            )
         except Exception:
             logger.exception("Recommendation generation failed; returning stored rows")
         result = [
@@ -220,7 +228,7 @@ class RecommendationService:
             for r in recommendations
         ]
         await _cache_set(user_id, result)
-        return result
+        return result[:limit]
 
     async def generate(
         self,
@@ -268,13 +276,9 @@ class RecommendationService:
             seen: set[str] = set()
 
             async def score_genre(genre) -> None:
-                try:
-                    items = await catalog.fetch_by_genre(
-                        str(genre["id"]), page_size=settings.MAX_CATALOG_PAGE_SIZE
-                    )
-                except Exception:
-                    logger.warning("Failed to fetch content for genre %s", genre.get("slug"))
-                    return
+                items = await catalog.fetch_by_genre(
+                    str(genre["id"]), page_size=settings.MAX_CATALOG_PAGE_SIZE
+                )
                 for item in items:
                     if len(scored) >= settings.MAX_CANDIDATES:
                         return
@@ -302,10 +306,7 @@ class RecommendationService:
                 await score_genre(genre)
 
             if not liked:
-                try:
-                    items = await catalog.fetch_global()
-                except Exception:
-                    items = []
+                items = await catalog.fetch_global(page_size=settings.MAX_CATALOG_PAGE_SIZE)
                 for item in items:
                     if len(scored) >= settings.MAX_CANDIDATES:
                         break
@@ -338,6 +339,7 @@ class RecommendationService:
             await self.pref_repo.session.commit()
             return len(ranked)
         except Exception:
+            await self.pref_repo.session.rollback()
             logger.exception("Recommendation generation failed")
             raise
 
@@ -358,7 +360,12 @@ class RecommendationService:
         # Invalidate Redis cache on preference change (#456)
         await _cache_invalidate(user_id)
         try:
-            await self.generate(user_id, prefs.liked_genres or [], prefs.disliked_genres or [])
+            await self.generate(
+                user_id,
+                prefs.liked_genres or [],
+                prefs.disliked_genres or [],
+                settings.MAX_RECOMMENDATION_LIMIT,
+            )
         except Exception:
             logger.exception("Recommendation refresh failed after preference update")
         return prefs

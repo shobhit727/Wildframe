@@ -1,29 +1,26 @@
 # tests for repository layer in creators-service
+import pytest
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    create_async_engine,
+    async_sessionmaker,
+)
 
 import uuid
 import pytest_asyncio
-from datetime import datetime, timezone
+from datetime import datetime
 
-# set up in‑memory DB same as other tests
-import os
-
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
-
-from app.models import CreatorAccount, CreatorOnboarding, PayoutLedger
+from app.models import Base, CreatorSuspendedError, PayoutStatus
 from app.repositories import (
     CreatorAccountRepository,
     PayoutLedgerRepository,
 )
-from app.models import CreatorSuspendedError
 
 
 @pytest_asyncio.fixture
 async def session() -> AsyncSession:
-    engine = create_async_engine(os.getenv("DATABASE_URL"), echo=False, future=True)
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
-        # create tables
-        from app.core.database import Base
-
         await conn.run_sync(Base.metadata.create_all)
     async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     async with async_session() as s:
@@ -32,68 +29,62 @@ async def session() -> AsyncSession:
 
 
 @pytest.mark.asyncio
-async def test_creator_account_and_onboarding_flow(session: AsyncSession):
+async def test_creator_account_and_idempotent_accrual(session: AsyncSession):
     acct_repo = CreatorAccountRepository(session)
     user_id = uuid.uuid4()
     acct = await acct_repo.create(user_id=user_id, display_name="Test", region_code="US")
-    assert acct.user_id == user_id
-    # onboarding record directly (no dedicated repo)
-    onboarding = CreatorOnboarding(user_id=user_id, kyc_type="individual")
-    # setup dates for ledger
-    period_start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    period_end = datetime(2024, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
+    assert (await acct_repo.get_by_user(user_id)).id == acct.id
     ledger_repo = PayoutLedgerRepository(session)
-    key = "test-key"
-    row1 = await ledger_repo.accrued(
-        creator_id=user_id,
-        period_start=period_start,
-        period_end=period_end,
-        view_minutes=1000,
-        floor_cents=5000,
-        pool_topup_cents=2000,
-        share_cents=3000,
-        stripe_fee_cents=300,
-        net_cents=2700,
-        idempotency_key=key,
+    values = dict(
+        creator_id=acct.id,
+        period_start=datetime(2024, 1, 1),
+        period_end=datetime(2024, 1, 31),
+        view_minutes=100,
+        floor_cents=1000,
+        pool_topup_cents=200,
+        share_cents=300,
+        stripe_fee_cents=50,
+        net_cents=1450,
+        idempotency_key="test-key",
     )
-    assert row1.idempotency_key == key
-    assert row1.status == "accrued"
-    row2 = await ledger_repo.accrued(
-        creator_id=user_id,
-        period_start=period_start,
-        period_end=period_end,
-        view_minutes=1000,
-        floor_cents=5000,
-        pool_topup_cents=2000,
-        share_cents=3000,
-        stripe_fee_cents=300,
-        net_cents=2700,
-        idempotency_key=key,
+    row = await ledger_repo.accrued(**values)
+    duplicate = await ledger_repo.accrued(**{**values, "net_cents": 9999})
+    assert duplicate.id == row.id
+    await session.refresh(duplicate)
+    assert duplicate.net_cents == 1450
+    assert duplicate.status == PayoutStatus.ACCRUED
+    # PayoutLedgerRepository.accrued derives the stored key from
+    # (creator_id, period_start, period_end) and ignores the caller's
+    # ``idempotency_key`` argument, so look the row up by the derived key.
+    derived_key = (
+        f"{acct.id}:{values['period_start'].isoformat()}:{values['period_end'].isoformat()}"
     )
-    assert row2.id == row1.id
+    assert row.idempotency_key == derived_key
+    assert (await ledger_repo.get_by_idempotency_key(derived_key)).id == row.id
+    assert await ledger_repo.get_by_idempotency_key("test-key") is None
 
 
 @pytest.mark.asyncio
 async def test_payout_ledger_suspended_creator(session: AsyncSession):
     acct_repo = CreatorAccountRepository(session)
-    user_id = uuid.uuid4()
-    # create creator and deactivate
-    acct = await acct_repo.create(user_id=user_id)
-    acct.is_active = False
-    await session.flush()
+    acct = await acct_repo.create(user_id=uuid.uuid4(), display_name="Test", region_code="US")
+    # accrued() rolls the session back on CreatorSuspendedError, and rollback
+    # expires every instance, so read the id up front instead of after.
+    acct_id = acct.id
+    await acct_repo.update(acct, is_active=False)
     ledger_repo = PayoutLedgerRepository(session)
-    period_start = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    period_end = datetime(2024, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
     with pytest.raises(CreatorSuspendedError):
         await ledger_repo.accrued(
-            creator_id=user_id,
-            period_start=period_start,
-            period_end=period_end,
+            creator_id=acct_id,
+            period_start=datetime(2024, 1, 1),
+            period_end=datetime(2024, 1, 31),
             view_minutes=100,
             floor_cents=1000,
             pool_topup_cents=0,
-            share_cents=500,
-            stripe_fee_cents=50,
-            net_cents=450,
-            idempotency_key="suspended-key",
+            share_cents=0,
+            stripe_fee_cents=0,
+            net_cents=1000,
+            idempotency_key="suspended",
         )
+    rolled_back_key = f"{acct_id}:2024-01-01T00:00:00:2024-01-31T00:00:00"
+    assert await ledger_repo.get_by_idempotency_key(rolled_back_key) is None

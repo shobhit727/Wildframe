@@ -45,10 +45,13 @@ class EmailChannel:
         if not settings.SMTP_HOST:
             raise ChannelUnavailable("SMTP not configured")
         if not recipient:
-            raise ChannelUnavailable("no recipient email address")
-        subject, html_body, text_body = render_template(
-            template, title=notification.title, message=notification.message
-        )
+            raise DeliveryError("no recipient email address")
+        try:
+            subject, html_body, text_body = render_template(
+                template, title=notification.title, message=notification.message
+            )
+        except (KeyError, ValueError) as exc:
+            raise DeliveryError("unsupported email template context") from exc
         message = EmailMessage()
         message["Subject"] = subject
         message["From"] = settings.SMTP_FROM
@@ -57,7 +60,7 @@ class EmailChannel:
         message.add_alternative(html_body, subtype="html")
         try:
             await asyncio.to_thread(self._send_smtp, message)
-        except smtplib.SMTPException as exc:
+        except (smtplib.SMTPException, OSError) as exc:
             raise DeliveryError(f"smtp send failed: {exc}") from exc
 
     def _send_smtp(self, message: EmailMessage) -> None:

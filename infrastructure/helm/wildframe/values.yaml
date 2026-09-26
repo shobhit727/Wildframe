@@ -47,14 +47,14 @@ services:
     containerPort: 8000
     replicas: 2
     env:
-      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000"]'
     probes:
       readinessProbe:
         path: /ready
       startupProbe:
         path: /ready
   auth-service:
-    containerPort: 8000
+    containerPort: 8001
     replicas: 1
     db: auth_db
     env:
@@ -65,16 +65,16 @@ services:
       startupProbe:
         path: /ready
   user-service:
-    containerPort: 8000
+    containerPort: 8002
     replicas: 1
-    db: user_db
+    db: users_db
     probes:
       readinessProbe:
         path: /ready
       startupProbe:
         path: /ready
   content-service:
-    containerPort: 8000
+    containerPort: 8003
     replicas: 1
     db: content_db
     probes:
@@ -83,33 +83,39 @@ services:
       startupProbe:
         path: /ready
   streaming-service:
-    containerPort: 8000
+    containerPort: 8004
     replicas: 1
     db: streaming_db
   search-service:
-    containerPort: 8000
+    containerPort: 8005
     replicas: 1
     db: search_db
+    env:
+      CONTENT_SERVICE_URL: http://content-service:8000
   recommendation-service:
-    containerPort: 8000
+    containerPort: 8007
     replicas: 1
     db: recommendation_db
+    env:
+      CONTENT_SERVICE_URL: http://content-service:8000
   billing-service:
-    containerPort: 8000
+    containerPort: 8008
     replicas: 1
     db: billing_db
   analytics-service:
-    containerPort: 8000
+    containerPort: 8009
     replicas: 1
     db: analytics_db
+    env:
+      CONTENT_SERVICE_URL: http://content-service:8000
   notification-service:
-    containerPort: 8000
+    containerPort: 8010
     replicas: 1
     db: notification_db
   media-pipeline:
-    containerPort: 8000
+    containerPort: 8011
     replicas: 1
-    db: media_pipeline_db
+    db: media_db
     terminationGracePeriodSeconds: 120
     resources:
       requests:
@@ -124,19 +130,19 @@ services:
       startupProbe:
         path: /ready
   creators-service:
-    containerPort: 8000
+    containerPort: 8012
     replicas: 1
     db: creators_db
   moderation-service:
-    containerPort: 8000
+    containerPort: 8013
     replicas: 1
     db: moderation_db
   uploads-service:
-    containerPort: 8000
+    containerPort: 8014
     replicas: 1
     db: uploads_db
   admin-service:
-    containerPort: 8000
+    containerPort: 8006
     replicas: 1
     db: admin_db
 service:

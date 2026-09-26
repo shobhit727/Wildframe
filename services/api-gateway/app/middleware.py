@@ -30,6 +30,25 @@ _CONTROL_TRANSLATION = str.maketrans({c: "?" for c in _CONTROL_CHARS})
 # servers; the client would otherwise get the gateway's own responses).
 _PROXY_AGENT_HEADERS = frozenset({"host", "content-length"})
 
+# Hop-by-hop headers that are connection-scoped and must never be relayed when
+# a downstream response is re-wrapped with a byte budget (#466). Mirrors
+# _HOP_BY_HOP_HEADERS in app/api/gateway_routes.py (same RFC 9110 set, plus
+# "trailer"). "content-length" is added at the call site: the re-wrapped body is
+# counted while it streams, so any inherited length would be a lie.
+_HOP_BY_HOP_HEADERS = frozenset(
+    {
+        "transfer-encoding",
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "trailers",
+        "upgrade",
+    }
+)
+
 # Headers whose duplicate occurrences would create auth/routing ambiguity
 # (#520): they are rejected outright rather than comma-merged by h11.
 _SECURITY_SENSITIVE_HEADERS = frozenset(
@@ -729,6 +748,9 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                         status_code=502,
                         headers={"X-Request-ID": request.headers.get("x-request-id", "")},
                     )
+            # Passed through untouched, so the downstream response keeps its
+            # exact raw headers (names, casing, duplicate fields) — rebuilding
+            # it here is what used to collapse them.
             return response
         finally:
             if acquired and reserve:
@@ -752,13 +774,24 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                     raise ValueError(f"Response body exceeds limit: {total} > {max_body}")
                 yield chunk_bytes
 
-        return StreamingResponse(
+        # Carry the original raw headers over verbatim so exact header names
+        # and duplicate fields (e.g. repeated Set-Cookie) survive the re-wrap;
+        # dict(response.headers) would collapse them. Hop-by-hop headers and
+        # content-length are dropped: the body is re-counted as it streams and
+        # the budget can abort it mid-flight, so any inherited length is a lie.
+        excluded_headers = _HOP_BY_HOP_HEADERS | {"content-length"}
+        limited_response = StreamingResponse(
             content=limited(),
             status_code=response.status_code,
-            headers=dict(response.headers),
             media_type=response.media_type,
             background=response.background,
         )
+        limited_response.raw_headers = [
+            (name, value)
+            for name, value in response.raw_headers
+            if name.decode("latin-1").lower() not in excluded_headers
+        ]
+        return limited_response
 
 
 class ServiceRegistry:
@@ -835,13 +868,13 @@ class AuthenticationMiddleware:
             if scheme.lower() != "bearer":
                 return None
 
-            # Require an expiration claim so tokens without an expiry cannot
-            # become effectively permanent bearer credentials.
+            # Optional identity extraction only; upstream services enforce audience.
+            # Expiry remains mandatory even at this transparent proxy boundary.
             payload = jwt.decode(
                 token,
                 self.jwt_secret,
                 algorithms=["HS256"],
-                options={"require": ["exp"]},
+                options={"require": ["exp"], "verify_aud": False},
             )
             return payload
         except Exception:

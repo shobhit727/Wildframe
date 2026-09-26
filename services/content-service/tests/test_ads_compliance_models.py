@@ -27,7 +27,7 @@ def _has_default(model, column_name):
 
 
 def test_ad_config_defaults():
-    ad = ads_mod.AdConfig(content_id=uuid.uuid4())
+    _ = ads_mod.AdConfig(content_id=uuid.uuid4())
     assert _has_default(ads_mod.AdConfig, "consent_gated")
     assert _has_default(ads_mod.AdConfig, "minor_safe")
     assert _has_default(ads_mod.AdConfig, "tcf_required")
@@ -35,13 +35,13 @@ def test_ad_config_defaults():
 
 
 def test_eu_compliance_defaults():
-    eu = ContentEU(content_id=uuid.uuid4())
+    _ = ContentEU(content_id=uuid.uuid4())
     assert _has_default(ContentEU, "avms_rating")
     assert _has_default(ContentEU, "created_at")
 
 
 def test_india_compliance_defaults():
-    india = ContentIndia(content_id=uuid.uuid4())
+    _ = ContentIndia(content_id=uuid.uuid4())
     assert _has_default(ContentIndia, "grievance_tier")
     assert _has_default(ContentIndia, "created_at")
 
@@ -68,6 +68,6 @@ def test_rights_holder_and_territorial_license():
 
 
 def test_content_audit_defaults():
-    audit = Audit(event_type="create", content_id=uuid.uuid4())
+    _ = Audit(event_type="create", content_id=uuid.uuid4())
     assert _has_default(Audit, "encrypted")
     assert _has_default(Audit, "created_at")

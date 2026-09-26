@@ -235,13 +235,12 @@ class SearchService:
         if current:
             return current
 
-        # Legacy: an unaliased index literally named CONTENT_INDEX may exist.
-        try:
-            if await self.es.indices.exists(index=CONTENT_INDEX):
-                await self.es.indices.put_alias(index=CONTENT_INDEX, name=CONTENT_INDEX)
-                return CONTENT_INDEX
-        except Exception:
-            logger.exception("Legacy index migration failed; creating new versioned index")
+        # A concrete index cannot share its name with an alias. Keep legacy data
+        # intact until writers are paused for an explicit offline migration.
+        if await self.es.indices.exists(index=CONTENT_INDEX):
+            raise IndexingError(
+                "Legacy content index requires an offline migration before alias creation"
+            )
 
         # Fresh install: create first versioned index and point the alias at it.
         # Sorting by _id (cursor tie-break) requires fielddata on _id (ES 8+);
@@ -271,7 +270,7 @@ class SearchService:
             return None
         except Exception:
             logger.exception("Failed to read index alias")
-            return None
+            raise
 
     async def _versioned_indices(self) -> list[str]:
         """All versioned indices matching content_v*."""
@@ -421,67 +420,61 @@ class SearchService:
     # ---- reindex (atomic alias cutover) ----------------------------------
 
     async def reindex_catalog(self, catalog: ContentCatalogClient | None = None) -> ReindexResult:
-        """Full catalog reindex with atomic alias switch and versioned indices.
+        """Build and refresh a catalog index, then atomically switch the alias.
 
-        - Creates a new versioned index (content_vN).
-        - Bulk indexes all published content into the new index.
-        - On success, atomically swaps the CONTENT_INDEX alias to the new index.
-        - Deletes the previous versioned index (safeguarded: never deletes the alias).
-        - On any failure, cleans up the new index and propagates the exception.
+        Lifecycle writers must be quiesced externally: the catalog API provides
+        no snapshot/event boundary for replaying updates across the cutover.
         """
-        catalog = catalog or ContentCatalogClient()
-        old_target = await self.ensure_index()  # ensures alias exists, returns current target
-        new_version = await self._next_version(old_target)
-        new_index = f"{CONTENT_INDEX_PREFIX}{new_version}"
-
-        logger.info("Starting reindex: target=%s new=%s", old_target, new_index)
-        await self.es.indices.create(index=new_index, body=CONTENT_INDEX_MAPPING)
-
+        owns_catalog = catalog is None
+        if catalog is None:
+            catalog = ContentCatalogClient()
         try:
-            items = await catalog.fetch_published()
-        except CatalogFetchError:
-            await self._cleanup_index(new_index)
-            raise
-        except Exception:
-            await self._cleanup_index(new_index)
-            logger.exception("Unexpected catalog fetch error")
-            raise
+            old_target = await self.ensure_index()
+            new_version = await self._next_version(old_target)
+            new_index = f"{CONTENT_INDEX_PREFIX}{new_version}"
+            logger.info("Starting reindex: target=%s new=%s", old_target, new_index)
+            await self.es.indices.create(index=new_index, body=CONTENT_INDEX_MAPPING)
 
-        if not items:
-            logger.info("Catalog empty; aborting reindex (no switch)")
-            await self._cleanup_index(new_index)
-            return ReindexResult(count=0, index_name=old_target, switched=False)
-
-        # Bulk index with one retry pass for transient per-doc failures (#304, #585).
-        try:
-            await self._bulk_index(new_index, items)
-        except IndexingError:
-            await self._cleanup_index(new_index)
-            raise
-
-        # Atomic alias switch: add new, remove old (if old was versioned).
-        actions = [{"add": {"index": new_index, "alias": CONTENT_INDEX}}]
-        if old_target and self._is_versioned_index(old_target):
-            actions.append({"remove": {"index": old_target, "alias": CONTENT_INDEX}})
-        try:
-            await self.es.indices.update_aliases(body={"actions": actions})
-        except Exception:
-            await self._cleanup_index(new_index)
-            logger.exception("Alias switch failed; new index %s left for inspection", new_index)
-            raise
-
-        # Safeguarded deletion of the old versioned index (#586).
-        if old_target and self._is_versioned_index(old_target):
             try:
-                await self.es.indices.delete(index=old_target)
-                logger.info("Deleted previous versioned index %s", old_target)
-            except Exception:
-                logger.warning(
-                    "Failed to delete old index %s (manual cleanup required)", old_target
-                )
+                items = await catalog.fetch_published()
+                if items:
+                    await self._bulk_index(new_index, items)
+                await self.es.indices.refresh(index=new_index)
+            except BaseException:
+                await self._cleanup_index(new_index)
+                raise
 
-        logger.info("Reindex complete: %d items, alias -> %s", len(items), new_index)
-        return ReindexResult(count=len(items), index_name=new_index, switched=True)
+            if not items:
+                # An empty catalog would repoint the alias at an index with no
+                # documents, silently emptying search. Keep the live index.
+                await self._cleanup_index(new_index)
+                logger.warning("Catalog returned no published items; alias not switched")
+                return ReindexResult(count=0, index_name=old_target or new_index, switched=False)
+
+            actions = [{"add": {"index": new_index, "alias": CONTENT_INDEX}}]
+            if old_target and self._is_versioned_index(old_target):
+                actions.append({"remove": {"index": old_target, "alias": CONTENT_INDEX}})
+            try:
+                await self.es.indices.update_aliases(body={"actions": actions})
+            except Exception:
+                # A transport failure can occur after ES committed the switch.
+                # Never delete a possibly active index on an ambiguous response.
+                logger.exception("Alias switch failed; retaining index %s", new_index)
+                raise
+
+            if old_target and self._is_versioned_index(old_target):
+                try:
+                    await self.es.indices.delete(index=old_target)
+                except Exception:
+                    logger.warning(
+                        "Failed to delete old index %s (manual cleanup required)", old_target
+                    )
+
+            logger.info("Reindex complete: %d items, alias -> %s", len(items), new_index)
+            return ReindexResult(count=len(items), index_name=new_index, switched=True)
+        finally:
+            if owns_catalog:
+                await catalog.aclose()
 
     async def _bulk_index(self, index_name: str, items: list[dict]) -> None:
         """Bulk index with per-document error capture and one retry pass."""
@@ -539,15 +532,11 @@ class SearchService:
         Returns True if the ES document existed (found), False if it was absent.
         """
         try:
-            resp = await self.es.delete(index=CONTENT_INDEX, id=str(content_id), ignore=[404])  # type: ignore[call-arg]
+            resp = await self.es.delete(index=CONTENT_INDEX, id=str(content_id))
             found = resp.get("result") == "deleted" or resp.get("found") is True
-        except Exception:
-            logger.exception("ES delete failed for %s", content_id)
+        except NotFoundError:
             found = False
-        try:
-            await self.index_repo.delete(content_id)
-        except Exception:
-            logger.exception("SQL mirror delete failed for %s", content_id)
+        await self.index_repo.delete(content_id)
         return found
 
     async def delete_index(self, index_name: str) -> None:

@@ -1,6 +1,7 @@
 """Pydantic v2 schemas for the Creators service."""
 
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 from typing import Optional
 
@@ -40,7 +41,7 @@ class CreatorAccountResponse(BaseModel):
 
 # ----------------------------------------------------------------- EffectiveFloor
 class EffectiveFloorCreate(BaseModel):
-    per_minute_amount: float = Field(..., ge=0)
+    per_minute_amount: Decimal = Field(..., ge=0, max_digits=20, decimal_places=8)
     currency: str = Field("USD", max_length=8)
     reason: Optional[str] = Field(None, max_length=500)
 
@@ -48,7 +49,7 @@ class EffectiveFloorCreate(BaseModel):
 class EffectiveFloorResponse(BaseModel):
     id: UUID
     creator_id: UUID
-    per_minute_amount: float
+    per_minute_amount: Decimal
     currency: str
     effective_from: datetime
     last_adjusted_at: Optional[datetime]

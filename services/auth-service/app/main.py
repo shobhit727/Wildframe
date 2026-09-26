@@ -272,6 +272,17 @@ def create_app() -> FastAPI:
                     )
             except ValueError:
                 pass
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > MAX_BODY_SIZE:
+                return JSONResponse(
+                    content={"detail": "Request body too large"},
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                )
+            chunks.append(chunk)
+        request._body = b"".join(chunks)
         return await call_next(request)
 
     wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)

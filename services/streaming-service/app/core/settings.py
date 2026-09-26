@@ -27,6 +27,8 @@ KNOWN_INSECURE_JWT_SECRETS = (
     "secret",
     "changeme",
 )
+# Default shipped on PLAYBACK_URL_SIGNING_SECRET; rejected outside development.
+KNOWN_INSECURE_PLAYBACK_SIGNING_SECRETS = ("dev-playback-signing-secret-change-in-production",)
 
 
 class Settings(ComplianceSettingsMixin, BaseSettings):
@@ -42,6 +44,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_ISSUER: str = "wildframe-auth"
     JWT_AUDIENCE: str = "wildframe-api"
+    ADMIN_ROLE_VERSION: int = 0
     JWT_EXPIRATION_MINUTES: int = 15
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 5
@@ -75,6 +78,17 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
+        """Fail fast when running outside development with default insecure secrets.
+
+        Two complementary hardening layers are enforced here. The explicit
+        per-setting chain below rejects missing values, known-insecure
+        credentials and secrets, and short JWT keys. The upstream production
+        guard additionally rejects empty or whitespace-only secrets and
+        validates the playback URL signing secret as well; every entry on its
+        ``default_secrets`` set is a member of KNOWN_INSECURE_JWT_SECRETS or
+        KNOWN_INSECURE_PLAYBACK_SIGNING_SECRETS, so it stays enforced without
+        duplicating the set here.
+        """
         if self.ENVIRONMENT in DEV_ENVIRONMENTS:
             return self
         if self.DATABASE_URL is None:
@@ -91,13 +105,31 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
             )
-        if self.JWT_SECRET_KEY in KNOWN_INSECURE_JWT_SECRETS:
+        # Upstream guard: also reject empty / whitespace-only secrets.
+        if not self.JWT_SECRET_KEY.strip():
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
+            )
+        if self.JWT_SECRET_KEY.strip() in KNOWN_INSECURE_JWT_SECRETS:
             raise ValueError(
                 "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
             )
         if len(self.JWT_SECRET_KEY) < 32:
             raise ValueError(
                 "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
+            )
+        # The playback signing secret is a plain str carrying a shipped dev
+        # default, so a non-development deploy that omits the env var would
+        # otherwise sign playback URLs with that dev secret.
+        if not self.PLAYBACK_URL_SIGNING_SECRET.strip():
+            raise ValueError(
+                "PLAYBACK_URL_SIGNING_SECRET must be set to a strong random value "
+                "when ENVIRONMENT is not development."
+            )
+        if self.PLAYBACK_URL_SIGNING_SECRET.strip() in KNOWN_INSECURE_PLAYBACK_SIGNING_SECRETS:
+            raise ValueError(
+                "PLAYBACK_URL_SIGNING_SECRET must be set to a strong random value "
+                "when ENVIRONMENT is not development."
             )
         return self
 

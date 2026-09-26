@@ -52,7 +52,7 @@ def verify_token(request: Request) -> Identity | None:
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
-            options={"require": ["exp"]},
+            options={"require_exp": True},
         )
         # Token-type separation (#221): refresh tokens are not access tokens.
         if payload.get("type") != "access":

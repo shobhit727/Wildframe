@@ -369,7 +369,7 @@ resource "aws_db_subnet_group" "postgres" {
 # RDS cluster parameter group
 resource "aws_rds_cluster_parameter_group" "postgres" {
   name        = "wildframe-${var.environment}"
-  family      = "aurora-postgresql14"
+  family      = "aurora-postgresql${split(".", var.postgres_version)[0]}"
   description = "Wildframe Aurora PostgreSQL cluster parameter group"
 
   # Aggregate connection budget: sum of all service pool sizes (max + overflow) across
@@ -415,8 +415,8 @@ resource "aws_security_group" "postgres" {
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
-    security_groups = [aws_security_group.eks_cluster.id]
-    description     = "Allow PostgreSQL access from EKS cluster"
+    security_groups = [aws_eks_cluster.main.vpc_config[0].cluster_security_group_id]
+    description     = "Allow PostgreSQL access from EKS managed nodes"
   }
 
   # No egress rule: databases never initiate outbound connections (#352).
@@ -516,8 +516,8 @@ resource "aws_security_group" "redis" {
     from_port       = 6379
     to_port         = 6379
     protocol        = "tcp"
-    security_groups = [aws_security_group.eks_cluster.id]
-    description     = "Allow Redis access from EKS cluster"
+    security_groups = [aws_eks_cluster.main.vpc_config[0].cluster_security_group_id]
+    description     = "Allow Redis access from EKS managed nodes"
   }
 
   # No egress rule (#353).
@@ -635,6 +635,30 @@ resource "aws_kms_key" "s3" {
   description             = "KMS key for S3 bucket encryption"
   deletion_window_in_days = 30
   enable_key_rotation     = true
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "EnableAccountAdministration"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action    = "kms:*"
+        Resource  = "*"
+      },
+      {
+        Sid       = "CloudFrontOACDecrypt"
+        Effect    = "Allow"
+        Principal = { Service = "cloudfront.amazonaws.com" }
+        Action    = "kms:Decrypt"
+        Resource  = "*"
+        Condition = {
+          StringEquals = {
+            "AWS:SourceArn" = aws_cloudfront_distribution.videos.arn
+          }
+        }
+      }
+    ]
+  })
 
   tags = {
     Name = "wildframe-${var.environment}-s3"

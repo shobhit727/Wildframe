@@ -218,7 +218,7 @@ class TestSearchEndpoints:
         import time
         from uuid import uuid4
 
-        import jwt as pyjwt
+        from jose import jwt as pyjwt
 
         now = int(time.time())
         token = pyjwt.encode(

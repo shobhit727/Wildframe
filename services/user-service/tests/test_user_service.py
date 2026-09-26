@@ -281,10 +281,11 @@ class TestDeviceManagement:
         mock_device.updated_at = datetime.now(UTC)
         mock_repositories["device_repo"].mark_device_inactive.return_value = mock_device
 
-        device = await user_service.deactivate_device(device_id)
-
+        device = await user_service.deactivate_device(device_id, user_id)
         assert device.is_active is False
-        mock_repositories["device_repo"].mark_device_inactive.assert_called_once_with(device_id)
+        mock_repositories["device_repo"].mark_device_inactive.assert_called_once_with(
+            device_id, user_id
+        )
 
 
 def _mock_preferences(user_id):
