@@ -170,6 +170,7 @@ infrastructure/terraform/.terraform/
 
 # Local scratch space for agent tooling (screenshots, test scripts, logs)
 tmp/
+tem/
 .opencode/
 scripts/dev/.tmp/
 
@@ -177,3 +178,8 @@ scripts/dev/.tmp/
 apps/web/certificates/*.pem
 apps/web/certificates/*.key
 !apps/web/certificates/.gitkeep
+playwright/.cache/
+.serena/
+
+# Dated point-in-time audit snapshots; the durable record is the issue tracker
+GITHUB_ISSUES_CODE_AUDIT_*.md
