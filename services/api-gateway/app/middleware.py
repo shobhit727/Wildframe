@@ -870,7 +870,7 @@ class AuthenticationMiddleware:
                 return None
 
             from app.core.settings import settings
-            from wildframe_auth.verifier import get_cached_jwks
+            from wildframe_auth.verifier import get_cached_jwks, verify_token as verify_jwt_token
 
             # Refresh the cache immediately when a rotated signing key is not present.
             header = jwt.get_unverified_header(token)
