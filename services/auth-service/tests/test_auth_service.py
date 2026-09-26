@@ -346,7 +346,7 @@ class TestAuthServiceLogin:
 
         # Exactly one verification happened, against the shared dummy hash.
         assert len(calls) == 1
-        assert calls[0][1] == PasswordManager.dummy_hash()
+        # Compare against the exact cached dummy hash used by the verifier.\n        assert calls[0][1] == PasswordManager.dummy_hash()
 
     async def test_login_upgrades_low_cost_hash_on_success(
         self, auth_service, mock_repositories, user_id
