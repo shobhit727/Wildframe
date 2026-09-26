@@ -37,12 +37,25 @@ class FakeRepo:
         self.chunks: dict = {}
         self.enqueued_events: list[dict] = []
 
+        # Transaction stub: the service commits/rolls back through repo.session.
+        class _SimpleSession:
+            async def commit(self) -> None:
+                return None
+
+            async def rollback(self) -> None:
+                return None
+
+        self.session = _SimpleSession()
+
     async def create(self, session):
         self.sessions[session.id] = session
         self.chunks.setdefault(session.id, [])
         return session
 
     async def get(self, session_id):
+        return self.sessions.get(session_id)
+
+    async def get_for_update(self, session_id):
         return self.sessions.get(session_id)
 
     async def save(self, session):
@@ -87,8 +100,13 @@ def make_service(storage: StubStoragePort | None = None) -> tuple[UploadService,
     return UploadService(repo=repo), repo
 
 
+def put_chunk(storage, uploads, index: int, data: bytes, mime: str = "video/mp4") -> None:
+    """PUT chunk bytes at the key the server issued a presigned URL for."""
+    storage.upload_bytes(uploads[index].storage_key, data, mime)
+
+
 async def _completed_session(service, repo, *, size_bytes=5 * 1024 * 1024, checksum=None):
-    session, _ = await service.create_session(
+    session, uploads = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
         mime="video/mp4",
@@ -96,8 +114,7 @@ async def _completed_session(service, repo, *, size_bytes=5 * 1024 * 1024, check
         chunk_size=size_bytes,
         checksum_sha256=checksum,
     )
-    key = storage_key_for(str(session.id), 0)
-    service.storage.upload_bytes(key, b"x" * size_bytes, "video/mp4")
+    put_chunk(service.storage, uploads, 0, b"x" * size_bytes)
     await service.register_chunk(session_id=session.id, index=0, size_bytes=size_bytes)
     return await service.complete_session(session.id), repo
 
@@ -177,8 +194,8 @@ async def test_reaper_aborts_expired_session_and_cleans_storage():
         size_bytes=5 * 1024 * 1024,
         chunk_size=5 * 1024 * 1024,
     )
-    key = storage_key_for(str(session.id), 0)
-    service.storage.upload_bytes(key, b"x" * 5 * 1024 * 1024, "video/mp4")
+    key = uploads[0].storage_key
+    put_chunk(service.storage, uploads, 0, b"x" * 5 * 1024 * 1024)
     session.expires_at = datetime.now(UTC) - timedelta(minutes=1)
 
     touched = await service.reap_expired()
@@ -234,24 +251,24 @@ def test_no_route_accepts_a_client_chosen_storage_key():
 @pytest.mark.asyncio
 async def test_abort_cleanup_does_not_touch_other_sessions():
     service, _repo = make_service()
-    s1, _ = await service.create_session(
+    s1, uploads1 = await service.create_session(
         creator_id=uuid4(),
         filename="a.mp4",
         mime="video/mp4",
         size_bytes=5 * 1024 * 1024,
         chunk_size=5 * 1024 * 1024,
     )
-    s2, _ = await service.create_session(
+    s2, uploads2 = await service.create_session(
         creator_id=uuid4(),
         filename="b.mp4",
         mime="video/mp4",
         size_bytes=5 * 1024 * 1024,
         chunk_size=5 * 1024 * 1024,
     )
-    key1 = storage_key_for(str(s1.id), 0)
-    key2 = storage_key_for(str(s2.id), 0)
-    service.storage.upload_bytes(key1, b"a" * 5 * 1024 * 1024, "video/mp4")
-    service.storage.upload_bytes(key2, b"b" * 5 * 1024 * 1024, "video/mp4")
+    key1 = uploads1[0].storage_key
+    key2 = uploads2[0].storage_key
+    put_chunk(service.storage, uploads1, 0, b"a" * 5 * 1024 * 1024)
+    put_chunk(service.storage, uploads2, 0, b"b" * 5 * 1024 * 1024)
 
     await service.abort(s1.id, reason="cancelled")
 
@@ -263,15 +280,15 @@ async def test_abort_cleanup_does_not_touch_other_sessions():
 async def test_cleanup_failure_is_retried_by_reaper():
     storage = StubStoragePort()
     service, repo = make_service(storage)
-    session, _ = await service.create_session(
+    session, uploads = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
         mime="video/mp4",
         size_bytes=5 * 1024 * 1024,
         chunk_size=5 * 1024 * 1024,
     )
-    key = storage_key_for(str(session.id), 0)
-    storage.upload_bytes(key, b"x" * 5 * 1024 * 1024, "video/mp4")
+    key = uploads[0].storage_key
+    put_chunk(storage, uploads, 0, b"x" * 5 * 1024 * 1024)
 
     original = storage.cleanup_upload
 
@@ -299,15 +316,14 @@ async def test_cleanup_failure_is_retried_by_reaper():
 @pytest.mark.asyncio
 async def test_register_chunk_uses_storage_size_not_client_size():
     service, _repo = make_service()
-    session, _ = await service.create_session(
+    session, uploads = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
         mime="video/mp4",
         size_bytes=5 * 1024 * 1024,
         chunk_size=5 * 1024 * 1024,
     )
-    key = storage_key_for(str(session.id), 0)
-    service.storage.upload_bytes(key, b"x" * 5 * 1024 * 1024, "video/mp4")
+    put_chunk(service.storage, uploads, 0, b"x" * 5 * 1024 * 1024)
 
     chunk = await service.register_chunk(
         session_id=session.id, index=0, size_bytes=1  # client lies
@@ -318,21 +334,20 @@ async def test_register_chunk_uses_storage_size_not_client_size():
 @pytest.mark.asyncio
 async def test_completion_rereads_storage_before_finalizing():
     service, _repo = make_service()
-    session, _ = await service.create_session(
+    session, uploads = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
         mime="video/mp4",
         size_bytes=5 * 1024 * 1024,
         chunk_size=5 * 1024 * 1024,
     )
-    key = storage_key_for(str(session.id), 0)
-    service.storage.upload_bytes(key, b"x" * 5 * 1024 * 1024, "video/mp4")
+    put_chunk(service.storage, uploads, 0, b"x" * 5 * 1024 * 1024)
     await service.register_chunk(session_id=session.id, index=0)
 
     # Bytes change in storage after registration (client tamper / partial PUT).
-    service.storage.upload_bytes(key, b"y" * 1000, "video/mp4")
+    put_chunk(service.storage, uploads, 0, b"y" * 1000)
 
-    with pytest.raises(UploadError, match="size mismatch at completion"):
+    with pytest.raises(UploadError, match="assembled size mismatch"):
         await service.complete_session(session.id)
 
 
@@ -343,7 +358,7 @@ async def test_storage_computed_checksum_is_authoritative():
     service, _repo = make_service()
     payload = b"z" * 5 * 1024 * 1024
     declared = hashlib.sha256(payload).hexdigest()
-    session, _ = await service.create_session(
+    session, uploads = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
         mime="video/mp4",
@@ -351,8 +366,7 @@ async def test_storage_computed_checksum_is_authoritative():
         chunk_size=len(payload),
         checksum_sha256=declared,
     )
-    key = storage_key_for(str(session.id), 0)
-    service.storage.upload_bytes(key, payload, "video/mp4")
+    put_chunk(service.storage, uploads, 0, payload)
     await service.register_chunk(session_id=session.id, index=0)
 
     completed = await service.complete_session(session.id, checksum_sha256="client-lies")

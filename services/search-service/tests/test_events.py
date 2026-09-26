@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from wildframe_events import DomainEvent, InMemoryEventSubscriber
 
@@ -32,17 +33,35 @@ def _event(topic: str, content_id: str | None, key: str | None = None) -> Domain
     )
 
 
-class _FakeSessionFactory:
-    """Stand-in for async_sessionmaker: yields one mock session per use."""
+class _FakeSessionContext:
+    """Async context manager yielded by ``_FakeSessionFactory.begin()``."""
 
-    async def __aenter__(self):
-        return MagicMock()
+    def __init__(self, session: MagicMock) -> None:
+        self._session = session
 
-    async def __aexit__(self, *exc):
+    async def __aenter__(self) -> MagicMock:
+        return self._session
+
+    async def __aexit__(self, *exc) -> bool:
         return False
 
 
-def _fake_sessions():
+class _FakeSessionFactory:
+    """Stand-in for ``async_sessionmaker``: one mock session per ``begin()`` call.
+
+    ``DatabaseManager.session_factory`` is an ``async_sessionmaker`` and the
+    handlers use it as ``async with factory.begin() as session``, so the patched
+    attribute must expose ``begin()`` returning an async context manager --
+    patching it with a plain function fails with AttributeError. The session is
+    spec'd on ``AsyncSession`` so awaited methods (``execute``/``flush``) are
+    AsyncMock and unknown attribute access fails loudly.
+    """
+
+    def begin(self) -> _FakeSessionContext:
+        return _FakeSessionContext(MagicMock(spec=AsyncSession))
+
+
+def _fake_sessions() -> _FakeSessionFactory:
     return _FakeSessionFactory()
 
 
@@ -52,7 +71,7 @@ class TestDeleteHandlers:
         from app.core import events as events_mod
 
         content_id = str(uuid4())
-        monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
+        monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions())
         es = MagicMock()
         es.delete = AsyncMock(return_value={"result": "deleted"})
         monkeypatch.setattr("app.api.search_routes.es_client", lambda: es)
@@ -67,7 +86,7 @@ class TestDeleteHandlers:
         from app.core import events as events_mod
 
         content_id = str(uuid4())
-        monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
+        monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions())
         es = MagicMock()
         es.delete = AsyncMock(return_value={"result": "deleted"})
         monkeypatch.setattr("app.api.search_routes.es_client", lambda: es)
@@ -83,7 +102,7 @@ class TestDeleteHandlers:
         from app.core import events as events_mod
 
         content_id = str(uuid4())
-        monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
+        monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions())
         es = MagicMock()
         es.delete = AsyncMock(return_value={"result": "not_found"})
         monkeypatch.setattr("app.api.search_routes.es_client", lambda: es)
@@ -98,7 +117,7 @@ class TestDeleteHandlers:
     async def test_event_without_content_id_is_dropped(self, monkeypatch):
         from app.core import events as events_mod
 
-        monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
+        monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions())
         es = MagicMock()
         es.delete = AsyncMock(return_value={"result": "deleted"})
         monkeypatch.setattr("app.api.search_routes.es_client", lambda: es)
@@ -111,7 +130,7 @@ class TestDeleteHandlers:
     async def test_event_with_invalid_content_id_is_dropped(self, monkeypatch):
         from app.core import events as events_mod
 
-        monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
+        monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions())
         es = MagicMock()
         es.delete = AsyncMock(return_value={"result": "deleted"})
         monkeypatch.setattr("app.api.search_routes.es_client", lambda: es)
@@ -141,7 +160,7 @@ class TestSubscriberWiring:
 
         sub = InMemoryEventSubscriber()
         monkeypatch.setattr(events_mod, "get_event_subscriber", lambda: sub)
-        monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
+        monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions())
         es = MagicMock()
         es.delete = AsyncMock(return_value={"result": "deleted"})
         monkeypatch.setattr("app.api.search_routes.es_client", lambda: es)

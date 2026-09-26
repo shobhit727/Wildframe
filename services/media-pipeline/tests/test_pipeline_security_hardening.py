@@ -108,6 +108,9 @@ async def test_shell_metacharacters_stay_one_argv_element():
     job_dir = os.path.join(work, str(uuid4()))
     os.makedirs(job_dir, exist_ok=True)
     evil_path = os.path.join(job_dir, "evil ; touch /tmp/pwned.mp4")
+    os.makedirs(os.path.dirname(evil_path), exist_ok=True)  # nested "/tmp" segment
+    with open(evil_path, "wb") as f:  # the adapter refuses missing/empty input
+        f.write(b"x")
     out_dir = os.path.join(job_dir, "out")
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "v_400.mp4"), "wb") as f:
@@ -145,6 +148,8 @@ async def test_encoder_clamps_threads_to_configured_cap():
     job_dir = os.path.join(work, str(uuid4()))
     os.makedirs(job_dir, exist_ok=True)
     try:
+        with open(os.path.join(job_dir, "in.mp4"), "wb") as f:
+            f.write(b"x")  # _require_local_input rejects missing/empty media
         out_dir = os.path.join(job_dir, "out")
         os.makedirs(out_dir, exist_ok=True)
         with open(os.path.join(out_dir, "v_400.mp4"), "wb") as f:
@@ -171,6 +176,8 @@ async def test_encoder_wires_duration_cap_into_argv():
     job_dir = os.path.join(work, str(uuid4()))
     os.makedirs(job_dir, exist_ok=True)
     try:
+        with open(os.path.join(job_dir, "in.mp4"), "wb") as f:
+            f.write(b"x")  # _require_local_input rejects missing/empty media
         out_dir = os.path.join(job_dir, "out")
         os.makedirs(out_dir, exist_ok=True)
         with open(os.path.join(out_dir, "v_400.mp4"), "wb") as f:
@@ -227,9 +234,10 @@ async def test_run_process_timeout_kills_process_group():
     ):
         with pytest.raises(CommandTimeout):
             await run_process(["ffmpeg"], timeout=0.05)
-        assert killpg.called  # SIGTERM (and SIGKILL on grace expiry)
+        # cleanup() escalates immediately: the process group gets one SIGKILL.
+        assert killpg.called
         signals = {c.args[1] for c in killpg.call_args_list}
-        assert signals == {signal.SIGTERM, signal.SIGKILL}
+        assert signals == {signal.SIGKILL}
 
 
 @pytest.mark.asyncio

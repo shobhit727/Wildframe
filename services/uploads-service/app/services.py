@@ -204,7 +204,6 @@ class UploadService:
                         filename=safe_filename,
                         mime=safe_mime,
                         chunk_index=index if total_chunks > 1 else None,
-                        expected_size=self._expected_chunk_size(session, index),
                         upload_id=upload_id,
                     )
                 )
@@ -369,7 +368,6 @@ class UploadService:
                 size_bytes=session.size_bytes,  # type: ignore[arg-type]
                 mime=session.mime,  # type: ignore[arg-type]
                 upload_id=session.multipart_upload_id,
-                chunk_size=session.chunk_size,
             )
         except StorageError as exc:
             # Session stays retryable — completion failure is not a success.

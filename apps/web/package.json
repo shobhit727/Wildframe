@@ -30,14 +30,14 @@
     "dashjs": "^5.2.1",
     "date-fns": "^4.4.0",
     "hls.js": "^1.7.1",
-    "next": "^16.3.2",
+    "next": "^16.3.3",
     "react": "^19.0.0-rc",
     "react-dom": "^19.0.0-rc",
     "sonner": "^2.0.8",
     "zustand": "^4.4.0"
   },
   "devDependencies": {
-    "@next/eslint-plugin-next": "^16.3.2",
+    "@next/eslint-plugin-next": "^16.3.3",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/forms": "^0.5.11",
     "@tailwindcss/postcss": "^4.3.3",
@@ -54,7 +54,7 @@
     "@vitest/ui": "^4.1.10",
     "autoprefixer": "^10.4.0",
     "eslint": "^9.8.0",
-    "eslint-config-next": "^16.3.2",
+    "eslint-config-next": "^16.3.3",
     "eslint-plugin-jsx-a11y": "^6.8.0",
     "jsdom": "^23.0.0",
     "postcss": "^8.5.25",
@@ -63,5 +63,8 @@
     "typescript": "^6.0.3",
     "vite": "^7.0.0",
     "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "sharp": "^0.35.4"
   }
 }

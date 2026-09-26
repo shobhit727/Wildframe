@@ -68,11 +68,14 @@ async def test_creator_account_and_idempotent_accrual(session: AsyncSession):
 async def test_payout_ledger_suspended_creator(session: AsyncSession):
     acct_repo = CreatorAccountRepository(session)
     acct = await acct_repo.create(user_id=uuid.uuid4(), display_name="Test", region_code="US")
+    # accrued() rolls the session back on CreatorSuspendedError, and rollback
+    # expires every instance, so read the id up front instead of after.
+    acct_id = acct.id
     await acct_repo.update(acct, is_active=False)
     ledger_repo = PayoutLedgerRepository(session)
     with pytest.raises(CreatorSuspendedError):
         await ledger_repo.accrued(
-            creator_id=acct.id,
+            creator_id=acct_id,
             period_start=datetime(2024, 1, 1),
             period_end=datetime(2024, 1, 31),
             view_minutes=100,
@@ -83,5 +86,5 @@ async def test_payout_ledger_suspended_creator(session: AsyncSession):
             net_cents=1000,
             idempotency_key="suspended",
         )
-    rolled_back_key = f"{acct.id}:2024-01-01T00:00:00:2024-01-31T00:00:00"
+    rolled_back_key = f"{acct_id}:2024-01-01T00:00:00:2024-01-31T00:00:00"
     assert await ledger_repo.get_by_idempotency_key(rolled_back_key) is None

@@ -92,7 +92,8 @@ async def test_close_catalog_client_closes_and_resets(service):
 async def test_timeout_on_liked_genre_leaves_client_usable(service):
     """A content-service timeout on one genre must not kill the shared client."""
 
-    async def flaky_fetch_by_genre(genre_id):
+    async def flaky_fetch_by_genre(genre_id, page_size: int = 100) -> list[dict]:
+        """Mirrors ContentCatalogClient.fetch_by_genre(genre_id, page_size=100)."""
         raise httpx.ConnectTimeout("connect timed out")
 
     client = make_client(
@@ -100,8 +101,9 @@ async def test_timeout_on_liked_genre_leaves_client_usable(service):
         fetch_by_genre=flaky_fetch_by_genre,
     )
     with patch("app.services.ContentCatalogClient", return_value=client):
-        count = await service.generate(uuid4(), ["action"], [], limit=10)
-        assert count == 0
+        # generate() rolls back and re-raises; the pooled client must survive.
+        with pytest.raises(httpx.ConnectTimeout):
+            await service.generate(uuid4(), ["action"], [], limit=10)
         assert get_catalog_client() is client
         client.aclose.assert_not_awaited()
 

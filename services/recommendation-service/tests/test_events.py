@@ -48,17 +48,22 @@ async def test_handler_evicts_rows_for_deleted_content(monkeypatch):
     from app.core import events as events_mod
 
     content_id = str(uuid4())
+    affected_users = [uuid4(), uuid4()]
     monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
     repo_cls = MagicMock()
     repo = repo_cls.return_value
-    repo.delete_for_content = AsyncMock(return_value=2)
+    # delete_for_content -> list[UUID]: the affected user ids, not a row count.
+    repo.delete_for_content = AsyncMock(return_value=affected_users)
     repo.session.commit = AsyncMock()
     monkeypatch.setattr(events_mod, "RecommendationRepository", repo_cls)
+    cache_invalidate = AsyncMock()
+    monkeypatch.setattr(events_mod, "_cache_invalidate", cache_invalidate)
 
     await events_mod._handle_content_deleted(_event({"content_id": content_id}))
 
     repo_cls.assert_called_once()
     repo.delete_for_content.assert_awaited_once_with(UUID(content_id))
+    assert [c.args[0] for c in cache_invalidate.await_args_list] == affected_users
     _FakeSessionFactory.instances[-1].commit.assert_awaited_once()
 
 
@@ -68,12 +73,15 @@ async def test_handler_evicts_rows_for_unpublished_content(monkeypatch):
     from app.core import events as events_mod
 
     content_id = str(uuid4())
+    affected_users = [uuid4()]
     monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
     repo_cls = MagicMock()
     repo = repo_cls.return_value
-    repo.delete_for_content = AsyncMock(return_value=1)
+    repo.delete_for_content = AsyncMock(return_value=affected_users)
     repo.session.commit = AsyncMock()
     monkeypatch.setattr(events_mod, "RecommendationRepository", repo_cls)
+    cache_invalidate = AsyncMock()
+    monkeypatch.setattr(events_mod, "_cache_invalidate", cache_invalidate)
 
     await events_mod._handle_content_unpublished(
         _event({"content_id": content_id}, "content.unpublished")
@@ -81,6 +89,7 @@ async def test_handler_evicts_rows_for_unpublished_content(monkeypatch):
 
     repo.delete_for_content.assert_awaited_once_with(UUID(content_id))
     _FakeSessionFactory.instances[-1].commit.assert_awaited_once()
+    assert [c.args[0] for c in cache_invalidate.await_args_list] == affected_users
 
 
 @pytest.mark.asyncio
@@ -157,7 +166,7 @@ async def test_memory_subscriber_round_trip(monkeypatch):
     content_id = str(uuid4())
     monkeypatch.setattr(events_mod.DatabaseManager, "session_factory", _fake_sessions)
     repo_cls = MagicMock()
-    repo_cls.return_value.delete_for_content = AsyncMock(return_value=1)
+    repo_cls.return_value.delete_for_content = AsyncMock(return_value=[uuid4()])
     monkeypatch.setattr(events_mod, "RecommendationRepository", repo_cls)
 
     sub = events_mod.get_event_subscriber()

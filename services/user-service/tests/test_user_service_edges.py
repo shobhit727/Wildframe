@@ -96,19 +96,23 @@ class TestDeviceErrors:
 
     async def test_remove_device_success(self, service):
         service.device_repo.delete.return_value = True
+        device_id, owner_id = uuid4(), uuid4()
 
-        result = await service.remove_device(uuid4())
+        result = await service.remove_device(device_id, owner_id)
 
         assert result is True
+        service.device_repo.delete.assert_awaited_once_with(device_id, owner_id)
         service.device_repo.commit.assert_awaited_once()
 
     async def test_remove_device_missing_raises_404(self, service):
         service.device_repo.delete.return_value = False
+        device_id, owner_id = uuid4(), uuid4()
 
         with pytest.raises(HTTPException) as exc:
-            await service.remove_device(uuid4())
+            await service.remove_device(device_id, owner_id)
 
         assert exc.value.status_code == 404
+        service.device_repo.commit.assert_not_awaited()
 
 
 class TestPreferenceErrors:

@@ -444,6 +444,13 @@ class SearchService:
                 await self._cleanup_index(new_index)
                 raise
 
+            if not items:
+                # An empty catalog would repoint the alias at an index with no
+                # documents, silently emptying search. Keep the live index.
+                await self._cleanup_index(new_index)
+                logger.warning("Catalog returned no published items; alias not switched")
+                return ReindexResult(count=0, index_name=old_target or new_index, switched=False)
+
             actions = [{"add": {"index": new_index, "alias": CONTENT_INDEX}}]
             if old_target and self._is_versioned_index(old_target):
                 actions.append({"remove": {"index": old_target, "alias": CONTENT_INDEX}})

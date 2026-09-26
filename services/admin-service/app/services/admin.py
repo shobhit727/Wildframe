@@ -26,6 +26,15 @@ def _clamp_limit(limit: int, maximum: int = MAX_LIST_LIMIT) -> int:
     return max(0, min(limit, maximum))
 
 
+def _moderated_at_iso(value: datetime | str | None) -> str:
+    # moderated_at is a DateTime column, so rows read back carry a datetime.
+    # Accept an already-serialized string unchanged; fall back to "now" when
+    # unset, matching the previous truthiness check.
+    if not value:
+        return datetime.now(UTC).isoformat()
+    return value if isinstance(value, str) else value.isoformat()
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,11 +65,7 @@ class AdminService:
                         user_id,
                         status,
                         moderated_by,
-                        (
-                            existing.moderated_at.isoformat()
-                            if existing.moderated_at
-                            else datetime.now(UTC).isoformat()
-                        ),
+                        _moderated_at_iso(existing.moderated_at),
                     )
                 )
             except Exception:
@@ -88,11 +93,7 @@ class AdminService:
                     user_id,
                     status,
                     moderated_by,
-                    (
-                        moderation.moderated_at.isoformat()
-                        if moderation.moderated_at
-                        else datetime.now(UTC).isoformat()
-                    ),
+                    _moderated_at_iso(moderation.moderated_at),
                 )
             )
         except Exception:

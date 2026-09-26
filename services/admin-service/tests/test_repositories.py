@@ -105,7 +105,7 @@ async def test_system_config_crud(db_session: AsyncSession):
     )
     fetched = await repo.get_by_key("feature_x")
     assert fetched and fetched.value == "on"
-    await repo.update("feature_x", "off", "admin2")
+    await repo.update("feature_x", "off", "admin2", "bool", None)
     updated = await repo.get_by_key("feature_x")
     assert updated and updated.value == "off"
     all_cfg = await repo.list_all()

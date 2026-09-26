@@ -71,7 +71,7 @@ async def test_user_device_repository(db_session: AsyncSession):
     devices = await repo.get_user_devices(uid)
     assert len(devices) == 1
     # deactivate
-    deactivated = await repo.mark_device_inactive(device.id)
+    deactivated = await repo.mark_device_inactive(device.id, uid)
     await db_session.commit()
     assert deactivated.is_active is False
 

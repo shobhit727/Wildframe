@@ -309,6 +309,7 @@ async def test_update_preferences_regenerates(service):
     service.pref_repo.get_or_create = AsyncMock(return_value=prefs)
     client = make_client(
         fetch_genres=AsyncMock(return_value=fake_genres()),
+        fetch_by_genre=AsyncMock(side_effect=fake_items),
         fetch_global=AsyncMock(return_value=[]),
     )
     with patch("app.services.ContentCatalogClient", return_value=client):

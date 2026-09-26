@@ -299,6 +299,9 @@ async def get_episode_manifest(
     if not manifest:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Manifest not found")
     if not (session_id and signature and expires):
+        # The unsigned branch above already rejected an anonymous caller; the
+        # explicit guard keeps the non-optional user_id contract visible.
+        assert current_user is not None, "unauthenticated manifest access"
         await service.require_manifest_session(current_user, episode_id, manifest.content_id)
     # Authorized media must not be cached by shared intermediaries: a cached
     # copy would keep serving after session revocation until CDN TTL expires

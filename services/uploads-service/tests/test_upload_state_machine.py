@@ -7,12 +7,13 @@ abort, and event emission. They use in-memory stubs for the storage port, the
 event publisher, and a fake repository.
 """
 
+import hashlib
 from uuid import UUID, uuid4
 
 import pytest
 
 from app.core.events import InMemoryEventPublisher, set_event_publisher
-from app.core.storage import StubStoragePort, set_storage, storage_key_for
+from app.core.storage import StubStoragePort, set_storage
 from app.models import UploadChunk, UploadSession, UploadSessionStatus
 from app.services import UploadError, UploadService
 
@@ -48,6 +49,9 @@ class FakeRepo:
     async def get(self, session_id: UUID):
         return self.sessions.get(session_id)
 
+    async def get_for_update(self, session_id: UUID):
+        return self.sessions.get(session_id)
+
     async def save(self, session: UploadSession) -> UploadSession:
         self.sessions[session.id] = session
         return session
@@ -72,6 +76,11 @@ def make_service():
     set_storage(StubStoragePort())
     repo = FakeRepo()
     return UploadService(repo=repo), repo
+
+
+def put_chunk(storage, uploads, index: int, data: bytes, mime: str = "video/mp4") -> None:
+    """PUT chunk bytes at the key the server issued a presigned URL for."""
+    storage.upload_bytes(uploads[index].storage_key, data, mime)
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +111,7 @@ async def test_create_session_plans_chunks_and_issues_urls():
 @pytest.mark.asyncio
 async def test_register_chunk_advances_status_and_counts():
     service, _repo = make_service()
-    session, _ = await service.create_session(
+    session, uploads = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
         mime="video/mp4",
@@ -111,8 +120,7 @@ async def test_register_chunk_advances_status_and_counts():
     )
     assert session.total_chunks == 1
     # Upload chunk data to stub storage before registering.
-    chunk_key = storage_key_for(str(session.id), 0)
-    service.storage.upload_bytes(chunk_key, b"x" * (5 * 1024 * 1024), "video/mp4")
+    put_chunk(service.storage, uploads, 0, b"x" * (5 * 1024 * 1024))
     await service.register_chunk(session_id=session.id, index=0, size_bytes=5 * 1024 * 1024)
     assert session.uploaded_chunks == 1
 
@@ -121,7 +129,7 @@ async def test_register_chunk_advances_status_and_counts():
 async def test_complete_happy_path_emits_content_uploaded():
     service, repo = make_service()
     creator = uuid4()
-    session, _ = await service.create_session(
+    session, uploads = await service.create_session(
         creator_id=creator,
         filename="clip.mp4",
         mime="video/mp4",
@@ -129,8 +137,7 @@ async def test_complete_happy_path_emits_content_uploaded():
         chunk_size=5 * 1024 * 1024,
     )
     # Upload chunk data to stub storage before registering.
-    chunk_key = storage_key_for(str(session.id), 0)
-    service.storage.upload_bytes(chunk_key, b"x" * (5 * 1024 * 1024), "video/mp4")
+    put_chunk(service.storage, uploads, 0, b"x" * (5 * 1024 * 1024))
     await service.register_chunk(session_id=session.id, index=0, size_bytes=5 * 1024 * 1024)
     completed = await service.complete_session(session.id)
     assert completed.status == UploadSessionStatus.COMPLETE
@@ -149,7 +156,7 @@ async def test_complete_happy_path_emits_content_uploaded():
 @pytest.mark.asyncio
 async def test_complete_rejects_missing_chunks():
     service, _repo = make_service()
-    session, _ = await service.create_session(
+    session, uploads = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
         mime="video/mp4",
@@ -157,8 +164,7 @@ async def test_complete_rejects_missing_chunks():
         chunk_size=5 * 1024 * 1024,
     )
     # Only register chunk 0 of 3.
-    chunk_key = storage_key_for(str(session.id), 0)
-    service.storage.upload_bytes(chunk_key, b"x" * (5 * 1024 * 1024), "video/mp4")
+    put_chunk(service.storage, uploads, 0, b"x" * (5 * 1024 * 1024))
     await service.register_chunk(session_id=session.id, index=0, size_bytes=5 * 1024 * 1024)
     with pytest.raises(UploadError) as exc:
         await service.complete_session(session.id)
@@ -169,15 +175,14 @@ async def test_complete_rejects_missing_chunks():
 @pytest.mark.asyncio
 async def test_register_rejects_duplicate_chunk():
     service, _repo = make_service()
-    session, _ = await service.create_session(
+    session, uploads = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
         mime="video/mp4",
         size_bytes=5 * 1024 * 1024,
         chunk_size=5 * 1024 * 1024,
     )
-    chunk_key = storage_key_for(str(session.id), 0)
-    service.storage.upload_bytes(chunk_key, b"x" * (5 * 1024 * 1024), "video/mp4")
+    put_chunk(service.storage, uploads, 0, b"x" * (5 * 1024 * 1024))
     await service.register_chunk(session_id=session.id, index=0, size_bytes=5 * 1024 * 1024)
     with pytest.raises(UploadError) as exc:
         await service.register_chunk(session_id=session.id, index=0, size_bytes=5 * 1024 * 1024)
@@ -202,19 +207,20 @@ async def test_register_rejects_out_of_range_chunk():
 @pytest.mark.asyncio
 async def test_complete_rejects_checksum_mismatch():
     service, _repo = make_service()
-    session, _ = await service.create_session(
+    declared = hashlib.sha256(b"x" * (5 * 1024 * 1024)).hexdigest()
+    session, uploads = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
         mime="video/mp4",
         size_bytes=5 * 1024 * 1024,
         chunk_size=5 * 1024 * 1024,
-        checksum_sha256="right-hash",
+        checksum_sha256=declared,
     )
-    chunk_key = storage_key_for(str(session.id), 0)
-    service.storage.upload_bytes(chunk_key, b"x" * (5 * 1024 * 1024), "video/mp4")
+    # Stored bytes keep the expected byte count but not the declared digest.
+    put_chunk(service.storage, uploads, 0, b"y" * (5 * 1024 * 1024))
     await service.register_chunk(session_id=session.id, index=0, size_bytes=5 * 1024 * 1024)
     with pytest.raises(UploadError) as exc:
-        await service.complete_session(session.id, checksum_sha256="wrong-hash")
+        await service.complete_session(session.id)
     assert "checksum mismatch" in str(exc.value)
 
 
@@ -248,15 +254,14 @@ async def test_abort_emits_content_uploaded_aborted_and_blocks_chunks():
 async def test_complete_is_idempotent_guard():
     """Completing an already-complete session is idempotent (no double-emission)."""
     service, _repo = make_service()
-    session, _ = await service.create_session(
+    session, uploads = await service.create_session(
         creator_id=uuid4(),
         filename="clip.mp4",
         mime="video/mp4",
         size_bytes=5 * 1024 * 1024,
         chunk_size=5 * 1024 * 1024,
     )
-    chunk_key = storage_key_for(str(session.id), 0)
-    service.storage.upload_bytes(chunk_key, b"x" * (5 * 1024 * 1024), "video/mp4")
+    put_chunk(service.storage, uploads, 0, b"x" * (5 * 1024 * 1024))
     await service.register_chunk(session_id=session.id, index=0, size_bytes=5 * 1024 * 1024)
     await service.complete_session(session.id)
 

@@ -155,8 +155,9 @@ async def run_process(
         # Kill the group even when its leader exited: descendants may hold pipes.
         try:
             os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        except OSError:
+            # A failed kill must never mask the failure that triggered cleanup.
+            logger.warning("failed to kill process group %s", proc.pid, exc_info=True)
         for reader in readers:
             reader.cancel()
         await asyncio.gather(*readers, return_exceptions=True)

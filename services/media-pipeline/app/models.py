@@ -250,6 +250,11 @@ class VideoManifest(Base):
     target_segment_duration_seconds = Column(Integer, default=10)
 
     generated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
 
 
 class StreamingQualityProfile(Base):
@@ -263,3 +268,14 @@ class StreamingQualityProfile(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     bitrates = Column(ARRAY(Integer), nullable=False, default=list)
     resolutions = Column(ARRAY(String), nullable=False, default=list)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )

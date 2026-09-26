@@ -84,6 +84,16 @@ class StoragePort(ABC):
     """Port (interface) for the upload/storage lifecycle."""
 
     @abstractmethod
+    async def begin_upload(self, *, session_id: str, mime: str) -> str | None:
+        """Open a multipart upload for a chunked session.
+
+        Returns the provider upload id, or None for backends without
+        multipart semantics. The id is persisted on the session so chunk
+        registration, completion and cleanup all address the same upload.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     async def create_upload(
         self,
         *,
@@ -91,6 +101,7 @@ class StoragePort(ABC):
         filename: str,
         mime: str,
         chunk_index: int | None = None,
+        upload_id: str | None = None,
     ) -> PresignedUpload:
         """Return a pre-signed URL for a chunk (or the whole object)."""
         raise NotImplementedError
@@ -98,6 +109,22 @@ class StoragePort(ABC):
     @abstractmethod
     async def get_object_metadata(self, *, storage_key: str) -> StorageObjectMetadata | None:
         """Return authoritative metadata for an object, or None if missing."""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_chunk_metadata(
+        self,
+        *,
+        session_id: str,
+        index: int,
+        total_chunks: int,
+        upload_id: str | None = None,
+    ) -> StorageObjectMetadata | None:
+        """Return authoritative metadata for one chunk, or None if missing.
+
+        ``index`` is the chunk's position in the session's chunk plan; a
+        single-chunk session is stored under the final object key.
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -109,6 +136,7 @@ class StoragePort(ABC):
         final_key: str,
         size_bytes: int,
         mime: str,
+        upload_id: str | None = None,
     ) -> StorageObjectMetadata:
         """Assemble/commit chunks into the final object and verify it.
 
@@ -125,6 +153,7 @@ class StoragePort(ABC):
         session_id: str,
         chunk_keys: list[str],
         final_key: str,
+        upload_id: str | None = None,
     ) -> None:
         """Delete chunk/final objects and cancel multipart state.
 
@@ -157,6 +186,10 @@ class StubStoragePort(StoragePort):
         self.objects[key] = data
         self.content_types[key] = mime
 
+    async def begin_upload(self, *, session_id: str, mime: str) -> str | None:
+        """The stub stores chunks as plain objects: no multipart state."""
+        return None
+
     async def create_upload(
         self,
         *,
@@ -164,6 +197,7 @@ class StubStoragePort(StoragePort):
         filename: str,
         mime: str,
         chunk_index: int | None = None,
+        upload_id: str | None = None,
     ) -> PresignedUpload:
         storage_key = storage_key_for(session_id, chunk_index)
         upload_url = (
@@ -195,6 +229,17 @@ class StubStoragePort(StoragePort):
             mime=self.content_types.get(storage_key),
         )
 
+    async def get_chunk_metadata(
+        self,
+        *,
+        session_id: str,
+        index: int,
+        total_chunks: int,
+        upload_id: str | None = None,
+    ) -> StorageObjectMetadata | None:
+        storage_key = storage_key_for(session_id, index if total_chunks > 1 else None)
+        return await self.get_object_metadata(storage_key=storage_key)
+
     async def complete_upload(
         self,
         *,
@@ -203,6 +248,7 @@ class StubStoragePort(StoragePort):
         final_key: str,
         size_bytes: int,
         mime: str,
+        upload_id: str | None = None,
     ) -> StorageObjectMetadata:
         parts = []
         for key in chunk_keys:
@@ -244,6 +290,7 @@ class StubStoragePort(StoragePort):
         session_id: str,
         chunk_keys: list[str],
         final_key: str,
+        upload_id: str | None = None,
     ) -> None:
         for key in [*chunk_keys, final_key]:
             self.objects.pop(key, None)
@@ -288,6 +335,28 @@ class S3StoragePort(StoragePort):
             endpoint_url=endpoint_url or None,
         )
 
+    async def begin_upload(self, *, session_id: str, mime: str) -> str | None:
+        import asyncio
+
+        existing = self._upload_ids.get(session_id)
+        if existing is not None:
+            return existing
+        created = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: self._client.create_multipart_upload(
+                Bucket=self.bucket,
+                Key=storage_key_for(session_id, None),
+                ContentType=mime,
+            )["UploadId"],
+        )
+        upload_id = (
+            created
+            if created is not None
+            else _raise_storage_error("S3 create_multipart_upload returned no UploadId")
+        )
+        self._upload_ids[session_id] = upload_id
+        return upload_id
+
     async def create_upload(
         self,
         *,
@@ -295,6 +364,7 @@ class S3StoragePort(StoragePort):
         filename: str,
         mime: str,
         chunk_index: int | None = None,
+        upload_id: str | None = None,
     ) -> PresignedUpload:
         import asyncio
 
@@ -311,7 +381,8 @@ class S3StoragePort(StoragePort):
             )
         else:
             storage_key = storage_key_for(session_id, chunk_index)
-            upload_id = self._upload_ids.get(session_id)
+            if upload_id is None:
+                upload_id = self._upload_ids.get(session_id)
             if upload_id is None:
                 upload_id = await asyncio.get_event_loop().run_in_executor(
                     None,
@@ -381,6 +452,42 @@ class S3StoragePort(StoragePort):
             mime=head.get("ContentType"),
         )
 
+    async def get_chunk_metadata(
+        self,
+        *,
+        session_id: str,
+        index: int,
+        total_chunks: int,
+        upload_id: str | None = None,
+    ) -> StorageObjectMetadata | None:
+        import asyncio
+
+        storage_key = storage_key_for(session_id, index if total_chunks > 1 else None)
+        if upload_id is None:
+            return await self.get_object_metadata(storage_key=storage_key)
+        # Multipart parts are not objects: read their authoritative byte count
+        # from the provider's part listing instead of a HEAD request.
+        listed = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: self._client.list_parts(
+                Bucket=self.bucket,
+                Key=storage_key_for(session_id, None),
+                UploadId=upload_id,
+            ),
+        )
+        for part in listed.get("Parts", []):
+            if part.get("PartNumber") == index + 1:
+                return StorageObjectMetadata(
+                    storage_key=storage_key,
+                    size_bytes=part["Size"],
+                    # S3 exposes no SHA-256 for parts of a multipart upload that
+                    # was not created with a checksum algorithm; part integrity
+                    # is covered by the ETag verification in complete_upload.
+                    checksum_sha256=None,
+                    mime=None,
+                )
+        return None
+
     async def complete_upload(
         self,
         *,
@@ -389,11 +496,13 @@ class S3StoragePort(StoragePort):
         final_key: str,
         size_bytes: int,
         mime: str,
+        upload_id: str | None = None,
     ) -> StorageObjectMetadata:
         import asyncio
 
         loop = asyncio.get_event_loop()
-        upload_id = self._upload_ids.pop(session_id, None)
+        mapped_upload_id = self._upload_ids.pop(session_id, None)
+        upload_id = upload_id or mapped_upload_id
         if upload_id is not None:
             parts = await loop.run_in_executor(
                 None,
@@ -442,6 +551,7 @@ class S3StoragePort(StoragePort):
         session_id: str,
         chunk_keys: list[str],
         final_key: str,
+        upload_id: str | None = None,
     ) -> None:
         import asyncio
 
@@ -456,7 +566,8 @@ class S3StoragePort(StoragePort):
                 )
             except Exception:  # noqa: BLE001 - idempotent: missing objects are fine
                 logger.warning("cleanup delete failed for %s", key, exc_info=True)
-        upload_id = self._upload_ids.pop(session_id, None)
+        mapped_upload_id = self._upload_ids.pop(session_id, None)
+        upload_id = upload_id or mapped_upload_id
         if upload_id is not None:
             try:
                 await loop.run_in_executor(

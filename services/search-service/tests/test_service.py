@@ -4,6 +4,12 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from elasticsearch import NotFoundError
+
+
+def no_alias_error() -> NotFoundError:
+    """Elasticsearch raises NotFoundError when the alias does not exist yet."""
+    return NotFoundError(404, "index_not_found_exception", {})
 
 from app.services import (
     SearchService,
@@ -26,9 +32,11 @@ def es_mock():
     mock.indices.get_alias = AsyncMock()
     mock.indices.get = AsyncMock()
     mock.cluster = MagicMock()
-    mock.cluster.put_settings = AsyncMock()
     mock.indices.update_aliases = AsyncMock()
     mock.indices.delete = AsyncMock()
+    mock.indices.refresh = AsyncMock()
+    mock.cluster.put_settings = AsyncMock()
+    mock.bulk = AsyncMock(return_value={"errors": False, "items": []})
     return mock
 
 
@@ -242,7 +250,7 @@ class TestSearchService:
             ]
         )
         # Mock alias target to return None (fresh install)
-        es_mock.indices.get_alias = AsyncMock(side_effect=Exception("NotFound"))
+        es_mock.indices.get_alias = AsyncMock(side_effect=no_alias_error())
         es_mock.indices.exists = AsyncMock(return_value=False)
         es_mock.indices.create = AsyncMock()
         es_mock.indices.put_alias = AsyncMock()
@@ -273,7 +281,7 @@ class TestSearchService:
 
         ensure_index creates the alias instead of failing on create (#227 F1).
         """
-        es_mock.indices.get_alias = AsyncMock(side_effect=Exception("NotFound"))
+        es_mock.indices.get_alias = AsyncMock(side_effect=no_alias_error())
         es_mock.indices.exists = AsyncMock(side_effect=lambda index: index == "content_v1")
         es_mock.indices.create = AsyncMock()
 
@@ -306,7 +314,7 @@ class TestSearchService:
                 {"id": item_id, "title": "X", "description": "d", "content_type": "movie"}
             ]
         )
-        es_mock.indices.get_alias = AsyncMock(side_effect=Exception("NotFound"))
+        es_mock.indices.get_alias = AsyncMock(side_effect=no_alias_error())
         es_mock.indices.exists = AsyncMock(return_value=False)
         es_mock.indices.create = AsyncMock()
         es_mock.indices.put_alias = AsyncMock()

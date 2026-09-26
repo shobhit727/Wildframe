@@ -89,8 +89,9 @@ async def test_delete_for_content(db_session: AsyncSession):
     cid = uuid4()
     await repo.create(uid, cid, 0.3)
     await db_session.commit()
+    # Returns the affected user ids so the event handler can evict their caches.
     deleted = await repo.delete_for_content(cid)
-    assert deleted == 1
+    assert deleted == [uid]
     # second delete is idempotent
     deleted_again = await repo.delete_for_content(cid)
-    assert deleted_again == 0
+    assert deleted_again == []
