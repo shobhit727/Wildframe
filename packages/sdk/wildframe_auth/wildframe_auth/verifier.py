@@ -100,11 +100,14 @@ def fetch_jwks_sync(url: str, timeout: float = 5.0) -> dict:
         return resp.json()
 
 
-async def get_cached_jwks(url: str, ttl: int = 300) -> dict:
+async def get_cached_jwks(url: str, ttl: int = 300, required_kid: str | None = None) -> dict:
     global _jwks_cache, _jwks_cache_expiry, _jwks_cache_url
     now = time.time()
     if _jwks_cache is not None and _jwks_cache_url == url and now < _jwks_cache_expiry:
-        return _jwks_cache
+        # A newly rotated signing key can appear before the normal TTL expires.
+        # Force a refresh when the caller sees a kid absent from the cached set.
+        if required_kid is None or get_jwk_for_kid(_jwks_cache, required_kid) is not None:
+            return _jwks_cache
     data = await fetch_jwks(url)
     _jwks_cache = data
     _jwks_cache_url = url
