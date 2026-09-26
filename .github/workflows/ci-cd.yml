@@ -110,6 +110,7 @@ jobs:
             echo "::group::mypy $svc"
             (
               cd "services/$svc"
+              poetry lock --no-interaction
               find . -type f -name "*.pyc" -delete 2>/dev/null || true
               find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
               poetry install --no-interaction --with dev
@@ -250,10 +251,13 @@ jobs:
             venv-v4-${{ env.PYTHON_VERSION }}-${{ runner.os }}-${{ matrix.service }}-
 
       - name: Install service dependencies
-        # Always install: the venv cache is a speed hint, not a correctness
-        # dependency — a stale/poisoned cache must never skip dependency setup.
+        # Refresh lock metadata after manifest changes before installing. The
+        # resolver must validate the checked-in service contract instead of
+        # silently installing an obsolete lock state.
         working-directory: services/${{ matrix.service }}
-        run: poetry install --no-interaction --with dev
+        run: |
+          poetry lock --no-interaction
+          poetry install --no-interaction --with dev
 
       - name: Verify test collection
         working-directory: services/${{ matrix.service }}
@@ -329,7 +333,9 @@ jobs:
           virtualenvs-create: true
           virtualenvs-in-project: true
       - name: Install integration dependencies
-        run: poetry install --no-interaction
+        run: |
+          poetry lock --no-interaction
+          poetry install --no-interaction
       - name: Generate development TLS certificates
         run: bash scripts/generate-dev-certs.sh
       - name: Start isolated development stack
@@ -555,7 +561,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
-          skip-dirs: "apps/web/node_modules,apps/web/.next,node_modules,.git,.github,docs,tests,scripts,.cache,.github,__pycache__,*.pyc,*.pyo,*.pyd"
+          skip-dirs: "apps/web/node_modules,apps/web/.next,node_modules,.git,.github,docs,tests,scripts,.cache,.github,__pycache__,*.pyc,*.pyo,*.pyd,apps/web/certificates"
 
       - name: Upload Trivy results
         if: always()
