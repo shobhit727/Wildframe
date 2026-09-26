@@ -299,7 +299,8 @@ class KafkaEventSubscriber(EventSubscriber):
                     ctx.verify_mode = ssl.CERT_NONE
                     self.ssl_context = ctx
                 else:
-                    self.ssl_context = None
+                    # Use the system trust store when no custom CA is supplied.
+                    self.ssl_context = ssl.create_default_context()
             else:
                 self.ssl_context = None
         self._handlers: Dict[str, List[EventHandler]] = {}
