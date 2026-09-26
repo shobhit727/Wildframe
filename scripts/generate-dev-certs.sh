@@ -15,6 +15,14 @@ mkdir -p "$CERT_DIR"
 
 if [[ -f "$KEY_FILE" && -f "$CRT_FILE" ]]; then
   echo "Dev certificates already exist at $CERT_DIR — skipping generation."
+  # Still ensure the Kafka PEM bundle exists: it was added after the original
+  # pair, so an older checkout can have the base files but not the bundle.
+  if [[ ! -f "$CERT_DIR/kafka-keystore.pem" || ! -f "$CERT_DIR/kafka-truststore.pem" ]]; then
+    cat "$KEY_FILE" "$CRT_FILE" > "$CERT_DIR/kafka-keystore.pem"
+    cp "$CRT_FILE" "$CERT_DIR/kafka-truststore.pem"
+    chmod 644 "$CERT_DIR/kafka-keystore.pem" "$CERT_DIR/kafka-truststore.pem"
+    echo "Generated Kafka PEM keystore/truststore from the existing pair."
+  fi
   echo "  $KEY_FILE"
   echo "  $CRT_FILE"
   echo "Delete them to regenerate."
@@ -53,8 +61,19 @@ fi
 
 chmod 644 "$KEY_FILE" "$CRT_FILE"
 
+# Kafka's PEM keystore format requires the private key and certificate
+# concatenated in ONE file; the truststore is the certificate alone. Caddy and
+# Grafana consume the two base files separately, so neither can be reused as-is.
+KAFKA_KEYSTORE="$CERT_DIR/kafka-keystore.pem"
+KAFKA_TRUSTSTORE="$CERT_DIR/kafka-truststore.pem"
+cat "$KEY_FILE" "$CRT_FILE" > "$KAFKA_KEYSTORE"
+cp "$CRT_FILE" "$KAFKA_TRUSTSTORE"
+chmod 644 "$KAFKA_KEYSTORE" "$KAFKA_TRUSTSTORE"
+
 echo "Generated:"
 echo "  $KEY_FILE"
 echo "  $CRT_FILE"
+echo "  $KAFKA_KEYSTORE (Kafka PEM keystore: key+cert)"
+echo "  $KAFKA_TRUSTSTORE (Kafka PEM truststore: cert)"
 openssl x509 -noout -ext subjectAltName -in "$CRT_FILE" 2>/dev/null || true
 echo "Permissions: $(stat -c %a "$KEY_FILE") $KEY_FILE, $(stat -c %a "$CRT_FILE") $CRT_FILE"

@@ -35,21 +35,21 @@ cd apps/web && npm install && npm run dev   # https://localhost:3000
 ```
 wildframe/
 ├── services/                       # 15 independent FastAPI microservices
-│   ├── api-gateway/               # routing, auth, rate limiting (host :8000)
-│   ├── auth-service/              # JWT auth, refresh tokens, rate limiting
-│   ├── user-service/              # profiles, devices, sessions, preferences
-│   ├── content-service/           # movies/shows/seasons/episodes/genres
-│   ├── streaming-service/         # HLS/DASH manifests, metrics
-│   ├── search-service/            # Elasticsearch-backed search
-│   ├── recommendation-service/    # ML recommendations
-│   ├── billing-service/           # subscriptions + Stripe payments
-│   ├── analytics-service/         # event analytics
-│   ├── notification-service/      # multi-channel notifications
-│   ├── admin-service/             # moderation, flags, alerts, config
-│   ├── media-pipeline/            # video transcoding
-│   ├── creators-service/          # creator onboarding & profiles
-│   ├── moderation-service/        # content moderation
-│   └── uploads-service/           # file uploads & processing
+│   ├── api-gateway/                # routing, auth, rate limiting (host :8000)
+│   ├── auth-service/               # JWT auth, refresh tokens, rate limiting
+│   ├── user-service/               # profiles, devices, sessions, preferences
+│   ├── content-service/            # movies/shows/seasons/episodes/genres
+│   ├── streaming-service/          # HLS/DASH manifests, metrics
+│   ├── search-service/             # Elasticsearch-backed search
+│   ├── recommendation-service/     # ML recommendations
+│   ├── billing-service/            # subscriptions + Stripe payments
+│   ├── analytics-service/          # event analytics
+│   ├── notification-service/       # multi-channel notifications
+│   ├── admin-service/              # moderation, flags, alerts, config
+│   ├── media-pipeline/             # video transcoding
+│   ├── creators-service/           # creator onboarding & profiles
+│   ├── moderation-service/         # content moderation
+│   └── uploads-service/            # file uploads & processing
 ├── apps/web/                       # Next.js 15 frontend (viewer + admin)
 ├── deployments/
 │   └── docker-compose.dev.yml      # local dev orchestration

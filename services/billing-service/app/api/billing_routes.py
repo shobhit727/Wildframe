@@ -46,7 +46,10 @@ router = APIRouter(prefix="/api/v1/billing", tags=["billing"])
 
 async def _verify_creator(auth_header: str | None) -> None:
     if not settings.CREATORS_SERVICE_URL:
-        return
+        raise HTTPException(
+            status_code=http_status.SERVICE_UNAVAILABLE,
+            detail="Creator verification is unavailable",
+        )
     if not auth_header:
         raise HTTPException(
             status_code=http_status.UNAUTHORIZED, detail="Missing or invalid authorization header"
@@ -86,7 +89,7 @@ async def _enforce_auth_version(authorization: str, payload: dict) -> None:
     try:
         data = resp.json()
     except Exception:
-        return
+        raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token payload")
     current_av = None
     if isinstance(data, dict):
         current_av = data.get("auth_version")
@@ -98,14 +101,15 @@ async def _enforce_auth_version(authorization: str, payload: dict) -> None:
             current_av = data["user"].get("auth_version")
         if current_av is None and "user" in data and isinstance(data["user"], dict):
             current_av = data["user"].get("av")
-    if current_av is not None:
-        try:
-            if int(payload.get("av", 0)) != int(current_av):
-                raise HTTPException(
-                    status_code=http_status.UNAUTHORIZED, detail="Invalid or expired token"
-                )
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token")
+    if current_av is None:
+        raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token payload")
+    token_av = payload.get("av")
+    if type(token_av) is not int or type(current_av) is not int:
+        raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token payload")
+    if token_av != current_av:
+        raise HTTPException(
+            status_code=http_status.UNAUTHORIZED, detail="Invalid or expired token"
+        )
 
 
 async def get_current_user_payload(

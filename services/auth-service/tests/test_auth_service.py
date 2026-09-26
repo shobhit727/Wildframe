@@ -6,10 +6,11 @@ Tests cover registration, login, token refresh, and password management.
 from datetime import UTC, datetime, timedelta
 from unittest import mock as unittest_mock
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from app.schemas import UserLoginRequest, UserRegisterRequest
+from app.repositories import UserRepository
 from app.security import PasswordManager, TokenManager
 from app.services import AuthService
 from fastapi import HTTPException
@@ -458,3 +459,621 @@ class TestAuthServiceLogout:
         await auth_service.logout(refresh_token)
 
         mock_repositories["token_repo"].revoke.assert_called_once()
+
+
+# ==========================================================================
+# Remaining AuthService branches (app/services/__init__.py)
+# ==========================================================================
+
+
+@pytest.fixture
+def service(test_session, test_user, token_repository, audit_repository):
+    from app.repositories import TokenBlacklistRepository, UserRepository
+    from app.services import AuthService
+
+    svc = AuthService(
+        user_repo=UserRepository(test_session),
+        token_repo=token_repository,
+        audit_repo=audit_repository,
+        password_manager=PasswordManager(),
+        token_manager=TokenManager(),
+        blacklist_repo=TokenBlacklistRepository(test_session),
+    )
+    # Record every audit row the service writes so assertions do not have to
+    # round-trip a nil UUID through the SQLite emulated-UUID result processor.
+    svc.audit_repo.created = []
+    original_create = svc.audit_repo.create
+
+    async def _create(*args, **kwargs):
+        row = await original_create(*args, **kwargs)
+        svc.audit_repo.created.append(row)
+        return row
+
+    svc.audit_repo.create = _create
+    return svc
+
+
+class TestRegistrationEventFanOut:
+    async def test_publishes_user_registered(self, service, test_session):
+        from app.core import events
+
+        request = UserRegisterRequest(
+            email="fanout@example.com", password="SecurePass123!", first_name="A"
+        )
+
+        publisher = __import__(
+            "wildframe_events", fromlist=["InMemoryEventPublisher"]
+        ).InMemoryEventPublisher()
+        events.reset_event_publisher()
+        with unittest_mock.patch.object(events, "get_event_publisher", return_value=publisher):
+            user = await service.register(request)
+        await test_session.commit()
+
+        assert len(publisher.sent) == 1
+        assert publisher.sent[0].topic == "user.registered"
+        assert publisher.sent[0].key == f"registered:{user.id}"
+        assert publisher.sent[0].payload["email"] == "fanout@example.com"
+
+    async def test_publish_failure_does_not_roll_back_registration(
+        self, service, test_session
+    ):
+        from app.core import events
+
+        request = UserRegisterRequest(
+            email="fanout-fail@example.com", password="SecurePass123!"
+        )
+        exploding = AsyncMock()
+        exploding.publish = unittest_mock.AsyncMock(
+            side_effect=RuntimeError("broker down")
+        )
+        events.reset_event_publisher()
+        with unittest_mock.patch.object(
+            events, "get_event_publisher", return_value=exploding
+        ):
+            user = await service.register(request)
+        await test_session.commit()
+
+        assert user.email == "fanout-fail@example.com"
+        assert await UserRepository(test_session).get_by_email("fanout-fail@example.com")
+
+
+class TestCompleteMfaLoginBranches:
+    async def test_unknown_challenge_is_401(self, service):
+        with pytest.raises(HTTPException) as exc_info:
+            await service.complete_mfa_login("not.a.jwt", "123456", ip_address="1.1.1.1")
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Invalid or expired MFA challenge"
+
+    async def test_challenge_for_a_deleted_user_is_401(self, service, test_user):
+        challenge = TokenManager.create_mfa_challenge_token(test_user.id, test_user.email)
+        test_user.is_active = False
+        await service.user_repo.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await service.complete_mfa_login(challenge, "123456", ip_address="1.1.1.1")
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "User not found"
+
+    async def test_mfa_disabled_after_the_challenge_is_400(self, service, test_user):
+        from app.security import SecretCipher
+        import pyotp
+
+        secret = pyotp.random_base32()
+        test_user.mfa_secret = SecretCipher.encrypt(secret)
+        test_user.mfa_enabled = False
+        await service.user_repo.commit()
+        challenge = TokenManager.create_mfa_challenge_token(test_user.id, test_user.email)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await service.complete_mfa_login(
+                challenge, pyotp.TOTP(secret).now(), ip_address="1.1.1.1"
+            )
+
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.detail == "MFA is not enabled for this user"
+
+    async def test_wrong_totp_code_is_400(self, service, test_user):
+        from app.security import SecretCipher
+        import pyotp
+
+        test_user.mfa_secret = SecretCipher.encrypt(pyotp.random_base32())
+        test_user.mfa_enabled = True
+        await service.user_repo.commit()
+        challenge = TokenManager.create_mfa_challenge_token(test_user.id, test_user.email)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await service.complete_mfa_login(challenge, "000000", ip_address="1.1.1.1")
+
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.detail == "Invalid MFA code"
+
+    async def test_concurrent_challenge_consumption_is_401(self, service, test_user):
+        """The loser of the blacklist INSERT race gets a 401, not a 500."""
+        from sqlalchemy.exc import IntegrityError
+
+        from app.security import SecretCipher
+        import pyotp
+
+        secret = pyotp.random_base32()
+        test_user.mfa_secret = SecretCipher.encrypt(secret)
+        test_user.mfa_enabled = True
+        await service.user_repo.commit()
+        challenge = TokenManager.create_mfa_challenge_token(test_user.id, test_user.email)
+
+        with unittest_mock.patch.object(
+            type(service.blacklist_repo),
+            "create",
+            AsyncMock(side_effect=IntegrityError("INSERT", {}, Exception("dup"))),
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await service.complete_mfa_login(
+                    challenge, pyotp.TOTP(secret).now(), ip_address="1.1.1.1"
+                )
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Invalid or expired MFA challenge"
+
+    async def test_completes_and_issues_tokens(self, service, test_user):
+        from app.security import SecretCipher
+        import pyotp
+
+        secret = pyotp.random_base32()
+        test_user.mfa_secret = SecretCipher.encrypt(secret)
+        test_user.mfa_enabled = True
+        await service.user_repo.commit()
+        challenge = TokenManager.create_mfa_challenge_token(test_user.id, test_user.email)
+
+        response = await service.complete_mfa_login(
+            challenge, pyotp.TOTP(secret).now(), ip_address="1.1.1.1"
+        )
+
+        assert response.token_type == "bearer"
+        assert response.expires_in == 900
+        assert TokenManager.verify_token(response.access_token, token_type="access")
+
+
+class TestRefreshTokenBranches:
+    async def test_user_id_mismatch_is_401(self, service, test_user, test_session):
+        from app.models import RefreshToken
+
+        real_user = await service.user_repo.get_by_email(test_user.email)
+        other = RefreshToken(
+            user_id=uuid4(),
+            token_hash=TokenManager.hash_refresh_token(
+                TokenManager.create_refresh_token(real_user.id)
+            ),
+            expires_at=datetime.now(UTC) + timedelta(days=7),
+        )
+        test_session.add(other)
+        await test_session.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await service.refresh_token(
+                TokenManager.create_refresh_token(real_user.id)
+            )
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Refresh token not found"
+
+    async def test_expired_stored_token_is_401(self, service, test_user, test_session):
+        from app.models import RefreshToken
+
+        user = await service.user_repo.get_by_email(test_user.email)
+        expired_token = TokenManager.create_refresh_token(user.id)
+        test_session.add(
+            RefreshToken(
+                user_id=user.id,
+                token_hash=TokenManager.hash_refresh_token(expired_token),
+                expires_at=datetime.now(UTC) - timedelta(minutes=1),
+            )
+        )
+        await test_session.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await service.refresh_token(expired_token)
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Refresh token expired"
+
+    async def test_rotates_a_valid_refresh_token(self, service, test_user, test_session):
+        from app.models import RefreshToken
+
+        user = await service.user_repo.get_by_email(test_user.email)
+        original = TokenManager.create_refresh_token(user.id)
+        test_session.add(
+            RefreshToken(
+                user_id=user.id,
+                token_hash=TokenManager.hash_refresh_token(original),
+                expires_at=datetime.now(UTC) + timedelta(days=7),
+            )
+        )
+        await test_session.commit()
+
+        response = await service.refresh_token(original)
+
+        assert response.refresh_token != original
+        assert TokenManager.verify_token(response.access_token, token_type="access")
+        # The old row is gone; the new one exists.
+        assert (
+            await service.token_repo.get_by_token_hash(
+                TokenManager.hash_refresh_token(original)
+            )
+            is None
+        )
+
+    async def test_suspended_user_cannot_refresh(self, service, test_user, test_session):
+        from app.models import RefreshToken
+
+        user = await service.user_repo.get_by_email(test_user.email)
+        token = TokenManager.create_refresh_token(user.id)
+        test_session.add(
+            RefreshToken(
+                user_id=user.id,
+                token_hash=TokenManager.hash_refresh_token(token),
+                expires_at=datetime.now(UTC) + timedelta(days=7),
+            )
+        )
+        user.is_active = False
+        await test_session.commit()
+
+        # BUG-adjacent: `get_by_id` also filters `is_active IS TRUE`, so the
+        # dedicated 403 "Account suspended" branch at
+        # app/services/__init__.py:348 is unreachable and the caller sees 401.
+        with pytest.raises(HTTPException) as exc_info:
+            await service.refresh_token(token)
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "User not found"
+
+    async def test_unknown_user_cannot_refresh(self, service):
+        orphan = TokenManager.create_refresh_token(uuid4())
+
+        with pytest.raises(HTTPException) as exc_info:
+            await service.refresh_token(orphan)
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "User not found"
+
+
+class TestLogoutAndProfileHelpers:
+    async def test_logout_returns_false_when_the_token_is_unknown(self, service):
+        assert await service.logout("never-issued") is False
+
+    async def test_logout_returns_true_for_a_known_token(self, service, test_user, test_session):
+        from app.models import RefreshToken
+
+        user = await service.user_repo.get_by_email(test_user.email)
+        token = TokenManager.create_refresh_token(user.id)
+        test_session.add(
+            RefreshToken(
+                user_id=user.id,
+                token_hash=TokenManager.hash_refresh_token(token),
+                expires_at=datetime.now(UTC) + timedelta(days=7),
+            )
+        )
+        await test_session.commit()
+
+        assert await service.logout(token) is True
+
+    async def test_logout_swallows_repository_errors(self, service):
+        with unittest_mock.patch.object(
+            type(service.token_repo), "revoke", AsyncMock(side_effect=RuntimeError("io"))
+        ):
+            assert await service.logout("any-token") is False
+
+    async def test_get_current_user_returns_the_profile(self, service, test_user):
+        user = await service.user_repo.get_by_email(test_user.email)
+
+        profile = await service.get_current_user(user.id)
+
+        assert profile.id == user.id
+        assert profile.email == test_user.email
+        assert profile.role == "user"
+
+    async def test_get_current_user_for_a_missing_user_is_404(self, service):
+        with pytest.raises(HTTPException) as exc_info:
+            await service.get_current_user(uuid4())
+
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.detail == "User not found"
+
+    async def test_change_password_revokes_refresh_tokens(self, service, test_user, test_session):
+        from app.models import RefreshToken
+
+        user = await service.user_repo.get_by_email(test_user.email)
+        test_session.add(
+            RefreshToken(
+                user_id=user.id,
+                token_hash="session-token",
+                expires_at=datetime.now(UTC) + timedelta(days=7),
+            )
+        )
+        await test_session.commit()
+        before = user.auth_version
+
+        assert await service.change_password(user.id, "testpass123", "BrandNewPass456!") is True
+        await test_session.commit()
+
+        refreshed = await service.user_repo.get_by_email(test_user.email)
+        assert refreshed.auth_version == before + 1
+        assert await service.token_repo.get_by_token_hash("session-token") is None
+        assert PasswordManager.verify_password("BrandNewPass456!", refreshed.password_hash)
+
+    async def test_change_password_wrong_old_password_is_401(self, service, test_user):
+        user = await service.user_repo.get_by_email(test_user.email)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await service.change_password(user.id, "wrong-password", "BrandNewPass456!")
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Invalid password"
+
+    async def test_change_password_for_a_missing_user_is_404(self, service):
+        with pytest.raises(HTTPException) as exc_info:
+            await service.change_password(uuid4(), "old-password", "BrandNewPass456!")
+
+        assert exc_info.value.status_code == 404
+
+
+class TestLoginRemainingBranches:
+    async def test_suspended_account_is_401_because_lookup_filters_it(
+        self, service, test_user
+    ):
+        """The dedicated 403 "Account suspended" branch is unreachable.
+
+        ``UserRepository.get_by_email`` filters on ``is_active IS TRUE``, so a
+        suspended account never reaches the ``if not user.is_active`` check at
+        app/services/__init__.py:143 — it is reported as "user not found"
+        instead. Asserted as-is; not fixed here.
+        """
+        user = await service.user_repo.get_by_email(test_user.email)
+        user.is_active = False
+        await service.user_repo.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await service.login(
+                UserLoginRequest(email=test_user.email, password="testpass123"),
+                ip_address="1.1.1.1",
+            )
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Invalid email or password"
+
+    async def test_stored_naive_lock_raises_a_type_error_instead_of_429(
+        self, service, test_user, test_session
+    ):
+        """BUG: the locked-account 429 is unreachable through the database.
+
+        ``users.locked_until`` is a naive column (AGENTS.md: TIMESTAMP WITHOUT
+        TIME ZONE), so a stored lock reads back without tzinfo. ``login`` then
+        evaluates ``user.locked_until > datetime.now(UTC)``
+        (app/services/__init__.py:128) and raises
+        ``TypeError: can't compare offset-naive and offset-aware datetimes`` —
+        a 500 on the login path instead of the intended 429. ``User.is_locked``
+        normalises tzinfo before comparing; ``login`` does not. Asserted as-is;
+        not fixed here.
+        """
+        from app.models import User
+
+        user = await service.user_repo.get_by_email(test_user.email)
+        # A naive value is what a TIMESTAMP WITHOUT TIME ZONE column yields.
+        user.locked_until = datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=5)
+        await service.user_repo.commit()
+
+        # Re-reading repopulates the identity-mapped row from the stored value.
+        reloaded = await service.user_repo.get_by_email(test_user.email)
+        assert reloaded.locked_until.tzinfo is None
+
+        with pytest.raises(TypeError, match="offset-naive and offset-aware"):
+            await service.login(
+                UserLoginRequest(email=test_user.email, password="testpass123"),
+                ip_address="1.1.1.1",
+            )
+
+    async def test_locked_account_is_429_when_the_value_is_tz_aware(
+        self, service, test_user, test_session
+    ):
+        """The intended behaviour, isolated from the tz bug above.
+
+        Handing ``login`` a user whose ``locked_until`` still carries tzinfo
+        (which is what a ``TIMESTAMP WITH TIME ZONE`` column would return)
+        produces the 429 and the ``locked`` audit row.
+        """
+        from app.models import LoginAudit, User
+        from sqlalchemy import select
+
+        stored = await service.user_repo.get_by_email(test_user.email)
+        locked = User(
+            id=stored.id,
+            email=stored.email,
+            password_hash=stored.password_hash,
+            login_attempts=stored.login_attempts,
+            locked_until=datetime.now(UTC) + timedelta(minutes=5),
+        )
+
+        with unittest_mock.patch.object(
+            service.user_repo, "get_by_email", AsyncMock(return_value=locked)
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await service.login(
+                    UserLoginRequest(email=stored.email, password="testpass123"),
+                    ip_address="1.1.1.1",
+                )
+        await test_session.commit()
+
+        assert exc_info.value.status_code == 429
+        assert "temporarily locked" in exc_info.value.detail
+
+        statuses = [
+            row.status
+            for row in (
+                await test_session.execute(
+                    select(LoginAudit).where(LoginAudit.user_id == stored.id)
+                )
+            ).scalars()
+        ]
+        assert "locked" in statuses
+
+    async def test_repeated_failures_lock_the_account(self, service, test_user, test_session):
+        request = UserLoginRequest(email=test_user.email, password="WrongPass456!")
+
+        for _ in range(5):
+            with pytest.raises(HTTPException):
+                await service.login(request, ip_address="1.1.1.1")
+        await test_session.commit()
+
+        user = await service.user_repo.get_by_email(test_user.email)
+        assert user.login_attempts == 5
+        assert user.locked_until is not None
+        # The lock is readable through the property even though the stored
+        # value is naive (User.is_locked normalises tzinfo before comparing).
+        assert user.is_locked is True
+
+    async def test_successful_login_resets_attempts_and_stamps_last_login(
+        self, service, test_user
+    ):
+        user = await service.user_repo.get_by_email(test_user.email)
+        user.login_attempts = 3
+        await service.user_repo.commit()
+
+        response = await service.login(
+            UserLoginRequest(email=test_user.email, password="testpass123"),
+            ip_address="1.1.1.1",
+        )
+
+        assert response.token_type == "bearer"
+        refreshed = await service.user_repo.get_by_email(test_user.email)
+        assert refreshed.login_attempts == 0
+        assert refreshed.last_login_at is not None
+
+    async def test_successful_login_upgrades_a_weak_hash(self, service, test_user, monkeypatch):
+        from app.core import settings as settings_module
+
+        user = await service.user_repo.get_by_email(test_user.email)
+        monkeypatch.setattr(settings_module.settings, "PASSWORD_BCRYPT_ROUNDS", 5)
+        cheap = PasswordManager.hash_password("testpass123")
+        user.password_hash = cheap
+        await service.user_repo.commit()
+        monkeypatch.setattr(settings_module.settings, "PASSWORD_BCRYPT_ROUNDS", 12)
+
+        await service.login(
+            UserLoginRequest(email=test_user.email, password="testpass123"),
+            ip_address="1.1.1.1",
+        )
+
+        upgraded = await service.user_repo.get_by_email(test_user.email)
+        assert upgraded.password_hash != cheap
+        assert PasswordManager.needs_rehash(upgraded.password_hash) is False
+
+    async def test_mfa_enabled_user_receives_a_challenge(self, service, test_user):
+        from app.security import SecretCipher
+        from app.services import MfaChallengeRequired
+        import pyotp
+
+        user = await service.user_repo.get_by_email(test_user.email)
+        user.mfa_enabled = True
+        user.mfa_secret = SecretCipher.encrypt(pyotp.random_base32())
+        await service.user_repo.commit()
+
+        with pytest.raises(MfaChallengeRequired) as exc_info:
+            await service.login(
+                UserLoginRequest(email=test_user.email, password="testpass123"),
+                ip_address="1.1.1.1",
+            )
+
+        assert TokenManager.verify_mfa_challenge(exc_info.value.challenge_token) == user.id
+
+    async def test_unknown_user_login_is_audited_against_a_null_user(self, service, test_session):
+        with pytest.raises(HTTPException) as exc_info:
+            await service.login(
+                UserLoginRequest(email="nobody@example.com", password="whatever123"),
+                ip_address="1.1.1.1",
+            )
+        await test_session.commit()
+
+        assert exc_info.value.status_code == 401
+
+        from app.models import LoginAudit
+
+        audited = service.audit_repo.created[-1]
+        assert isinstance(audited, LoginAudit)
+        # Login records unknown users against the nil UUID, not NULL.
+        assert str(audited.user_id) == "00000000-0000-0000-0000-000000000000"
+        assert audited.status == "failed"
+        assert audited.ip_address == "1.1.1.1"
+
+
+class TestRegistrationFailurePaths:
+    async def test_duplicate_email_is_409(self, service, test_user):
+        with pytest.raises(HTTPException) as exc_info:
+            await service.register(
+                UserRegisterRequest(email=test_user.email, password="SecurePass123!")
+            )
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.detail == "User with this email already exists"
+
+    async def test_repository_failure_becomes_500(self, service):
+        with unittest_mock.patch.object(
+            service.user_repo, "create", AsyncMock(side_effect=RuntimeError("pg down"))
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await service.register(
+                    UserRegisterRequest(email="pgdown@example.com", password="SecurePass123!")
+                )
+
+        assert exc_info.value.status_code == 500
+        assert exc_info.value.detail == "Failed to create user"
+
+
+class TestMfaChallengeReuse:
+    async def test_already_consumed_challenge_is_401(self, service, test_user, test_session):
+        """The blacklist insert is preceded by an ``is_blacklisted`` probe."""
+        from app.repositories import TokenBlacklistRepository
+        from app.security import SecretCipher
+        import pyotp
+
+        secret = pyotp.random_base32()
+        test_user.mfa_secret = SecretCipher.encrypt(secret)
+        test_user.mfa_enabled = True
+        await service.user_repo.commit()
+        challenge = TokenManager.create_mfa_challenge_token(test_user.id, test_user.email)
+        await TokenBlacklistRepository(test_session).create(
+            token_hash=TokenManager.hash_token(challenge),
+            user_id=test_user.id,
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
+        )
+        await test_session.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await service.complete_mfa_login(
+                challenge, pyotp.TOTP(secret).now(), ip_address="1.1.1.1"
+            )
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Invalid or expired MFA challenge"
+
+
+class TestRefreshUserMismatch:
+    async def test_stored_token_owned_by_another_user_is_401(self, service, test_user, test_session):
+        """The token verifies to user A but the stored row belongs to user B."""
+        from app.models import RefreshToken
+
+        user = await service.user_repo.get_by_email(test_user.email)
+        token = TokenManager.create_refresh_token(user.id)
+        test_session.add(
+            RefreshToken(
+                user_id=uuid4(),
+                token_hash=TokenManager.hash_refresh_token(token),
+                expires_at=datetime.now(UTC) + timedelta(days=7),
+            )
+        )
+        await test_session.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await service.refresh_token(token)
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Refresh token not found"

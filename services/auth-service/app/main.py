@@ -13,11 +13,12 @@ from app.core.database import DatabaseManager
 from app.core.logging import set_correlation_id, set_request_id, setup_logging
 from app.core.settings import settings
 from app.schemas import ErrorResponse, HealthCheckResponse
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+from starlette.types import Message
 from wildframe_observability.wire import wire_observability
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Shutdown
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
-
+ 
     # Close database connections
     await DatabaseManager.close()
 
@@ -272,17 +273,38 @@ def create_app() -> FastAPI:
                     )
             except ValueError:
                 pass
-        chunks: list[bytes] = []
+
+        raw_receive = request._receive
         total = 0
-        async for chunk in request.stream():
-            total += len(chunk)
-            if total > MAX_BODY_SIZE:
-                return JSONResponse(
-                    content={"detail": "Request body too large"},
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                )
-            chunks.append(chunk)
-        request._body = b"".join(chunks)
+
+        async def _bounded_stream() -> AsyncGenerator[bytes, None]:
+            nonlocal total
+            while True:
+                message: Message = await raw_receive()
+                if message["type"] != "http.request":
+                    return
+                chunk: bytes = message.get("body", b"")
+                total += len(chunk)
+                if total > MAX_BODY_SIZE:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="Request body too large",
+                    )
+                if chunk:
+                    yield chunk
+                if not message.get("more_body", False):
+                    return
+
+        stream = _bounded_stream()
+
+        async def _receive() -> Message:
+            try:
+                chunk = await anext(stream)
+            except StopAsyncIteration:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            return {"type": "http.request", "body": chunk, "more_body": True}
+
+        request._receive = _receive
         return await call_next(request)
 
     wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)

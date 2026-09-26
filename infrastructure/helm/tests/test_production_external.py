@@ -31,6 +31,14 @@ def test_dev_renders():
 def test_prod_renders_with_external():
     res = helm_template("wildframe-production", PROD, [])
     assert_success(res, "prod with external")
+    assert 'name: KAFKA_SSL_INSECURE\n          value: "false"' in res.stdout
+
+
+def test_prod_fails_when_kafka_tls_verification_is_disabled():
+    res = helm_template(
+        "wildframe-production", PROD, [("kafka.sasl.insecureSkipVerify", "true")]
+    )
+    assert_fail(res, "prod with Kafka TLS verification disabled")
 
 
 def test_prod_fails_without_postgres_enabled():
