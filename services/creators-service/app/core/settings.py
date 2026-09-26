@@ -64,6 +64,8 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     POOL_RATE: float = 0.15
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+    # Polling interval for the inbound event worker; configurable per environment.
+    INBOUND_EVENT_POLL_INTERVAL_SECONDS: int = 30
 
     @model_validator(mode="before")
     @classmethod
