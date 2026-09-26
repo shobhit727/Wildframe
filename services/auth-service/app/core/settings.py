@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
@@ -43,6 +44,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     JWT_KEY_ID: str = "k1"
     JWT_PREVIOUS_SECRETS: str = ""
     JWT_PRIVATE_KEY: str | None = None
+    JWT_PRIVATE_KEY_FILE: str | None = None
     JWT_PUBLIC_KEY: str | None = None
     JWT_PREVIOUS_JWKS: str = ""
     JWT_EXPIRATION_MINUTES: int = 15
@@ -114,6 +116,12 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
         if environment in DEV_ENVIRONMENTS:
             for key, value in DEV_DEFAULTS.items():
                 values.setdefault(key, value)
+        # Prefer an explicitly generated local key file so dev reloads do not
+        # rotate the auth signing key and invalidate unrelated test sessions.
+        if not values.get("JWT_PRIVATE_KEY") and values.get("JWT_PRIVATE_KEY_FILE"):
+            key_path = Path(str(values["JWT_PRIVATE_KEY_FILE"]))
+            if key_path.is_file():
+                values["JWT_PRIVATE_KEY"] = key_path.read_text(encoding="utf-8")
         return values
 
     @model_validator(mode="after")
