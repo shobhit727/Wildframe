@@ -353,6 +353,17 @@ jobs:
       - name: Tear down stack
         if: always()
         run: docker compose -f deployments/docker-compose.dev.yml down -v
+  docs-link-check:
+    name: Documentation Link Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check local Markdown links
+        run: python .github/scripts/check_markdown_links.py
+
   backend-route-contract:
     name: Frontend/backend route contract (#44)
     runs-on: ubuntu-latest
