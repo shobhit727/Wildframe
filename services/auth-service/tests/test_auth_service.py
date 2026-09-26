@@ -200,9 +200,13 @@ class TestTokenManager:
             return base64.urlsafe_b64encode(b).decode().rstrip("=")
 
         prev_priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        prev_pem = prev_priv.private_bytes(\n            serialization.Encoding.PEM,\n            serialization.PrivateFormat.PKCS8,\n            serialization.NoEncryption(),\n        ).decode()
+        prev_pem = prev_priv.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode()
         nums = prev_priv.public_key().public_numbers()
-        prev_jwk = {"kty":"RSA","kid":"k0","use":"sig","alg":"RS256","n":_b64(nums.n),"e":_b64(nums.e)}
+        prev_jwk = {\n            "kty": "RSA",\n            "kid": "k0",\n            "use": "sig",\n            "alg": "RS256",\n            "n": _b64(nums.n),\n            "e": _b64(nums.e),\n        }
         user_id = str(uuid4())
         now = datetime.now(UTC)
         payload = {
