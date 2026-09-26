@@ -869,17 +869,19 @@ class AuthenticationMiddleware:
             if scheme.lower() != "bearer":
                 return None
 
-            # Optional identity extraction only; upstream services enforce audience.
-            # Expiry remains mandatory even at this transparent proxy boundary
-            # (python-jose spells "exp is required" as require_exp, not a
-            # `require` list).
-            payload = jwt.decode(
+            from app.core.settings import settings
+            from wildframe_auth.verifier import get_cached_jwks
+
+            # Verify the auth-service RS256 signature and all security claims.
+            jwks = await get_cached_jwks(self.jwks_url)
+            return verify_jwt_token(
                 token,
-                self.jwt_secret,
-                algorithms=["HS256"],
-                options={"verify_aud": False, "require_exp": True},
+                jwks,
+                audience=settings.JWT_AUDIENCE,
+                issuer=settings.JWT_ISSUER,
+                leeway=settings.JWT_LEEWAY_SECONDS,
+                expected_type="access",
             )
-            return payload
         except (JWTError, ValueError):  # ValueError: malformed auth header
             logger.warning("Token verification failed", exc_info=True)
             return None
