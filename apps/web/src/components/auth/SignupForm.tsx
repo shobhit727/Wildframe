@@ -6,10 +6,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { getApiErrorMessage } from '@/api/client';
+import { REGEX } from '@/constants';
 
 export function SignupForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -19,6 +21,32 @@ export function SignupForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
+
+    if (!firstName.trim()) {
+      setErrors({ firstName: 'First name is required' });
+      return;
+    }
+    if (!lastName.trim()) {
+      setErrors({ lastName: 'Last name is required' });
+      return;
+    }
+    if (!REGEX.EMAIL.test(email)) {
+      setErrors({ email: 'Enter a valid email address' });
+      return;
+    }
+    if (password.length < 12) {
+      setErrors({ password: 'Password must be at least 12 characters' });
+      return;
+    }
+    const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(password)).length;
+    if (classes < 2) {
+      setErrors({ password: 'Password must mix at least two of: letters, numbers, symbols' });
+      return;
+    }
+    if (password !== confirmPassword) {
+      setErrors({ confirmPassword: 'Passwords do not match' });
+      return;
+    }
 
     try {
       await register(email, password, firstName, lastName);
@@ -109,6 +137,26 @@ export function SignupForm() {
               placeholder="Create a password"
               required
             />
+          </div>
+
+          <div>
+            <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300 mb-2">
+              Confirm Password
+            </label>
+            <input
+              id="confirmPassword"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full bg-dark-800 text-white px-4 py-3 rounded-lg border border-dark-600 focus:border-red-600 focus:outline-none focus:ring-2 focus:ring-red-600/50 placeholder-gray-500"
+              placeholder="Confirm your password"
+              required
+            />
+            {errors.confirmPassword && (
+              <p role="alert" className="text-red-400 text-xs mt-1.5">
+                {errors.confirmPassword}
+              </p>
+            )}
           </div>
 
           <button
