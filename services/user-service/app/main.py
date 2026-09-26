@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from wildframe_observability.wire import wire_observability
 
 from app.core.database import DatabaseManager
-from app.core.logging import set_correlation_id, set_request_id, setup_logging
+from app.core.logging import get_correlation_id, set_correlation_id, set_request_id, setup_logging
 from app.core.settings import settings
 from app.schemas import ErrorResponse
 
@@ -191,7 +191,12 @@ def create_app() -> FastAPI:
         logger.exception("Unhandled exception: %s", exc)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"status_code": 500, "message": "Internal server error"},
+            content={
+                "status_code": 500,
+                "message": "Internal server error",
+                "correlation_id": get_correlation_id(),
+            },
+            headers={"X-Correlation-ID": get_correlation_id()},
         )
 
     return app
