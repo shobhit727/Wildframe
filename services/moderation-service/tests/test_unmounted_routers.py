@@ -39,9 +39,7 @@ async def client():
     throwaway = FastAPI()
     throwaway.include_router(router)
     throwaway.dependency_overrides[get_db] = _db_override
-    async with AsyncClient(
-        transport=ASGITransport(app=throwaway), base_url="http://stub"
-    ) as http:
+    async with AsyncClient(transport=ASGITransport(app=throwaway), base_url="http://stub") as http:
         yield http, factory
     await engine.dispose()
 
@@ -106,9 +104,7 @@ class TestCreateTakedown:
 
     async def test_rejects_a_missing_reporter_email(self, client):
         http, _ = client
-        resp = await http.post(
-            "/dmca/takedown", json={"content_id": "c-1", "reason": "x"}
-        )
+        resp = await http.post("/dmca/takedown", json={"content_id": "c-1", "reason": "x"})
         assert resp.status_code == 422
 
     async def test_rejects_a_malformed_body(self, client):

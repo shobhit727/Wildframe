@@ -236,13 +236,10 @@ class TestLoginAuditRepository:
 # ==========================================================================
 
 from datetime import datetime as _dt
-from unittest.mock import AsyncMock
 from uuid import uuid4
 
-import pytest
-from app.models import ConsentRecord, PrivacyNotice, RefreshToken, TokenBlacklist
+from app.models import ConsentRecord, PrivacyNotice, RefreshToken
 from app.repositories import (
-    ConsentRecordRepository,
     PrivacyNoticeRepository,
     TokenBlacklistRepository,
 )
@@ -257,9 +254,7 @@ class TestUserRepositoryErrorPaths:
             type(user_repository.session), "flush", AsyncMock(side_effect=RuntimeError("deadlock"))
         ):
             with pytest.raises(RuntimeError):
-                await user_repository.create(
-                    email="rollback@example.com", password_hash="hash"
-                )
+                await user_repository.create(email="rollback@example.com", password_hash="hash")
 
     async def test_update_unknown_user_returns_none(self, user_repository):
         assert await user_repository.update(uuid4(), first_name="X") is None
@@ -396,10 +391,11 @@ class TestRefreshTokenRepositoryRemaining:
         assert await token_repository.revoke("never-existed") is False
 
     async def test_revoke_rolls_back_and_reraises(self, token_repository):
-        with patch.object(
-            TokenBlacklistRepository, "create", AsyncMock()
-        ), patch.object(
-            type(token_repository), "consume", AsyncMock(side_effect=RuntimeError("io"))
+        with (
+            patch.object(TokenBlacklistRepository, "create", AsyncMock()),
+            patch.object(
+                type(token_repository), "consume", AsyncMock(side_effect=RuntimeError("io"))
+            ),
         ):
             with pytest.raises(RuntimeError):
                 await token_repository.revoke("x")
@@ -450,17 +446,13 @@ class TestLoginAuditRepositoryErrorPaths:
                 )
 
     async def test_successful_attempts_are_not_counted(self, test_user, audit_repository):
-        await audit_repository.create(
-            user_id=test_user.id, status="success", ip_address="1.1.1.1"
-        )
+        await audit_repository.create(user_id=test_user.id, status="success", ip_address="1.1.1.1")
         await audit_repository.commit()
 
         assert await audit_repository.get_recent_failed_attempts(test_user.id) == 0
 
     async def test_another_users_attempts_are_not_counted(self, test_user, audit_repository):
-        await audit_repository.create(
-            user_id=uuid4(), status="failed", ip_address="1.1.1.1"
-        )
+        await audit_repository.create(user_id=uuid4(), status="failed", ip_address="1.1.1.1")
         await audit_repository.commit()
 
         assert await audit_repository.get_recent_failed_attempts(test_user.id) == 0
@@ -469,13 +461,9 @@ class TestLoginAuditRepositoryErrorPaths:
 class TestTokenBlacklistRepository:
     async def test_create_rolls_back_and_reraises(self, test_user, test_session):
         repo = TokenBlacklistRepository(test_session)
-        with patch.object(
-            type(test_session), "flush", AsyncMock(side_effect=RuntimeError("io"))
-        ):
+        with patch.object(type(test_session), "flush", AsyncMock(side_effect=RuntimeError("io"))):
             with pytest.raises(RuntimeError):
-                await repo.create(
-                    token_hash="h", user_id=test_user.id, expires_at=_dt.now(UTC)
-                )
+                await repo.create(token_hash="h", user_id=test_user.id, expires_at=_dt.now(UTC))
 
     def test_blacklist_repository_shares_the_base_helpers(self):
         from app.repositories import BaseRepository
@@ -484,9 +472,7 @@ class TestTokenBlacklistRepository:
 
     async def test_is_blacklisted_reports_membership(self, test_user, test_session):
         repo = TokenBlacklistRepository(test_session)
-        await repo.create(
-            token_hash="present", user_id=test_user.id, expires_at=_dt.now(UTC)
-        )
+        await repo.create(token_hash="present", user_id=test_user.id, expires_at=_dt.now(UTC))
         await test_session.commit()
 
         assert await repo.is_blacklisted("present") is True
@@ -517,9 +503,7 @@ class TestTokenBlacklistRepository:
         assert await TokenBlacklistRepository(test_session).delete_expired() == 0
 
     async def test_delete_expired_rolls_back_and_reraises(self, test_session):
-        with patch.object(
-            type(test_session), "execute", AsyncMock(side_effect=RuntimeError("io"))
-        ):
+        with patch.object(type(test_session), "execute", AsyncMock(side_effect=RuntimeError("io"))):
             with pytest.raises(RuntimeError):
                 await TokenBlacklistRepository(test_session).delete_expired()
 
@@ -635,9 +619,7 @@ class TestConsentRecordRepositoryQueries:
         _consent(test_session, consent_type="marketing", jurisdiction="US")
         await test_session.commit()
 
-        found = await repo.get_by_user_type_jurisdiction(
-            record.user_id, "marketing", "EU"
-        )
+        found = await repo.get_by_user_type_jurisdiction(record.user_id, "marketing", "EU")
 
         assert found is not None
         assert found.consent_type == "marketing"

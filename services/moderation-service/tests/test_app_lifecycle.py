@@ -16,7 +16,6 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from app.core import database as db_mod
 from app.core.database import DatabaseManager
 from app.core.settings import settings
 from app.main import _drain_outbox_worker, create_app, lifespan
@@ -111,9 +110,7 @@ class TestLifespanStartup:
         # Only the outbox worker task; no DLQ retention task in memory mode.
         assert [c.__qualname__ for c in scheduled] == ["_drain_outbox_worker"]
 
-    async def test_dlq_retention_is_scheduled_with_the_kafka_publisher(
-        self, stub_db, monkeypatch
-    ):
+    async def test_dlq_retention_is_scheduled_with_the_kafka_publisher(self, stub_db, monkeypatch):
         import sys
         import types
 

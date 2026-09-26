@@ -424,12 +424,7 @@ def _limiter(redis, fixed=1, burst=100, concurrency=100, service="search"):
 async def test_fixed_window_account_dimension_can_deny_on_its_own():
     redis = ScriptedRedis({"rate_limit:account:acct:search": 2})
     limiter = _limiter(redis, fixed=1)
-    assert (
-        await limiter.check_rate_limit(
-            "search", "", ip="1.1.1.1", account_id="acct"
-        )
-        is False
-    )
+    assert await limiter.check_rate_limit("search", "", ip="1.1.1.1", account_id="acct") is False
     # The ip counter passed, the account counter refused, and nothing further ran.
     assert redis.touched == [
         "rate_limit:ip:1.1.1.1:search",
@@ -440,10 +435,7 @@ async def test_fixed_window_account_dimension_can_deny_on_its_own():
 async def test_fixed_window_device_dimension_can_deny_on_its_own():
     redis = ScriptedRedis({"rate_limit:device:dev-9:search": 2})
     limiter = _limiter(redis, fixed=1)
-    assert (
-        await limiter.check_rate_limit("search", "", ip="1.1.1.1", device_id="dev-9")
-        is False
-    )
+    assert await limiter.check_rate_limit("search", "", ip="1.1.1.1", device_id="dev-9") is False
     assert redis.touched == [
         "rate_limit:ip:1.1.1.1:search",
         "rate_limit:device:dev-9:search",
@@ -453,12 +445,7 @@ async def test_fixed_window_device_dimension_can_deny_on_its_own():
 async def test_burst_account_dimension_can_deny_on_its_own():
     redis = ScriptedRedis({"rate_limit:burst:account:acct:search": 2})
     limiter = _limiter(redis, fixed=100, burst=1)
-    assert (
-        await limiter.check_rate_limit(
-            "search", "", ip="1.1.1.1", account_id="acct"
-        )
-        is False
-    )
+    assert await limiter.check_rate_limit("search", "", ip="1.1.1.1", account_id="acct") is False
     assert redis.touched == [
         "rate_limit:ip:1.1.1.1:search",
         "rate_limit:account:acct:search",
@@ -470,10 +457,7 @@ async def test_burst_account_dimension_can_deny_on_its_own():
 async def test_burst_device_dimension_can_deny_on_its_own():
     redis = ScriptedRedis({"rate_limit:burst:device:dev-9:search": 2})
     limiter = _limiter(redis, fixed=100, burst=1)
-    assert (
-        await limiter.check_rate_limit("search", "", ip="1.1.1.1", device_id="dev-9")
-        is False
-    )
+    assert await limiter.check_rate_limit("search", "", ip="1.1.1.1", device_id="dev-9") is False
     assert redis.touched[-1] == "rate_limit:burst:device:dev-9:search"
 
 
@@ -481,9 +465,7 @@ async def test_concurrency_account_dimension_can_deny_on_its_own():
     redis = ScriptedRedis()
     limiter = _limiter(redis, fixed=100, burst=100, concurrency=1)
     redis.leases["rate_limit:inflight:account:acct:search"] = {"held": float("inf")}
-    allowed, lease_id = await limiter.acquire_rate_limits(
-        "1.1.1.1", "search", account_id="acct"
-    )
+    allowed, lease_id = await limiter.acquire_rate_limits("1.1.1.1", "search", account_id="acct")
     assert allowed is False
     assert lease_id is None
 
@@ -492,9 +474,7 @@ async def test_concurrency_device_dimension_can_deny_on_its_own():
     redis = ScriptedRedis()
     limiter = _limiter(redis, fixed=100, burst=100, concurrency=1)
     redis.leases["rate_limit:inflight:device:dev-9:search"] = {"held": float("inf")}
-    allowed, lease_id = await limiter.acquire_rate_limits(
-        "1.1.1.1", "search", device_id="dev-9"
-    )
+    allowed, lease_id = await limiter.acquire_rate_limits("1.1.1.1", "search", device_id="dev-9")
     assert allowed is False
     assert lease_id is None
 
@@ -561,8 +541,7 @@ async def test_explicit_path_keyword_is_used_for_dimension_specific_limits():
     limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
     limiter.limits["reindex"] = 20
     assert (
-        await limiter.check_rate_limit("search", "/reindex", ip="3.3.3.3", path="/reindex")
-        is True
+        await limiter.check_rate_limit("search", "/reindex", ip="3.3.3.3", path="/reindex") is True
     )
     assert "rate_limit:ip:3.3.3.3:search" in redis.touched
 
@@ -625,10 +604,7 @@ async def test_user_id_keyword_takes_the_account_dimension_not_the_legacy_path()
 async def test_account_id_keyword_wins_over_a_positional_user_argument():
     redis = ScriptedRedis()
     limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
-    assert (
-        await limiter.check_rate_limit("ignored", account_id="acct", service="search")
-        is True
-    )
+    assert await limiter.check_rate_limit("ignored", account_id="acct", service="search") is True
     assert redis.touched[:2] == [
         "rate_limit:ip:unknown:search",
         "rate_limit:account:acct:search",
@@ -645,9 +621,7 @@ async def test_legacy_signature_service_keyword_is_mixed_with_a_positional_user(
 async def test_legacy_signature_path_keyword_is_mixed_with_positional_arguments():
     redis = ScriptedRedis()
     limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
-    assert (
-        await limiter.check_rate_limit("legacy-user", "search", path="/reindex") is True
-    )
+    assert await limiter.check_rate_limit("legacy-user", "search", path="/reindex") is True
     assert redis.touched == ["rate_limit:legacy-user:search"]
 
 

@@ -379,9 +379,7 @@ async def test_publisher_to_subscriber_evicts_on_content_unpublished(in_memory_b
     await events_mod.start_event_subscriber()
     content_id = str(uuid4())
 
-    await _deliver(
-        in_memory_bus, _event({"content_id": content_id}, "content.unpublished")
-    )
+    await _deliver(in_memory_bus, _event({"content_id": content_id}, "content.unpublished"))
 
     in_memory_bus.repo.delete_for_content.assert_awaited_once_with(UUID(content_id))
     await events_mod.stop_event_subscriber()
@@ -395,9 +393,7 @@ async def test_publisher_to_subscriber_clears_on_billing_change(in_memory_bus, m
     await events_mod.start_event_subscriber()
     user_id = str(uuid4())
 
-    await _deliver(
-        in_memory_bus, _event({"user_id": user_id}, "billing.subscription.created")
-    )
+    await _deliver(in_memory_bus, _event({"user_id": user_id}, "billing.subscription.created"))
 
     in_memory_bus.repo.clear_for_user.assert_awaited_once_with(UUID(user_id))
     in_memory_bus.repo.delete_for_content.assert_not_called()
@@ -409,9 +405,7 @@ async def test_publisher_to_subscriber_clears_on_billing_change(in_memory_bus, m
 async def test_publisher_validates_the_payload_before_delivery(in_memory_bus):
     """A non-JSON-safe payload is rejected by the port, not by the handler."""
     with pytest.raises(Exception):
-        await in_memory_bus.publisher.publish(
-            _event({"content_id": object()}, "content.deleted")
-        )
+        await in_memory_bus.publisher.publish(_event({"content_id": object()}, "content.deleted"))
 
     assert in_memory_bus.publisher.sent == []
     in_memory_bus.repo.delete_for_content.assert_not_called()

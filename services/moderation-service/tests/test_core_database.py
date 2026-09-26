@@ -9,7 +9,7 @@ its session through.
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import database as db_mod
 from app.core.database import DatabaseManager, get_db

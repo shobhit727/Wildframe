@@ -19,7 +19,7 @@ driven against an injected fake module.
 import json
 import sys
 import types
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest

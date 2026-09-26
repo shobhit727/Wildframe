@@ -11,7 +11,7 @@ actually work against asyncpg; the mock tests pin the lifecycle contract
 """
 
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -22,7 +22,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.database import DatabaseManager, get_db, get_db_session
 from app.core.settings import settings
 from app.models import Base
-
 
 # ---------------------------------------------------------------------------
 # Doubles that honour the async-context-manager protocols the code relies on
@@ -367,9 +366,7 @@ class TestGetDb:
         assert get_db_session is get_db
 
     def test_singleton_starts_with_no_engine_and_no_factory(self):
-        assert DatabaseManager.engine is None or isinstance(
-            DatabaseManager.engine, object
-        )
+        assert DatabaseManager.engine is None or isinstance(DatabaseManager.engine, object)
         assert hasattr(DatabaseManager, "session_factory")
 
 

@@ -18,7 +18,6 @@ from stripe import StripeError as _StripeError
 from app.core.settings import settings
 from app.core.stripe_client import StripeClient, StripeError
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -121,7 +120,9 @@ class TestCreateCheckoutSession:
     def test_correlates_user_and_tier_for_the_webhook_handler(self):
         user = uuid4()
         with patch("stripe.checkout.Session.create") as create:
-            StripeClient.create_checkout_session(user, "price_1", "premium", "https://x/s", "https://x/c")
+            StripeClient.create_checkout_session(
+                user, "price_1", "premium", "https://x/s", "https://x/c"
+            )
         kwargs = create.call_args.kwargs
         # client_reference_id and metadata must both carry the user so the
         # checkout.session.completed handler can correlate either way.
@@ -456,7 +457,9 @@ class TestRetrieveHelpers:
         assert isinstance(exc.value.__cause__, _StripeError)
 
     def test_retrieve_payment_intent_returns_dict(self):
-        with patch("stripe.PaymentIntent.retrieve", return_value=_StripeObj({"id": "pi_1"})) as retrieve:
+        with patch(
+            "stripe.PaymentIntent.retrieve", return_value=_StripeObj({"id": "pi_1"})
+        ) as retrieve:
             result = StripeClient.retrieve_payment_intent("pi_1")
         retrieve.assert_called_once_with("pi_1")
         assert result["id"] == "pi_1"

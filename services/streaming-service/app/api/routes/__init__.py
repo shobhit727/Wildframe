@@ -52,7 +52,9 @@ async def _decode_token(token: str) -> dict:
             expected_type="access",
         )
     except JWTError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from exc
 
 
 async def _enforce_auth_version(authorization: str, payload: dict) -> None:

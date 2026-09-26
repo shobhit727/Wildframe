@@ -18,7 +18,6 @@ import app.main as main_mod
 from app.core.settings import settings
 from app.main import create_app
 
-
 # ----------------------------------------------------------------------
 # Fakes
 # ----------------------------------------------------------------------
@@ -294,9 +293,7 @@ class TestBodySizeLimit:
             called.append(request)
             return "reached-the-route"
 
-        response = await dispatch(
-            _request({"content-length": str(1048576 + 1)}), call_next
-        )
+        response = await dispatch(_request({"content-length": str(1048576 + 1)}), call_next)
 
         assert response.status_code == 413
         assert json.loads(response.body) == {"detail": "Request body too large"}

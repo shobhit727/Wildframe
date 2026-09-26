@@ -191,9 +191,7 @@ def test_age_gate_defaults_the_jurisdiction_to_global():
 
 
 def test_age_gate_uppercases_a_lowercase_jurisdiction_header():
-    result = check_age_gate(
-        _Request("/maturity/x"), x_age_verified="true", x_jurisdiction="in"
-    )
+    result = check_age_gate(_Request("/maturity/x"), x_age_verified="true", x_jurisdiction="in")
     assert result["jurisdiction"] == "IN"
 
 
@@ -201,9 +199,7 @@ def test_age_gate_uppercases_a_lowercase_jurisdiction_header():
     ("jurisdiction", "minor_age"),
     sorted(JURISDICTION_MINOR_AGE.items()),
 )
-def test_age_gate_minor_age_table_is_used_for_each_jurisdiction(
-    jurisdiction, minor_age
-):
+def test_age_gate_minor_age_table_is_used_for_each_jurisdiction(jurisdiction, minor_age):
     result = check_age_gate(
         _Request("/maturity/x"),
         x_age_verified="true",

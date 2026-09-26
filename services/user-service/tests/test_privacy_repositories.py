@@ -128,7 +128,9 @@ async def test_get_by_user_orders_newest_first(session: AsyncSession):
     for offset, consent_type in enumerate(("marketing", "analytics", "profiling")):
         await repo.create(
             UserConsentRecord(
-                **_consent(user_id, consent_type=consent_type, created_at=base + timedelta(days=offset))
+                **_consent(
+                    user_id, consent_type=consent_type, created_at=base + timedelta(days=offset)
+                )
             )
         )
     await session.commit()

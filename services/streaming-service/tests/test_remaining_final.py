@@ -25,7 +25,6 @@ from pydantic import ValidationError
 from app.models import PlaybackSession, PlaybackSessionStatus
 from app.schemas.accessibility import AccessibilityCreate
 
-
 # ------------------------------------------- app/schemas/accessibility.py ---
 
 

@@ -69,7 +69,7 @@ def test_health_check_uses_text_statement_not_lambda():
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core import database as database_module
-from app.core.database import DatabaseManager, get_db, get_db_session
+from app.core.database import get_db, get_db_session
 from app.core.settings import settings
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -289,7 +289,9 @@ async def test_get_db_session_alias_delegates_to_get_session(clean_manager, monk
         cm.__aexit__ = AsyncMock(return_value=False)
         yield session
 
-    monkeypatch.setattr(DatabaseManager, "get_session", classmethod(lambda cls: _fake_get_session()))
+    monkeypatch.setattr(
+        DatabaseManager, "get_session", classmethod(lambda cls: _fake_get_session())
+    )
 
     async for _ in get_db_session():
         pass

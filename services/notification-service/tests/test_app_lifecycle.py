@@ -458,9 +458,7 @@ def test_unhandled_exceptions_return_an_opaque_500_with_a_correlation_id():
         patch.object(DatabaseManager, "health_check", new=AsyncMock(return_value=True)),
         patch.object(DatabaseManager, "close", new=AsyncMock(return_value=None)),
     ):
-        with TestClient(
-            app, base_url="http://localhost", raise_server_exceptions=False
-        ) as client:
+        with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
             response = client.get("/_boom", headers={"X-Correlation-ID": "corr-500"})
 
     assert response.status_code == 500
@@ -493,9 +491,7 @@ def test_known_defect_500_responses_lose_the_tracing_headers():
         patch.object(DatabaseManager, "health_check", new=AsyncMock(return_value=True)),
         patch.object(DatabaseManager, "close", new=AsyncMock(return_value=None)),
     ):
-        with TestClient(
-            app, base_url="http://localhost", raise_server_exceptions=False
-        ) as client:
+        with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
             response = client.get("/_boom2", headers={"X-Correlation-ID": "corr-500"})
 
     assert response.status_code == 500

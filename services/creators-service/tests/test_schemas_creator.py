@@ -79,8 +79,13 @@ class TestCreatorAccountUpdate:
         assert payload.model_dump(exclude_unset=True) == {"display_name": "New"}
 
     def test_stripe_connect_account_id_can_be_set_and_cleared(self):
-        assert CreatorAccountUpdate(stripe_connect_account_id="acct_1").stripe_connect_account_id == "acct_1"
-        assert CreatorAccountUpdate(stripe_connect_account_id=None).stripe_connect_account_id is None
+        assert (
+            CreatorAccountUpdate(stripe_connect_account_id="acct_1").stripe_connect_account_id
+            == "acct_1"
+        )
+        assert (
+            CreatorAccountUpdate(stripe_connect_account_id=None).stripe_connect_account_id is None
+        )
 
     def test_display_name_length_limit(self):
         with pytest.raises(ValidationError):
@@ -328,22 +333,16 @@ class TestMilestoneSchemas:
 
 class TestPayoutSchemas:
     def test_accrual_defaults(self):
-        payload = PayoutAccrualRequest(
-            period_start=NOW, period_end=NOW.replace(month=12)
-        )
+        payload = PayoutAccrualRequest(period_start=NOW, period_end=NOW.replace(month=12))
 
         assert payload.view_minutes == 0
         assert payload.earned_cents == 0
         assert payload.stripe_fee_cents == 0
 
-    @pytest.mark.parametrize(
-        "field", ["view_minutes", "earned_cents", "stripe_fee_cents"]
-    )
+    @pytest.mark.parametrize("field", ["view_minutes", "earned_cents", "stripe_fee_cents"])
     def test_negative_money_is_rejected(self, field):
         with pytest.raises(ValidationError):
-            PayoutAccrualRequest(
-                period_start=NOW, period_end=NOW, **{field: -1}
-            )
+            PayoutAccrualRequest(period_start=NOW, period_end=NOW, **{field: -1})
 
     def test_period_bounds_are_required(self):
         with pytest.raises(ValidationError):

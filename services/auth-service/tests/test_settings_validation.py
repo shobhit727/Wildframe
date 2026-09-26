@@ -149,9 +149,7 @@ class TestProductionValidator:
         assert settings.JWT_SECRET_KEY == "changeme"
 
     def test_known_insecure_jwt_secrets_are_documented_as_dev_only(self):
-        assert "dev-secret-key-change-in-production-min-32-bytes" in (
-            KNOWN_INSECURE_JWT_SECRETS
-        )
+        assert "dev-secret-key-change-in-production-min-32-bytes" in (KNOWN_INSECURE_JWT_SECRETS)
         assert "changeme" in KNOWN_INSECURE_JWT_SECRETS
         assert KNOWN_INSECURE_JWT_SECRETS[0].startswith("dev-secret-key")
 
@@ -236,9 +234,7 @@ def env_app(tmp_path, monkeypatch):
 
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(DatabaseManager, "get_engine", classmethod(lambda cls: engine))
-    monkeypatch.setattr(
-        DatabaseManager, "get_session_factory", classmethod(lambda cls: factory)
-    )
+    monkeypatch.setattr(DatabaseManager, "get_session_factory", classmethod(lambda cls: factory))
     return engine
 
 
@@ -252,10 +248,10 @@ def env_client(env_app):
     async def _consumer(_session_factory):
         return None
 
-    with patch.object(
-        event_consumer, "run_user_moderation_consumer", _consumer
-    ), patch("app.main.setup_logging"), patch.object(
-        auth_routes, "allow", AsyncMock(return_value=True)
+    with (
+        patch.object(event_consumer, "run_user_moderation_consumer", _consumer),
+        patch("app.main.setup_logging"),
+        patch.object(auth_routes, "allow", AsyncMock(return_value=True)),
     ):
         with TestClient(create_app()) as client:
             yield client
@@ -303,10 +299,7 @@ class TestProductionEnvironmentGates:
 
         assert response.status_code == 202
         assert response.json()["verification_token"]
-        assert (
-            response.json()["message"]
-            == "Verification request processed; no email was sent."
-        )
+        assert response.json()["message"] == "Verification request processed; no email was sent."
 
     def test_mfa_setup_still_works_in_production_but_never_leaks_a_secret(
         self, env_client, monkeypatch
@@ -341,9 +334,7 @@ class TestProductionEnvironmentGates:
         assert response.status_code == 429
         assert response.json()["detail"] == "Too many MFA setup attempts. Try again later."
 
-    def test_docs_are_disabled_in_production_but_health_stays_reachable(
-        self, env_app, monkeypatch
-    ):
+    def test_docs_are_disabled_in_production_but_health_stays_reachable(self, env_app, monkeypatch):
         from unittest.mock import patch
 
         from app.core import event_consumer
@@ -355,9 +346,10 @@ class TestProductionEnvironmentGates:
 
         # Production pins TrustedHostMiddleware to localhost/*.wildframe.com,
         # so the client must address the service by an allowed Host.
-        with patch.object(
-            event_consumer, "run_user_moderation_consumer", _consumer
-        ), patch("app.main.setup_logging"):
+        with (
+            patch.object(event_consumer, "run_user_moderation_consumer", _consumer),
+            patch("app.main.setup_logging"),
+        ):
             with TestClient(create_app(), base_url="http://localhost") as client:
                 assert client.get("/docs").status_code == 404
                 assert client.get("/redoc").status_code == 404
@@ -411,7 +403,6 @@ class TestJwksSettingsInteraction:
 class TestGetCurrentUserSettingsInteraction:
     async def test_rejects_a_token_whose_auth_version_is_stale(self, test_session):
         """The ``av`` claim is compared against the stored auth_version."""
-        from uuid import uuid4
 
         from app.models import User
         from app.security import PasswordManager, TokenManager

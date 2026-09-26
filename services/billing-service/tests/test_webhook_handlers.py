@@ -36,7 +36,6 @@ from app.main import create_app
 from app.models import InvoiceStatus
 from app.services import BillingError
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -264,9 +263,7 @@ class TestSubscriptionUpdated:
             ),
             svc,
         )
-        svc.sync_subscription_from_stripe.assert_awaited_once_with(
-            user, "past_due", 1700000000
-        )
+        svc.sync_subscription_from_stripe.assert_awaited_once_with(user, "past_due", 1700000000)
 
     async def test_missing_created_defaults_to_zero(self):
         user = uuid4()
@@ -452,7 +449,11 @@ class TestInvoicePaid:
         await _handle_invoice_paid(
             _event(
                 "invoice.paid",
-                {"id": "in_7", "total": 250, "lines": {"data": [{"metadata": {"user_id": str(user)}}]}},
+                {
+                    "id": "in_7",
+                    "total": 250,
+                    "lines": {"data": [{"metadata": {"user_id": str(user)}}]},
+                },
             ),
             svc,
         )
@@ -812,9 +813,7 @@ class TestProcessSingleRefundObj:
 
     async def test_amount_falls_back_to_amount_refunded(self):
         svc = _service_mock()
-        await _process_single_refund_obj(
-            self._refund(amount=None, amount_refunded=250), svc
-        )
+        await _process_single_refund_obj(self._refund(amount=None, amount_refunded=250), svc)
         assert svc.process_refund.call_args.kwargs["amount"] == Decimal("2.50")
 
     async def test_amount_defaults_to_zero_when_neither_field_present(self):
@@ -886,17 +885,13 @@ class TestProcessSingleRefundObj:
     async def test_malformed_invoice_id_in_metadata_is_rejected(self):
         svc = _service_mock()
         with pytest.raises(BillingError, match="Invalid invoice_id"):
-            await _process_single_refund_obj(
-                self._refund(metadata={"invoice_id": "nope"}), svc
-            )
+            await _process_single_refund_obj(self._refund(metadata={"invoice_id": "nope"}), svc)
         svc.process_refund.assert_not_awaited()
 
     async def test_local_invoice_id_from_metadata_is_forwarded(self):
         local = uuid4()
         svc = _service_mock()
-        await _process_single_refund_obj(
-            self._refund(metadata={"invoice_id": str(local)}), svc
-        )
+        await _process_single_refund_obj(self._refund(metadata={"invoice_id": str(local)}), svc)
         assert svc.process_refund.call_args.kwargs["invoice_id"] == local
 
 
@@ -919,9 +914,7 @@ class TestHandleRefund:
 
     async def test_refund_created_processes_the_top_level_object(self):
         svc = _service_mock()
-        await _handle_refund(
-            _event("refund.created", self._refund_obj()), svc
-        )
+        await _handle_refund(_event("refund.created", self._refund_obj()), svc)
         svc.process_refund.assert_awaited_once()
         assert svc.process_refund.call_args.kwargs["refund_id"] == "re_1"
 

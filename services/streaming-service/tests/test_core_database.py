@@ -14,7 +14,6 @@ only connect is against a real in-memory SQLite database.
 """
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool
 

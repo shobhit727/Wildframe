@@ -257,9 +257,7 @@ def test_trusted_proxies_accepts_a_list_of_cidrs(monkeypatch):
 
 
 @pytest.mark.parametrize("raw", [123, 1.5, object()])
-def test_trusted_proxies_returns_empty_for_a_non_string_non_list_value(
-    monkeypatch, raw
-):
+def test_trusted_proxies_returns_empty_for_a_non_string_non_list_value(monkeypatch, raw):
     from app.middleware import _trusted_proxies
 
     monkeypatch.setattr(settings, "TRUSTED_PROXIES", raw)

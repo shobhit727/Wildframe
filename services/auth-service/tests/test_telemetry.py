@@ -156,8 +156,9 @@ class TestSetupTracingEnabled:
     ):
         exporter = MagicMock()
 
-        with _swap(telemetry, "JaegerExporter", exporter), _swap(
-            telemetry, "FastAPIInstrumentor", class_instrumentor
+        with (
+            _swap(telemetry, "JaegerExporter", exporter),
+            _swap(telemetry, "FastAPIInstrumentor", class_instrumentor),
         ):
             setup_tracing()
 
@@ -174,10 +175,11 @@ class TestSetupTracingEnabled:
         sql = _InstanceInstrumentor()
         redis = _InstanceInstrumentor()
 
-        with _swap(telemetry, "JaegerExporter", MagicMock()), _swap(
-            telemetry, "FastAPIInstrumentor", class_instrumentor
-        ), _swap(telemetry, "SQLAlchemyInstrumentor", lambda: sql), _swap(
-            telemetry, "RedisInstrumentor", lambda: redis
+        with (
+            _swap(telemetry, "JaegerExporter", MagicMock()),
+            _swap(telemetry, "FastAPIInstrumentor", class_instrumentor),
+            _swap(telemetry, "SQLAlchemyInstrumentor", lambda: sql),
+            _swap(telemetry, "RedisInstrumentor", lambda: redis),
         ):
             setup_tracing()
 
@@ -187,9 +189,11 @@ class TestSetupTracingEnabled:
     def test_logs_the_configured_agent_endpoint(
         self, jaeger_enabled, clean_tracer_provider, caplog, class_instrumentor
     ):
-        with _swap(telemetry, "JaegerExporter", MagicMock()), _swap(
-            telemetry, "FastAPIInstrumentor", class_instrumentor
-        ), caplog.at_level(logging.DEBUG, logger="app.telemetry"):
+        with (
+            _swap(telemetry, "JaegerExporter", MagicMock()),
+            _swap(telemetry, "FastAPIInstrumentor", class_instrumentor),
+            caplog.at_level(logging.DEBUG, logger="app.telemetry"),
+        ):
             setup_tracing()
 
         assert "Jaeger tracing initialized (jaeger-agent:6831)" in caplog.text
@@ -199,8 +203,9 @@ class TestSetupTracingEnabled:
     ):
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-        with _swap(telemetry, "JaegerExporter", MagicMock()), _swap(
-            telemetry, "FastAPIInstrumentor", class_instrumentor
+        with (
+            _swap(telemetry, "JaegerExporter", MagicMock()),
+            _swap(telemetry, "FastAPIInstrumentor", class_instrumentor),
         ):
             setup_tracing()
             provider = trace.get_tracer_provider()
@@ -218,9 +223,11 @@ class TestSetupTracingEnabled:
         and log the endpoint verbatim."""
         jaeger_enabled.JAEGER_AGENT_PORT = "not-a-port"
 
-        with _swap(telemetry, "JaegerExporter", MagicMock()), _swap(
-            telemetry, "FastAPIInstrumentor", class_instrumentor
-        ), caplog.at_level(logging.DEBUG, logger="app.telemetry"):
+        with (
+            _swap(telemetry, "JaegerExporter", MagicMock()),
+            _swap(telemetry, "FastAPIInstrumentor", class_instrumentor),
+            caplog.at_level(logging.DEBUG, logger="app.telemetry"),
+        ):
             setup_tracing()
 
         assert "Failed to setup Jaeger tracing" not in caplog.text
@@ -233,9 +240,10 @@ class TestSetupTracingFailure:
     ):
         boom = ValueError("jaeger agent unreachable")
 
-        with _swap(
-            telemetry, "JaegerExporter", MagicMock(side_effect=boom)
-        ), caplog.at_level(logging.DEBUG, logger="app.telemetry"):
+        with (
+            _swap(telemetry, "JaegerExporter", MagicMock(side_effect=boom)),
+            caplog.at_level(logging.DEBUG, logger="app.telemetry"),
+        ):
             assert setup_tracing() is None
 
         assert "Failed to setup Jaeger tracing: jaeger agent unreachable" in caplog.text
@@ -244,11 +252,15 @@ class TestSetupTracingFailure:
     def test_span_processor_failure_is_logged_and_swallowed(
         self, jaeger_enabled, clean_tracer_provider, caplog
     ):
-        with _swap(telemetry, "JaegerExporter", MagicMock()), _swap(
-            telemetry,
-            "BatchSpanProcessor",
-            MagicMock(side_effect=RuntimeError("exporter rejected")),
-        ), caplog.at_level(logging.DEBUG, logger="app.telemetry"):
+        with (
+            _swap(telemetry, "JaegerExporter", MagicMock()),
+            _swap(
+                telemetry,
+                "BatchSpanProcessor",
+                MagicMock(side_effect=RuntimeError("exporter rejected")),
+            ),
+            caplog.at_level(logging.DEBUG, logger="app.telemetry"),
+        ):
             setup_tracing()
 
         assert "Failed to setup Jaeger tracing: exporter rejected" in caplog.text
@@ -261,9 +273,11 @@ class TestSetupTracingFailure:
         instrumentor = MagicMock()
         instrumentor.instrument.side_effect = RuntimeError("instrumentation conflict")
 
-        with _swap(telemetry, "JaegerExporter", MagicMock()), _swap(
-            telemetry, "FastAPIInstrumentor", instrumentor
-        ), caplog.at_level(logging.DEBUG, logger="app.telemetry"):
+        with (
+            _swap(telemetry, "JaegerExporter", MagicMock()),
+            _swap(telemetry, "FastAPIInstrumentor", instrumentor),
+            caplog.at_level(logging.DEBUG, logger="app.telemetry"),
+        ):
             setup_tracing()
 
         assert "Failed to setup Jaeger tracing: instrumentation conflict" in caplog.text
@@ -280,8 +294,9 @@ class TestSetupTracingFailure:
         SQLAlchemy/Redis instrumentors on the next two lines never run and the
         "initialized" log line is never emitted.
         """
-        with _swap(telemetry, "JaegerExporter", MagicMock()), caplog.at_level(
-            logging.ERROR, logger="app.telemetry"
+        with (
+            _swap(telemetry, "JaegerExporter", MagicMock()),
+            caplog.at_level(logging.ERROR, logger="app.telemetry"),
         ):
             assert setup_tracing() is None
 

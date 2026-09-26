@@ -18,7 +18,7 @@ import pytest_asyncio
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.models import Base, UserDevice, UserPreference, UserProfile, UserSubscriptionProfile
+from app.models import Base, UserProfile
 from app.repositories import (
     UserDeviceRepository,
     UserPreferenceRepository,
@@ -295,9 +295,7 @@ async def test_preference_update_ignores_none_and_unknown_fields(session: AsyncS
     await repo.create_default(user_id)
     await session.commit()
 
-    updated = await repo.update(
-        user_id, theme=None, not_a_field=1, autoplay_next_episode=False
-    )
+    updated = await repo.update(user_id, theme=None, not_a_field=1, autoplay_next_episode=False)
 
     assert updated is not None
     assert updated.theme == "dark"  # unchanged: `None` values are ignored

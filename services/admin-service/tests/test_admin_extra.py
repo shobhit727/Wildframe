@@ -223,9 +223,7 @@ class TestConfigReads:
     async def test_set_config_updates_an_existing_key(self, service):
         svc, session, _ = service
         await svc.set_config("region", "eu", "string", None, "admin-1", "10.0.0.1")
-        updated = await svc.set_config(
-            "region", "us", "string", "moved", "admin-2", "10.0.0.1"
-        )
+        updated = await svc.set_config("region", "us", "string", "moved", "admin-2", "10.0.0.1")
         assert updated["value"] == "us"
         assert updated["updated_by"] == "admin-2"
         assert updated["description"] == "moved"
@@ -244,9 +242,7 @@ class TestConfigReads:
 
     async def test_audit_changes_never_contain_a_sensitive_value(self, service):
         svc, session, _ = service
-        await svc.set_config(
-            "api_key", "sk_live_leak", "string", None, "admin-1", "10.0.0.1"
-        )
+        await svc.set_config("api_key", "sk_live_leak", "string", None, "admin-1", "10.0.0.1")
         audits = (await session.execute(select(AdminAuditLog))).scalars().all()
         assert "sk_live_leak" not in audits[0].changes
         assert audits[0].changes == "value=********"

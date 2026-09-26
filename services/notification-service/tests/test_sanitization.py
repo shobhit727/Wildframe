@@ -17,16 +17,13 @@ from app.templates import (
     sanitize_text,
 )
 
-
 # ---------------------------------------------------------------------------
 # sanitize_text - HTML escaping
 # ---------------------------------------------------------------------------
 
 
 def test_script_tags_are_escaped():
-    assert sanitize_text("<script>alert(1)</script>") == (
-        "&lt;script&gt;alert(1)&lt;/script&gt;"
-    )
+    assert sanitize_text("<script>alert(1)</script>") == ("&lt;script&gt;alert(1)&lt;/script&gt;")
 
 
 def test_quotes_are_escaped_so_attributes_cannot_be_broken_out_of():
@@ -119,7 +116,7 @@ def test_script_content_survives_as_plain_text():
     assert sanitize_plain("<script>alert(1)</script>") == "alert(1)"
 
 
-def test_control_characters_are_stripped():
+def test_sanitize_plain_strips_control_characters():
     assert sanitize_plain("a\x00b\x07c") == "abc"
 
 
@@ -215,9 +212,7 @@ def test_a_none_context_value_renders_the_literal_none():
 
 def test_every_shipped_template_renders_with_the_documented_context():
     for name in _TEMPLATES:
-        subject, html_body, text_body = render_template(
-            name, title="T", message="M"
-        )
+        subject, html_body, text_body = render_template(name, title="T", message="M")
         assert isinstance(subject, str) and subject
         assert isinstance(html_body, str) and html_body
         assert isinstance(text_body, str)

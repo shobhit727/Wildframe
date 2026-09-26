@@ -323,18 +323,14 @@ class TestValidatePasswordStrength:
         with pytest.raises(ValueError):
             UserRegisterRequest(email="a@example.com", password="Password1234")
 
-        ok = UserRegisterRequest(
-            email="a@example.com", password="correct-horse-battery-staple"
-        )
+        ok = UserRegisterRequest(email="a@example.com", password="correct-horse-battery-staple")
         assert ok.password == "correct-horse-battery-staple"
 
     def test_change_password_schema_enforces_the_same_rules(self):
         from app.schemas import ChangePasswordRequest
 
         with pytest.raises(ValueError, match="too common"):
-            ChangePasswordRequest(
-                current_password="Whatever123!", new_password="qwerty123456"
-            )
+            ChangePasswordRequest(current_password="Whatever123!", new_password="qwerty123456")
 
         ok = ChangePasswordRequest(
             current_password="Whatever123!", new_password="a-long-enough-passphrase"

@@ -7,8 +7,6 @@ was a byte-identical placeholder copied across five services and asserted only
 defaults the repositories rely on for their entitlement maths.
 """
 
-from uuid import uuid4
-
 from app.repositories import (
     BaseRepository,
     DSARRepository,

@@ -179,7 +179,9 @@ class TestProductionSecrets:
     def test_absent_secret_is_still_rejected_when_the_variable_is_unset(self, clean_env):
         # The guard is not vacuous: omitting the variable entirely still fails,
         # because the field default ("whsec_default_change_me") is caught.
-        with pytest.raises(ValidationError, match="STRIPE_WEBHOOK_SECRET must be set in production"):
+        with pytest.raises(
+            ValidationError, match="STRIPE_WEBHOOK_SECRET must be set in production"
+        ):
             _settings(STRIPE_WEBHOOK_SECRET="whsec_default_change_me")
 
     def test_guards_are_ordered_database_before_redis(self, clean_env):
@@ -246,9 +248,7 @@ class TestCorsCredentials:
         assert s.CORS_ALLOWED_ORIGINS == ["*"]
 
     def test_explicit_origin_with_credentials_is_allowed_in_production(self, clean_env):
-        s = _settings(
-            CORS_ALLOWED_ORIGINS=["https://wildframe.com"], CORS_ALLOW_CREDENTIALS=True
-        )
+        s = _settings(CORS_ALLOWED_ORIGINS=["https://wildframe.com"], CORS_ALLOW_CREDENTIALS=True)
         assert s.CORS_ALLOWED_ORIGINS == ["https://wildframe.com"]
 
     def test_wildcard_origin_with_credentials_is_allowed_outside_production(self, clean_env):

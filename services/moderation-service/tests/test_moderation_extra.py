@@ -77,7 +77,7 @@ class TestIssueStrikeReasons:
         ],
     )
     async def test_only_copyright_maps_to_a_copyright_strike(self, flag_reason, expected):
-        service, = make_service()
+        (service,) = make_service()
         flag = await service.flag_content(
             content_id=uuid4(),
             content_creator_id=uuid4(),
@@ -88,7 +88,7 @@ class TestIssueStrikeReasons:
         assert strike.strike_reason is expected
 
     async def test_strike_is_linked_to_the_triggering_flag(self):
-        service, = make_service()
+        (service,) = make_service()
         flag = await service.flag_content(
             content_id=uuid4(),
             content_creator_id=uuid4(),
@@ -99,7 +99,7 @@ class TestIssueStrikeReasons:
         assert strike.related_flag_id == flag.id
 
     async def test_strike_is_created_active(self):
-        service, = make_service()
+        (service,) = make_service()
         flag = await service.flag_content(
             content_id=uuid4(),
             content_creator_id=uuid4(),
@@ -111,7 +111,7 @@ class TestIssueStrikeReasons:
 
     async def test_strike_never_carries_the_content_id(self):
         # The regression this guards: treating a content UUID as a creator UUID.
-        service, = make_service()
+        (service,) = make_service()
         content_id, creator_id = uuid4(), uuid4()
         flag = await service.flag_content(
             content_id=content_id,
@@ -124,7 +124,7 @@ class TestIssueStrikeReasons:
         assert strike.creator_id != content_id
 
     async def test_missing_creator_returns_none_and_logs(self, caplog):
-        service, = make_service()
+        (service,) = make_service()
         flag = await service.flag_content(
             content_id=uuid4(),
             content_creator_id=None,
@@ -138,7 +138,7 @@ class TestIssueStrikeReasons:
 
 class TestStrikeExpiry:
     async def test_strike_expires_after_the_configured_window(self):
-        service, = make_service()
+        (service,) = make_service()
         flag = await service.flag_content(
             content_id=uuid4(),
             content_creator_id=uuid4(),
@@ -152,7 +152,7 @@ class TestStrikeExpiry:
         assert settings.STRIKE_EXPIRES_DAYS == 90
 
     async def test_an_already_expired_strike_does_not_count(self):
-        service, = make_service()
+        (service,) = make_service()
         creator = uuid4()
         flag = await service.flag_content(
             content_id=uuid4(),
@@ -163,21 +163,21 @@ class TestStrikeExpiry:
         service.strike_repo.strikes.append(
             CreatorStrike(
                 creator_id=creator,
-                strike_reason=StrikeReason.SPAM.value
-                if hasattr(StrikeReason, "SPAM")
-                else StrikeReason.CONTENT_VIOLATION,
+                strike_reason=(
+                    StrikeReason.SPAM.value
+                    if hasattr(StrikeReason, "SPAM")
+                    else StrikeReason.CONTENT_VIOLATION
+                ),
                 is_active=True,
                 expires_at=datetime.now(UTC) - timedelta(days=1),
             )
         )
         await service._issue_strike(flag, uuid4())
         # Only the fresh strike is active, so no suspension.
-        assert [
-            e for e in service.flag_repo.events if e.topic == "creator.suspended"
-        ] == []
+        assert [e for e in service.flag_repo.events if e.topic == "creator.suspended"] == []
 
     async def test_a_deactivated_strike_does_not_count(self):
-        service, = make_service()
+        (service,) = make_service()
         creator = uuid4()
         flag = await service.flag_content(
             content_id=uuid4(),
@@ -195,14 +195,12 @@ class TestStrikeExpiry:
                 )
             )
         await service._issue_strike(flag, uuid4())
-        assert [
-            e for e in service.flag_repo.events if e.topic == "creator.suspended"
-        ] == []
+        assert [e for e in service.flag_repo.events if e.topic == "creator.suspended"] == []
 
 
 class TestSuspensionIdempotence:
     async def test_the_third_strike_suspends_exactly_once(self):
-        service, = make_service()
+        (service,) = make_service()
         creator = uuid4()
         for _ in range(3):
             flag = await service.flag_content(
@@ -213,16 +211,14 @@ class TestSuspensionIdempotence:
             )
             await service._issue_strike(flag, uuid4())
         assert len(service.strike_repo.strikes) == 3
-        suspensions = [
-            e for e in service.flag_repo.events if e.topic == "creator.suspended"
-        ]
+        suspensions = [e for e in service.flag_repo.events if e.topic == "creator.suspended"]
         assert len(suspensions) == 1
         assert suspensions[0].payload["active_strikes"] == 3
 
     async def test_a_fourth_strike_does_not_suspend_again(self):
         # The suspension event is idempotent: it fires only on the transition
         # 2 -> 3, not on every strike at or above the threshold.
-        service, = make_service()
+        (service,) = make_service()
         creator = uuid4()
         for _ in range(5):
             flag = await service.flag_content(
@@ -232,14 +228,12 @@ class TestSuspensionIdempotence:
                 reporter_id=uuid4(),
             )
             await service._issue_strike(flag, uuid4())
-        suspensions = [
-            e for e in service.flag_repo.events if e.topic == "creator.suspended"
-        ]
+        suspensions = [e for e in service.flag_repo.events if e.topic == "creator.suspended"]
         assert len(suspensions) == 1
         assert len(service.strike_repo.strikes) == 5
 
     async def test_the_suspension_event_names_the_triggering_flag(self):
-        service, = make_service()
+        (service,) = make_service()
         creator = uuid4()
         triggering = None
         for _ in range(3):
@@ -251,15 +245,13 @@ class TestSuspensionIdempotence:
             )
             await service._issue_strike(flag, uuid4())
             triggering = flag
-        suspension = next(
-            e for e in service.flag_repo.events if e.topic == "creator.suspended"
-        )
+        suspension = next(e for e in service.flag_repo.events if e.topic == "creator.suspended")
         assert suspension.payload["triggering_flag_id"] == str(triggering.id)
         assert suspension.event_key == f"{creator}:suspended"
         assert "auto-suspended after 3 strikes" == suspension.payload["reason"]
 
     async def test_the_suspension_event_stays_pending_for_the_worker(self):
-        service, = make_service()
+        (service,) = make_service()
         creator = uuid4()
         for _ in range(3):
             flag = await service.flag_content(
@@ -269,13 +261,11 @@ class TestSuspensionIdempotence:
                 reporter_id=uuid4(),
             )
             await service._issue_strike(flag, uuid4())
-        suspension = next(
-            e for e in service.flag_repo.events if e.topic == "creator.suspended"
-        )
+        suspension = next(e for e in service.flag_repo.events if e.topic == "creator.suspended")
         assert suspension.status is OutboxEventStatus.PENDING
 
     async def test_a_second_creator_has_an_independent_threshold(self):
-        service, = make_service()
+        (service,) = make_service()
         first, second = uuid4(), uuid4()
         for creator in (first, first, first, second):
             flag = await service.flag_content(
@@ -285,9 +275,7 @@ class TestSuspensionIdempotence:
                 reporter_id=uuid4(),
             )
             await service._issue_strike(flag, uuid4())
-        suspensions = [
-            e for e in service.flag_repo.events if e.topic == "creator.suspended"
-        ]
+        suspensions = [e for e in service.flag_repo.events if e.topic == "creator.suspended"]
         assert [e.payload["creator_id"] for e in suspensions] == [str(first)]
 
 
@@ -560,7 +548,7 @@ class TestServiceInvariants:
         assert service.publisher is shared
 
     async def test_get_queue_passes_the_limit_through(self):
-        service, = make_service()
+        (service,) = make_service()
         now = datetime.now(UTC)
         for i in range(3):
             # created_at is column-defaulted, so the in-memory fake needs it set
@@ -575,7 +563,7 @@ class TestServiceInvariants:
         assert len(await service.get_queue(limit=99)) == 3
 
     async def test_get_strikes_scopes_to_the_creator(self):
-        service, = make_service()
+        (service,) = make_service()
         mine, theirs = uuid4(), uuid4()
         for creator in (mine, theirs):
             flag = await service.flag_content(
@@ -589,12 +577,12 @@ class TestServiceInvariants:
         assert (await service.get_strikes(mine))[0].creator_id == mine
 
     async def test_drain_outbox_returns_zero_when_nothing_is_pending(self):
-        service, = make_service()
+        (service,) = make_service()
         assert await service.drain_outbox() == 0
         assert service.publisher.sent == []
 
     async def test_escalated_flags_cannot_be_decided_again(self):
-        service, = make_service()
+        (service,) = make_service()
         flag = await service.flag_content(
             content_id=uuid4(),
             flag_reason=FlagReason.SPAM,

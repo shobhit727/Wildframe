@@ -11,14 +11,12 @@ patched at their import site so nothing touches a real database or broker.
 """
 
 import asyncio
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from jose import jwt
 
 from app.core.settings import settings
 from app.main import create_app, lifespan
@@ -414,9 +412,7 @@ def test_unhandled_exceptions_return_an_opaque_500():
     ):
         # raise_server_exceptions=False: Starlette's ServerErrorMiddleware
         # re-raises after the handler has already written the 500 body.
-        with TestClient(
-            app, base_url="http://localhost", raise_server_exceptions=False
-        ) as client:
+        with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
             response = client.get("/_boom")
 
     assert response.status_code == 500
@@ -450,9 +446,7 @@ def test_known_defect_500_responses_lose_the_tracing_headers():
         raise RuntimeError("kaboom")
 
     with patch("app.core.database.DatabaseManager.health_check", new=AsyncMock(return_value=True)):
-        with TestClient(
-            app, base_url="http://localhost", raise_server_exceptions=False
-        ) as client:
+        with TestClient(app, base_url="http://localhost", raise_server_exceptions=False) as client:
             response = client.get("/_boom2", headers={"X-Correlation-ID": "corr-500"})
 
     assert response.status_code == 500

@@ -17,7 +17,7 @@ for every guarded handler -- see the ``test_no_mutation_*`` cases.
 
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException, Request
@@ -32,7 +32,6 @@ from app.api.routes import (
     get_streaming_service,
     require_admin,
     require_self,
-    router,
 )
 from app.core.settings import settings
 from _test_jwks import JWKS, PRIVATE_PEM
@@ -527,7 +526,9 @@ def test_episode_manifest_unsigned_authorized_succeeds(client, fake_service):
     assert r.json()["manifest_url"] == manifest.manifest_url
     # #528/#526: authorized media must not be cached by shared intermediaries.
     assert r.headers["cache-control"] == "private, no-store"
-    fake_service.require_manifest_session.assert_awaited_once_with(user, episode_id, manifest.content_id)
+    fake_service.require_manifest_session.assert_awaited_once_with(
+        user, episode_id, manifest.content_id
+    )
     # The unsigned path must not touch the signed-URL helpers.
     fake_service.verify_signed_url.assert_not_called()
     fake_service.check_session_valid_for_playback.assert_not_called()

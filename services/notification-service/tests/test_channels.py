@@ -12,9 +12,8 @@ attempt count, doubling delay, "never retry a config error" rule and terminal
 error message are all asserted here.
 """
 
-import asyncio
 import smtplib
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -230,9 +229,7 @@ async def test_email_strips_tags_from_the_plain_text_part(smtp_settings):
 @pytest.mark.parametrize("template", ["generic", "welcome", "new_episode"])
 async def test_email_renders_every_supported_template(smtp_settings, template):
     with patch("app.channels.smtplib.SMTP", RecordingSMTP):
-        await EmailChannel().deliver(
-            make_notification(), recipient="a@b.test", template=template
-        )
+        await EmailChannel().deliver(make_notification(), recipient="a@b.test", template=template)
 
     assert RecordingSMTP.instances[0].sent
 
@@ -276,12 +273,8 @@ async def test_email_logs_in_when_both_credentials_are_set(smtp_settings):
     assert RecordingSMTP.instances[0].logged_in == ("mailer", "hunter2")
 
 
-@pytest.mark.parametrize(
-    "username,password", [("", "hunter2"), ("mailer", ""), ("", "")]
-)
-async def test_email_skips_login_when_credentials_are_incomplete(
-    smtp_settings, username, password
-):
+@pytest.mark.parametrize("username,password", [("", "hunter2"), ("mailer", ""), ("", "")])
+async def test_email_skips_login_when_credentials_are_incomplete(smtp_settings, username, password):
     smtp_settings(SMTP_USERNAME=username, SMTP_PASSWORD=password)
 
     with patch("app.channels.smtplib.SMTP", RecordingSMTP):

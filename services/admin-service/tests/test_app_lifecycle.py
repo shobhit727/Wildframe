@@ -14,10 +14,8 @@ import asyncio
 import pathlib
 
 import pytest
-from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
-from app.core import database as db_mod
 from app.core.database import DatabaseManager
 from app.core.settings import settings
 import app.main as main_mod
@@ -212,9 +210,7 @@ class TestHealthEndpoints:
             resp = await client.get("/health")
         assert resp.status_code == 200
 
-    async def test_ready_reports_ok_when_database_and_redis_are_healthy(
-        self, stub_db, monkeypatch
-    ):
+    async def test_ready_reports_ok_when_database_and_redis_are_healthy(self, stub_db, monkeypatch):
         _, healthy = stub_db
         healthy["value"] = True
         monkeypatch.setattr(settings, "REDIS_URL", "redis://stub:6379/0")

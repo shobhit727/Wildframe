@@ -122,9 +122,7 @@ class TestVerifyDsarIdentity:
         session.commit.assert_not_called()
 
     @pytest.mark.parametrize("method", ["email_otp", "id_document", "knowledge"])
-    def test_every_documented_verification_method_is_accepted(
-        self, client_for, method
-    ):
+    def test_every_documented_verification_method_is_accepted(self, client_for, method):
         user_id = uuid.uuid4()
         session = _fake_session()
 
@@ -256,9 +254,7 @@ class TestVerifyDsarIdentity:
 
     def test_admin_step_up_token_produces_a_500_instead_of_a_401(self, client_for):
         user_id = uuid.uuid4()
-        step_up = TokenManager.create_admin_step_up_token(
-            user_id, "dsar@example.com", 0, ["pwd"]
-        )
+        step_up = TokenManager.create_admin_step_up_token(user_id, "dsar@example.com", 0, ["pwd"])
         session = _fake_session()
 
         with client_for(session, raise_server_exceptions=False) as client:
@@ -404,6 +400,4 @@ class TestRouterShape:
 
         mounted = set(create_app().openapi()["paths"])
         assert not any(path.startswith("/api/v1/dsar") for path in mounted)
-        assert not any(
-            getattr(r, "path", "").startswith("/dsar") for r in mounted_router.routes
-        )
+        assert not any(getattr(r, "path", "").startswith("/dsar") for r in mounted_router.routes)

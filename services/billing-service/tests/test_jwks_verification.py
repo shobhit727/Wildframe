@@ -1,5 +1,4 @@
 import base64
-import json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -323,7 +322,9 @@ class TestVerifyWithJwksRejections:
 
     def test_unsupported_algorithm_is_rejected(self):
         # Symmetric-signed token: the header says HS256, which is not allowed.
-        token = jwt.encode(_access_claims(), "a-shared-secret", algorithm="HS256", headers={"kid": "k1"})
+        token = jwt.encode(
+            _access_claims(), "a-shared-secret", algorithm="HS256", headers={"kid": "k1"}
+        )
         assert jwt.get_unverified_header(token)["alg"] == "HS256"
         with pytest.raises(JWTError, match="unsupported alg HS256"):
             verify_with_jwks(token, {"keys": [{"kid": "k1", "alg": "RS256"}]})
@@ -490,7 +491,9 @@ class TestVerifyTokenEntryPoints:
     async def test_verify_token_falls_back_to_the_cache(self):
         from tests._test_jwks import JWKS
 
-        with patch.object(jwt_verifier, "get_cached_jwks", new=AsyncMock(return_value=JWKS)) as cached:
+        with patch.object(
+            jwt_verifier, "get_cached_jwks", new=AsyncMock(return_value=JWKS)
+        ) as cached:
             payload = await verify_token(_signed(_access_claims()))
         cached.assert_awaited_once()
         assert payload["type"] == "access"

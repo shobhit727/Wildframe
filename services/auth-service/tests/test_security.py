@@ -164,13 +164,12 @@ class TestRateLimiter:
 # ==========================================================================
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from app.security import (
     PASSWORD_MAX_LENGTH,
     PasswordManager,
     SecretCipher,
-    TokenManager,
     normalize_email,
     role_for_email,
 )
@@ -406,9 +405,7 @@ class TestSecretCipher:
     def test_decrypts_with_a_previous_key(self, monkeypatch):
         monkeypatch.setattr(settings_module.settings, "MFA_ENCRYPTION_KEY", "old-key")
         token = SecretCipher.encrypt("rotate-me")
-        monkeypatch.setattr(
-            settings_module.settings, "MFA_ENCRYPTION_KEY", "new-key"
-        )
+        monkeypatch.setattr(settings_module.settings, "MFA_ENCRYPTION_KEY", "new-key")
         monkeypatch.setattr(settings_module.settings, "MFA_ENCRYPTION_KEY_PREVIOUS", ["old-key"])
 
         assert SecretCipher.decrypt(token) == "rotate-me"
@@ -449,10 +446,7 @@ class TestSecretCipher:
 
 class TestRateLimiterHelpers:
     def test_rate_limit_key_is_namespaced(self):
-        assert (
-            RateLimiter.get_rate_limit_key("1.2.3.4", "login")
-            == "ratelimit:login:1.2.3.4"
-        )
+        assert RateLimiter.get_rate_limit_key("1.2.3.4", "login") == "ratelimit:login:1.2.3.4"
 
     def test_window_size_for_login(self):
         assert RateLimiter.get_window_size("login") == (
@@ -554,7 +548,12 @@ class TestTokensWithoutASubject:
 
         now = datetime.now(UTC)
         token = jwt.encode(
-            {"user_id": str(uuid4()), "type": "access", "iat": now, "exp": now + timedelta(minutes=5)},
+            {
+                "user_id": str(uuid4()),
+                "type": "access",
+                "iat": now,
+                "exp": now + timedelta(minutes=5),
+            },
             "a-shared-secret-that-is-long-enough-for-hs256!!",
             algorithm="HS256",
         )

@@ -229,7 +229,9 @@ def test_unhandled_exception_returns_opaque_500(monkeypatch):
     async def _boom():
         raise RuntimeError("secret db password leaked")
 
-    with TestClient(main_module.app, base_url="http://localhost", raise_server_exceptions=False) as c:
+    with TestClient(
+        main_module.app, base_url="http://localhost", raise_server_exceptions=False
+    ) as c:
         r = c.get("/_boom")
 
     assert r.status_code == 500
@@ -254,9 +256,7 @@ def test_main_entrypoint_starts_uvicorn(monkeypatch):
         (),
         {
             "run": staticmethod(
-                lambda target, host, port: recorded.update(
-                    target=target, host=host, port=port
-                )
+                lambda target, host, port: recorded.update(target=target, host=host, port=port)
             )
         },
     )

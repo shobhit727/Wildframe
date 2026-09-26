@@ -1,7 +1,7 @@
 """Tests for security headers and the gateway's authentication boundary."""
 
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -79,9 +79,7 @@ async def test_verify_token_returns_the_decoded_claims(auth):
 
 
 async def test_verify_token_is_case_insensitive_about_the_bearer_scheme(auth):
-    payload = await auth.verify_token(
-        _request(headers={"authorization": f"bearer {_token()}"})
-    )
+    payload = await auth.verify_token(_request(headers={"authorization": f"bearer {_token()}"}))
     assert payload is not None
 
 
@@ -106,9 +104,7 @@ async def test_verify_token_rejects_a_token_signed_with_another_key(auth):
 
 
 async def test_verify_token_rejects_an_expired_token(auth):
-    expired = jwt.encode(
-        {"sub": "user-1", "exp": int(time.time()) - 60}, SECRET, algorithm="HS256"
-    )
+    expired = jwt.encode({"sub": "user-1", "exp": int(time.time()) - 60}, SECRET, algorithm="HS256")
     assert await auth.verify_token(_request(headers={"authorization": f"Bearer {expired}"})) is None
 
 
@@ -162,15 +158,15 @@ async def test_protected_paths_require_a_valid_token(auth, path):
 
 async def test_protected_paths_return_the_claims_for_a_valid_token(auth):
     payload = await auth(
-        _request(path="/content/api/v1/titles", headers={"authorization": f"Bearer {_token('u-7')}"})
+        _request(
+            path="/content/api/v1/titles", headers={"authorization": f"Bearer {_token('u-7')}"}
+        )
     )
     assert payload["sub"] == "u-7"
 
 
 @pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"])
-async def test_docs_paths_always_require_a_token_regardless_of_environment(
-    auth, path, monkeypatch
-):
+async def test_docs_paths_always_require_a_token_regardless_of_environment(auth, path, monkeypatch):
     """Docs are gated in *both* environments, not just production.
 
     ``__call__`` reads::
@@ -286,9 +282,7 @@ async def test_shared_client_lifespan_opens_and_closes_a_pooled_client():
         client = get_shared_client()
         assert client is not None
         assert isinstance(client.timeout.connect, float)
-        assert (
-            client.timeout.connect == settings.UPSTREAM_CONNECT_TIMEOUT
-        )
+        assert client.timeout.connect == settings.UPSTREAM_CONNECT_TIMEOUT
         assert client.timeout.read == settings.UPSTREAM_READ_TIMEOUT
         assert client.timeout.write == settings.UPSTREAM_WRITE_TIMEOUT
         assert client.timeout.pool == settings.UPSTREAM_POOL_TIMEOUT

@@ -53,7 +53,9 @@ async def session(tmp_path):
     """
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'admin.db'}")
     async with engine.begin() as conn:
-        await conn.run_sync(_load_third_copy("admin_models_direct", MODEL_MODULE_PATH).Base.metadata.create_all)
+        await conn.run_sync(
+            _load_third_copy("admin_models_direct", MODEL_MODULE_PATH).Base.metadata.create_all
+        )
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
         yield db
@@ -110,9 +112,7 @@ class TestDoubleLoadHazard:
             == select(model_module.UserModeration).compile().string
         )
 
-    async def test_repository_still_persists_through_the_service_wired_session(
-        self, session
-    ):
+    async def test_repository_still_persists_through_the_service_wired_session(self, session):
         # End-to-end sanity: the copy the service holds writes real rows.
         service_repo = UserModerationRepository.__new__(UserModerationRepository)
         service_repo.db = session
@@ -138,7 +138,6 @@ class TestUserModerationRepository:
     async def test_create_defaults_status_to_active(self, session):
         import app.models.admin as models
 
-        row = models.UserModeration(user_id="u-x", moderated_by="admin-1")
         assert models.UserModeration.status.default.arg == "active"
 
     async def test_get_by_user_id_returns_newest_first(self, session):
@@ -183,9 +182,12 @@ class TestUserModerationRepository:
         assert updated.moderated_at is not None
 
     async def test_update_status_returns_none_for_unknown_user(self, session):
-        assert await UserModerationRepository(session).update_status(
-            "ghost", "banned", None, "admin-1"
-        ) is None
+        assert (
+            await UserModerationRepository(session).update_status(
+                "ghost", "banned", None, "admin-1"
+            )
+            is None
+        )
 
     async def test_list_moderated_users_is_newest_first(self, session):
         repo = UserModerationRepository(session)
@@ -412,7 +414,7 @@ class TestSystemAlertRepository:
 class TestSystemConfigRepository:
     async def test_create_and_get_by_key(self, session):
         repo = SystemConfigRepository(session)
-        row = await repo.create("retention_days", "90", "number", "How long", "admin-1")
+        await repo.create("retention_days", "90", "number", "How long", "admin-1")
         await session.commit()
         fetched = await repo.get_by_key("retention_days")
         assert fetched.value == "90"
@@ -429,7 +431,11 @@ class TestSystemConfigRepository:
         await repo.create("b_key", "2", "number", None, "admin-1")
         await repo.create("a_key", "1", "number", None, "admin-1")
         await session.commit()
-        session.add(models.SystemConfig(key="c_key", value="3", config_type="number", updated_by="x", is_active=False))
+        session.add(
+            models.SystemConfig(
+                key="c_key", value="3", config_type="number", updated_by="x", is_active=False
+            )
+        )
         await session.commit()
         assert [c.key for c in await repo.list_all()] == ["a_key", "b_key"]
 
@@ -454,9 +460,10 @@ class TestSystemConfigRepository:
         assert updated.updated_by == "admin-2"
 
     async def test_update_returns_none_for_missing_key(self, session):
-        assert await SystemConfigRepository(session).update(
-            "missing", "v", "admin-1", "string", None
-        ) is None
+        assert (
+            await SystemConfigRepository(session).update("missing", "v", "admin-1", "string", None)
+            is None
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -467,9 +474,7 @@ class TestSystemConfigRepository:
 class TestAdminAuditLogRepository:
     async def test_create_persists_the_audit_row(self, session):
         repo = AdminAuditLogRepository(session)
-        row = await repo.create(
-            "admin-1", "user_banned", "user", "u-9", "reason=spam", "10.0.0.1"
-        )
+        row = await repo.create("admin-1", "user_banned", "user", "u-9", "reason=spam", "10.0.0.1")
         await session.commit()
         assert (row.admin_id, row.action, row.resource_id) == (
             "admin-1",
@@ -481,8 +486,12 @@ class TestAdminAuditLogRepository:
     async def test_create_redacts_secret_shaped_changes(self, session):
         repo = AdminAuditLogRepository(session)
         row = await repo.create(
-            "admin-1", "config_updated", "config", "stripe_key",
-            "value=sk_live_leak; token=tok_abc", "10.0.0.1",
+            "admin-1",
+            "config_updated",
+            "config",
+            "stripe_key",
+            "value=sk_live_leak; token=tok_abc",
+            "10.0.0.1",
         )
         await session.commit()
         assert "sk_live_leak" not in row.changes

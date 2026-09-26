@@ -174,7 +174,9 @@ async def test_a_tampered_token_is_rejected():
     head, payload_b64, signature = token.split(".")
 
     with pytest.raises(HTTPException) as excinfo:
-        await get_current_user_id(authorization=f"Bearer {head}.{payload_b64}.{'A' * len(signature)}")
+        await get_current_user_id(
+            authorization=f"Bearer {head}.{payload_b64}.{'A' * len(signature)}"
+        )
 
     assert excinfo.value.status_code == 401
 

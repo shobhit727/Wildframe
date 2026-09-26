@@ -62,9 +62,7 @@ class TestSlugValidation:
         with pytest.raises(ValidationError) as exc:
             schema(name="A", slug="Not-A-Slug")
 
-        assert "Slug must contain only lowercase letters, numbers, and hyphens" in str(
-            exc.value
-        )
+        assert "Slug must contain only lowercase letters, numbers, and hyphens" in str(exc.value)
 
     def test_content_create_request_rejects_a_malformed_slug(self):
         with pytest.raises(ValidationError) as exc:
@@ -72,13 +70,9 @@ class TestSlugValidation:
                 title="T", slug="has spaces", description="D", content_type="movie"
             )
 
-        assert "Slug must contain only lowercase letters, numbers, and hyphens" in str(
-            exc.value
-        )
+        assert "Slug must contain only lowercase letters, numbers, and hyphens" in str(exc.value)
 
-    @pytest.mark.parametrize(
-        "slug", ["action", "sci-fi", "a1", "top-10-shows", "x"]
-    )
+    @pytest.mark.parametrize("slug", ["action", "sci-fi", "a1", "top-10-shows", "x"])
     def test_well_formed_slugs_are_accepted(self, slug):
         assert GenreCreateRequest(name="A", slug=slug).slug == slug
 
@@ -211,9 +205,7 @@ class TestCastMemberDelegation:
         service.cast_repo.create.side_effect = RuntimeError("db down")
 
         with pytest.raises(RuntimeError):
-            await service.create_cast_member(
-                CastMemberCreateRequest(name="K", slug="k")
-            )
+            await service.create_cast_member(CastMemberCreateRequest(name="K", slug="k"))
 
         service.content_repo.rollback.assert_awaited_once()
 
@@ -359,9 +351,7 @@ class TestSeasonService:
         service.season_repo.create.side_effect = RuntimeError("db down")
 
         with pytest.raises(RuntimeError):
-            await service.create_season(
-                uuid4(), SeasonCreateRequest(season_number=1, title="S1")
-            )
+            await service.create_season(uuid4(), SeasonCreateRequest(season_number=1, title="S1"))
 
         service.content_repo.rollback.assert_awaited_once()
 
@@ -419,9 +409,7 @@ class TestSeasonService:
         service.season_repo.update.side_effect = RuntimeError("db down")
 
         with pytest.raises(RuntimeError):
-            await service.update_season(
-                content_id, season.id, SeasonUpdateRequest(title="S1")
-            )
+            await service.update_season(content_id, season.id, SeasonUpdateRequest(title="S1"))
 
         service.content_repo.rollback.assert_awaited_once()
 
@@ -517,9 +505,7 @@ class TestRatingAndRecommendationService:
         service.rating_repo.create.side_effect = RuntimeError("db down")
 
         with pytest.raises(RuntimeError):
-            await service.rate_content(
-                uuid4(), uuid4(), ContentRatingCreateRequest(rating=8.0)
-            )
+            await service.rate_content(uuid4(), uuid4(), ContentRatingCreateRequest(rating=8.0))
 
         service.content_repo.rollback.assert_awaited_once()
 
@@ -572,9 +558,7 @@ class TestRatingAndRecommendationService:
         service.recommendation_repo.get_recommendations.return_value = ["r"]
 
         assert await service.list_recommendations(content_id) == ["r"]
-        service.recommendation_repo.get_recommendations.assert_awaited_once_with(
-            content_id, 10
-        )
+        service.recommendation_repo.get_recommendations.assert_awaited_once_with(content_id, 10)
 
     async def test_get_recommendations_forwards_the_limit(self, service):
         service.recommendation_repo.get_recommendations.return_value = ["r"]
@@ -590,9 +574,7 @@ class TestAddCastMemberService:
     async def test_missing_content_returns_none(self, service):
         service.content_repo.get_by_id.return_value = None
 
-        result = await service.add_cast_member(
-            uuid4(), CastMemberCreateRequest(name="K", slug="k")
-        )
+        result = await service.add_cast_member(uuid4(), CastMemberCreateRequest(name="K", slug="k"))
 
         assert result is None
         service.cast_repo.create.assert_not_awaited()
@@ -601,9 +583,7 @@ class TestAddCastMemberService:
         service.content_repo.get_by_id.side_effect = RuntimeError("db down")
 
         with pytest.raises(RuntimeError):
-            await service.add_cast_member(
-                uuid4(), CastMemberCreateRequest(name="K", slug="k")
-            )
+            await service.add_cast_member(uuid4(), CastMemberCreateRequest(name="K", slug="k"))
 
         service.content_repo.rollback.assert_awaited_once()
 
@@ -677,7 +657,9 @@ class TestContentLifecycleAgainstPostgres:
     async def test_genre_crud_round_trip(self, db_session):
         service = ContentService(db_session)
         genre = await service.create_genre(
-            GenreCreateRequest(name=f"Westerns-{uuid4().hex[:8]}", slug=f"westerns-{uuid4().hex[:8]}")
+            GenreCreateRequest(
+                name=f"Westerns-{uuid4().hex[:8]}", slug=f"westerns-{uuid4().hex[:8]}"
+            )
         )
         genre_id = genre.id
 
@@ -715,9 +697,7 @@ class TestContentLifecycleAgainstPostgres:
 
         assert (await service.get_content_by_slug(created.slug)).id == content_id
         assert any(c.id == content_id for c in await service.list_content_by_genre(genre.id))
-        assert any(
-            c.id == content_id for c in await service.list_content_by_type("movie")
-        )
+        assert any(c.id == content_id for c in await service.list_content_by_type("movie"))
         assert any(c.id == content_id for c in await service.search_content("Space"))
         assert any(c.id == content_id for c in await service.get_trending_content(50))
 
@@ -727,9 +707,7 @@ class TestContentLifecycleAgainstPostgres:
         assert await service.delete_content(content_id) is True
         # Soft delete (#433): the row survives but leaves the catalog.
         assert await service.get_content(content_id) is not None
-        assert all(
-            c.id != content_id for c in await service.list_content(page=1, page_size=50)
-        )
+        assert all(c.id != content_id for c in await service.list_content(page=1, page_size=50))
 
     async def test_list_content_filters_by_status_and_genre(self, db_session):
         service = ContentService(db_session)
@@ -788,12 +766,8 @@ class TestContentLifecycleAgainstPostgres:
             EpisodeCreateRequest(episode_number=1, title="Pilot", duration_minutes=45),
         )
         assert (await service.get_season(content.id, season.id)).episode_count == 1
-        assert [e.id for e in await service.list_episodes(content.id, season.id)] == [
-            episode.id
-        ]
-        assert (
-            await service.get_episode(content.id, season.id, episode.id)
-        ).title == "Pilot"
+        assert [e.id for e in await service.list_episodes(content.id, season.id)] == [episode.id]
+        assert (await service.get_episode(content.id, season.id, episode.id)).title == "Pilot"
 
         updated_season = await service.update_season(
             content.id, season.id, SeasonUpdateRequest(title="Season One")
@@ -812,9 +786,7 @@ class TestContentLifecycleAgainstPostgres:
 
     async def test_rating_upserts_and_recomputes_the_average(self, db_session):
         service = ContentService(db_session)
-        content = await service.create_content(
-            _content_request(slug=f"rated-{uuid4().hex[:8]}")
-        )
+        content = await service.create_content(_content_request(slug=f"rated-{uuid4().hex[:8]}"))
         user_a, user_b = uuid4(), uuid4()
 
         await service.rate_content(content.id, user_a, ContentRatingCreateRequest(rating=6.0))
@@ -834,12 +806,8 @@ class TestContentLifecycleAgainstPostgres:
 
     async def test_recommendation_and_cast_lifecycle(self, db_session):
         service = ContentService(db_session)
-        content = await service.create_content(
-            _content_request(slug=f"rec-{uuid4().hex[:8]}")
-        )
-        other = await service.create_content(
-            _content_request(slug=f"rec2-{uuid4().hex[:8]}")
-        )
+        content = await service.create_content(_content_request(slug=f"rec-{uuid4().hex[:8]}"))
+        other = await service.create_content(_content_request(slug=f"rec2-{uuid4().hex[:8]}"))
         rec = await service.add_recommendation(
             content.id,
             ContentRecommendationCreateRequest(
@@ -928,12 +896,9 @@ class TestRepositoryQueries:
         await repo.commit()
 
         assert any(
-            c.id == created.id
-            for c in await repo.get_by_animation_style(AnimationStyle.CGI_3D)
+            c.id == created.id for c in await repo.get_by_animation_style(AnimationStyle.CGI_3D)
         )
-        assert any(
-            c.id == created.id for c in await repo.get_creator_filmography(creator_id)
-        )
+        assert any(c.id == created.id for c in await repo.get_creator_filmography(creator_id))
 
     async def test_get_series_episodes_orders_by_season_and_episode(self, db_session):
         repo = ContentRepository(db_session)
@@ -962,9 +927,7 @@ class TestRepositoryQueries:
         content = await self._content_row(db_session)
         content_id = content.id
         repo = SeasonRepository(db_session)
-        season = await repo.create(
-            content_id=content_id, season_number=2, title="Season 2"
-        )
+        season = await repo.create(content_id=content_id, season_number=2, title="Season 2")
         await repo.commit()
 
         found = await repo.get_by_content_and_number(content_id, 2)
@@ -997,9 +960,7 @@ class TestRepositoryQueries:
             duration_minutes=45,
         )
         await episode_repo.commit()
-        assert [e.id for e in await episode_repo.get_season_episodes(season.id)] == [
-            episode.id
-        ]
+        assert [e.id for e in await episode_repo.get_season_episodes(season.id)] == [episode.id]
         assert await episode_repo.update(uuid4(), title="x") is None
         assert await episode_repo.delete(uuid4()) is False
 
@@ -1014,9 +975,7 @@ class TestRepositoryQueries:
         await rating_repo.commit()
         assert (await rating_repo.get_user_rating(content_id, user_id)).id == rating.id
         assert await rating_repo.get_user_rating(content_id, uuid4()) is None
-        assert [r.id for r in await rating_repo.get_content_ratings(content_id)] == [
-            rating.id
-        ]
+        assert [r.id for r in await rating_repo.get_content_ratings(content_id)] == [rating.id]
 
         rec_repo = ContentRecommendationRepository(db_session)
         rec = await rec_repo.create(
@@ -1032,9 +991,7 @@ class TestRepositoryQueries:
 
     async def test_cast_member_lookups_escape_like_wildcards(self, db_session):
         repo = CastMemberRepository(db_session)
-        member = await repo.create(
-            name="Percent % Person", slug=f"pct-{uuid4().hex[:8]}", bio=None
-        )
+        member = await repo.create(name="Percent % Person", slug=f"pct-{uuid4().hex[:8]}", bio=None)
         await repo.commit()
 
         assert (await repo.get_by_slug(member.slug)).id == member.id

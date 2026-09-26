@@ -153,9 +153,7 @@ class TestCreateApp:
         # Two BaseHTTPMiddleware layers: in-flight tracking (#426) and the
         # request body cap (#517).
         app = create_app()
-        http_mw = [
-            m for m in app.user_middleware if m.cls.__name__ == "BaseHTTPMiddleware"
-        ]
+        http_mw = [m for m in app.user_middleware if m.cls.__name__ == "BaseHTTPMiddleware"]
         assert len(http_mw) == 2
 
     def test_module_level_app_exists_for_uvicorn(self):
@@ -272,9 +270,7 @@ class TestReadyEndpoint:
             # `from_url` is awaited by /ready, so the double must be an
             # AsyncMock — a plain MagicMock returns the client un-awaited and
             # raises "AsyncMock object can't be awaited" on the next line.
-            with patch.object(
-                main_module.redis, "from_url", AsyncMock(return_value=client)
-            ):
+            with patch.object(main_module.redis, "from_url", AsyncMock(return_value=client)):
                 resp = await _get(app, "/ready")
         assert resp.status_code == 200
         body = resp.json()
@@ -289,9 +285,7 @@ class TestReadyEndpoint:
         app = create_app()
         client = AsyncMock()
         with patch.object(DatabaseManager, "health_check", AsyncMock(return_value=False)):
-            with patch.object(
-                main_module.redis, "from_url", AsyncMock(return_value=client)
-            ):
+            with patch.object(main_module.redis, "from_url", AsyncMock(return_value=client)):
                 resp = await _get(app, "/ready")
         assert resp.status_code == 503
         body = resp.json()
@@ -303,9 +297,7 @@ class TestReadyEndpoint:
         client = AsyncMock()
         client.ping = AsyncMock(side_effect=ConnectionError("redis refused"))
         with patch.object(DatabaseManager, "health_check", AsyncMock(return_value=True)):
-            with patch.object(
-                main_module.redis, "from_url", AsyncMock(return_value=client)
-            ):
+            with patch.object(main_module.redis, "from_url", AsyncMock(return_value=client)):
                 resp = await _get(app, "/ready")
         assert resp.status_code == 503
         assert resp.json()["checks"]["redis"] == "down"
@@ -338,9 +330,7 @@ class TestReadyEndpoint:
         client = AsyncMock()
         client.ping = AsyncMock(side_effect=asyncio.TimeoutError())
         with patch.object(DatabaseManager, "health_check", AsyncMock(return_value=True)):
-            with patch.object(
-                main_module.redis, "from_url", AsyncMock(return_value=client)
-            ):
+            with patch.object(main_module.redis, "from_url", AsyncMock(return_value=client)):
                 resp = await _get(app, "/ready")
         assert resp.status_code == 503
         assert resp.json()["checks"]["redis"] == "down"

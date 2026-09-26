@@ -78,22 +78,19 @@ def test_privacy_notice_is_current():
 # every consent state transition are exercised end to end.
 # ==========================================================================
 
-import contextlib
-from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
-from uuid import UUID, uuid4
+from datetime import timedelta
+from unittest.mock import patch
+from uuid import UUID
 
-from app.api.routes import auth as auth_routes
 from app.api.routes.privacy import _validate_jurisdiction, require_admin
 from app.core.database import DatabaseManager
 from app.core.settings import settings
 from app.main import create_app
-from app.models import Base, ConsentRecord, PrivacyNotice
+from app.models import Base
 from app.repositories.privacy_repository import (
     ConsentRecordRepository,
-    PrivacyNoticeRepository,
 )
-from app.security import PasswordManager, TokenManager
+from app.security import PasswordManager
 
 
 def _run(coro):
@@ -153,9 +150,10 @@ def privacy_client(privacy_app):
     async def _consumer(_f):
         return None
 
-    with patch.object(
-        event_consumer, "run_user_moderation_consumer", _consumer
-    ), patch("app.main.setup_logging"):
+    with (
+        patch.object(event_consumer, "run_user_moderation_consumer", _consumer),
+        patch("app.main.setup_logging"),
+    ):
         with TestClient(create_app()) as client:
             yield client
 
@@ -232,9 +230,7 @@ class TestRequireAdmin:
         from app.models import User
 
         monkeypatch.setattr(settings, "ADMIN_EMAILS", ADMIN_EMAIL)
-        user = User(
-            email=ADMIN_EMAIL, password_hash=PasswordManager.hash_password("Secret1234!")
-        )
+        user = User(email=ADMIN_EMAIL, password_hash=PasswordManager.hash_password("Secret1234!"))
         test_session.add(user)
         await test_session.commit()
 
@@ -246,9 +242,7 @@ class TestRequireAdmin:
         from app.models import User
 
         monkeypatch.setattr(settings, "ADMIN_EMAILS", ADMIN_EMAIL)
-        user = User(
-            email=USER_EMAIL, password_hash=PasswordManager.hash_password("Secret1234!")
-        )
+        user = User(email=USER_EMAIL, password_hash=PasswordManager.hash_password("Secret1234!"))
         test_session.add(user)
         await test_session.commit()
 
@@ -301,7 +295,9 @@ class TestPrivacyNoticesAdminRoutes:
             "effective_date": datetime.now(UTC).isoformat(),
         }
         assert (
-            privacy_client.post("/api/v1/privacy/notices", json=payload, headers=tokens["admin"]).status_code
+            privacy_client.post(
+                "/api/v1/privacy/notices", json=payload, headers=tokens["admin"]
+            ).status_code
             == 201
         )
 
@@ -551,7 +547,9 @@ class TestPrivacyNoticesAdminRoutes:
 
         assert response.status_code == 200
         assert response.json()["is_current"] is True
-        assert privacy_client.get("/api/v1/privacy/notices/current").json()["EU"]["version"] == "1.0.0"
+        assert (
+            privacy_client.get("/api/v1/privacy/notices/current").json()["EU"]["version"] == "1.0.0"
+        )
 
     def test_update_missing_notice_is_404(self, privacy_client, tokens):
         response = privacy_client.patch(
@@ -613,7 +611,9 @@ class TestPrivacyNoticesAdminRoutes:
         assert response.status_code == 200
         assert response.json()["is_current"] is True
         assert response.json()["deprecated_date"] is None
-        assert privacy_client.get("/api/v1/privacy/notices/current").json()["EU"]["version"] == "1.0.0"
+        assert (
+            privacy_client.get("/api/v1/privacy/notices/current").json()["EU"]["version"] == "1.0.0"
+        )
 
     def test_set_current_missing_notice_is_404(self, privacy_client, tokens):
         response = privacy_client.post(
@@ -687,9 +687,7 @@ class TestConsentRoutes:
     def test_create_consent_records_the_grant(self, privacy_client, tokens):
         user_id = _user_id(tokens["user"]["Authorization"].removeprefix("Bearer "))
 
-        response = privacy_client.post(
-            "/api/v1/privacy/consent", json=_consent_payload(user_id)
-        )
+        response = privacy_client.post("/api/v1/privacy/consent", json=_consent_payload(user_id))
 
         assert response.status_code == 201
         body = response.json()
@@ -714,9 +712,7 @@ class TestConsentRoutes:
         user_id = _user_id(tokens["user"]["Authorization"].removeprefix("Bearer "))
         privacy_client.post("/api/v1/privacy/consent", json=_consent_payload(user_id))
 
-        duplicate = privacy_client.post(
-            "/api/v1/privacy/consent", json=_consent_payload(user_id)
-        )
+        duplicate = privacy_client.post("/api/v1/privacy/consent", json=_consent_payload(user_id))
 
         assert duplicate.status_code == 409
         assert "marketing" in duplicate.json()["detail"]
@@ -730,15 +726,13 @@ class TestConsentRoutes:
             json=_consent_payload(user_id, consent_type="analytics"),
         )
 
-        response = privacy_client.get(f"/api/v1/privacy/consent", params={"user_id": str(user_id)})
+        response = privacy_client.get("/api/v1/privacy/consent", params={"user_id": str(user_id)})
 
         assert response.status_code == 200
         assert {r["consent_type"] for r in response.json()} == {"marketing", "analytics"}
 
     def test_list_user_consent_for_unknown_user_is_empty(self, privacy_client):
-        response = privacy_client.get(
-            "/api/v1/privacy/consent", params={"user_id": str(uuid4())}
-        )
+        response = privacy_client.get("/api/v1/privacy/consent", params={"user_id": str(uuid4())})
 
         assert response.json() == []
 
@@ -771,9 +765,7 @@ class TestConsentRoutes:
         user_id = _user_id(tokens["user"]["Authorization"].removeprefix("Bearer "))
         privacy_client.post("/api/v1/privacy/consent", json=_consent_payload(user_id))
 
-        response = privacy_client.get(
-            f"/api/v1/privacy/consent/{user_id}/marketing/EU"
-        )
+        response = privacy_client.get(f"/api/v1/privacy/consent/{user_id}/marketing/EU")
 
         assert response.status_code == 200
         assert response.json()["consent_type"] == "marketing"
@@ -841,9 +833,7 @@ class TestConsentRoutes:
         user_id = _user_id(tokens["user"]["Authorization"].removeprefix("Bearer "))
         privacy_client.post("/api/v1/privacy/consent", json=_consent_payload(user_id))
 
-        response = privacy_client.patch(
-            f"/api/v1/privacy/consent/{user_id}/marketing/EU", json={}
-        )
+        response = privacy_client.patch(f"/api/v1/privacy/consent/{user_id}/marketing/EU", json={})
 
         assert response.status_code == 200
         assert response.json()["granted"] is True
@@ -862,9 +852,7 @@ class TestConsentRoutes:
             f"/api/v1/privacy/consent/{user_id}/marketing/EU", json={"granted": False}
         )
 
-        response = privacy_client.post(
-            f"/api/v1/privacy/consent/{user_id}/marketing/EU/grant"
-        )
+        response = privacy_client.post(f"/api/v1/privacy/consent/{user_id}/marketing/EU/grant")
 
         assert response.status_code == 200
         assert response.json()["granted"] is True
@@ -874,9 +862,7 @@ class TestConsentRoutes:
         user_id = _user_id(tokens["user"]["Authorization"].removeprefix("Bearer "))
         privacy_client.post("/api/v1/privacy/consent", json=_consent_payload(user_id))
 
-        response = privacy_client.post(
-            f"/api/v1/privacy/consent/{user_id}/marketing/EU/grant"
-        )
+        response = privacy_client.post(f"/api/v1/privacy/consent/{user_id}/marketing/EU/grant")
 
         assert response.status_code == 409
         assert response.json()["detail"] == "Consent is already granted"
@@ -961,7 +947,6 @@ class TestWithdrawConsentHelper:
         assert exc_info.value.detail == "Consent is already withdrawn"
 
     async def test_unknown_jurisdiction_is_still_looked_up(self, test_session):
-        from fastapi import HTTPException
 
         from app.api.routes.privacy import withdraw_consent
 
@@ -1005,9 +990,7 @@ class TestPreferenceCenter:
         user_id = _user_id(tokens["user"]["Authorization"].removeprefix("Bearer "))
         privacy_client.post("/api/v1/privacy/consent", json=_consent_payload(user_id))
 
-        response = privacy_client.get(
-            "/api/v1/privacy/preferences", headers=tokens["user"]
-        )
+        response = privacy_client.get("/api/v1/privacy/preferences", headers=tokens["user"])
 
         assert response.status_code == 200
         body = response.json()
@@ -1042,8 +1025,6 @@ class TestPreferenceCenter:
         user_id = _user_id(tokens["user"]["Authorization"].removeprefix("Bearer "))
         privacy_client.post("/api/v1/privacy/consent", json=_consent_payload(user_id))
 
-        response = privacy_client.get(
-            "/api/v1/privacy/preferences", headers=_auth(other)
-        )
+        response = privacy_client.get("/api/v1/privacy/preferences", headers=_auth(other))
 
         assert response.json()["consent_records"] == []

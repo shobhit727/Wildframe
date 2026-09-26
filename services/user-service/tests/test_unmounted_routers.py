@@ -12,7 +12,6 @@ for real, only the transport is stubbed. Production `main.py` is untouched.
 
 import asyncio
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -463,9 +462,7 @@ def test_create_dsar_returns_201_with_a_30_day_sla(dsar_client):
 
 
 def test_create_dsar_defaults_categories_to_an_empty_json_array(dsar_client):
-    response = dsar_client.post(
-        "/dsar", json={"user_id": str(uuid4()), "request_type": "deletion"}
-    )
+    response = dsar_client.post("/dsar", json={"user_id": str(uuid4()), "request_type": "deletion"})
 
     assert response.status_code == 201
     assert response.json()["data_categories"] == "[]"

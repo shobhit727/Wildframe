@@ -465,17 +465,13 @@ class _FakeUpstreamClient:
             content=content,
             closed=False,
         )
-        return _FakeStreamContext(
-            self._response, content, self.captured, self._error
-        )
+        return _FakeStreamContext(self._response, content, self.captured, self._error)
 
 
 def _upstream(chunks=(), status_code=200, headers=(), error=None):
     if error is not None:
         return _FakeUpstreamClient(error=error)
-    return _FakeUpstreamClient(
-        response=_FakeUpstreamResponse(chunks, status_code, headers)
-    )
+    return _FakeUpstreamClient(response=_FakeUpstreamResponse(chunks, status_code, headers))
 
 
 @contextlib.contextmanager
@@ -501,15 +497,11 @@ def gateway(upstream, limiter_result=True, app=None):
     # RateLimiter) and unpacks the real (allowed, lease_id) tuple. A bare
     # MagicMock attribute is not awaitable, so stub it as an AsyncMock and
     # honour limiter_result so a denying limiter still yields a 429.
-    limiter.acquire_rate_limits = AsyncMock(
-        return_value=(limiter_result, None)
-    )
+    limiter.acquire_rate_limits = AsyncMock(return_value=(limiter_result, None))
     limiter.release_rate_limits = AsyncMock(return_value=None)
 
     try:
-        with patch(
-            "app.api.gateway_routes.get_shared_client", return_value=upstream
-        ):
+        with patch("app.api.gateway_routes.get_shared_client", return_value=upstream):
             with TestClient(app, base_url="http://test") as client:
                 main.rate_limiter = limiter
                 main.auth_middleware = AuthenticationMiddleware("test-secret")
@@ -527,9 +519,7 @@ def gateway(upstream, limiter_result=True, app=None):
 def _bearer(sub="user-42"):
     from jose import jwt
 
-    return jwt.encode(
-        {"sub": sub, "exp": int(time.time()) + 600}, "test-secret", algorithm="HS256"
-    )
+    return jwt.encode({"sub": sub, "exp": int(time.time()) + 600}, "test-secret", algorithm="HS256")
 
 
 # -- gateway's own service routes -----------------------------------------
@@ -820,7 +810,9 @@ def test_proxy_keys_the_rate_limit_on_the_authenticated_subject():
     """
     up = _upstream([b"{}"])
     with gateway(up) as (client, _cap, limiter):
-        client.get("/content/api/v1/titles", headers={"authorization": f"Bearer {_bearer('sub-7')}"})
+        client.get(
+            "/content/api/v1/titles", headers={"authorization": f"Bearer {_bearer('sub-7')}"}
+        )
 
     assert limiter.acquire_rate_limits.call_args.kwargs["account_id"] == "sub-7"
 
@@ -864,9 +856,7 @@ def test_proxy_forwards_the_device_id_dimension():
     """X-Device-Id reaches the limiter so per-device caps can be enforced."""
     up = _upstream([b"{}"])
     with gateway(up) as (client, _cap, limiter):
-        client.get(
-            "/content/api/v1/titles", headers={"x-device-id": "device-abc"}
-        )
+        client.get("/content/api/v1/titles", headers={"x-device-id": "device-abc"})
 
     assert limiter.acquire_rate_limits.call_args.kwargs["device_id"] == "device-abc"
 
@@ -1182,9 +1172,7 @@ async def test_an_immutable_response_header_map_does_not_break_the_request():
     async def _call_next(request):
         return OddResponse()
 
-    req = _make_request(
-        method="GET", headers=[("authorization", "Bearer t")], body_chunks=[]
-    )
+    req = _make_request(method="GET", headers=[("authorization", "Bearer t")], body_chunks=[])
     resp = await middleware.dispatch(req, _call_next)
     assert resp.status_code == 200
     assert resp.body == b"ok"

@@ -21,7 +21,6 @@ from app.core.money import (
     validate_currency,
 )
 
-
 # ---------------------------------------------------------------------------
 # The allowlist itself
 # ---------------------------------------------------------------------------
@@ -310,7 +309,6 @@ class TestRoundTrip:
     @pytest.mark.parametrize("minor", [0, 1, 7, 99, 100, 999, 1000, 123456])
     def test_round_trip_from_minor_units_is_lossless(self, minor):
         for currency in ("USD", "JPY", "BHD"):
-            units = CURRENCY_MINOR_UNITS[currency]
             major = from_minor_units(minor, currency)
             assert to_minor_units(major, currency) == minor
 

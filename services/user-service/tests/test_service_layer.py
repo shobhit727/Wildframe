@@ -12,7 +12,6 @@ happy paths that actually assemble data:
 it is a request-shape guard that a 200-response test never reaches.
 """
 
-from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest

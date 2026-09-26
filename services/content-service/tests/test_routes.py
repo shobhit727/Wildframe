@@ -236,9 +236,7 @@ async def client(service):
 # ------------------------------------------------------------------- genres
 class TestGenreEndpoints:
     async def test_create_genre(self, client, service):
-        response = await client.post(
-            "/api/v1/genres", json={"name": "Action", "slug": "action"}
-        )
+        response = await client.post("/api/v1/genres", json={"name": "Action", "slug": "action"})
 
         assert response.status_code == 201
         assert response.json()["slug"] == "action"
@@ -248,9 +246,7 @@ class TestGenreEndpoints:
     async def test_create_genre_conflict_maps_integrity_error_to_409(self, client, service):
         service.create_genre.side_effect = IntegrityError("INSERT", {}, Exception("dup"))
 
-        response = await client.post(
-            "/api/v1/genres", json={"name": "Action", "slug": "action"}
-        )
+        response = await client.post("/api/v1/genres", json={"name": "Action", "slug": "action"})
 
         assert response.status_code == 409
         assert response.json()["detail"] == "Genre with this name or slug already exists"
@@ -346,9 +342,7 @@ class TestContentEndpoints:
         assert response.status_code == 422
 
     async def test_create_content_rejects_a_malformed_slug(self, client):
-        response = await client.post(
-            "/api/v1/content", json={**CONTENT_BODY, "slug": "Not A Slug"}
-        )
+        response = await client.post("/api/v1/content", json={**CONTENT_BODY, "slug": "Not A Slug"})
 
         assert response.status_code == 422
 
@@ -494,9 +488,7 @@ class TestSeasonEndpoints:
     async def test_get_season(self, client, service):
         content_id, season_id = uuid4(), uuid4()
 
-        response = await client.get(
-            f"/api/v1/content/{content_id}/seasons/{season_id}"
-        )
+        response = await client.get(f"/api/v1/content/{content_id}/seasons/{season_id}")
 
         assert response.status_code == 200
         service.get_season.assert_awaited_once_with(content_id, season_id)
@@ -531,9 +523,7 @@ class TestSeasonEndpoints:
     async def test_delete_season_returns_204(self, client, service):
         content_id, season_id = uuid4(), uuid4()
 
-        response = await client.delete(
-            f"/api/v1/content/{content_id}/seasons/{season_id}"
-        )
+        response = await client.delete(f"/api/v1/content/{content_id}/seasons/{season_id}")
 
         assert response.status_code == 204
         service.delete_season.assert_awaited_once_with(content_id, season_id)
@@ -570,9 +560,7 @@ class TestEpisodeEndpoints:
     async def test_list_episodes(self, client, service):
         content_id, season_id = uuid4(), uuid4()
 
-        response = await client.get(
-            f"/api/v1/content/{content_id}/seasons/{season_id}/episodes"
-        )
+        response = await client.get(f"/api/v1/content/{content_id}/seasons/{season_id}/episodes")
 
         assert response.status_code == 200
         service.list_episodes.assert_awaited_once_with(content_id, season_id)
@@ -626,9 +614,7 @@ class TestEpisodeEndpoints:
         )
 
         assert response.status_code == 204
-        service.delete_episode.assert_awaited_once_with(
-            content_id, season_id, episode_id
-        )
+        service.delete_episode.assert_awaited_once_with(content_id, season_id, episode_id)
 
     async def test_delete_episode_missing_returns_404(self, client, service):
         service.delete_episode.return_value = False
@@ -658,9 +644,7 @@ class TestEngagementEndpoints:
         assert response.json()["user_id"] == str(CURRENT_USER_ID)
 
     async def test_rate_content_rejects_an_out_of_range_rating(self, client):
-        response = await client.post(
-            f"/api/v1/content/{uuid4()}/ratings", json={"rating": 11.0}
-        )
+        response = await client.post(f"/api/v1/content/{uuid4()}/ratings", json={"rating": 11.0})
 
         assert response.status_code == 422
 

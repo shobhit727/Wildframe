@@ -51,9 +51,7 @@ def _redis_mock(ping_error: Exception | None = None) -> MagicMock:
 @pytest.fixture
 def redis_ok(monkeypatch):
     client = _redis_mock()
-    monkeypatch.setattr(
-        main_mod.redis, "from_url", AsyncMock(return_value=client), raising=False
-    )
+    monkeypatch.setattr(main_mod.redis, "from_url", AsyncMock(return_value=client), raising=False)
     return client
 
 
@@ -823,9 +821,7 @@ class TestGenreValidation:
         from app.api.recommendation_routes import _validate_genre_list
 
         with pytest.raises(HTTPException) as excinfo:
-            _validate_genre_list(
-                "disliked_genres", ["g"] * (settings.MAX_PREFERENCE_GENRES + 1)
-            )
+            _validate_genre_list("disliked_genres", ["g"] * (settings.MAX_PREFERENCE_GENRES + 1))
 
         assert excinfo.value.status_code == 422
         assert str(settings.MAX_PREFERENCE_GENRES) in excinfo.value.detail
@@ -859,9 +855,7 @@ class TestPreferenceRouteBodies:
         )
 
         assert response.status_code == 200
-        service.update_preferences.assert_awaited_once_with(
-            user_id, ["action"], ["horror"]
-        )
+        service.update_preferences.assert_awaited_once_with(user_id, ["action"], ["horror"])
 
     def test_object_body_with_only_liked_genres(self, build_app):
         from app.api.recommendation_routes import get_rec_service
@@ -949,9 +943,7 @@ class TestCacheHelpers:
     async def test_failed_ping_disables_the_cache(self, monkeypatch):
         client = _redis_mock(ping_error=ConnectionError("no route"))
         monkeypatch.setattr(services_mod, "_redis_client", None)
-        monkeypatch.setattr(
-            services_mod.redis_async, "from_url", AsyncMock(return_value=client)
-        )
+        monkeypatch.setattr(services_mod.redis_async, "from_url", AsyncMock(return_value=client))
 
         assert await services_mod.get_redis_client() is None
 
@@ -999,9 +991,7 @@ class TestCacheHelpers:
         client.get = AsyncMock(return_value=json.dumps([{"content_id": "a", "score": 1.0}]))
         monkeypatch.setattr(services_mod, "get_redis_client", AsyncMock(return_value=client))
 
-        assert await services_mod._cache_get(uuid4()) == [
-            {"content_id": "a", "score": 1.0}
-        ]
+        assert await services_mod._cache_get(uuid4()) == [{"content_id": "a", "score": 1.0}]
 
     @pytest.mark.asyncio
     async def test_get_returns_none_on_a_cache_miss(self, monkeypatch):
@@ -1257,9 +1247,7 @@ class TestGetRecommendationsBranches:
         fresh = [_row(C2, score=0.5)]
         rec_repo = MagicMock()
         rec_repo.get_for_user = AsyncMock(side_effect=[stale, fresh])
-        rec_repo.latest_created_at = AsyncMock(
-            return_value=datetime.datetime(2024, 1, 1)
-        )
+        rec_repo.latest_created_at = AsyncMock(return_value=datetime.datetime(2024, 1, 1))
         pref_repo.session = MagicMock()
         pref_repo.session.rollback = AsyncMock()
         service = RecommendationService(pref_repo, rec_repo)
@@ -1622,9 +1610,7 @@ class TestRepositoryGuards:
         second = MagicMock()
         second.scalar_one_or_none.return_value = winner
         session.execute = AsyncMock(side_effect=[first, second])
-        session.begin_nested = MagicMock(
-            side_effect=lambda: _FailingIntegrityScope(session)
-        )
+        session.begin_nested = MagicMock(side_effect=lambda: _FailingIntegrityScope(session))
 
         prefs = await UserPreferencesRepository(session).get_or_create(uuid4())
 
@@ -1639,9 +1625,7 @@ class TestRepositoryGuards:
         missing = MagicMock()
         missing.scalar_one_or_none.return_value = None
         session.execute = AsyncMock(return_value=missing)
-        session.begin_nested = MagicMock(
-            side_effect=lambda: _FailingIntegrityScope(session)
-        )
+        session.begin_nested = MagicMock(side_effect=lambda: _FailingIntegrityScope(session))
 
         with pytest.raises(IntegrityError):
             await UserPreferencesRepository(session).get_or_create(uuid4())

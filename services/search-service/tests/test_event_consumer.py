@@ -55,9 +55,7 @@ def catalog():
 
 class TestHandlePublished:
     @pytest.mark.asyncio
-    async def test_published_event_indexes_the_canonical_document(
-        self, catalog, search_service
-    ):
+    async def test_published_event_indexes_the_canonical_document(self, catalog, search_service):
         content_id = str(uuid4())
 
         await _handle(
@@ -117,9 +115,7 @@ class TestHandlePublished:
         search_service.index_content.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_detail_fetch_failure_propagates_to_the_caller(
-        self, catalog, search_service
-    ):
+    async def test_detail_fetch_failure_propagates_to_the_caller(self, catalog, search_service):
         from app.services import CatalogFetchError
 
         content_id = str(uuid4())
@@ -141,7 +137,9 @@ class TestHandleRemoval:
     async def test_removal_topics_delete_the_document(self, topic, search_service, catalog):
         content_id = str(uuid4())
 
-        await _handle(catalog, search_service, {"topic": topic, "payload": {"content_id": content_id}})
+        await _handle(
+            catalog, search_service, {"topic": topic, "payload": {"content_id": content_id}}
+        )
 
         search_service.delete_content.assert_awaited_once_with(UUID(content_id))
         search_service.index_content.assert_not_awaited()
@@ -149,7 +147,9 @@ class TestHandleRemoval:
 
     @pytest.mark.asyncio
     async def test_unknown_topic_is_ignored(self, search_service, catalog):
-        await _handle(catalog, search_service, {"topic": "content.updated", "payload": {"content_id": "x"}})
+        await _handle(
+            catalog, search_service, {"topic": "content.updated", "payload": {"content_id": "x"}}
+        )
 
         search_service.delete_content.assert_not_awaited()
         search_service.index_content.assert_not_awaited()
@@ -269,9 +269,7 @@ def consumer_env(monkeypatch):
     monkeypatch.setattr(aiokafka.structs, "TopicPartition", _TopicPartition)
 
     factory = _SessionFactory()
-    monkeypatch.setattr(
-        database_mod.DatabaseManager, "session_factory", factory, raising=False
-    )
+    monkeypatch.setattr(database_mod.DatabaseManager, "session_factory", factory, raising=False)
 
     catalog = MagicMock()
     catalog.fetch_published = AsyncMock(return_value=[])

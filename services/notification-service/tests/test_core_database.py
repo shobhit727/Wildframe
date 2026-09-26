@@ -11,10 +11,8 @@ engine so they are proven, not mocked.
 from unittest.mock import patch
 
 import pytest
-import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.pool import NullPool
 from sqlalchemy.pool.impl import AsyncAdaptedQueuePool
 
 from app.core.database import DatabaseManager, get_db
@@ -153,9 +151,7 @@ async def test_health_check_is_false_when_connect_raises():
 
     # The engine is a real object, so the failure has to be injected at the
     # dialect level (an unopenable SQLite file is the honest equivalent).
-    with patch.object(
-        type(engine), "connect", side_effect=RuntimeError("no route to host")
-    ):
+    with patch.object(type(engine), "connect", side_effect=RuntimeError("no route to host")):
         assert await DatabaseManager.health_check() is False
 
     await engine.dispose()

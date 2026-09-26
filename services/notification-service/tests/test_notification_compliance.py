@@ -16,7 +16,6 @@ import pytest
 
 from app.models import Base, Notification, NotificationPreference, utcnow_naive
 
-
 # ---------------------------------------------------------------------------
 # Preference defaults
 # ---------------------------------------------------------------------------
@@ -68,7 +67,11 @@ def test_event_id_is_nullable_so_dedup_is_optional():
 def test_event_id_has_a_unique_index_for_deduplication():
     indexes = {tuple(c.name for c in idx.columns) for idx in Notification.__table__.indexes}
     assert ("event_id",) in indexes
-    unique = [idx for idx in Notification.__table__.indexes if tuple(c.name for c in idx.columns) == ("event_id",)]
+    unique = [
+        idx
+        for idx in Notification.__table__.indexes
+        if tuple(c.name for c in idx.columns) == ("event_id",)
+    ]
     assert unique[0].unique is True
 
 

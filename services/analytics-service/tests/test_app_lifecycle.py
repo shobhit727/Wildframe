@@ -309,9 +309,7 @@ def test_ready_reports_503_when_the_database_is_down(make_client, monkeypatch):
 
 
 @pytest.mark.unit
-def test_ready_reports_503_when_redis_connection_fails(
-    make_client, monkeypatch, main_logs
-):
+def test_ready_reports_503_when_redis_connection_fails(make_client, monkeypatch, main_logs):
     """main.py:134-137 -- a Redis connection failure is logged and denies."""
     monkeypatch.setattr(DatabaseManager, "health_check", _Awaitable(True))
 
@@ -356,9 +354,7 @@ def test_ready_reports_503_when_the_redis_ping_times_out(make_client, monkeypatc
 
 
 @pytest.mark.unit
-def test_ready_reports_503_when_both_dependencies_are_down(
-    make_client, monkeypatch, main_logs
-):
+def test_ready_reports_503_when_both_dependencies_are_down(make_client, monkeypatch, main_logs):
     """Both checks failing still yields one 503 with both verdicts."""
     monkeypatch.setattr(DatabaseManager, "health_check", _Awaitable(False))
 
@@ -416,9 +412,7 @@ def test_requests_flow_again_after_shutdown_completes(make_client):
 
 
 @pytest.mark.unit
-async def test_lifespan_waits_for_in_flight_requests_before_closing(
-    monkeypatch, sink, main_logs
-):
+async def test_lifespan_waits_for_in_flight_requests_before_closing(monkeypatch, sink, main_logs):
     """Shutdown must not close clients while a request is still running."""
     monkeypatch.setattr(DatabaseManager, "health_check", _Awaitable(True))
     monkeypatch.setattr(DatabaseManager, "close", _Awaitable(None))
@@ -440,9 +434,7 @@ async def test_lifespan_waits_for_in_flight_requests_before_closing(
 
 
 @pytest.mark.unit
-async def test_lifespan_warns_and_continues_when_the_drain_times_out(
-    monkeypatch, sink, main_logs
-):
+async def test_lifespan_warns_and_continues_when_the_drain_times_out(monkeypatch, sink, main_logs):
     """main.py:59-64 -- a stuck request must not block shutdown forever.
 
     The drain bound is patched to 0.01s and one request is held open, so the
@@ -548,9 +540,7 @@ def test_require_metrics_token_is_inert_outside_production(monkeypatch):
     monkeypatch.setattr(settings, "ENVIRONMENT", "development")
     monkeypatch.setattr(settings, "METRICS_TOKEN", "the-right-token")
     app = main_module.create_app()
-    route = next(
-        r for r in app.router.routes if getattr(r, "name", None) == "gated_metrics"
-    )
+    route = next(r for r in app.router.routes if getattr(r, "name", None) == "gated_metrics")
     gate = route.dependant.dependencies[0].call
     assert asyncio.run(gate(None)) is None
 
@@ -566,9 +556,7 @@ def test_metrics_is_open_outside_production(make_client):
 
 
 @pytest.mark.unit
-def test_metrics_gate_is_shadowed_by_the_observability_scrape_route(
-    make_client, monkeypatch
-):
+def test_metrics_gate_is_shadowed_by_the_observability_scrape_route(make_client, monkeypatch):
     """GENUINE BUG -- analytics-service/app/main.py:173 and :191.
 
     ``create_app()`` calls ``wire_observability(app, ...)`` at line 173 without
@@ -609,9 +597,7 @@ def test_gated_metrics_handler_body_works_when_invoked_directly(monkeypatch):
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
     monkeypatch.setattr(settings, "METRICS_TOKEN", "tok")
     app = main_module.create_app()
-    route = next(
-        r for r in app.router.routes if getattr(r, "name", None) == "gated_metrics"
-    )
+    route = next(r for r in app.router.routes if getattr(r, "name", None) == "gated_metrics")
     response = asyncio.run(route.endpoint())
 
     assert response.status_code == 200
@@ -685,9 +671,7 @@ def test_unhandled_exception_returns_opaque_500_with_a_correlation_id(make_clien
 @pytest.mark.unit
 def test_cors_origin_is_taken_from_settings(make_client):
     """CORS is configured from settings, not a hardcoded list."""
-    c = make_client(
-        CORS_ALLOWED_ORIGINS=["https://allowed.example"], CORS_ALLOW_CREDENTIALS=True
-    )
+    c = make_client(CORS_ALLOWED_ORIGINS=["https://allowed.example"], CORS_ALLOW_CREDENTIALS=True)
     r = c.get("/health", headers={"Origin": "https://allowed.example"})
     assert r.headers["access-control-allow-origin"] == "https://allowed.example"
 
@@ -695,9 +679,7 @@ def test_cors_origin_is_taken_from_settings(make_client):
 @pytest.mark.unit
 def test_cors_credentials_can_be_disabled(make_client):
     """The credential flag is honoured in both directions."""
-    c = make_client(
-        CORS_ALLOWED_ORIGINS=["https://allowed.example"], CORS_ALLOW_CREDENTIALS=False
-    )
+    c = make_client(CORS_ALLOWED_ORIGINS=["https://allowed.example"], CORS_ALLOW_CREDENTIALS=False)
     r = c.get("/health", headers={"Origin": "https://allowed.example"})
     assert "access-control-allow-credentials" not in r.headers
 

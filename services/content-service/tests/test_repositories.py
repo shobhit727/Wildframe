@@ -9,7 +9,6 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 
-
 from app.models import Base, ContentStatus, ContentType
 from app.models.rights import Base as RightsBase, RightsHolder, TerritorialLicense
 from app.repositories import (
@@ -24,7 +23,9 @@ from app.repositories import (
 async def db_session() -> AsyncIterator[AsyncSession]:
     """Use disposable PostgreSQL; TEST_DATABASE_URL must name a test database."""
     with ExitStack() as stack:
-        from testcontainers.postgres import PostgresContainer  # lazy: keeps collection safe when the dep is absent
+        from testcontainers.postgres import (
+            PostgresContainer,
+        )  # lazy: keeps collection safe when the dep is absent
 
         url = os.environ.get("TEST_DATABASE_URL")
         if not url:

@@ -166,9 +166,7 @@ async def test_cooldown_flag_uses_a_separate_namespaced_key():
     client.set = AsyncMock(return_value=True)
 
     with patch("app.core.rate_limit._get_client", return_value=client):
-        await allow(
-            "user@example.com", max_requests=5, window_seconds=60, cooldown_seconds=120
-        )
+        await allow("user@example.com", max_requests=5, window_seconds=60, cooldown_seconds=120)
 
     token_key = pipe.incr.call_args.args[0]
     cooldown_key = client.set.call_args.args[0]
@@ -191,7 +189,6 @@ async def test_scope_is_a_stable_blake2s_digest():
 
 
 def test_get_client_returns_none_when_settings_raise(monkeypatch):
-    from app.core import settings
 
     class _Exploding:
         @property

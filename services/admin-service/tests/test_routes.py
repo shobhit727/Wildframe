@@ -464,9 +464,7 @@ class TestConsumeStepupJtiWithRedis:
             await _consume_stepup_jti("r-7", None)
         assert "r-7" not in _stepup_jti_seen
 
-    async def test_redis_replay_does_not_also_populate_the_local_store(
-        self, redis_store
-    ):
+    async def test_redis_replay_does_not_also_populate_the_local_store(self, redis_store):
         await _consume_stepup_jti("r-8", None)
         await _consume_stepup_jti("r-8", None)
         assert "r-8" not in _stepup_jti_seen
@@ -651,9 +649,7 @@ class TestUserModerationRoutes:
         async with factory() as session:
             from sqlalchemy import select
 
-            rows = (
-                await session.execute(select(AdminAuditLog))
-            ).scalars().all()
+            rows = (await session.execute(select(AdminAuditLog))).scalars().all()
         assert [r.action for r in rows] == ["user_moderation_suspended"]
 
 
@@ -661,7 +657,12 @@ class TestContentModerationRoutes:
     async def test_flag_content(self, admin_client):
         resp = await admin_client.post(
             "/api/v1/admin/content/flag",
-            json={"content_id": "c-1", "content_type": "movie", "status": "flagged", "reason": "gore"},
+            json={
+                "content_id": "c-1",
+                "content_type": "movie",
+                "status": "flagged",
+                "reason": "gore",
+            },
             headers=_bearer(_mint()),
         )
         assert resp.status_code == 200
@@ -983,9 +984,7 @@ class TestStatsRoute:
 
         factory = DatabaseManager.session_factory
         async with factory() as session:
-            stats = await AdminService(session).get_system_stats(
-                total_users=10, suspended_users=4
-            )
+            stats = await AdminService(session).get_system_stats(total_users=10, suspended_users=4)
         assert stats["total_users"] == 10
         assert stats["suspended_users"] == 4
         assert stats["active_users"] == 6

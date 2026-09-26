@@ -13,14 +13,12 @@ import contextlib
 import functools
 import json
 import logging
-import re
 from uuid import UUID
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from app.core import event_consumer
-from app.models import Base
 from app.core.events import (
     get_event_publisher,
     reset_event_publisher,
@@ -89,8 +87,9 @@ class TestGetEventPublisher:
         monkeypatch.setattr(settings, "EVENT_PUBLISHER", "kafka")
         monkeypatch.setattr(settings, "KAFKA_BOOTSTRAP_SERVERS", "broker:9092")
 
-        with patch("app.core.events.KafkaEventPublisher", MagicMock()), caplog.at_level(
-            logging.INFO, logger="app.core.events"
+        with (
+            patch("app.core.events.KafkaEventPublisher", MagicMock()),
+            caplog.at_level(logging.INFO, logger="app.core.events"),
         ):
             get_event_publisher()
 
@@ -362,9 +361,7 @@ class TestApplyModeration:
         await test_session.refresh(user)
         assert user.is_active is False
 
-    async def test_reapplying_the_same_status_is_idempotent(
-        self, test_session, uuid_str_binds
-    ):
+    async def test_reapplying_the_same_status_is_idempotent(self, test_session, uuid_str_binds):
         from app.models import User
         from app.security import PasswordManager
 
@@ -467,8 +464,9 @@ class TestRunUserModerationConsumer:
         class _BadMessage:
             value = b"not-json"
 
-        with _seeded(_BadMessage()), caplog.at_level(
-            logging.ERROR, logger="app.core.event_consumer"
+        with (
+            _seeded(_BadMessage()),
+            caplog.at_level(logging.ERROR, logger="app.core.event_consumer"),
         ):
             await event_consumer.run_user_moderation_consumer(_make_factory(test_session))
 
@@ -482,8 +480,9 @@ class TestRunUserModerationConsumer:
             original_init(self, *topics, **kwargs)
             self.start_error = ConnectionError("no broker")
 
-        with patch.object(_FakeConsumer, "__init__", failing_init), patch(
-            "asyncio.sleep", AsyncMock()
+        with (
+            patch.object(_FakeConsumer, "__init__", failing_init),
+            patch("asyncio.sleep", AsyncMock()),
         ):
             await event_consumer.run_user_moderation_consumer(_make_factory(AsyncMock()))
 
@@ -501,16 +500,12 @@ class TestRunUserModerationConsumer:
         with patch.object(_FakeConsumer, "__init__", failing_stop_init):
             await event_consumer.run_user_moderation_consumer(_make_factory(AsyncMock()))
 
-    async def test_bootstrap_servers_come_from_the_environment(
-        self, fake_consumer, monkeypatch
-    ):
+    async def test_bootstrap_servers_come_from_the_environment(self, fake_consumer, monkeypatch):
         monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "broker-from-env:9092")
 
         await event_consumer.run_user_moderation_consumer(_make_factory(AsyncMock()))
 
-        assert fake_consumer.instances[0].kwargs["bootstrap_servers"] == (
-            "broker-from-env:9092"
-        )
+        assert fake_consumer.instances[0].kwargs["bootstrap_servers"] == ("broker-from-env:9092")
 
     async def test_bootstrap_servers_fall_back_to_the_compose_default(
         self, fake_consumer, monkeypatch

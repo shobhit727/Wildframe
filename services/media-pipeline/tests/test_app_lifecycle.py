@@ -100,7 +100,7 @@ def test_create_app_installs_cors_and_body_size_middleware():
 
 
 async def test_cors_reflects_a_configured_origin():
-    app = _build("development")
+    _build("development")
     with patch.object(settings, "CORS_ALLOWED_ORIGINS", ["https://studio.example.com"]):
         app2 = app_main.create_app()
     async with _client(app2) as client:

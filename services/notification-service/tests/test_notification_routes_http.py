@@ -126,9 +126,7 @@ def test_a_preference_update_with_only_nulls_is_rejected(client, service):
 
 
 def test_a_partial_preference_update_only_sends_the_set_flags(client, service):
-    response = client.put(
-        "/api/v1/notifications/preferences", json={"sms_enabled": False}
-    )
+    response = client.put("/api/v1/notifications/preferences", json={"sms_enabled": False})
 
     assert response.status_code == 200
     service.update_preferences.assert_awaited_once()

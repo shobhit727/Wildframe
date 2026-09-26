@@ -107,9 +107,7 @@ async def _enforce_auth_version(authorization: str, payload: dict) -> None:
     if type(token_av) is not int or type(current_av) is not int:
         raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid token payload")
     if token_av != current_av:
-        raise HTTPException(
-            status_code=http_status.UNAUTHORIZED, detail="Invalid or expired token"
-        )
+        raise HTTPException(status_code=http_status.UNAUTHORIZED, detail="Invalid or expired token")
 
 
 async def get_current_user_payload(

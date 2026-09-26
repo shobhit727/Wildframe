@@ -101,8 +101,12 @@ async def test_partial_refund_applies_to_invoice():
     with patch("app.services.StripeClient.retrieve_refund", side_effect=Exception("not found")):
         with patch("app.services.StripeClient.retrieve_charge", side_effect=Exception("not found")):
             result = await svc.process_refund(
-                "re_partial_1", "ch_1", Decimal("3.00"), "USD",
-                invoice_id=inv_id, payment_intent_id=payment_intent_id,
+                "re_partial_1",
+                "ch_1",
+                Decimal("3.00"),
+                "USD",
+                invoice_id=inv_id,
+                payment_intent_id=payment_intent_id,
             )
     svc.refund_repo.apply_to_invoice.assert_awaited_once_with(inv_id, Decimal("3.00"))
     assert result.status == RefundStatus.PROCESSED if hasattr(result, "status") else True
@@ -120,13 +124,21 @@ async def test_multiple_refunds_cumulative():
     with patch("app.services.StripeClient.retrieve_refund", side_effect=Exception("nf")):
         with patch("app.services.StripeClient.retrieve_charge", side_effect=Exception("nf")):
             r1 = await svc.process_refund(
-                "re_1", "ch_1", Decimal("4.00"), "USD",
-                invoice_id=inv_id, payment_intent_id=payment_intent_id,
+                "re_1",
+                "ch_1",
+                Decimal("4.00"),
+                "USD",
+                invoice_id=inv_id,
+                payment_intent_id=payment_intent_id,
             )
             svc.refund_repo.get_by_refund_id = AsyncMock(return_value=None)
             r2 = await svc.process_refund(
-                "re_2", "ch_1", Decimal("6.00"), "USD",
-                invoice_id=inv_id, payment_intent_id=payment_intent_id,
+                "re_2",
+                "ch_1",
+                Decimal("6.00"),
+                "USD",
+                invoice_id=inv_id,
+                payment_intent_id=payment_intent_id,
             )
     assert svc.refund_repo.apply_to_invoice.await_count == 2
     assert r1.refund_id == "re_1"
@@ -145,8 +157,12 @@ async def test_amount_exceeds_invoice_rejected():
     with patch("app.services.StripeClient.retrieve_refund", side_effect=Exception("nf")):
         with patch("app.services.StripeClient.retrieve_charge", side_effect=Exception("nf")):
             result = await svc.process_refund(
-                "re_big", "ch_1", Decimal("10.00"), "USD",
-                invoice_id=inv_id, payment_intent_id=payment_intent_id,
+                "re_big",
+                "ch_1",
+                Decimal("10.00"),
+                "USD",
+                invoice_id=inv_id,
+                payment_intent_id=payment_intent_id,
             )
     assert result.status == RefundStatus.REJECTED
 
@@ -186,9 +202,7 @@ async def test_stripe_lookup_invoice_via_payment_intent():
 @pytest.mark.asyncio
 async def test_mismatched_metadata_invoice_is_pending_without_mutation():
     svc = _make_service()
-    authoritative_invoice = MagicMock(
-        id=uuid4(), amount=Decimal("5.00"), currency="USD"
-    )
+    authoritative_invoice = MagicMock(id=uuid4(), amount=Decimal("5.00"), currency="USD")
     supplied_invoice_id = uuid4()
     purchase = MagicMock(id=uuid4())
     svc.purchase_repo.get_by_stripe_payment_intent_id = AsyncMock(return_value=purchase)
@@ -287,8 +301,12 @@ async def test_currency_mismatch_pending_review():
     with patch("app.services.StripeClient.retrieve_refund", side_effect=Exception("nf")):
         with patch("app.services.StripeClient.retrieve_charge", side_effect=Exception("nf")):
             result = await svc.process_refund(
-                "re_cur_mismatch", "ch_1", Decimal("5.00"), "EUR",
-                invoice_id=inv_id, payment_intent_id=payment_intent_id,
+                "re_cur_mismatch",
+                "ch_1",
+                Decimal("5.00"),
+                "EUR",
+                invoice_id=inv_id,
+                payment_intent_id=payment_intent_id,
             )
     assert result.status == RefundStatus.PENDING_REVIEW
 

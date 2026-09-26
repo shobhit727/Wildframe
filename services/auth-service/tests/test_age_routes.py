@@ -80,15 +80,16 @@ class TestVerifyAge:
         session = _fake_session()
 
         with client_for(session) as client:
-                response = client.post("/age/verify", json=_payload(declared_age=30))
+            response = client.post("/age/verify", json=_payload(declared_age=30))
 
         assert response.status_code == 201
         body = response.json()
         assert body["is_minor"] is False
         assert body["verified"] is True
-        assert body["consent_minor_age"] == get_policy_for_jurisdiction(
-            Jurisdiction.EU
-        ).consent_minor_age
+        assert (
+            body["consent_minor_age"]
+            == get_policy_for_jurisdiction(Jurisdiction.EU).consent_minor_age
+        )
         assert body["verified_age"] == 30
         assert body["verified_at"] is not None
 
@@ -109,10 +110,10 @@ class TestVerifyAge:
         session = _fake_session()
 
         with client_for(session) as client:
-                response = client.post(
-                    "/age/verify",
-                    json=_payload(jurisdiction=jurisdiction, declared_age=declared_age),
-                )
+            response = client.post(
+                "/age/verify",
+                json=_payload(jurisdiction=jurisdiction, declared_age=declared_age),
+            )
 
         assert response.status_code == 201
         assert response.json()["is_minor"] is expected_minor
@@ -121,15 +122,15 @@ class TestVerifyAge:
         session = _fake_session()
 
         with client_for(session) as client:
-                response = client.post("/age/verify", json=_payload(declared_age=14))
+            response = client.post("/age/verify", json=_payload(declared_age=14))
 
         claim = response.json()["jwt_claim"]
         assert claim["age_verified"] is True
         assert claim["is_minor"] is True
         assert claim["minor_flag"] is True
-        assert claim["consent_age"] == get_policy_for_jurisdiction(
-            Jurisdiction.EU
-        ).consent_minor_age
+        assert (
+            claim["consent_age"] == get_policy_for_jurisdiction(Jurisdiction.EU).consent_minor_age
+        )
         # verified_at in the claim is a parseable ISO-8601 stamp.
         assert datetime.fromisoformat(claim["verified_at"]).tzinfo is not None
 
@@ -137,9 +138,7 @@ class TestVerifyAge:
         session = _fake_session()
 
         with client_for(session) as client:
-                response = client.post(
-                    "/age/verify", json=_payload(jurisdiction="ZZ", declared_age=10)
-                )
+            response = client.post("/age/verify", json=_payload(jurisdiction="ZZ", declared_age=10))
 
         assert response.status_code == 201
         body = response.json()
@@ -148,15 +147,13 @@ class TestVerifyAge:
         assert body["is_minor"] is True
         assert body["jurisdiction"] == "ZZ"
 
-    def test_known_custom_jurisdiction_uses_its_consent_age_table_entry(
-        self, client_for
-    ):
+    def test_known_custom_jurisdiction_uses_its_consent_age_table_entry(self, client_for):
         session = _fake_session()
 
         with client_for(session) as client:
-                response = client.post(
-                    "/age/verify", json=_payload(jurisdiction="US-CA", declared_age=15)
-                )
+            response = client.post(
+                "/age/verify", json=_payload(jurisdiction="US-CA", declared_age=15)
+            )
 
         assert response.status_code == 201
         # US-CA is a Jurisdiction (so the policy path wins), but assert the
@@ -171,10 +168,10 @@ class TestVerifyAge:
         user_id = uuid.uuid4()
 
         with client_for(session) as client:
-                response = client.post(
-                    "/age/verify",
-                    json=_payload(user_id=str(user_id), declared_age=17),
-                )
+            response = client.post(
+                "/age/verify",
+                json=_payload(user_id=str(user_id), declared_age=17),
+            )
 
         assert response.status_code == 201
         session.add.assert_called_once()
@@ -194,14 +191,14 @@ class TestVerifyAge:
         session = _fake_session()
 
         with client_for(session) as client:
-                response = client.post(
-                    "/age/verify",
-                    json=_payload(
-                        verification_method="document",
-                        document_type="passport",
-                        declared_age=21,
-                    ),
-                )
+            response = client.post(
+                "/age/verify",
+                json=_payload(
+                    verification_method="document",
+                    document_type="passport",
+                    declared_age=21,
+                ),
+            )
 
         assert response.status_code == 201
         record = session.add.call_args.args[0]
@@ -213,9 +210,7 @@ class TestVerifyAge:
         session = _fake_session()
 
         with client_for(session) as client:
-                response = client.post(
-                    "/age/verify", json=_payload(verification_method="id_check")
-                )
+            response = client.post("/age/verify", json=_payload(verification_method="id_check"))
 
         assert response.status_code == 201
         assert session.add.call_args.args[0].verified_by == "document"
@@ -224,7 +219,7 @@ class TestVerifyAge:
         session = _fake_session()
 
         with client_for(session) as client:
-                response = client.post("/age/verify", json=_payload(declared_age=0))
+            response = client.post("/age/verify", json=_payload(declared_age=0))
 
         assert response.status_code == 201
         assert response.json()["is_minor"] is True
@@ -233,7 +228,7 @@ class TestVerifyAge:
         session = _fake_session()
 
         with client_for(session) as client:
-                response = client.post("/age/verify", json=_payload(declared_age=120))
+            response = client.post("/age/verify", json=_payload(declared_age=120))
 
         assert response.status_code == 201
         assert response.json()["is_minor"] is False
@@ -243,9 +238,7 @@ class TestVerifyAge:
         session = _fake_session()
 
         with client_for(session) as client:
-                response = client.post(
-                    "/age/verify", json=_payload(declared_age=declared_age)
-                )
+            response = client.post("/age/verify", json=_payload(declared_age=declared_age))
 
         assert response.status_code == 422
         session.add.assert_not_called()
@@ -254,9 +247,7 @@ class TestVerifyAge:
         session = _fake_session()
 
         with client_for(session) as client:
-                response = client.post(
-                    "/age/verify", json=_payload(verification_method="telepathy")
-                )
+            response = client.post("/age/verify", json=_payload(verification_method="telepathy"))
 
         assert response.status_code == 422
 
@@ -266,7 +257,7 @@ class TestVerifyAge:
         body.pop("user_id")
 
         with client_for(session) as client:
-                response = client.post("/age/verify", json=body)
+            response = client.post("/age/verify", json=body)
 
         assert response.status_code == 422
 
@@ -274,7 +265,7 @@ class TestVerifyAge:
         session = _fake_session()
 
         with client_for(session) as client:
-                response = client.post("/age/verify", json=_payload(jurisdiction="E"))
+            response = client.post("/age/verify", json=_payload(jurisdiction="E"))
 
         assert response.status_code == 422
 
@@ -303,7 +294,7 @@ class TestCheckAge:
         session = _fake_session(self._record(user_id))
 
         with client_for(session) as client:
-                response = client.get(f"/age/check/{user_id}")
+            response = client.get(f"/age/check/{user_id}")
 
         assert response.status_code == 200
         body = response.json()
@@ -319,7 +310,7 @@ class TestCheckAge:
         session = _fake_session(None)
 
         with client_for(session) as client:
-                response = client.get(f"/age/check/{uuid.uuid4()}")
+            response = client.get(f"/age/check/{uuid.uuid4()}")
 
         assert response.status_code == 404
         assert response.json()["detail"] == "Age verification not found"
@@ -329,7 +320,7 @@ class TestCheckAge:
         session = _fake_session(self._record(user_id, is_minor=True, verified_age=14))
 
         with client_for(session) as client:
-                response = client.get(f"/age/check/{user_id}")
+            response = client.get(f"/age/check/{user_id}")
 
         assert response.json()["is_minor"] is True
         assert response.json()["jwt_claim"] == {"age_verified": True, "is_minor": True}
@@ -339,7 +330,7 @@ class TestCheckAge:
         session = _fake_session(self._record(user_id, verified_at=None, verified_age=None))
 
         with client_for(session) as client:
-                response = client.get(f"/age/check/{user_id}")
+            response = client.get(f"/age/check/{user_id}")
 
         body = response.json()
         assert body["verified"] is False
@@ -352,20 +343,20 @@ class TestCheckAge:
         session = _fake_session(self._record(user_id))
 
         with client_for(session) as client:
-                client.get(f"/age/check/{user_id}")
+            client.get(f"/age/check/{user_id}")
 
         session.execute.assert_awaited_once()
         statement = session.execute.await_args.args[0]
         compiled = str(statement).replace("\n", " ")
         assert "FROM age_verifications" in compiled
-        assert f"age_verifications.user_id = :user_id_1" in compiled
+        assert "age_verifications.user_id = :user_id_1" in compiled
         assert statement.compile().params["user_id_1"] == user_id
 
     def test_non_uuid_user_id_is_rejected(self, client_for):
         session = _fake_session(None)
 
         with client_for(session) as client:
-                response = client.get("/age/check/not-a-uuid")
+            response = client.get("/age/check/not-a-uuid")
 
         assert response.status_code == 422
         session.execute.assert_not_awaited()

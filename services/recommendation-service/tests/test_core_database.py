@@ -85,9 +85,7 @@ class TestInit:
         assert server_settings["lock_timeout"] == "5000"
         assert server_settings["idle_in_transaction_session_timeout"] == "30000"
 
-        sessionmaker.assert_called_once_with(
-            engine, class_=AsyncSession, expire_on_commit=False
-        )
+        sessionmaker.assert_called_once_with(engine, class_=AsyncSession, expire_on_commit=False)
         assert DatabaseManager.engine is engine
         assert DatabaseManager.session_factory is factory
 
@@ -220,9 +218,7 @@ class TestGetDb:
             await generator.__anext__()
 
     @pytest.mark.asyncio
-    async def test_initialises_the_manager_when_no_factory_exists(
-        self, reset_manager, monkeypatch
-    ):
+    async def test_initialises_the_manager_when_no_factory_exists(self, reset_manager, monkeypatch):
         factory = _SessionFactory()
         monkeypatch.setattr(database_mod, "async_sessionmaker", MagicMock(return_value=factory))
         monkeypatch.setattr(

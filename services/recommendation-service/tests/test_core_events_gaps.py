@@ -24,7 +24,8 @@ def _fresh_subscriber():
 
 def _event(topic: str, payload: dict) -> DomainEvent:
     return DomainEvent(
-        topic=topic, key=f"key:{payload.get('content_id') or payload.get('user_id')}",
+        topic=topic,
+        key=f"key:{payload.get('content_id') or payload.get('user_id')}",
         payload=payload,
         producer="content-service",
     )
@@ -67,7 +68,9 @@ class TestContentGoneWithoutDatabase:
         repo_cls = MagicMock()
         monkeypatch.setattr(events_mod, "RecommendationRepository", repo_cls)
 
-        await events_mod._handle_content_deleted(_event("content.deleted", {"content_id": str(uuid4())}))
+        await events_mod._handle_content_deleted(
+            _event("content.deleted", {"content_id": str(uuid4())})
+        )
 
         repo_cls.assert_not_called()
 
@@ -89,7 +92,9 @@ class TestContentGoneWithoutDatabase:
         invalidate = AsyncMock()
         monkeypatch.setattr(events_mod, "_cache_invalidate", invalidate)
 
-        await events_mod._handle_content_deleted(_event("content.deleted", {"content_id": str(uuid4())}))
+        await events_mod._handle_content_deleted(
+            _event("content.deleted", {"content_id": str(uuid4())})
+        )
 
         invalidate.assert_not_awaited()
 
@@ -103,7 +108,9 @@ class TestContentGoneWithoutDatabase:
         invalidate = AsyncMock()
         monkeypatch.setattr(events_mod, "_cache_invalidate", invalidate)
 
-        await events_mod._handle_content_deleted(_event("content.deleted", {"content_id": str(uuid4())}))
+        await events_mod._handle_content_deleted(
+            _event("content.deleted", {"content_id": str(uuid4())})
+        )
 
         invalidate.assert_not_awaited()
         # The transaction is still committed for the delete itself.
@@ -214,9 +221,7 @@ class TestTransportSelection:
             sub = events_mod.get_event_subscriber()
 
         assert sub is ksub.return_value
-        dedup.assert_called_once_with(
-            redis_url="redis://redis:6379/3", key_prefix="wf:dedup:rec"
-        )
+        dedup.assert_called_once_with(redis_url="redis://redis:6379/3", key_prefix="wf:dedup:rec")
         assert ksub.call_args.kwargs["group_id"] == "rec-workers"
         assert ksub.call_args.kwargs["client_id"] == "rec-workers"
         assert kpub.call_args.kwargs["client_id"] == "rec-workers-dlq"
@@ -433,9 +438,7 @@ class TestCacheInvalidationContract:
         import app.services as services_mod
 
         monkeypatch.setattr(services_mod, "_redis_client", None)
-        monkeypatch.setattr(
-            services_mod, "get_redis_client", AsyncMock(return_value=None)
-        )
+        monkeypatch.setattr(services_mod, "get_redis_client", AsyncMock(return_value=None))
 
         await services_mod._cache_invalidate(uuid4())  # must not raise
 

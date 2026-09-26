@@ -9,7 +9,7 @@ startup/shutdown halves of the lifespan including the bounded drain.
 import asyncio
 import contextlib
 import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi.responses import JSONResponse
@@ -225,9 +225,7 @@ def test_ready_reports_ready_when_redis_pings(redis_stub, preserve_globals):
     }
 
 
-def test_ready_reports_down_when_no_redis_client_is_attached(
-    redis_stub, preserve_globals
-):
+def test_ready_reports_down_when_no_redis_client_is_attached(redis_stub, preserve_globals):
     app = create_app()
     with _client(app) as client:
         app.state.redis_client = None
@@ -270,9 +268,7 @@ async def test_ready_reports_timeout_when_redis_ping_hangs(redis_stub, preserve_
 # --------------------------------------------------------------------------
 
 
-def test_requests_are_rejected_with_retry_after_while_shutting_down(
-    redis_stub, preserve_globals
-):
+def test_requests_are_rejected_with_retry_after_while_shutting_down(redis_stub, preserve_globals):
     app = create_app()
     with _client(app) as client:
         app.state.redis_client = FakeRedis()
@@ -284,9 +280,7 @@ def test_requests_are_rejected_with_retry_after_while_shutting_down(
     assert resp.headers["retry-after"] == str(main._MAX_DRAIN_SECONDS)
 
 
-def test_requests_are_accepted_again_while_startup_flag_is_false(
-    redis_stub, preserve_globals
-):
+def test_requests_are_accepted_again_while_startup_flag_is_false(redis_stub, preserve_globals):
     app = create_app()
     with _client(app) as client:
         app.state.redis_client = FakeRedis()
@@ -294,9 +288,7 @@ def test_requests_are_accepted_again_while_startup_flag_is_false(
         assert client.get("/health").status_code == 200
 
 
-def test_in_flight_counter_is_incremented_then_released(
-    redis_stub, preserve_globals
-):
+def test_in_flight_counter_is_incremented_then_released(redis_stub, preserve_globals):
     app = create_app()
     observed = {}
 
@@ -314,9 +306,7 @@ def test_in_flight_counter_is_incremented_then_released(
     assert main._in_flight_requests == 0, "counter must be released after the request"
 
 
-def test_in_flight_counter_is_released_even_when_handler_raises(
-    redis_stub, preserve_globals
-):
+def test_in_flight_counter_is_released_even_when_handler_raises(redis_stub, preserve_globals):
     app = create_app()
 
     async def _explode(request):
@@ -335,9 +325,7 @@ def test_in_flight_counter_is_released_even_when_handler_raises(
 # --------------------------------------------------------------------------
 
 
-def test_unhandled_exception_returns_opaque_500_without_internals(
-    redis_stub, preserve_globals
-):
+def test_unhandled_exception_returns_opaque_500_without_internals(redis_stub, preserve_globals):
     app = create_app()
 
     async def _explode(request):
@@ -396,9 +384,7 @@ async def test_lifespan_startup_initialises_auth_rate_limiter_and_clients(
         assert get_shared_client() is not None
 
 
-async def test_lifespan_startup_uses_the_configured_redis_url(
-    redis_stub, preserve_globals
-):
+async def test_lifespan_startup_uses_the_configured_redis_url(redis_stub, preserve_globals):
     from app.core.settings import settings
 
     app = create_app()

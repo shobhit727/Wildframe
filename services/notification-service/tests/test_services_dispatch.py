@@ -24,7 +24,6 @@ from app.models import Notification, NotificationPreference, utcnow_naive
 from app.repositories import NotificationRepository
 from app.services import NotificationService
 
-
 # ---------------------------------------------------------------------------
 # fakes
 # ---------------------------------------------------------------------------
@@ -59,7 +58,6 @@ def make_notification(delivery_status: str = "pending", errors: dict | None = No
     )
 
 
-from app.repositories import NotificationRepository
 def build_repo(notification=None, preference=None) -> MagicMock:
     """A repository double with the *real* parse_delivery_errors attached."""
     repo = MagicMock()
@@ -339,9 +337,7 @@ async def test_retry_is_a_noop_for_a_pending_notification(patched_channels):
     notif = make_notification(delivery_status="pending")
     repo = build_repo(notification=notif)
 
-    assert await service_for(repo).retry_delivery(notif.id, notif.user_id) == {
-        "status": "pending"
-    }
+    assert await service_for(repo).retry_delivery(notif.id, notif.user_id) == {"status": "pending"}
 
 
 async def test_retry_re_dispatches_only_the_failed_channels(patched_channels):
@@ -417,9 +413,7 @@ async def test_retry_handles_a_notification_with_no_stored_outcomes(patched_chan
 
 async def test_retry_keeps_failing_the_notification_when_the_retry_fails(patched_channels):
     patched_channels["sms"]._behaviour = DeliveryError("still down")
-    notif = make_notification(
-        delivery_status="failed", errors={"sms": "failed: gateway 503"}
-    )
+    notif = make_notification(delivery_status="failed", errors={"sms": "failed: gateway 503"})
     repo = build_repo(notification=notif)
 
     result = await service_for(repo).retry_delivery(notif.id, notif.user_id)
@@ -433,9 +427,7 @@ async def test_retry_keeps_failing_the_notification_when_the_retry_fails(patched
 
 async def test_retry_never_creates_a_second_notification_row(patched_channels):
     """Idempotency: retry re-dispatches, it does not re-create."""
-    notif = make_notification(
-        delivery_status="failed", errors={"sms": "failed: gateway 503"}
-    )
+    notif = make_notification(delivery_status="failed", errors={"sms": "failed: gateway 503"})
     repo = build_repo(notification=notif)
     repo.create = AsyncMock()
 

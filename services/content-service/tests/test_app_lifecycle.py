@@ -277,9 +277,7 @@ class TestBodySizeLimitMiddleware:
 
     async def test_empty_content_length_passes_through(self, echo_app):
         async with make_client(echo_app) as client:
-            response = await client.post(
-                "/_test/echo", content=b"", headers={"content-length": ""}
-            )
+            response = await client.post("/_test/echo", content=b"", headers={"content-length": ""})
 
         assert response.status_code == 200
 
@@ -429,9 +427,7 @@ class TestLifespan:
                 pass
 
         warnings = [r for r in records if r.levelno == logging.WARNING]
-        assert [r.getMessage() for r in warnings] == [
-            "Database health check failed at startup"
-        ]
+        assert [r.getMessage() for r in warnings] == ["Database health check failed at startup"]
         assert db_stub["close"] == 1
 
     async def test_healthy_database_logs_the_connection(self, db_stub):

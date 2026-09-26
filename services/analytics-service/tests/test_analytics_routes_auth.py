@@ -305,9 +305,7 @@ async def test_owning_creator_is_allowed():
     """analytics_routes.py:151-156 -- the owning creator reads their own data."""
     content_id = uuid4()
     owner = uuid4()
-    with patch.object(
-        routes_module, "resolve_content_owner", AsyncMock(return_value=owner)
-    ):
+    with patch.object(routes_module, "resolve_content_owner", AsyncMock(return_value=owner)):
         resolved = await require_content_access(
             {"user_id": owner, "role": "user"}, make_request({"content_id": str(content_id)})
         )
@@ -323,9 +321,7 @@ async def test_a_different_creator_is_denied_with_404():
     """
     content_id = uuid4()
     other_owner = uuid4()
-    with patch.object(
-        routes_module, "resolve_content_owner", AsyncMock(return_value=other_owner)
-    ):
+    with patch.object(routes_module, "resolve_content_owner", AsyncMock(return_value=other_owner)):
         with pytest.raises(HTTPException) as exc:
             await require_content_access(
                 {"user_id": uuid4(), "role": "user"},
@@ -339,9 +335,7 @@ async def test_a_different_creator_is_denied_with_404():
 async def test_unknown_content_is_denied_with_404():
     """analytics_routes.py:149-150 -- content-service 404 -> local 404."""
     content_id = uuid4()
-    with patch.object(
-        routes_module, "resolve_content_owner", AsyncMock(return_value=None)
-    ):
+    with patch.object(routes_module, "resolve_content_owner", AsyncMock(return_value=None)):
         with pytest.raises(HTTPException) as exc:
             await require_content_access(
                 {"user_id": uuid4(), "role": "user"},
@@ -413,9 +407,7 @@ async def test_a_non_admin_role_is_not_treated_as_privileged():
     """
     content_id = uuid4()
     owner = uuid4()
-    with patch.object(
-        routes_module, "resolve_content_owner", AsyncMock(return_value=owner)
-    ):
+    with patch.object(routes_module, "resolve_content_owner", AsyncMock(return_value=owner)):
         with pytest.raises(HTTPException) as exc:
             await require_content_access(
                 {"user_id": uuid4(), "role": "superadmin"},
@@ -428,9 +420,7 @@ async def test_a_non_admin_role_is_not_treated_as_privileged():
 async def test_a_creator_role_does_not_grant_privileged_access():
     """A 'creator' role still only sees content it owns."""
     content_id = uuid4()
-    with patch.object(
-        routes_module, "resolve_content_owner", AsyncMock(return_value=uuid4())
-    ):
+    with patch.object(routes_module, "resolve_content_owner", AsyncMock(return_value=uuid4())):
         with pytest.raises(HTTPException) as exc:
             await require_content_access(
                 {"user_id": uuid4(), "role": "creator"},
@@ -548,9 +538,7 @@ async def test_require_creator_access_requires_a_creator_id_path_param():
     from app.api.analytics_routes import require_creator_access
 
     with pytest.raises(HTTPException) as exc:
-        await require_creator_access(
-            {"user_id": uuid4(), "role": "user"}, make_request({})
-        )
+        await require_creator_access({"user_id": uuid4(), "role": "user"}, make_request({}))
     assert exc.value.status_code == 422
 
 
@@ -624,7 +612,6 @@ async def test_log_event_converts_a_service_valueerror_into_422():
     from fastapi.testclient import TestClient
 
     from app.api.analytics_routes import get_analytics_service
-    from app.schemas import LogEventRequest
     from app.main import app
 
     caller = uuid4()

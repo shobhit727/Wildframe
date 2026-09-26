@@ -160,9 +160,7 @@ async def test_resolve_content_owner_raises_unavailable_on_a_timeout(caplog):
 
 @pytest.mark.unit
 @pytest.mark.parametrize("status", [400, 401, 403, 429, 500, 502, 503])
-async def test_resolve_content_owner_raises_unavailable_on_error_statuses(
-    status, caplog
-):
+async def test_resolve_content_owner_raises_unavailable_on_error_statuses(status, caplog):
     """content_client.py:65-71 -- any non-200/404 is an untrustworthy answer.
 
     Notably 403 is in this bucket: a gateway denial must not be read as
@@ -264,9 +262,7 @@ async def test_scalar_body_escapes_the_authorization_gate():
     # 503 is what the documented contract requires; the guard below is
     # currently bypassed.
     with pytest.raises(AttributeError):
-        await analytics_routes.require_content_access(
-            {"user_id": uuid4(), "role": "user"}, request
-        )
+        await analytics_routes.require_content_access({"user_id": uuid4(), "role": "user"}, request)
 
 
 # ===================== app/schemas/__init__.py nesting ======================
@@ -275,9 +271,12 @@ async def test_scalar_body_escapes_the_authorization_gate():
 @pytest.mark.unit
 def test_nesting_depth_ignores_an_empty_dict():
     """``_nesting_depth({}) == 0`` -- the ``default=depth`` arm for dicts."""
-    assert LogEventRequest.model_validate(
-        {"user_id": str(uuid4()), "event_type": "x", "event_data": {}}
-    ).event_data == {}
+    assert (
+        LogEventRequest.model_validate(
+            {"user_id": str(uuid4()), "event_type": "x", "event_data": {}}
+        ).event_data
+        == {}
+    )
 
 
 @pytest.mark.unit
@@ -291,6 +290,7 @@ def test_nesting_depth_ignores_an_empty_list():
 @pytest.mark.unit
 def test_nesting_depth_is_measured_for_nested_values():
     """A structure at the limit is accepted; one level deeper is rejected."""
+
     def nest(depth: int) -> dict:
         payload = {"leaf": 1}
         for _ in range(depth):

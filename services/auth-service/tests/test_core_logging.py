@@ -379,9 +379,7 @@ def isolated_logging(tmp_path, monkeypatch):
         "asyncio": logging.getLogger("asyncio"),
     }
     named = {name: logging.getLogger(name) for name in ("sqlalchemy", "asyncio")}
-    named_state = {
-        name: (lg.handlers[:], lg.level, lg.propagate) for name, lg in named.items()
-    }
+    named_state = {name: (lg.handlers[:], lg.level, lg.propagate) for name, lg in named.items()}
 
     yield workdir
 
@@ -496,9 +494,7 @@ def test_json_formatter_uses_stdlib_json_serialisation():
 
 def test_redaction_constants_match_documented_policy():
     assert core_logging._REDACTED_VALUE == "[REDACTED]"
-    assert core_logging._REDACTED_HEADERS == frozenset(
-        {"authorization", "cookie", "set-cookie"}
-    )
+    assert core_logging._REDACTED_HEADERS == frozenset({"authorization", "cookie", "set-cookie"})
 
 
 def test_logs_directory_is_configured_relative_to_cwd():

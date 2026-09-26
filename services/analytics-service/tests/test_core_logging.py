@@ -60,9 +60,7 @@ def test_setup_logging_installs_an_info_level_handler():
         # basicConfig filters on the *root* level, leaving the handler at NOTSET.
         assert handler.level == logging.NOTSET
         assert handler.formatter is not None
-        assert handler.formatter._fmt == (
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
+        assert handler.formatter._fmt == ("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
 @pytest.mark.unit
@@ -188,9 +186,7 @@ def test_set_correlation_id_returns_the_value_unchanged():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(
-    "cid", ["corr-1", "0123456789abcdef", "corr with spaces", "corr/slash"]
-)
+@pytest.mark.parametrize("cid", ["corr-1", "0123456789abcdef", "corr with spaces", "corr/slash"])
 def test_set_correlation_id_accepts_any_string(cid):
     """No validation, no normalisation -- the caller's value is returned."""
     assert set_correlation_id(cid) == cid

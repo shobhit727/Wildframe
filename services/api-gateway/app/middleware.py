@@ -622,9 +622,7 @@ def _create_decompressor(encoding: str):
     return None
 
 
-def _decompress_chunk(
-    decompressor, chunk: bytes, max_output_bytes: int | None = None
-) -> bytes:
+def _decompress_chunk(decompressor, chunk: bytes, max_output_bytes: int | None = None) -> bytes:
     if decompressor is None:
         return b""
     if max_output_bytes is None:
@@ -794,7 +792,9 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                     if is_compressed:
                         if decompressor is not None:
                             try:
-                                out = _decompress_chunk(decompressor, chunk, limit - decompressed_total)
+                                out = _decompress_chunk(
+                                    decompressor, chunk, limit - decompressed_total
+                                )
                             except Exception as exc:
                                 raise ValueError(f"Invalid compressed body: {exc}") from exc
                             decompressed_total += len(out)
@@ -803,7 +803,9 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                                     f"Decompressed body exceeds limit: {decompressed_total} > {limit}"
                                 )
                         else:
-                            raise ValueError("Compressed encoding does not support bounded decompression")
+                            raise ValueError(
+                                "Compressed encoding does not support bounded decompression"
+                            )
                     yield chunk
                 if is_compressed and decompressor is not None:
                     try:

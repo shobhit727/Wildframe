@@ -40,6 +40,7 @@ async def session():
     finally:
         await engine.dispose()
 
+
 pytestmark = pytest.mark.unit
 
 NOW = datetime(2026, 2, 1)
@@ -189,7 +190,9 @@ class TestAccruePayout:
         await service.accrue_payout(creator_id, NOW, period_end, 10, 100)
 
         kwargs = service.ledger_repo.accrued.await_args.kwargs
-        assert kwargs["idempotency_key"] == f"{creator_id}:{NOW.isoformat()}:{period_end.isoformat()}"
+        assert (
+            kwargs["idempotency_key"] == f"{creator_id}:{NOW.isoformat()}:{period_end.isoformat()}"
+        )
 
     async def test_an_absurd_fee_cannot_break_the_55_percent_invariant(self, service):
         """The contractual assert is unreachable through the public API.

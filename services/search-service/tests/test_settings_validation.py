@@ -172,9 +172,7 @@ class TestCorsCredentialsGate:
             Settings(**production(CORS_ALLOWED_ORIGINS=["*"], CORS_ALLOW_CREDENTIALS=True))
 
     def test_wildcard_origins_are_fine_without_credentials(self):
-        settings = Settings(
-            **production(CORS_ALLOWED_ORIGINS=["*"], CORS_ALLOW_CREDENTIALS=False)
-        )
+        settings = Settings(**production(CORS_ALLOWED_ORIGINS=["*"], CORS_ALLOW_CREDENTIALS=False))
 
         assert settings.CORS_ALLOWED_ORIGINS == ["*"]
 

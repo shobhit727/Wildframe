@@ -50,7 +50,10 @@ async def session():
 
     engine = create_async_engine(SQLITE_URL, echo=False)
     async with engine.begin() as conn:
-        for table in (Base.metadata.tables["creator_onboarding"], Base.metadata.tables["creator_payouts"]):
+        for table in (
+            Base.metadata.tables["creator_onboarding"],
+            Base.metadata.tables["creator_payouts"],
+        ):
             await conn.run_sync(lambda sync_conn, t=table: t.drop(sync_conn, checkfirst=True))
             await conn.run_sync(lambda sync_conn, t=table: t.create(sync_conn, checkfirst=True))
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -432,9 +435,7 @@ async def user_client(user_service):
     application.include_router(user_router)
     application.dependency_overrides[get_service] = lambda: user_service
     application.dependency_overrides[current_user] = lambda: uuid4()
-    async with AsyncClient(
-        transport=ASGITransport(app=application), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as ac:
         yield ac
 
 
@@ -488,9 +489,7 @@ class TestUserRouteGuards:
         assert response.status_code == 404
         user_service.accrue_payout.assert_not_awaited()
 
-    async def test_payout_accrual_403s_for_a_suspended_creator(
-        self, user_client, user_service
-    ):
+    async def test_payout_accrual_403s_for_a_suspended_creator(self, user_client, user_service):
         user_service.get_profile.return_value.is_active = False
 
         response = await user_client.post(
@@ -578,9 +577,7 @@ async def admin_client(admin_service):
     application = FastAPI()
     application.include_router(admin_router)
     application.dependency_overrides[get_service] = lambda: admin_service
-    async with AsyncClient(
-        transport=ASGITransport(app=application), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as ac:
         yield ac
 
 
@@ -622,9 +619,7 @@ class TestAdminRoutes:
         assert body["status"] == "draft"
         assert body["total_cents"] == 500_00
 
-    async def test_add_tranche_requires_a_matching_milestone(
-        self, admin_client, admin_service
-    ):
+    async def test_add_tranche_requires_a_matching_milestone(self, admin_client, admin_service):
         admin_service.milestone_repo.get.return_value = None
 
         response = await admin_client.post(
@@ -667,9 +662,7 @@ class TestAdminRoutes:
         assert body["status"] == "released"
         assert body["milestone_id"] == str(milestone_id)
 
-    async def test_release_tranche_requires_a_matching_milestone(
-        self, admin_client, admin_service
-    ):
+    async def test_release_tranche_requires_a_matching_milestone(self, admin_client, admin_service):
         admin_service.milestone_repo.get.return_value = None
 
         response = await admin_client.post(
@@ -697,9 +690,7 @@ class TestAdminRoutes:
         assert response.status_code == 404
         assert response.json()["detail"] == "tranche not found"
 
-    async def test_release_tranche_returns_the_released_tranche(
-        self, admin_client, admin_service
-    ):
+    async def test_release_tranche_returns_the_released_tranche(self, admin_client, admin_service):
         creator_id, milestone_id = uuid4(), uuid4()
         admin_service.milestone_repo.get.return_value = make_milestone(creator_id)
         admin_service.add_tranche.return_value = make_tranche(milestone_id)
@@ -714,9 +705,7 @@ class TestAdminRoutes:
         assert response.status_code == 200
         assert response.json()["status"] == "released"
 
-    async def test_kill_milestone_requires_a_matching_milestone(
-        self, admin_client, admin_service
-    ):
+    async def test_kill_milestone_requires_a_matching_milestone(self, admin_client, admin_service):
         admin_service.milestone_repo.get.return_value = None
 
         response = await admin_client.post(
@@ -728,9 +717,7 @@ class TestAdminRoutes:
         assert response.status_code == 404
         admin_service.kill_milestone.assert_not_awaited()
 
-    async def test_kill_milestone_returns_the_killed_milestone(
-        self, admin_client, admin_service
-    ):
+    async def test_kill_milestone_returns_the_killed_milestone(self, admin_client, admin_service):
         creator_id, milestone_id = uuid4(), uuid4()
         killed = make_milestone(creator_id)
         killed.status = "killed"

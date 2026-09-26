@@ -175,9 +175,7 @@ class TestRejectionOrder:
 class TestCorsCredentialsGuard:
     def test_wildcard_origin_with_credentials_is_rejected_in_production(self):
         with pytest.raises(ValidationError) as exc:
-            Settings(
-                **_production_kwargs(CORS_ALLOWED_ORIGINS=["*"], CORS_ALLOW_CREDENTIALS=True)
-            )
+            Settings(**_production_kwargs(CORS_ALLOWED_ORIGINS=["*"], CORS_ALLOW_CREDENTIALS=True))
 
         assert "CORS_ALLOWED_ORIGINS cannot be ['*']" in str(exc.value)
 

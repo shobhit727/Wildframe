@@ -46,7 +46,6 @@ from app.services import (
     validate_transition,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -138,9 +137,7 @@ class TestValidateTransition:
 
     def test_disallowed_transition_raises(self):
         with pytest.raises(InvalidStateTransitionError, match="not in"):
-            validate_transition(
-                SubscriptionStatus.CANCELLED, "nonsense", SUBSCRIPTION_TRANSITIONS
-            )
+            validate_transition(SubscriptionStatus.CANCELLED, "nonsense", SUBSCRIPTION_TRANSITIONS)
 
     def test_unknown_current_state_raises(self):
         with pytest.raises(InvalidStateTransitionError) as exc:
@@ -150,7 +147,10 @@ class TestValidateTransition:
     def test_error_names_the_context(self):
         with pytest.raises(InvalidStateTransitionError, match="stripe_sync"):
             validate_transition(
-                SubscriptionStatus.CANCELLED, "nonsense", SUBSCRIPTION_TRANSITIONS, context="stripe_sync"
+                SubscriptionStatus.CANCELLED,
+                "nonsense",
+                SUBSCRIPTION_TRANSITIONS,
+                context="stripe_sync",
             )
 
     def test_error_lists_the_legal_source_states(self):
@@ -163,16 +163,12 @@ class TestValidateTransition:
         # REFUNDED is terminal per the state machine in the module docstring.
         assert INVOICE_TRANSITIONS[InvoiceStatus.REFUNDED] == (InvoiceStatus.REFUNDED,)
         with pytest.raises(InvalidStateTransitionError):
-            validate_transition(
-                InvoiceStatus.REFUNDED, InvoiceStatus.PAID, INVOICE_TRANSITIONS
-            )
+            validate_transition(InvoiceStatus.REFUNDED, InvoiceStatus.PAID, INVOICE_TRANSITIONS)
 
     def test_released_tranche_is_terminal(self):
         assert TRANCHE_TRANSITIONS[TrancheStatus.RELEASED] == (TrancheStatus.RELEASED,)
         with pytest.raises(InvalidStateTransitionError):
-            validate_transition(
-                TrancheStatus.RELEASED, TrancheStatus.REVERTED, TRANCHE_TRANSITIONS
-            )
+            validate_transition(TrancheStatus.RELEASED, TrancheStatus.REVERTED, TRANCHE_TRANSITIONS)
 
     def test_paid_payout_is_terminal(self):
         with pytest.raises(InvalidStateTransitionError):
@@ -241,8 +237,11 @@ class TestAccessorsAndTransactions:
         svc.milestone_repo.create = AsyncMock(return_value=milestone)
         creator = uuid4()
         result = await svc.create_milestone(
-            creator, "Feature Film", Decimal("10000.00"),
-            caller_id=uuid4(), caller_is_admin=True,
+            creator,
+            "Feature Film",
+            Decimal("10000.00"),
+            caller_id=uuid4(),
+            caller_is_admin=True,
         )
         assert result is milestone
         svc.milestone_repo.create.assert_awaited_once_with(
@@ -270,9 +269,7 @@ class TestAccessorsAndTransactions:
         svc = _service()
         svc.milestone_repo.get = AsyncMock(return_value=milestone)
         svc.milestone_repo.get_tranches = AsyncMock(return_value=[locked, released])
-        result = await svc.kill_milestone(
-            uuid4(), caller_id=uuid4(), caller_is_admin=True
-        )
+        result = await svc.kill_milestone(uuid4(), caller_id=uuid4(), caller_is_admin=True)
         assert milestone.status == MilestoneStatus.KILLED
         # An already-released tranche is NOT clawed back.
         assert locked.status == TrancheStatus.REVERTED
@@ -406,14 +403,24 @@ class TestAccessorsAndTransactions:
         )
         with pytest.raises(DuplicatePayoutError, match="cannot re-accrue"):
             await svc.accrue_payout(
-                uuid4(), Decimal("9.99"), "USD", "idem-1", datetime(2026, 1, 1), datetime(2026, 2, 1)
+                uuid4(),
+                Decimal("9.99"),
+                "USD",
+                "idem-1",
+                datetime(2026, 1, 1),
+                datetime(2026, 2, 1),
             )
 
     async def test_accrue_payout_rejects_an_unlisted_currency(self):
         svc = _service()
         with pytest.raises(ValueError, match="Unsupported currency code"):
             await svc.accrue_payout(
-                uuid4(), Decimal("5.00"), "ZZZ", "idem-1", datetime(2026, 1, 1), datetime(2026, 2, 1)
+                uuid4(),
+                Decimal("5.00"),
+                "ZZZ",
+                "idem-1",
+                datetime(2026, 1, 1),
+                datetime(2026, 2, 1),
             )
 
     def test_calculate_creator_share_is_at_least_55_percent(self):
@@ -461,14 +468,10 @@ class TestSubscriptionIdempotency:
         user = uuid4()
         assert await svc.subscribe(user, "svod") is created
         # SVOD carries the product price; AVOD is free.
-        svc.sub_repo.create.assert_awaited_once_with(
-            user, RevenueTier.SVOD, Decimal("7.99")
-        )
+        svc.sub_repo.create.assert_awaited_once_with(user, RevenueTier.SVOD, Decimal("7.99"))
 
     async def test_upgrade_reactivates_a_cancelled_subscription(self):
-        existing = _sub(
-            tier=RevenueTier.AVOD, status=SubscriptionStatus.CANCELLED, is_active=False
-        )
+        existing = _sub(tier=RevenueTier.AVOD, status=SubscriptionStatus.CANCELLED, is_active=False)
         svc = _service()
         svc.sub_repo.get_by_user = AsyncMock(return_value=existing)
         await svc.subscribe(uuid4(), "svod")
@@ -538,9 +541,7 @@ class TestFetchContentDetails:
         assert price == Decimal("9.99")
         assert resolved == creator
         # The canonical price comes from the content service, never the client.
-        client.get.assert_awaited_once_with(
-            f"http://content-service:8000/api/v1/content/{content}"
-        )
+        client.get.assert_awaited_once_with(f"http://content-service:8000/api/v1/content/{content}")
 
     @pytest.mark.parametrize("field", ["creator_id", "creatorId", "creator"])
     async def test_creator_id_aliases_are_all_accepted(self, field):
@@ -694,7 +695,7 @@ class TestSyncSubscriptionFromStripe:
         sub = _sub(status=SubscriptionStatus.ACTIVE, last_stripe_event_ts=1000)
         svc = _service()
         svc.sub_repo.get_by_user = AsyncMock(return_value=sub)
-        result = await svc.sync_subscription_from_stripe(uuid4(), "canceled", 1000)
+        await svc.sync_subscription_from_stripe(uuid4(), "canceled", 1000)
         assert sub.status == SubscriptionStatus.CANCELLED
         assert sub.last_stripe_event_ts == 1000
         svc.sub_repo.session.flush.assert_awaited_once()
@@ -753,7 +754,9 @@ class TestProcessRefundResolutionCascade:
         existing = MagicMock(refund_id="re_1")
         svc = _refund_service()
         svc.refund_repo.get_by_refund_id = AsyncMock(return_value=existing)
-        with patch("app.services.StripeClient.retrieve_refund", side_effect=AssertionError("no call")):
+        with patch(
+            "app.services.StripeClient.retrieve_refund", side_effect=AssertionError("no call")
+        ):
             result = await svc.process_refund("re_1", "ch_1", Decimal("5.00"), "USD")
         assert result is existing
         svc.refund_repo.create.assert_not_awaited()
@@ -835,9 +838,7 @@ class TestProcessRefundResolutionCascade:
         invoice = _invoice(amount=Decimal("20.00"))
         svc = _refund_service()
         svc.inv_repo.get = AsyncMock(return_value=invoice)
-        with patch(
-            "app.services.StripeClient.retrieve_refund", side_effect=RuntimeError("kaboom")
-        ):
+        with patch("app.services.StripeClient.retrieve_refund", side_effect=RuntimeError("kaboom")):
             result = await svc.process_refund(
                 "re_1", "ch_1", Decimal("5.00"), "USD", invoice_id=invoice.id
             )
@@ -852,8 +853,12 @@ class TestProcessRefundResolutionCascade:
         with patch("app.services.StripeClient.retrieve_refund", return_value={}):
             with patch("app.services.StripeClient.retrieve_charge", return_value={}):
                 result = await svc.process_refund(
-                    "re_1", "ch_1", Decimal("5.00"), "USD",
-                    invoice_id=missing, stripe_invoice_id="in_9",
+                    "re_1",
+                    "ch_1",
+                    Decimal("5.00"),
+                    "USD",
+                    invoice_id=missing,
+                    stripe_invoice_id="in_9",
                 )
         # Stripe linkage is authoritative: it resolves to a different invoice
         # than the caller supplied, so the refund is held rather than applied
@@ -911,7 +916,9 @@ class TestProcessRefundResolutionCascade:
     async def test_failing_invoice_lookup_is_survived_and_the_refund_is_held(self):
         svc = _refund_service()
         svc.inv_repo.get_by_stripe_invoice_id = AsyncMock(side_effect=RuntimeError("db down"))
-        svc.purchase_repo.get_by_stripe_payment_intent_id = AsyncMock(side_effect=RuntimeError("db"))
+        svc.purchase_repo.get_by_stripe_payment_intent_id = AsyncMock(
+            side_effect=RuntimeError("db")
+        )
         with patch("app.services.StripeClient.retrieve_refund", return_value={}):
             with patch("app.services.StripeClient.retrieve_charge", return_value={}):
                 result = await svc.process_refund(
@@ -941,7 +948,9 @@ class TestProcessRefundResolutionCascade:
 
     async def test_failing_purchase_lookup_during_invoice_resolution_is_survived(self):
         svc = _refund_service()
-        svc.purchase_repo.get_by_stripe_payment_intent_id = AsyncMock(side_effect=RuntimeError("db"))
+        svc.purchase_repo.get_by_stripe_payment_intent_id = AsyncMock(
+            side_effect=RuntimeError("db")
+        )
         with patch("app.services.StripeClient.retrieve_refund", return_value={}):
             with patch("app.services.StripeClient.retrieve_charge", return_value={}):
                 result = await svc.process_refund(
@@ -1052,7 +1061,9 @@ class TestProcessRefundResolutionCascade:
 
     async def test_a_failing_purchase_lookup_via_the_charge_payment_intent_is_survived(self):
         svc = _refund_service()
-        svc.purchase_repo.get_by_stripe_payment_intent_id = AsyncMock(side_effect=RuntimeError("db"))
+        svc.purchase_repo.get_by_stripe_payment_intent_id = AsyncMock(
+            side_effect=RuntimeError("db")
+        )
         with patch("app.services.StripeClient.retrieve_refund", return_value={}):
             with patch(
                 "app.services.StripeClient.retrieve_charge",
@@ -1145,9 +1156,7 @@ class TestProcessRefundDeadBranch:
             }
         )
         with patch("app.services.StripeClient.retrieve_refund", return_value={}):
-            with patch(
-                "app.services.StripeClient.retrieve_charge", return_value=charge or {}
-            ):
+            with patch("app.services.StripeClient.retrieve_charge", return_value=charge or {}):
                 result = await svc.process_refund(
                     "re_dead",
                     charge_id or "",
@@ -1223,7 +1232,8 @@ class TestProcessRefundDeadBranch:
 
     async def test_charge_with_no_resolvable_invoice_falls_through(self):
         await self._resolve_and_assert(
-            charge_id="ch_1", charge={"invoice": None, "payment_intent": None},
+            charge_id="ch_1",
+            charge={"invoice": None, "payment_intent": None},
             expect_processed=False,
         )
 

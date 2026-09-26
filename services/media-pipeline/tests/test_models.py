@@ -24,7 +24,9 @@ from app.models import (
 @pytest.fixture
 def session():
     with ExitStack() as stack:
-        from testcontainers.postgres import PostgresContainer  # lazy: keeps collection safe when the dep is absent
+        from testcontainers.postgres import (
+            PostgresContainer,
+        )  # lazy: keeps collection safe when the dep is absent
 
         url = os.environ.get("TEST_DATABASE_URL")
         if not url:

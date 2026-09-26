@@ -75,9 +75,7 @@ def published_item(title: str = "X") -> dict:
 
 class TestEnsureIndex:
     @pytest.mark.asyncio
-    async def test_returns_existing_alias_target_without_touching_anything(
-        self, es_mock, service
-    ):
+    async def test_returns_existing_alias_target_without_touching_anything(self, es_mock, service):
         es_mock.indices.get_alias = AsyncMock(return_value={"content_v4": {}})
 
         assert await service.ensure_index() == "content_v4"
@@ -88,9 +86,7 @@ class TestEnsureIndex:
 
     @pytest.mark.asyncio
     async def test_picks_the_highest_sorting_alias_key(self, es_mock, service):
-        es_mock.indices.get_alias = AsyncMock(
-            return_value={"content_v10": {}, "content_v2": {}}
-        )
+        es_mock.indices.get_alias = AsyncMock(return_value={"content_v10": {}, "content_v2": {}})
 
         assert await service.ensure_index() == "content_v2"
 
@@ -124,9 +120,7 @@ class TestEnsureIndex:
         es_mock.indices.create.assert_awaited_once_with(
             index="content_v1", body=CONTENT_INDEX_MAPPING
         )
-        es_mock.indices.put_alias.assert_awaited_once_with(
-            index="content_v1", name=CONTENT_INDEX
-        )
+        es_mock.indices.put_alias.assert_awaited_once_with(index="content_v1", name=CONTENT_INDEX)
         es_mock.cluster.put_settings.assert_awaited_once_with(
             body={"persistent": {"indices.id_field_data.enabled": True}}
         )
@@ -174,9 +168,7 @@ class TestAliasAndVersionHelpers:
             "content_v10",
             "content_v2",
         ]
-        es_mock.indices.get.assert_awaited_once_with(
-            index="content_v*", ignore_unavailable=True
-        )
+        es_mock.indices.get.assert_awaited_once_with(index="content_v*", ignore_unavailable=True)
 
     @pytest.mark.asyncio
     async def test_versioned_indices_swallows_failures(self, es_mock, service):
@@ -211,9 +203,7 @@ class TestAliasAndVersionHelpers:
         assert await service._next_version("content_v2") == 10
 
     @pytest.mark.asyncio
-    async def test_next_version_falls_back_to_siblings_when_current_is_none(
-        self, es_mock, service
-    ):
+    async def test_next_version_falls_back_to_siblings_when_current_is_none(self, es_mock, service):
         es_mock.indices.get = AsyncMock(return_value={"content_v4": {}})
 
         assert await service._next_version(None) == 5
@@ -495,9 +485,7 @@ class TestReindexAliasCutover:
         es_mock.indices.delete.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_old_index_delete_failure_does_not_fail_the_reindex(
-        self, es_mock, service
-    ):
+    async def test_old_index_delete_failure_does_not_fail_the_reindex(self, es_mock, service):
         es_mock.indices.get_alias = AsyncMock(return_value={"content_v1": {}})
         es_mock.indices.get = AsyncMock(return_value={"content_v1": {}})
 
@@ -530,9 +518,7 @@ class TestReindexAliasCutover:
         with pytest.raises(IndexingError):
             await service.reindex_catalog(_catalog([{"id": "z", "title": "Z"}]))
 
-        es_mock.indices.delete.assert_awaited_once_with(
-            index="content_v2", ignore_unavailable=True
-        )
+        es_mock.indices.delete.assert_awaited_once_with(index="content_v2", ignore_unavailable=True)
         es_mock.indices.update_aliases.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -543,9 +529,7 @@ class TestReindexAliasCutover:
         result = await service.reindex_catalog(_catalog([]))
 
         assert result == ReindexResult(count=0, index_name="content_v5", switched=False)
-        es_mock.indices.delete.assert_awaited_once_with(
-            index="content_v6", ignore_unavailable=True
-        )
+        es_mock.indices.delete.assert_awaited_once_with(index="content_v6", ignore_unavailable=True)
         es_mock.indices.update_aliases.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -555,7 +539,9 @@ class TestReindexAliasCutover:
         es_mock.indices.get = AsyncMock(return_value={"content_v1": {}})
 
         created = _catalog([published_item()])
-        monkeypatch.setattr(services_module, "ContentCatalogClient", MagicMock(return_value=created))
+        monkeypatch.setattr(
+            services_module, "ContentCatalogClient", MagicMock(return_value=created)
+        )
 
         result = await service.reindex_catalog()
 
@@ -583,7 +569,9 @@ class TestReindexAliasCutover:
         es_mock.indices.get = AsyncMock(return_value={"content_v1": {}})
         created = _catalog([published_item()])
         created.fetch_published = AsyncMock(side_effect=CatalogFetchError("down"))
-        monkeypatch.setattr(services_module, "ContentCatalogClient", MagicMock(return_value=created))
+        monkeypatch.setattr(
+            services_module, "ContentCatalogClient", MagicMock(return_value=created)
+        )
 
         with pytest.raises(CatalogFetchError):
             await service.reindex_catalog()
@@ -638,9 +626,7 @@ class TestSharedEsClient:
         await search_routes.close_es_client()  # must not raise
 
     @pytest.mark.asyncio
-    async def test_get_search_service_wires_repos_and_the_shared_client(
-        self, restore_es_client
-    ):
+    async def test_get_search_service_wires_repos_and_the_shared_client(self, restore_es_client):
         client = MagicMock()
         search_routes._es_client = client
         db = MagicMock(spec=AsyncSession)
@@ -694,9 +680,13 @@ class TestCursorIntegrity:
 
     def test_tampered_payload_is_rejected(self):
         raw, sig = encode_cursor("action", None, 20, [9.5, "doc-1"]).rsplit(".", 1)
-        forged = base64.urlsafe_b64encode(
-            json.dumps({"scope": "x", "sort": [0.0, "evil"]}, separators=(",", ":")).encode()
-        ).rstrip(b"=").decode()
+        forged = (
+            base64.urlsafe_b64encode(
+                json.dumps({"scope": "x", "sort": [0.0, "evil"]}, separators=(",", ":")).encode()
+            )
+            .rstrip(b"=")
+            .decode()
+        )
 
         with pytest.raises(ValueError, match="invalid cursor"):
             decode_cursor(f"{forged}.{sig}", "action", None, 20)
@@ -783,9 +773,7 @@ class TestReindexRouteErrorMapping:
         assert "Content service unavailable" in response.json()["detail"]["message"]
 
     def test_indexing_failure_maps_to_502(self, client, route_service):
-        route_service.reindex_catalog = AsyncMock(
-            side_effect=IndexingError("3 documents failed")
-        )
+        route_service.reindex_catalog = AsyncMock(side_effect=IndexingError("3 documents failed"))
         _use(route_service)
 
         with patch("app.api.search_routes.get_admin_identity", new=_admin()):
@@ -830,9 +818,7 @@ class TestDeleteIndexRoute:
         _use(route_service)
 
         with patch("app.api.search_routes.get_admin_identity", new=_admin()):
-            response = client.delete(
-                "/api/v1/search/index/content", params={"confirm": "true"}
-            )
+            response = client.delete("/api/v1/search/index/content", params={"confirm": "true"})
 
         assert response.status_code == 400
         assert "refusing to delete" in response.json()["detail"]["message"]
@@ -844,9 +830,7 @@ class TestDeleteIndexRoute:
         _use(route_service)
 
         with patch("app.api.search_routes.get_admin_identity", new=_admin()):
-            response = client.delete(
-                "/api/v1/search/index/random", params={"confirm": "true"}
-            )
+            response = client.delete("/api/v1/search/index/random", params={"confirm": "true"})
 
         assert response.status_code == 400
         assert "only versioned indices" in response.json()["detail"]["message"]
@@ -902,9 +886,7 @@ class TestReindexCancellationSafety:
         with pytest.raises(asyncio.CancelledError):
             await service.reindex_catalog(catalog)
 
-        es_mock.indices.delete.assert_awaited_once_with(
-            index="content_v2", ignore_unavailable=True
-        )
+        es_mock.indices.delete.assert_awaited_once_with(index="content_v2", ignore_unavailable=True)
         es_mock.indices.update_aliases.assert_not_awaited()
 
     @pytest.mark.asyncio

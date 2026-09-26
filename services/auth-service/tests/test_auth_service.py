@@ -6,7 +6,7 @@ Tests cover registration, login, token refresh, and password management.
 from datetime import UTC, datetime, timedelta
 from unittest import mock as unittest_mock
 from unittest.mock import AsyncMock, MagicMock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from app.schemas import UserLoginRequest, UserRegisterRequest
@@ -152,7 +152,10 @@ class TestTokenManager:
         from jose import jwt as _jwt
 
         expired_token = _jwt.encode(
-            payload, get_private_key_pem(), algorithm=settings.JWT_ALGORITHM, headers={"kid": settings.JWT_KEY_ID}
+            payload,
+            get_private_key_pem(),
+            algorithm=settings.JWT_ALGORITHM,
+            headers={"kid": settings.JWT_KEY_ID},
         )
 
         result = TokenManager.verify_token(expired_token, token_type="access")
@@ -187,13 +190,24 @@ class TestTokenManager:
         from app.security.jwks import reset_cache
 
         def _b64(n: int) -> str:
-            b = n.to_bytes((n.bit_length() + 7)//8, "big")
+            b = n.to_bytes((n.bit_length() + 7) // 8, "big")
             return base64.urlsafe_b64encode(b).decode().rstrip("=")
 
         prev_priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        prev_pem = prev_priv.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
+        prev_pem = prev_priv.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode()
         nums = prev_priv.public_key().public_numbers()
-        prev_jwk = {"kty":"RSA","kid":"k0","use":"sig","alg":"RS256","n":_b64(nums.n),"e":_b64(nums.e)}
+        prev_jwk = {
+            "kty": "RSA",
+            "kid": "k0",
+            "use": "sig",
+            "alg": "RS256",
+            "n": _b64(nums.n),
+            "e": _b64(nums.e),
+        }
         user_id = str(uuid4())
         now = datetime.now(UTC)
         payload = {
@@ -206,7 +220,8 @@ class TestTokenManager:
             "aud": settings.JWT_AUDIENCE,
         }
         from jose import jwt as _jwt
-        old_token = _jwt.encode(payload, prev_pem, algorithm="RS256", headers={"kid":"k0"})
+
+        old_token = _jwt.encode(payload, prev_pem, algorithm="RS256", headers={"kid": "k0"})
         assert TokenManager.verify_token(old_token) is None
         monkeypatch.setattr(settings, "JWT_PREVIOUS_JWKS", json.dumps([prev_jwk]))
         reset_cache()
@@ -514,22 +529,14 @@ class TestRegistrationEventFanOut:
         assert publisher.sent[0].key == f"registered:{user.id}"
         assert publisher.sent[0].payload["email"] == "fanout@example.com"
 
-    async def test_publish_failure_does_not_roll_back_registration(
-        self, service, test_session
-    ):
+    async def test_publish_failure_does_not_roll_back_registration(self, service, test_session):
         from app.core import events
 
-        request = UserRegisterRequest(
-            email="fanout-fail@example.com", password="SecurePass123!"
-        )
+        request = UserRegisterRequest(email="fanout-fail@example.com", password="SecurePass123!")
         exploding = AsyncMock()
-        exploding.publish = unittest_mock.AsyncMock(
-            side_effect=RuntimeError("broker down")
-        )
+        exploding.publish = unittest_mock.AsyncMock(side_effect=RuntimeError("broker down"))
         events.reset_event_publisher()
-        with unittest_mock.patch.object(
-            events, "get_event_publisher", return_value=exploding
-        ):
+        with unittest_mock.patch.object(events, "get_event_publisher", return_value=exploding):
             user = await service.register(request)
         await test_session.commit()
 
@@ -650,9 +657,7 @@ class TestRefreshTokenBranches:
         await test_session.commit()
 
         with pytest.raises(HTTPException) as exc_info:
-            await service.refresh_token(
-                TokenManager.create_refresh_token(real_user.id)
-            )
+            await service.refresh_token(TokenManager.create_refresh_token(real_user.id))
 
         assert exc_info.value.status_code == 401
         assert exc_info.value.detail == "Refresh token not found"
@@ -697,9 +702,7 @@ class TestRefreshTokenBranches:
         assert TokenManager.verify_token(response.access_token, token_type="access")
         # The old row is gone; the new one exists.
         assert (
-            await service.token_repo.get_by_token_hash(
-                TokenManager.hash_refresh_token(original)
-            )
+            await service.token_repo.get_by_token_hash(TokenManager.hash_refresh_token(original))
             is None
         )
 
@@ -818,9 +821,7 @@ class TestLogoutAndProfileHelpers:
 
 
 class TestLoginRemainingBranches:
-    async def test_suspended_account_is_401_because_lookup_filters_it(
-        self, service, test_user
-    ):
+    async def test_suspended_account_is_401_because_lookup_filters_it(self, service, test_user):
         """The dedicated 403 "Account suspended" branch is unreachable.
 
         ``UserRepository.get_by_email`` filters on ``is_active IS TRUE``, so a
@@ -855,7 +856,6 @@ class TestLoginRemainingBranches:
         normalises tzinfo before comparing; ``login`` does not. Asserted as-is;
         not fixed here.
         """
-        from app.models import User
 
         user = await service.user_repo.get_by_email(test_user.email)
         # A naive value is what a TIMESTAMP WITHOUT TIME ZONE column yields.
@@ -931,9 +931,7 @@ class TestLoginRemainingBranches:
         # value is naive (User.is_locked normalises tzinfo before comparing).
         assert user.is_locked is True
 
-    async def test_successful_login_resets_attempts_and_stamps_last_login(
-        self, service, test_user
-    ):
+    async def test_successful_login_resets_attempts_and_stamps_last_login(self, service, test_user):
         user = await service.user_repo.get_by_email(test_user.email)
         user.login_attempts = 3
         await service.user_repo.commit()
@@ -1057,7 +1055,9 @@ class TestMfaChallengeReuse:
 
 
 class TestRefreshUserMismatch:
-    async def test_stored_token_owned_by_another_user_is_401(self, service, test_user, test_session):
+    async def test_stored_token_owned_by_another_user_is_401(
+        self, service, test_user, test_session
+    ):
         """The token verifies to user A but the stored row belongs to user B."""
         from app.models import RefreshToken
 

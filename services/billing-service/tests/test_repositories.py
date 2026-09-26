@@ -143,31 +143,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.models import (
-    CreatorPoolEntry,
     InvoiceStatus,
     MilestoneStatus,
-    PayoutLedger,
-    Purchase,
-    Refund,
     RefundStatus,
-    RevenueTier,
-    StripeWebhookEvent,
-    Subscription,
-    WebhookEventStatus,
 )
 from app.repositories import (
     CreatorPoolRepository,
-    InvoiceRepository,
     MilestoneRepository,
     PayoutLedgerRepository,
-    PurchaseRepository,
     RefundRepository,
-    RegionFloorRepository,
-    SubscriptionRepository,
     WebhookEventRepository,
     _execute_with_deadlock_retry,
 )
-
 
 # ---------------------------------------------------------------------------
 # Deadlock retry helper (#631)
@@ -432,9 +419,7 @@ async def test_invoice_create_accepts_a_subscription_link(db_session):
     repo = InvoiceRepository(db_session)
     sub = await subs.create(uuid4(), RevenueTier.SVOD, Decimal("7.99"))
     await db_session.commit()
-    inv = await repo.create(
-        uuid4(), Decimal("7.99"), subscription_id=sub.id, currency="EUR"
-    )
+    inv = await repo.create(uuid4(), Decimal("7.99"), subscription_id=sub.id, currency="EUR")
     await db_session.commit()
     assert inv.subscription_id == sub.id
     assert inv.currency == "EUR"
@@ -515,7 +500,9 @@ async def test_creator_pool_redistribution_is_bounded_by_the_pool_amount(db_sess
 
 @pytest.mark.asyncio
 async def test_creator_pool_redistribution_of_an_unknown_entry_is_refused(db_session):
-    assert await CreatorPoolRepository(db_session).redistribute_pool(uuid4(), Decimal("1.00")) is False
+    assert (
+        await CreatorPoolRepository(db_session).redistribute_pool(uuid4(), Decimal("1.00")) is False
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -612,7 +599,13 @@ async def test_payout_accrue_persists_the_breakdown(db_session):
     repo = PayoutLedgerRepository(db_session)
     breakdown = {"type": "tvod", "content_id": str(uuid4()), "gross": "9.99"}
     entry = await repo.accrue(
-        uuid4(), Decimal("5.4945"), "USD", "idem-bd", datetime(2025, 1, 1), datetime(2025, 2, 1), breakdown
+        uuid4(),
+        Decimal("5.4945"),
+        "USD",
+        "idem-bd",
+        datetime(2025, 1, 1),
+        datetime(2025, 2, 1),
+        breakdown,
     )
     await db_session.commit()
     assert entry.breakdown == breakdown
@@ -628,8 +621,12 @@ async def test_payout_get_by_idempotency_key_returns_none_when_absent(db_session
 async def test_payout_history_is_newest_cycle_first(db_session):
     repo = PayoutLedgerRepository(db_session)
     creator = uuid4()
-    await repo.accrue(creator, Decimal("1.00"), "USD", "old", datetime(2025, 1, 1), datetime(2025, 2, 1))
-    await repo.accrue(creator, Decimal("2.00"), "USD", "new", datetime(2025, 2, 1), datetime(2025, 3, 1))
+    await repo.accrue(
+        creator, Decimal("1.00"), "USD", "old", datetime(2025, 1, 1), datetime(2025, 2, 1)
+    )
+    await repo.accrue(
+        creator, Decimal("2.00"), "USD", "new", datetime(2025, 2, 1), datetime(2025, 3, 1)
+    )
     await db_session.commit()
 
     history = await repo.get_by_creator(creator)
@@ -647,9 +644,11 @@ async def test_payout_accrue_recovers_from_a_concurrent_unique_violation(db_sess
     )
     await db_session.commit()
     repo.get_by_idempotency_key = AsyncMock(side_effect=[None, winner])
-    with patch.object(db_session, "flush", new=AsyncMock(
-        side_effect=IntegrityError("stmt", {}, Exception("duplicate key"))
-    )):
+    with patch.object(
+        db_session,
+        "flush",
+        new=AsyncMock(side_effect=IntegrityError("stmt", {}, Exception("duplicate key"))),
+    ):
         with patch.object(db_session, "rollback", new=AsyncMock()) as rollback:
             recovered = await repo.accrue(
                 uuid4(), Decimal("1.00"), "USD", "race", datetime(2025, 1, 1), datetime(2025, 2, 1)
@@ -680,7 +679,11 @@ async def test_refund_create_is_idempotent_on_the_stripe_refund_id(db_session):
     invoice = await invoices.create(uuid4(), Decimal("10.00"))
     await db_session.commit()
     first = await repo.create(
-        "re_1", Decimal("5.00"), "USD", charge_id="ch_1", invoice_id=invoice.id,
+        "re_1",
+        Decimal("5.00"),
+        "USD",
+        charge_id="ch_1",
+        invoice_id=invoice.id,
         reason="requested_by_customer",
     )
     await db_session.commit()
@@ -716,9 +719,11 @@ async def test_refund_create_recovers_from_a_concurrent_unique_violation(db_sess
     winner = await repo.create("re_race", Decimal("2.00"), "USD")
     await db_session.commit()
     repo.get_by_refund_id = AsyncMock(side_effect=[None, winner])
-    with patch.object(db_session, "flush", new=AsyncMock(
-        side_effect=IntegrityError("stmt", {}, Exception("duplicate key"))
-    )):
+    with patch.object(
+        db_session,
+        "flush",
+        new=AsyncMock(side_effect=IntegrityError("stmt", {}, Exception("duplicate key"))),
+    ):
         with patch.object(db_session, "rollback", new=AsyncMock()) as rollback:
             recovered = await repo.create("re_race", Decimal("2.00"), "USD")
     assert recovered.id == winner.id

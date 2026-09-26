@@ -28,7 +28,6 @@ from fastapi import HTTPException
 
 import bcrypt
 import pyotp
-import pytest
 from app.api.routes import auth as auth_routes
 from app.core.database import DatabaseManager
 from app.main import create_app
@@ -96,11 +95,11 @@ def make_client(app_db):
         from app.core import event_consumer
 
         try:
-            with patch.object(
-                event_consumer, "run_user_moderation_consumer", _consumer
-            ), patch.object(
-                auth_routes, "allow", AsyncMock(return_value=True)
-            ), patch("app.main.setup_logging"):
+            with (
+                patch.object(event_consumer, "run_user_moderation_consumer", _consumer),
+                patch.object(auth_routes, "allow", AsyncMock(return_value=True)),
+                patch("app.main.setup_logging"),
+            ):
                 with TestClient(create_app()) as client:
                     yield client
         finally:
@@ -413,9 +412,7 @@ class TestRegisterFailurePaths:
             "register",
             AsyncMock(side_effect=ValueError("nope")),
         ):
-            with patch.object(
-                auth_routes, "UserRepository", wraps=auth_routes.UserRepository
-            ):
+            with patch.object(auth_routes, "UserRepository", wraps=auth_routes.UserRepository):
                 client.post(
                     "/api/v1/auth/register",
                     json={"email": "rollback@example.com", "password": GOOD_PASSWORD},
@@ -485,9 +482,7 @@ class TestMfaLoginVerifyFailurePaths:
         with patch.object(
             auth_routes.AuthService,
             "complete_mfa_login",
-            AsyncMock(
-                side_effect=HTTPException(status_code=400, detail="Invalid MFA code")
-            ),
+            AsyncMock(side_effect=HTTPException(status_code=400, detail="Invalid MFA code")),
         ):
             response = client.post(
                 "/api/v1/auth/mfa/login-verify",
@@ -523,9 +518,7 @@ class TestRefreshFailurePaths:
             "refresh_token",
             AsyncMock(side_effect=ValueError("refresh token expired")),
         ):
-            response = client.post(
-                "/api/v1/auth/refresh", json={"refresh_token": "whatever"}
-            )
+            response = client.post("/api/v1/auth/refresh", json={"refresh_token": "whatever"})
 
         assert response.status_code == 401
         assert response.json()["detail"] == "refresh token expired"
@@ -536,9 +529,7 @@ class TestRefreshFailurePaths:
             "refresh_token",
             AsyncMock(side_effect=RuntimeError("pool exhausted at 10.0.0.5")),
         ):
-            response = client.post(
-                "/api/v1/auth/refresh", json={"refresh_token": "whatever"}
-            )
+            response = client.post("/api/v1/auth/refresh", json={"refresh_token": "whatever"})
 
         assert response.status_code == 500
         assert "pool exhausted" not in response.text
@@ -556,9 +547,7 @@ class TestRefreshFailurePaths:
 
 class TestLogoutFailurePaths:
     def test_malformed_bearer_token_is_401(self, client):
-        response = client.post(
-            "/api/v1/auth/logout", headers={"Authorization": "Bearer not.a.jwt"}
-        )
+        response = client.post("/api/v1/auth/logout", headers={"Authorization": "Bearer not.a.jwt"})
 
         assert response.status_code == 401
         assert response.json()["detail"] == "Invalid or expired token"
@@ -585,9 +574,7 @@ class TestLogoutFailurePaths:
             headers={"kid": settings.JWT_KEY_ID},
         )
 
-        response = client.post(
-            "/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"}
-        )
+        response = client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
 
         assert response.status_code == 401
 
@@ -672,7 +659,6 @@ class TestMeAndChangePasswordFailurePaths:
         assert response.json()["role"] == "user"
 
     def test_change_password_for_a_deleted_user_is_401(self, client, app_db):
-        from app.models import User
 
         account = _register(client, email="cp-deleted@example.com")
         engine, factory = app_db
@@ -694,9 +680,7 @@ class TestMeAndChangePasswordFailurePaths:
 
         assert response.status_code == 401
 
-    def test_change_password_revokes_refresh_tokens_and_bumps_auth_version(
-        self, client
-    ):
+    def test_change_password_revokes_refresh_tokens_and_bumps_auth_version(self, client):
         account = _register(client, email="cp-rotate@example.com")
 
         response = client.post(
@@ -730,9 +714,7 @@ class TestMeAndChangePasswordFailurePaths:
         with patch.object(
             auth_routes.PasswordManager,
             "hash_password",
-            staticmethod(
-                lambda _pw: (_ for _ in ()).throw(RuntimeError("bcrypt cost leaked"))
-            ),
+            staticmethod(lambda _pw: (_ for _ in ()).throw(RuntimeError("bcrypt cost leaked"))),
         ):
             response = client.post(
                 "/api/v1/auth/change-password",
@@ -766,9 +748,7 @@ class TestVerifyEmailFailurePaths:
         assert response.json()["detail"] == "Invalid or expired verification token"
 
     def test_non_uuid_subject_is_400(self, client):
-        token = _token_for(
-            "gaps@example.com", type="email_verification", user_id="not-a-uuid"
-        )
+        token = _token_for("gaps@example.com", type="email_verification", user_id="not-a-uuid")
 
         response = client.post(
             "/api/v1/auth/verify-email", json={"email": "gaps@example.com", "token": token}
@@ -801,9 +781,7 @@ class TestVerifyEmailFailurePaths:
         async def _deactivate():
             async with factory() as session:
                 await session.execute(
-                    update(
-                        __import__("app.models", fromlist=["User"]).User
-                    ).values(is_active=False)
+                    update(__import__("app.models", fromlist=["User"]).User).values(is_active=False)
                 )
                 await session.commit()
 
@@ -818,9 +796,7 @@ class TestVerifyEmailFailurePaths:
         assert response.json()["detail"] == "User not found"
 
     def test_token_for_a_nonexistent_user_is_404(self, client):
-        token = TokenManager.create_email_verification_token(
-            uuid.uuid4(), "nobody@example.com"
-        )
+        token = TokenManager.create_email_verification_token(uuid.uuid4(), "nobody@example.com")
 
         response = client.post(
             "/api/v1/auth/verify-email",
@@ -858,9 +834,7 @@ class TestVerifyEmailFailurePaths:
         with patch.object(
             auth_routes.TokenBlacklistRepository,
             "create",
-            AsyncMock(
-                side_effect=IntegrityError("INSERT", {}, Exception("duplicate key"))
-            ),
+            AsyncMock(side_effect=IntegrityError("INSERT", {}, Exception("duplicate key"))),
         ):
             response = client.post(
                 "/api/v1/auth/verify-email",
@@ -896,9 +870,7 @@ class TestVerifyEmailFailurePaths:
         )
 
     def test_missing_token_field_is_rejected_by_the_schema(self, client):
-        response = client.post(
-            "/api/v1/auth/verify-email", json={"email": "gaps@example.com"}
-        )
+        response = client.post("/api/v1/auth/verify-email", json={"email": "gaps@example.com"})
 
         assert response.status_code == 422
 
@@ -945,9 +917,7 @@ class TestResendVerification:
     def test_unverified_user_receives_a_usable_token(self, client):
         account = _register(client, email="resend-usable@example.com")
 
-        resend = client.post(
-            "/api/v1/auth/resend-verification", json={"email": account["email"]}
-        )
+        resend = client.post("/api/v1/auth/resend-verification", json={"email": account["email"]})
         token = resend.json()["verification_token"]
 
         verify = client.post(
@@ -973,9 +943,7 @@ class TestResendVerification:
         assert response.status_code == 429
 
     def test_invalid_email_is_rejected_by_the_schema(self, client):
-        response = client.post(
-            "/api/v1/auth/resend-verification", json={"email": "not-an-email"}
-        )
+        response = client.post("/api/v1/auth/resend-verification", json={"email": "not-an-email"})
 
         assert response.status_code == 422
 
@@ -993,29 +961,24 @@ class TestSetupMfa:
             response = client.post("/api/v1/auth/mfa/setup", headers=account["headers"])
 
         assert response.status_code == 429
-        assert (
-            response.json()["detail"]
-            == "Too many MFA setup attempts. Try again later."
-        )
+        assert response.json()["detail"] == "Too many MFA setup attempts. Try again later."
 
     def test_pending_enrolment_cannot_be_overwritten(self, client):
         account = _register(client, email="mfa-pending@example.com")
 
         first = client.post("/api/v1/auth/mfa/setup", headers=account["headers"])
         assert first.status_code == 200
-        first_secret = first.json()["secret"]
+        assert first.json()["secret"]
 
         second = client.post("/api/v1/auth/mfa/setup", headers=account["headers"])
 
         assert second.status_code == 409
         assert (
-            second.json()["detail"]
-            == "MFA setup already pending; verify the issued secret first"
+            second.json()["detail"] == "MFA setup already pending; verify the issued secret first"
         )
         assert "secret" not in second.json()
 
     def test_issued_secret_is_encrypted_at_rest(self, client, app_db):
-        from app.models import User
 
         account = _register(client, email="mfa-encrypted@example.com")
         response = client.post("/api/v1/auth/mfa/setup", headers=account["headers"])
@@ -1048,7 +1011,6 @@ class TestSetupMfa:
         assert response.status_code == 401
 
     def test_setup_for_a_deleted_user_is_401(self, client, app_db):
-        from app.models import User
 
         account = _register(client, email="mfa-setup-deleted@example.com")
         engine, factory = app_db
@@ -1078,15 +1040,11 @@ class TestVerifyMfa:
             )
 
         assert response.status_code == 429
-        assert (
-            response.json()["detail"] == "Too many MFA verification attempts. Try again later."
-        )
+        assert response.json()["detail"] == "Too many MFA verification attempts. Try again later."
 
     def test_verify_is_idempotent_once_mfa_is_enabled(self, client):
         account = _register(client, email="mfa-verify-idem@example.com")
-        secret = client.post(
-            "/api/v1/auth/mfa/setup", headers=account["headers"]
-        ).json()["secret"]
+        secret = client.post("/api/v1/auth/mfa/setup", headers=account["headers"]).json()["secret"]
         enabled = client.post(
             "/api/v1/auth/mfa/verify",
             json={"code": pyotp.TOTP(secret).now()},
@@ -1119,9 +1077,7 @@ class TestVerifyMfa:
 
     def test_enabling_mfa_forces_a_challenge_on_next_login(self, client):
         account = _register(client, email="mfa-login-challenge@example.com")
-        secret = client.post(
-            "/api/v1/auth/mfa/setup", headers=account["headers"]
-        ).json()["secret"]
+        secret = client.post("/api/v1/auth/mfa/setup", headers=account["headers"]).json()["secret"]
         client.post(
             "/api/v1/auth/mfa/verify",
             json={"code": pyotp.TOTP(secret).now()},
@@ -1139,9 +1095,7 @@ class TestVerifyMfa:
 
     def test_mfa_login_verify_completes_the_login(self, client):
         account = _register(client, email="mfa-login-complete@example.com")
-        secret = client.post(
-            "/api/v1/auth/mfa/setup", headers=account["headers"]
-        ).json()["secret"]
+        secret = client.post("/api/v1/auth/mfa/setup", headers=account["headers"]).json()["secret"]
         client.post(
             "/api/v1/auth/mfa/verify",
             json={"code": pyotp.TOTP(secret).now()},
@@ -1163,9 +1117,7 @@ class TestVerifyMfa:
 
     def test_mfa_challenge_is_single_use(self, client):
         account = _register(client, email="mfa-login-single-use@example.com")
-        secret = client.post(
-            "/api/v1/auth/mfa/setup", headers=account["headers"]
-        ).json()["secret"]
+        secret = client.post("/api/v1/auth/mfa/setup", headers=account["headers"]).json()["secret"]
         client.post(
             "/api/v1/auth/mfa/verify",
             json={"code": pyotp.TOTP(secret).now()},
@@ -1213,16 +1165,11 @@ class TestDisableMfa:
             )
 
         assert response.status_code == 429
-        assert (
-            response.json()["detail"]
-            == "Too many MFA disable attempts. Try again later."
-        )
+        assert response.json()["detail"] == "Too many MFA disable attempts. Try again later."
 
     def test_disable_clears_the_secret_and_re_enables_plain_login(self, client):
         account = _register(client, email="mfa-disable@example.com")
-        secret = client.post(
-            "/api/v1/auth/mfa/setup", headers=account["headers"]
-        ).json()["secret"]
+        secret = client.post("/api/v1/auth/mfa/setup", headers=account["headers"]).json()["secret"]
         client.post(
             "/api/v1/auth/mfa/verify",
             json={"code": pyotp.TOTP(secret).now()},
@@ -1247,9 +1194,7 @@ class TestDisableMfa:
 
     def test_wrong_code_does_not_disable_mfa(self, client):
         account = _register(client, email="mfa-disable-wrong@example.com")
-        secret = client.post(
-            "/api/v1/auth/mfa/setup", headers=account["headers"]
-        ).json()["secret"]
+        secret = client.post("/api/v1/auth/mfa/setup", headers=account["headers"]).json()["secret"]
         client.post(
             "/api/v1/auth/mfa/verify",
             json={"code": pyotp.TOTP(secret).now()},
@@ -1267,7 +1212,6 @@ class TestDisableMfa:
 
     def test_disable_with_no_secret_is_400(self, client, app_db):
         """mfa_enabled=True with a cleared secret must not 500."""
-        from app.models import User
 
         account = _register(client, email="mfa-disable-nosecret@example.com")
         engine, factory = app_db
@@ -1370,9 +1314,7 @@ class TestRollbackBranches:
         assert response.status_code == 401
 
     def test_refresh_http_exception_rolls_back_and_returns_401(self, client):
-        response = client.post(
-            "/api/v1/auth/refresh", json={"refresh_token": "not.a.jwt"}
-        )
+        response = client.post("/api/v1/auth/refresh", json={"refresh_token": "not.a.jwt"})
 
         assert response.status_code == 401
         assert response.json()["detail"] == "Invalid refresh token"
@@ -1392,7 +1334,6 @@ class TestRollbackBranches:
 class TestMeInternalErrorBranch:
     def test_me_returns_404_for_a_missing_user_row(self, client, app_db):
         """A live token whose user row has vanished is refused at the boundary."""
-        from app.models import User
 
         account = _register(client, email="me-404@example.com")
         engine, factory = app_db
@@ -1421,7 +1362,6 @@ class TestMeInternalErrorBranch:
         assert "pg dump" not in response.text
 
     def test_me_http_exception_branch_is_the_404_path(self, client, app_db):
-        from app.models import User
 
         account = _register(client, email="me-404b@example.com")
         engine, factory = app_db
@@ -1511,7 +1451,6 @@ class TestUnreachableThroughHttpDirectCalls:
 
     def _soft_delete(self, factory, user_id):
         async def _run():
-            from app.models import User
 
             async with factory() as session:
                 user = await UserRepository(session).get_by_id(user_id)
@@ -1520,10 +1459,7 @@ class TestUnreachableThroughHttpDirectCalls:
 
         _run(_run)
 
-    def test_me_returns_404_for_a_row_hidden_by_the_active_filter(
-        self, client, app_db
-    ):
-        from app.models import User
+    def test_me_returns_404_for_a_row_hidden_by_the_active_filter(self, client, app_db):
         from app.schemas import UserResponse
 
         account = _register(client, email="me-404-direct@example.com")

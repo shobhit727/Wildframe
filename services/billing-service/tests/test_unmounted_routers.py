@@ -13,7 +13,6 @@ points at the tests below that assumed it was dead code.
 """
 
 from datetime import datetime
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -92,9 +91,9 @@ class TestRoutersAreNotMountedInProduction:
     def test_commerce_router_is_absent_from_the_real_app(self):
         app = create_app()
         offenders = [p for p in _app_paths(app) if p.startswith("/commerce")]
-        assert not offenders, (
-            f"the commerce router is now mounted in main.py ({offenders}) — update this file"
-        )
+        assert (
+            not offenders
+        ), f"the commerce router is now mounted in main.py ({offenders}) — update this file"
 
     def test_the_api_prefix_does_not_reach_them_either(self):
         # The routers carry a bare prefix, so a careless future mount under
@@ -309,9 +308,7 @@ class TestCommerceRouter:
     async def test_commerce_accepts_an_arbitrary_body_shape(self):
         app = _throwaway_app(commerce_router, AsyncMock())
 
-        resp = await _post(
-            app, "/commerce", {"invoice_id": "in_2", "unexpected": {"nested": True}}
-        )
+        resp = await _post(app, "/commerce", {"invoice_id": "in_2", "unexpected": {"nested": True}})
 
         assert resp.status_code == 201
         assert resp.json()["invoice_id"] == "in_2"

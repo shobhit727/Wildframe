@@ -83,9 +83,7 @@ def _strike(creator_id, **overrides) -> CreatorStrike:
 async def _set_created_at(session, model, row_id, moment: datetime) -> None:
     """created_at is column-defaulted, so ordering tests must set it after INSERT."""
     await session.execute(
-        model.__table__.update()
-        .where(model.id == row_id)
-        .values(created_at=moment)
+        model.__table__.update().where(model.id == row_id).values(created_at=moment)
     )
 
 
@@ -171,9 +169,7 @@ class TestContentFlagRepositoryReads:
 
         from app.models import ContentFlag as CF
 
-        sql = str(
-            select(CF).where(CF.id == uuid4()).with_for_update().compile()
-        )
+        sql = str(select(CF).where(CF.id == uuid4()).with_for_update().compile())
         assert "FOR UPDATE" in sql.upper()
 
     async def test_list_pending_is_fifo_oldest_first(self, session):
@@ -274,9 +270,7 @@ class TestContentFlagRepositorySave:
 class TestOutbox:
     async def test_enqueue_event_persists_a_pending_row(self, session):
         repo = ContentFlagRepository(session)
-        row = await repo.enqueue_event(
-            topic="content.flagged", event_key="k-1", payload={"a": 1}
-        )
+        row = await repo.enqueue_event(topic="content.flagged", event_key="k-1", payload={"a": 1})
         await session.commit()
         assert row.id is not None
         assert row.topic == "content.flagged"
@@ -493,9 +487,7 @@ class TestCreatorStrikeRepository:
         creator = uuid4()
         await repo.create(_strike(creator))
         await repo.create(_strike(creator, is_active=False))
-        await repo.create(
-            _strike(creator, expires_at=datetime.now(UTC) - timedelta(days=1))
-        )
+        await repo.create(_strike(creator, expires_at=datetime.now(UTC) - timedelta(days=1)))
         await session.commit()
         assert len(await repo.list_all(creator)) == 3
 

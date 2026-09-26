@@ -49,9 +49,7 @@ def test_dsar_router_is_not_mounted_in_production_app():
     """Pin why these tests use a throwaway app: the router is orphaned."""
     from app.api.analytics_routes import router as main_router
 
-    assert not any(
-        getattr(r, "path", "").startswith("/dsar") for r in main_router.routes
-    )
+    assert not any(getattr(r, "path", "").startswith("/dsar") for r in main_router.routes)
 
     service_paths = set(main_module.create_app().openapi()["paths"])
     assert not any(p.startswith("/dsar") for p in service_paths)
@@ -108,9 +106,7 @@ def test_export_defaults_to_the_json_format(dsar_client):
 @pytest.mark.unit
 def test_export_accepts_the_csv_format(dsar_client):
     """The pattern also permits csv, and the value is echoed through."""
-    r = dsar_client.get(
-        "/dsar/export", params={"user_id": str(uuid4()), "format": "csv"}
-    )
+    r = dsar_client.get("/dsar/export", params={"user_id": str(uuid4()), "format": "csv"})
     assert r.status_code == 200
     assert r.json()[0]["export_format"] == "csv"
 
@@ -119,9 +115,7 @@ def test_export_accepts_the_csv_format(dsar_client):
 @pytest.mark.parametrize("fmt", ["xml", "jsonl", "JSON", "", "yaml"])
 def test_export_rejects_an_unsupported_format(dsar_client, fmt):
     """Anything outside ``^(json|csv)$`` is a 422, not a silent default."""
-    r = dsar_client.get(
-        "/dsar/export", params={"user_id": str(uuid4()), "format": fmt}
-    )
+    r = dsar_client.get("/dsar/export", params={"user_id": str(uuid4()), "format": fmt})
     assert r.status_code == 422
 
 

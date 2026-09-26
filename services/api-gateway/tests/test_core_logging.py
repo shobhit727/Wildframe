@@ -209,9 +209,7 @@ def test_filter_sanitizes_injected_newlines_in_the_formatted_message():
 
 def test_filter_leaves_underscore_prefixed_attributes_untouched():
     """The ``_``-prefix guard keeps internal bookkeeping out of redaction."""
-    record = logging.LogRecord(
-        "gateway.test", logging.INFO, __file__, 1, "msg", None, None
-    )
+    record = logging.LogRecord("gateway.test", logging.INFO, __file__, 1, "msg", None, None)
     record._authorization = "internal-bookkeeping"
 
     assert HeaderRedactionFilter().filter(record) is True
@@ -219,17 +217,13 @@ def test_filter_leaves_underscore_prefixed_attributes_untouched():
 
 
 def test_filter_always_admits_the_record_even_when_message_is_empty():
-    record = logging.LogRecord(
-        "gateway.test", logging.INFO, __file__, 1, "", None, None
-    )
+    record = logging.LogRecord("gateway.test", logging.INFO, __file__, 1, "", None, None)
     assert HeaderRedactionFilter().filter(record) is True
     assert record.getMessage() == ""
 
 
 def test_filter_does_not_touch_non_string_attributes():
-    record = logging.LogRecord(
-        "gateway.test", logging.INFO, __file__, 1, "msg", None, None
-    )
+    record = logging.LogRecord("gateway.test", logging.INFO, __file__, 1, "msg", None, None)
     record.cookie = {"session": "abc"}
 
     HeaderRedactionFilter().filter(record)

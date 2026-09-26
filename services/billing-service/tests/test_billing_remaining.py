@@ -239,7 +239,11 @@ async def test_subscribe_translates_an_invalid_tier_to_400():
     svc = _svc(subscribe=AsyncMock(side_effect=TierInvalidError("Invalid tier 'platinum'")))
     app = _app(svc)
     resp = await _call(
-        app, "POST", f"/api/v1/billing/subscribe/{user}", headers=_auth(user), json={"tier": "platinum"}
+        app,
+        "POST",
+        f"/api/v1/billing/subscribe/{user}",
+        headers=_auth(user),
+        json={"tier": "platinum"},
     )
     assert resp.status_code == 400
     assert "platinum" in resp.json()["detail"]
@@ -249,7 +253,9 @@ async def test_subscribe_translates_an_invalid_tier_to_400():
 async def test_subscribe_rejects_a_missing_tier_field():
     user = uuid4()
     app = _app(_svc())
-    resp = await _call(app, "POST", f"/api/v1/billing/subscribe/{user}", headers=_auth(user), json={})
+    resp = await _call(
+        app, "POST", f"/api/v1/billing/subscribe/{user}", headers=_auth(user), json={}
+    )
     assert resp.status_code == 422
 
 
@@ -258,7 +264,11 @@ async def test_subscribe_blocks_another_user():
     user, other = uuid4(), uuid4()
     app = _app(_svc())
     resp = await _call(
-        app, "POST", f"/api/v1/billing/subscribe/{other}", headers=_auth(user), json={"tier": "svod"}
+        app,
+        "POST",
+        f"/api/v1/billing/subscribe/{other}",
+        headers=_auth(user),
+        json={"tier": "svod"},
     )
     assert resp.status_code == 403
 
@@ -345,9 +355,7 @@ async def test_purchase_blocks_buying_for_another_account():
 @pytest.mark.asyncio
 async def test_purchase_400s_when_the_content_service_cannot_price_the_title():
     user, content = uuid4(), uuid4()
-    svc = _svc(
-        _fetch_content_price=AsyncMock(side_effect=ValueError("Content not found"))
-    )
+    svc = _svc(_fetch_content_price=AsyncMock(side_effect=ValueError("Content not found")))
     app = _app(svc)
     resp = await _call(
         app,
@@ -683,9 +691,7 @@ async def test_create_milestone_rejects_a_non_uuid_token_subject():
 @pytest.mark.asyncio
 async def test_create_milestone_translates_authorization_failure_to_403():
     user = uuid4()
-    svc = _svc(
-        create_milestone=AsyncMock(side_effect=MilestoneAuthorizationError("nope"))
-    )
+    svc = _svc(create_milestone=AsyncMock(side_effect=MilestoneAuthorizationError("nope")))
     app = _app(svc)
     with patch("app.api.billing_routes._verify_creator", new=AsyncMock()):
         resp = await _call(
@@ -795,7 +801,9 @@ async def test_release_tranche_translates_authorization_failure_to_403():
 async def test_release_tranche_translates_a_kill_clause_error_to_400():
     admin = uuid4()
     svc = _svc(
-        release_tranche=AsyncMock(side_effect=BillingError("Cannot release tranches on a killed milestone"))
+        release_tranche=AsyncMock(
+            side_effect=BillingError("Cannot release tranches on a killed milestone")
+        )
     )
     app = _app(svc)
     resp = await _call(
@@ -941,9 +949,7 @@ async def test_creator_share_applies_the_55_percent_floor(revenue, expected_shar
     # Decimal arithmetic, so the response never carries binary-float drift.
     # The result keeps the product's scale (2dp x 2dp -> 4dp), which is exact
     # but means the string carries four decimal places.
-    resp = await _call(
-        create_app(), "GET", f"/api/v1/billing/creator-share?svod_revenue={revenue}"
-    )
+    resp = await _call(create_app(), "GET", f"/api/v1/billing/creator-share?svod_revenue={revenue}")
     assert resp.status_code == 200
     body = resp.json()
     assert body["svod_revenue"] == revenue

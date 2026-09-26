@@ -344,9 +344,7 @@ class TestBodySizeLimitMiddleware:
 
     async def test_empty_content_length_passes_through(self, echo_app):
         async with make_client(echo_app) as client:
-            response = await client.post(
-                "/_test/echo", content=b"", headers={"content-length": ""}
-            )
+            response = await client.post("/_test/echo", content=b"", headers={"content-length": ""})
 
         assert response.status_code == 200
 
@@ -458,9 +456,7 @@ class TestInboundEventWorker:
             with pytest.raises(asyncio.CancelledError):
                 await task
 
-        assert any(
-            "Inbound event consumer worker cancelled" in r.getMessage() for r in records
-        )
+        assert any("Inbound event consumer worker cancelled" in r.getMessage() for r in records)
 
     async def test_a_failing_iteration_is_logged_and_the_worker_survives(
         self, worker_stubs, monkeypatch
@@ -484,9 +480,7 @@ class TestInboundEventWorker:
 
         assert len(attempts) > 1, "the worker must retry after a failure"
         assert still_running
-        assert any(
-            "inbound event drain iteration failed" in r.getMessage() for r in records
-        )
+        assert any("inbound event drain iteration failed" in r.getMessage() for r in records)
 
     async def test_poll_interval_is_read_from_settings(self, worker_stubs):
         observed: list[int] = []

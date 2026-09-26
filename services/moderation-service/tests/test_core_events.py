@@ -251,9 +251,7 @@ class TestKafkaPublisherLazyProducer:
         assert stub_aiokafka["started"] == 1
         assert len(stub_aiokafka["constructors"]) == 1
 
-    async def test_producer_configuration_matches_the_adapter_contract(
-        self, stub_aiokafka
-    ):
+    async def test_producer_configuration_matches_the_adapter_contract(self, stub_aiokafka):
         publisher = KafkaEventPublisher("broker:9092", client_id="svc")
         await publisher.publish(Event(topic="t", key="k"))
         kwargs = stub_aiokafka["constructors"][0]
@@ -285,9 +283,7 @@ class TestKafkaPublisherLazyProducer:
 
     async def test_publish_many_goes_through_the_single_producer(self, stub_aiokafka):
         publisher = KafkaEventPublisher("broker:9092")
-        await publisher.publish_many(
-            [Event(topic="t", key="1"), Event(topic="t", key="2")]
-        )
+        await publisher.publish_many([Event(topic="t", key="1"), Event(topic="t", key="2")])
         assert stub_aiokafka["started"] == 1
         assert [s["key"] for s in stub_aiokafka["sent"]] == ["1", "2"]
 
@@ -302,9 +298,7 @@ class TestKafkaPublisherStartupFailure:
         assert stub_aiokafka["stopped"] == 1
         assert publisher._producer is None
 
-    async def test_a_failing_cleanup_does_not_mask_the_original_error(
-        self, stub_aiokafka
-    ):
+    async def test_a_failing_cleanup_does_not_mask_the_original_error(self, stub_aiokafka):
         stub_aiokafka["start_error"] = RuntimeError("broker unreachable")
         stub_aiokafka["stop_error"] = RuntimeError("stop also failed")
         publisher = KafkaEventPublisher("broker:9092")

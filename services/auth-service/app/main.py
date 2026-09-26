@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Shutdown
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
- 
+
     # Close database connections
     await DatabaseManager.close()
 

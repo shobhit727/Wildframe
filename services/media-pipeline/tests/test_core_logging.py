@@ -11,7 +11,6 @@ import contextvars
 import logging
 import uuid
 
-import pytest
 
 from app.core.logging import request_id_var, set_correlation_id, set_request_id, setup_logging
 

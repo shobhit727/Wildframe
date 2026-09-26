@@ -77,9 +77,7 @@ def _reset_instances():
 async def _run(monkeypatch_messages=None, **consumer_kwargs):
     """Run the consumer against one scripted fake and return that fake."""
     with patch("aiokafka.AIOKafkaConsumer") as factory:
-        factory.side_effect = lambda *a, **k: _FakeConsumer(
-            *a, **consumer_kwargs, **k
-        )
+        factory.side_effect = lambda *a, **k: _FakeConsumer(*a, **consumer_kwargs, **k)
         await run_user_registered_consumer(MagicMock())
     assert factory.call_count == 1
     return _FakeConsumer.instances[-1]
@@ -128,7 +126,9 @@ async def test_bootstrap_servers_fall_back_when_the_env_var_is_absent():
 
 
 async def test_a_well_formed_envelope_message_is_provisioned_and_committed():
-    message = _msg({"event_id": "e1", "topic": USER_REGISTERED_TOPIC, "payload": {"user_id": USER_ID}})
+    message = _msg(
+        {"event_id": "e1", "topic": USER_REGISTERED_TOPIC, "payload": {"user_id": USER_ID}}
+    )
 
     with patch("app.core.event_consumer._provision_profile", new=AsyncMock()) as provision:
         consumer = await _run(messages=[message])

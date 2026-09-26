@@ -61,9 +61,7 @@ def wired_db(app_engine, monkeypatch):
 
     _run(_create())
 
-    session_factory = async_sessionmaker(
-        app_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(app_engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(DatabaseManager, "_engine", app_engine, raising=False)
     monkeypatch.setattr(DatabaseManager, "_session_factory", session_factory, raising=False)
     monkeypatch.setattr(DatabaseManager, "get_engine", classmethod(lambda cls: app_engine))
@@ -101,9 +99,10 @@ def _build_client(wired_db, **kwargs):
     async def _consumer(_session_factory):
         return None
 
-    with patch.object(
-        event_consumer, "run_user_moderation_consumer", _consumer
-    ), patch("app.main.setup_logging"):
+    with (
+        patch.object(event_consumer, "run_user_moderation_consumer", _consumer),
+        patch("app.main.setup_logging"),
+    ):
         with TestClient(create_app(), **kwargs) as test_client:
             yield test_client
 
@@ -141,11 +140,13 @@ class TestLifespanStartup:
         close = AsyncMock()
 
         async def _scenario():
-            with patch.object(
-                DatabaseManager, "health_check", AsyncMock(return_value=True)
-            ), patch.object(DatabaseManager, "close", close), patch(
-                "app.core.event_consumer.run_user_moderation_consumer", _null_consumer
-            ), patch("app.main.setup_logging"), patch("app.main.wire_observability"):
+            with (
+                patch.object(DatabaseManager, "health_check", AsyncMock(return_value=True)),
+                patch.object(DatabaseManager, "close", close),
+                patch("app.core.event_consumer.run_user_moderation_consumer", _null_consumer),
+                patch("app.main.setup_logging"),
+                patch("app.main.wire_observability"),
+            ):
                 async with _lifespan()(None):
                     pass
 
@@ -158,11 +159,12 @@ class TestLifespanStartup:
         assert "Shutdown complete" in caplog.text
 
     def test_startup_configures_logging(self, wired_db):
-        with patch.object(
-            DatabaseManager, "health_check", AsyncMock(return_value=True)
-        ), patch.object(DatabaseManager, "close", AsyncMock()), patch(
-            "app.core.event_consumer.run_user_moderation_consumer", _null_consumer
-        ), patch("app.main.setup_logging") as setup:
+        with (
+            patch.object(DatabaseManager, "health_check", AsyncMock(return_value=True)),
+            patch.object(DatabaseManager, "close", AsyncMock()),
+            patch("app.core.event_consumer.run_user_moderation_consumer", _null_consumer),
+            patch("app.main.setup_logging") as setup,
+        ):
 
             async def _scenario():
                 async with _lifespan()(None):
@@ -173,11 +175,12 @@ class TestLifespanStartup:
         setup.assert_called_once_with()
 
     def test_unhealthy_database_aborts_startup(self, wired_db):
-        with patch.object(
-            DatabaseManager, "health_check", AsyncMock(return_value=False)
-        ), patch.object(DatabaseManager, "close", AsyncMock()), patch(
-            "app.core.event_consumer.run_user_moderation_consumer", _null_consumer
-        ), patch("app.main.setup_logging"):
+        with (
+            patch.object(DatabaseManager, "health_check", AsyncMock(return_value=False)),
+            patch.object(DatabaseManager, "close", AsyncMock()),
+            patch("app.core.event_consumer.run_user_moderation_consumer", _null_consumer),
+            patch("app.main.setup_logging"),
+        ):
 
             async def _scenario():
                 async with _lifespan()(None):
@@ -192,11 +195,12 @@ class TestLifespanStartup:
         async def _consumer(session_factory):
             captured["factory"] = session_factory
 
-        with patch.object(
-            DatabaseManager, "health_check", AsyncMock(return_value=True)
-        ), patch.object(DatabaseManager, "close", AsyncMock()), patch(
-            "app.core.event_consumer.run_user_moderation_consumer", _consumer
-        ), patch("app.main.setup_logging"):
+        with (
+            patch.object(DatabaseManager, "health_check", AsyncMock(return_value=True)),
+            patch.object(DatabaseManager, "close", AsyncMock()),
+            patch("app.core.event_consumer.run_user_moderation_consumer", _consumer),
+            patch("app.main.setup_logging"),
+        ):
 
             async def _scenario():
                 async with _lifespan()(None):
@@ -218,11 +222,13 @@ class TestLifespanStartup:
                 raise
 
         async def _scenario():
-            with patch.object(
-                DatabaseManager, "health_check", AsyncMock(return_value=True)
-            ), patch.object(DatabaseManager, "close", AsyncMock()), patch(
-                "app.core.event_consumer.run_user_moderation_consumer", _consumer
-            ), patch("app.main.setup_logging"), patch("app.main.wire_observability"):
+            with (
+                patch.object(DatabaseManager, "health_check", AsyncMock(return_value=True)),
+                patch.object(DatabaseManager, "close", AsyncMock()),
+                patch("app.core.event_consumer.run_user_moderation_consumer", _consumer),
+                patch("app.main.setup_logging"),
+                patch("app.main.wire_observability"),
+            ):
                 async with _lifespan()(None):
                     await asyncio.sleep(0.05)
 
@@ -232,11 +238,12 @@ class TestLifespanStartup:
 
     def test_startup_failure_skips_shutdown_teardown(self, wired_db):
         close = AsyncMock()
-        with patch.object(
-            DatabaseManager, "health_check", AsyncMock(return_value=False)
-        ), patch.object(DatabaseManager, "close", close), patch(
-            "app.core.event_consumer.run_user_moderation_consumer", _null_consumer
-        ), patch("app.main.setup_logging"):
+        with (
+            patch.object(DatabaseManager, "health_check", AsyncMock(return_value=False)),
+            patch.object(DatabaseManager, "close", close),
+            patch("app.core.event_consumer.run_user_moderation_consumer", _null_consumer),
+            patch("app.main.setup_logging"),
+        ):
 
             async def _scenario():
                 async with _lifespan()(None):
@@ -403,6 +410,7 @@ class TestBodySizeLimit:
         assert response.status_code == 413
         assert response.json() == {"detail": "Request body too large"}
 
+
 # --------------------------------------------------------------------------
 # validation + opaque 500 handler
 # --------------------------------------------------------------------------
@@ -454,9 +462,7 @@ class TestExceptionHandlers:
 
 class TestHealthEndpoint:
     def test_reports_healthy_when_the_database_answers(self, client):
-        with patch.object(
-            DatabaseManager, "health_check", AsyncMock(return_value=True)
-        ):
+        with patch.object(DatabaseManager, "health_check", AsyncMock(return_value=True)):
             response = client.get("/health")
 
         assert response.status_code == 200
@@ -468,9 +474,7 @@ class TestHealthEndpoint:
         assert body["timestamp"]
 
     def test_reports_unhealthy_when_the_database_is_down(self, client):
-        with patch.object(
-            DatabaseManager, "health_check", AsyncMock(return_value=False)
-        ):
+        with patch.object(DatabaseManager, "health_check", AsyncMock(return_value=False)):
             response = client.get("/health")
 
         assert response.status_code == 200
@@ -488,18 +492,14 @@ class TestHealthEndpoint:
 
 class TestReadinessEndpoint:
     def test_ready_when_the_database_answers(self, client):
-        with patch.object(
-            DatabaseManager, "health_check", AsyncMock(return_value=True)
-        ):
+        with patch.object(DatabaseManager, "health_check", AsyncMock(return_value=True)):
             response = client.get("/ready")
 
         assert response.status_code == 200
         assert response.json() == {"status": "ready"}
 
     def test_503_with_a_reason_when_the_database_is_down(self, client):
-        with patch.object(
-            DatabaseManager, "health_check", AsyncMock(return_value=False)
-        ):
+        with patch.object(DatabaseManager, "health_check", AsyncMock(return_value=False)):
             response = client.get("/ready")
 
         assert response.status_code == 503

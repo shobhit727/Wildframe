@@ -1,6 +1,5 @@
 """Test gateway age middleware."""
 
-import pytest
 from fastapi.responses import Response
 
 from app.middleware import age_middleware
@@ -14,9 +13,7 @@ async def test_gateway_final2():
         captured["path"] = request.url.path
         return Response(content=b"ok")
 
-    response = await age_middleware(
-        _scope_request("/maturity/film"), call_next
-    )
+    response = await age_middleware(_scope_request("/maturity/film"), call_next)
 
     assert captured["path"] == "/maturity/film"
     assert response.headers["Vary"] == "X-Jurisdiction, X-Age-Verified"

@@ -438,8 +438,13 @@ class TestContentToDoc:
     def test_unparseable_release_date_yields_none(self):
         """A non-ISO release_date must not blow up indexing: year stays None."""
         doc = content_to_doc(
-            {"id": "1", "title": "T", "description": "", "content_type": "movie",
-             "release_date": "not-a-date"}
+            {
+                "id": "1",
+                "title": "T",
+                "description": "",
+                "content_type": "movie",
+                "release_date": "not-a-date",
+            }
         )
         assert doc["release_year"] is None
 
@@ -457,8 +462,13 @@ class TestContentToDoc:
 
     def test_genre_without_name_or_slug_is_dropped(self):
         doc = content_to_doc(
-            {"id": "1", "title": "T", "description": "", "content_type": "movie",
-             "genres": [{"id": "g1"}]}
+            {
+                "id": "1",
+                "title": "T",
+                "description": "",
+                "content_type": "movie",
+                "genres": [{"id": "g1"}],
+            }
         )
         assert doc["genres"] == []
 
@@ -553,9 +563,7 @@ class TestSearchErrorBranches:
 
     @pytest.mark.asyncio
     async def test_elasticsearch_api_error_returns_empty_result(self, es_mock, service):
-        es_mock.search = AsyncMock(
-            side_effect=ElasticsearchApiError(400, "parsing_exception", {})
-        )
+        es_mock.search = AsyncMock(side_effect=ElasticsearchApiError(400, "parsing_exception", {}))
 
         result = await service.search(user_id=None, query="x")
 
@@ -586,7 +594,9 @@ class TestSearchErrorBranches:
     @pytest.mark.asyncio
     async def test_trending_returns_sources_on_success(self, es_mock, service):
         es_mock.search = AsyncMock(
-            return_value={"hits": {"hits": [{"_source": {"title": "B"}}, {"_source": {"title": "A"}}]}}
+            return_value={
+                "hits": {"hits": [{"_source": {"title": "B"}}, {"_source": {"title": "A"}}]}
+            }
         )
 
         assert await service.trending() == [{"title": "B"}, {"title": "A"}]
@@ -606,9 +616,7 @@ class TestIndexContentErrorPaths:
         es_mock.index.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_es_failure_compensates_by_deleting_sql_row(
-        self, es_mock, service, index_repo
-    ):
+    async def test_es_failure_compensates_by_deleting_sql_row(self, es_mock, service, index_repo):
         content_id = uuid4()
         es_mock.index = AsyncMock(side_effect=RuntimeError("es down"))
 
@@ -636,9 +644,7 @@ class TestIndexContentErrorPaths:
         es_mock.index = AsyncMock()
         content_id = uuid4()
 
-        await service.index_content(
-            content_id, "T", "D", "movie", genres=["drama"], rating=8.5
-        )
+        await service.index_content(content_id, "T", "D", "movie", genres=["drama"], rating=8.5)
 
         call = es_mock.index.await_args.kwargs
         assert call["index"] == "content"
@@ -683,9 +689,18 @@ class TestBulkIndexRetry:
         retry_ops = es_mock.bulk.await_args_list[1].kwargs["operations"]
         assert retry_ops == [
             {"index": {"_index": "content_v2", "_id": "1"}},
-            {"id": "1", "title": "A", "description": "", "content_type": "",
-             "genres": [], "actors": [], "director": "", "release_year": None,
-             "rating": 0.0, "status": "published"},
+            {
+                "id": "1",
+                "title": "A",
+                "description": "",
+                "content_type": "",
+                "genres": [],
+                "actors": [],
+                "director": "",
+                "release_year": None,
+                "rating": 0.0,
+                "status": "published",
+            },
         ]
 
     @pytest.mark.asyncio
@@ -712,9 +727,7 @@ class TestBulkIndexRetry:
     @pytest.mark.asyncio
     async def test_repeated_failure_raises_indexing_error_with_payload(self, es_mock, service):
         failure = {"_id": "1", "error": {"type": "es_rejected"}}
-        es_mock.bulk = AsyncMock(
-            side_effect=[{"errors": True, "items": [{"index": failure}]}] * 2
-        )
+        es_mock.bulk = AsyncMock(side_effect=[{"errors": True, "items": [{"index": failure}]}] * 2)
 
         with pytest.raises(IndexingError) as excinfo:
             await service._bulk_index("content_v2", [{"id": "1", "title": "A"}])
@@ -746,9 +759,7 @@ class TestCleanupAndShutdown:
     async def test_cleanup_index_deletes_with_ignore_unavailable(self, es_mock, service):
         await service._cleanup_index("content_v9")
 
-        es_mock.indices.delete.assert_awaited_once_with(
-            index="content_v9", ignore_unavailable=True
-        )
+        es_mock.indices.delete.assert_awaited_once_with(index="content_v9", ignore_unavailable=True)
 
     @pytest.mark.asyncio
     async def test_cleanup_index_swallows_delete_failure(self, es_mock, service):
@@ -876,9 +887,7 @@ class TestContentCatalogClient:
 
         def handler(request: httpx.Request) -> httpx.Response:
             sent.append(request)
-            return httpx.Response(
-                200, content=b"x" * 50, headers={"content-length": "50"}
-            )
+            return httpx.Response(200, content=b"x" * 50, headers={"content-length": "50"})
 
         catalog = await _retarget(
             services_module.ContentCatalogClient(base_url="http://content.test"), handler
@@ -1008,7 +1017,9 @@ class TestContentCatalogClient:
             services_module.ContentCatalogClient(base_url="http://content.test"), handler
         )
 
-        with pytest.raises(CatalogFetchError, match="malformed detail for abc: detail parser exploded"):
+        with pytest.raises(
+            CatalogFetchError, match="malformed detail for abc: detail parser exploded"
+        ):
             await catalog.fetch_published()
         await catalog.aclose()
 

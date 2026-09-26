@@ -425,7 +425,7 @@ async def test_in_flight_counter_returns_to_zero_even_when_the_route_raises():
 
 
 def test_the_fallback_lock_is_used_before_the_lifespan_runs():
-    app = _build("development")
+    _build("development")
     assert app_main._in_flight_lock is None
     app_main._fallback_lock()  # must not raise without a running loop
     assert app_main._fallback_lock() is app_main._fallback_lock()

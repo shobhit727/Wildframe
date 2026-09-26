@@ -64,9 +64,7 @@ def test_dev_environments_get_defaults_injected(environment: str):
 
 
 def test_dev_defaults_do_not_override_explicit_values():
-    settings = Settings(
-        ENVIRONMENT="development", JWT_SECRET_KEY="explicit-secret-key-long-enough"
-    )
+    settings = Settings(ENVIRONMENT="development", JWT_SECRET_KEY="explicit-secret-key-long-enough")
 
     assert settings.JWT_SECRET_KEY == "explicit-secret-key-long-enough"
 
@@ -160,9 +158,7 @@ def test_production_rejects_wildcard_origins_with_credentials():
 
 
 def test_production_allows_wildcard_origins_without_credentials():
-    settings = Settings(
-        **VALID_PROD, CORS_ALLOWED_ORIGINS=["*"], CORS_ALLOW_CREDENTIALS=False
-    )
+    settings = Settings(**VALID_PROD, CORS_ALLOWED_ORIGINS=["*"], CORS_ALLOW_CREDENTIALS=False)
 
     assert settings.CORS_ALLOWED_ORIGINS == ["*"]
     assert settings.CORS_ALLOW_CREDENTIALS is False
