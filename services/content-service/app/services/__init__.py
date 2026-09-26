@@ -530,6 +530,7 @@ class ContentService:
                     bio=request.bio,
                     birth_date=request.birth_date,
                     image_url=request.image_url,
+                    role=request.role,
                 )
 
             if member not in content.cast_members:
