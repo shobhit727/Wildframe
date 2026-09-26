@@ -8,10 +8,10 @@ from contextlib import asynccontextmanager
 from types import MappingProxyType
 
 import httpx
-import jwt
 import redis.asyncio as redis
 from fastapi import HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
+from jose import JWTError, jwt
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
@@ -869,15 +869,17 @@ class AuthenticationMiddleware:
                 return None
 
             # Optional identity extraction only; upstream services enforce audience.
-            # Expiry remains mandatory even at this transparent proxy boundary.
+            # Expiry remains mandatory even at this transparent proxy boundary
+            # (python-jose spells "exp is required" as require_exp, not a
+            # `require` list).
             payload = jwt.decode(
                 token,
                 self.jwt_secret,
                 algorithms=["HS256"],
-                options={"require": ["exp"], "verify_aud": False},
+                options={"verify_aud": False, "require_exp": True},
             )
             return payload
-        except Exception:
+        except (JWTError, ValueError):  # ValueError: malformed auth header
             logger.warning("Token verification failed", exc_info=True)
             return None
 
