@@ -127,16 +127,15 @@ async def update_preferences(
     ``liked_genres`` / ``disliked_genres`` arrays (each bounded to
     ``MAX_PREFERENCE_GENRES``). Recommendations are regenerated afterwards.
     """
+    liked_genres: list | None = None
+    disliked_genres: list | None = None
     if isinstance(body, list):
         _validate_genre_list("liked_genres", body)
         liked_genres = body
-        disliked_genres = None
     elif isinstance(body, dict):
         _validate_genre_list("liked_genres", body.get("liked_genres"))
         _validate_genre_list("disliked_genres", body.get("disliked_genres"))
         liked_genres = body.get("liked_genres")
         disliked_genres = body.get("disliked_genres")
-    else:
-        liked_genres = disliked_genres = None
     await service.update_preferences(user_id, liked_genres, disliked_genres)
     return {"status": "updated"}
