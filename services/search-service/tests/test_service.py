@@ -11,6 +11,7 @@ def no_alias_error() -> NotFoundError:
     """Elasticsearch raises NotFoundError when the alias does not exist yet."""
     return NotFoundError(404, "index_not_found_exception", {})
 
+
 from app.services import (
     SearchService,
     content_to_doc,

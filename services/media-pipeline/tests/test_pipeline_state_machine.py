@@ -335,12 +335,8 @@ async def test_start_job_is_idempotent_per_upload_session():
     service = make_service(reg)
     up = uuid4()
     content = uuid4()
-    job1 = await service.start_job(
-        content_id=content, upload_session_id=up, storage_key="k"
-    )
-    job2 = await service.start_job(
-        content_id=content, upload_session_id=up, storage_key="k"
-    )
+    job1 = await service.start_job(content_id=content, upload_session_id=up, storage_key="k")
+    job2 = await service.start_job(content_id=content, upload_session_id=up, storage_key="k")
     assert job1.id == job2.id
 
 
