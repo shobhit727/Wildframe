@@ -127,10 +127,17 @@ export async function DELETE(request: NextRequest) {
   const authorization = request.headers.get('Authorization');
   try {
     if (raw) {
+      let refreshToken: string;
+      try {
+        refreshToken = decodeURIComponent(raw);
+      } catch {
+        // Malformed cookie encoding is an invalid session, not a server error.
+        return NextResponse.json({ error: 'invalid_cookie' }, { status: 401 });
+      }
       const response = await secureFetch(`${API_BASE_URL}/auth/api/v1/auth/logout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: decodeURIComponent(raw) }),
+        body: JSON.stringify({ refresh_token: refreshToken }),
       });
       if (!response.ok && response.status !== 401) {
         return NextResponse.json({ error: 'logout_failed' }, { status: 502 });
@@ -183,6 +190,8 @@ async function secureFetch(
         ca,
       },
       (res) => {
+        // Response-stream failures must reject instead of becoming uncaught errors.
+        res.on('error', reject);
         const chunks: Buffer[] = [];
         res.on('data', (c: Buffer) => chunks.push(c));
         res.on('end', () => {
@@ -193,6 +202,10 @@ async function secureFetch(
       },
     );
     req.on('error', reject);
+    req.setTimeout(10_000, () => {
+      // Bound upstream wait time so one hung auth request cannot pin a worker forever.
+      req.destroy(new Error('upstream request timeout'));
+    });
     req.write(init.body);
     req.end();
   });
