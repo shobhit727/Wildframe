@@ -399,6 +399,7 @@ services:
     volumes:
     - ../services/admin-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_auth:/app/wildframe_auth
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
@@ -517,6 +518,7 @@ services:
         condition: service_healthy
     volumes:
     - ../services/streaming-service:/app
+    - ../packages/sdk/wildframe_auth:/app/wildframe_auth
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance

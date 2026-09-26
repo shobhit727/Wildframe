@@ -19,6 +19,7 @@ python-json-logger = "^2.0.7"
 email-validator = "^2.1.0"
 httpx = "^0.25.0"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
+wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 aiokafka = "^0.10.0"
 wildframe-compliance = {path = "../../packages/sdk/wildframe_compliance", develop = true}
 protobuf = ">=5.29.6,<6"
