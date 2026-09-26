@@ -54,16 +54,12 @@ class UserRepository(BaseRepository):
             logger.error(f"Error creating user: {e!s}")
             raise
 
-    async def get_by_email(self, email: str) -> User | None:
-        """Get user by email (NFC-normalized + casefolded, #161)."""
-        # Inactive (disabled/soft-deleted) accounts can never authenticate.
-        stmt = select(User).where(User.email == normalize_email(email), User.is_active.is_(True))
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
-
-    async def get_by_email_for_login(self, email: str) -> User | None:
-        """Fetch the account for login so suspended accounts can receive 403."""
+    async def get_by_email(self, email: str, include_inactive: bool = False) -> User | None:
+        """Get a normalized user by email; login may explicitly inspect inactive accounts."""
         stmt = select(User).where(User.email == normalize_email(email))
+        if not include_inactive:
+            # Normal callers must not expose disabled/soft-deleted accounts.
+            stmt = stmt.where(User.is_active.is_(True))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
