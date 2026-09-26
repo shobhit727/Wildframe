@@ -506,7 +506,7 @@ class TestDlqRetentionApiContract:
         import sys
         import types
 
-        from wildframe_events import dlq_retention
+        import wildframe_events.dlq_retention as dlq_retention
 
         class FakeConfigResource:
             def __init__(self, resource_type, name):
@@ -563,7 +563,7 @@ class TestDlqRetentionApiContract:
         )
 
         configured = await dlq_retention.apply_dlq_retention("localhost:9092", "test")
-        assert configured == 0
+        assert configured == 1
         assert len(calls) == 1
         assert len(calls[0]) == 1
         assert calls[0][0].resource_type == "topic"
