@@ -17,7 +17,7 @@ This index points to the documentation that should be used for current engineeri
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution conventions.
 - [`QUICKSTART.md`](QUICKSTART.md) — local setup.
 - [`TEST_GUIDE.md`](TEST_GUIDE.md) — test strategy and execution.
-- [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) — test commands.
+- [`HOW_TO_RUN_TESTS.md`](../HOW_TO_RUN_TESTS.md) — test commands.
 
 ## Architecture
 
