@@ -50,7 +50,7 @@ describe('setTokens awaits cookie persistence', () => {
     );
 
     const { apiClient, getAccessToken } = await import('@/api/client');
-    const pending = apiClient.login('demo@wildframe.com', 'DemoPass123!');
+    const pending = apiClient.login('settokens-test@example.invalid', 'not-a-real-password');
     let completed = false;
     void pending.then(() => { completed = true; });
 
@@ -70,7 +70,7 @@ describe('setTokens awaits cookie persistence', () => {
   it('does not authenticate when cookie persistence fails', async () => {
     fetchMock.mockResolvedValue(new Response('{}', { status: 500 }));
     const { apiClient, getAccessToken } = await import('@/api/client');
-    await expect(apiClient.login('demo@wildframe.com', 'DemoPass123!')).rejects.toThrow();
+    await expect(apiClient.login('settokens-test@example.invalid', 'not-a-real-password')).rejects.toThrow();
     expect(getAccessToken()).toBeNull();
   });
 });
