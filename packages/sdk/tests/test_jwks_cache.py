@@ -6,7 +6,7 @@ import pytest
 @pytest.mark.asyncio
 async def test_cached_jwks_refreshes_when_required_kid_is_missing(monkeypatch):
     # A newly rotated signing key must bypass the normal cache TTL.
-    from wildframe_auth import verifier
+    import wildframe_auth.verifier as verifier
 
     verifier.clear_jwks_cache()
     responses = [
