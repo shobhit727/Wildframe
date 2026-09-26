@@ -8,9 +8,10 @@ import pathlib
 
 _admin_path = pathlib.Path(__file__).parent / "admin.py"
 _spec = importlib.util.spec_from_file_location("admin_models_impl", _admin_path)
+assert _spec is not None and _spec.loader is not None, f"no import spec for {_admin_path}"
+_loader = _spec.loader
 _mod = importlib.util.module_from_spec(_spec)
-assert _spec.loader is not None
-_spec.loader.exec_module(_mod)
+_loader.exec_module(_mod)
 
 # Re‑export public symbols expected by the tests.
 Base = _mod.Base
