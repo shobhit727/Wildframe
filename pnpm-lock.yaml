@@ -69,8 +69,8 @@ importers:
         version: 4.5.7(@types/react@18.3.31)(react@19.2.7)
     devDependencies:
       '@next/eslint-plugin-next':
-        specifier: ^16.3.3
-        version: 16.3.3(eslint@9.8.0(supports-color@7.2.0))
+        specifier: ^16.3.6
+        version: 16.3.6(eslint@9.8.0(supports-color@7.2.0))
       '@playwright/test':
         specifier: ^1.62.1
         version: 1.62.1
