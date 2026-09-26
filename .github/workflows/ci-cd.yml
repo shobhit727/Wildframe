@@ -298,6 +298,49 @@ jobs:
         if: always()
         run: PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest -c pyproject.toml packages/sdk/tests/ --asyncio-mode=auto --durations=20 -q
 
+  integration-tests:
+    name: Live Integration & Security Tests (#41)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "${{ env.PYTHON_VERSION }}"
+      - name: Install Poetry
+        uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1
+        with:
+          version: "${{ env.POETRY_VERSION }}"
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      - name: Install integration dependencies
+        run: poetry install --no-interaction
+      - name: Generate development TLS certificates
+        run: bash scripts/generate-dev-certs.sh
+      - name: Start isolated development stack
+        run: docker compose -f deployments/docker-compose.dev.yml up --build -d
+      - name: Wait for gateway readiness
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            if curl --fail --silent --show-error --insecure https://localhost:8000/gateway/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose -f deployments/docker-compose.dev.yml ps
+          exit 1
+      - name: Run integration and security tests
+        run: poetry run pytest tests/integration -q
+      - name: Collect stack logs on failure
+        if: failure()
+        run: docker compose -f deployments/docker-compose.dev.yml logs --no-color --tail=300
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f deployments/docker-compose.dev.yml down -v
   backend-route-contract:
     name: Frontend/backend route contract (#44)
     runs-on: ubuntu-latest
