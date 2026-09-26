@@ -10,7 +10,6 @@ from wildframe_observability.wire import wire_observability
 
 from app.api.notification_routes import router as notification_router
 from app.core.database import DatabaseManager
-from app.core.logging import get_correlation_id
 from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
