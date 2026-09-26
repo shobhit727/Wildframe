@@ -453,8 +453,9 @@ def _derive_real_ip(socket_ip: str, xff_header: str | None) -> str:
     if not trust_proxy:
         return socket_ip
     trusted = _trusted_proxies()
-    is_peer_trusted = True if not trusted else _is_trusted_ip(socket_ip, trusted)
-    if not is_peer_trusted:
+    # Never trust forwarded headers unless the direct peer is explicitly in
+    # the configured proxy trust set. An empty set is not an implicit wildcard.
+    if not trusted or not _is_trusted_ip(socket_ip, trusted):
         return socket_ip
     if not xff_header:
         return socket_ip
