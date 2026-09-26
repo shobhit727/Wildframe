@@ -11,7 +11,7 @@ import httpx
 import redis.asyncio as redis
 from fastapi import HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
-from jose import JWTError
+from jose import JWTError, jwt
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
@@ -872,8 +872,9 @@ class AuthenticationMiddleware:
             from app.core.settings import settings
             from wildframe_auth.verifier import get_cached_jwks
 
-            # Verify the auth-service RS256 signature and all security claims.
-            jwks = await get_cached_jwks(self.jwks_url)
+            # Refresh the cache immediately when a rotated signing key is not present.
+            header = jwt.get_unverified_header(token)
+            jwks = await get_cached_jwks(self.jwks_url, required_kid=header.get("kid"))
             return verify_jwt_token(
                 token,
                 jwks,
