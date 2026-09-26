@@ -1,119 +1,66 @@
 # How to Run Tests
 
-**Current State**: Unit/route tests for all 15 microservices + the shared SDK + the frontend (vitest) + a live-stack integration suite (`tests/integration/`, 110 tests). Backend suites green (895 unit/route tests, Aug 18, 2026). The integration suite needs the dockerized stack running and skips itself otherwise.
+Wildframe uses service-local pytest suites, shared SDK tests, frontend Vitest tests, Playwright E2E tests, and a live cross-service integration suite.
 
----
+## Backend
 
-## 1️⃣ Prerequisites
-
-```bash
-# From repo root — Python venv + dev deps (pytest, pytest-asyncio, pytest-mock, coverage)
-pip install poetry && poetry install
-# or use an existing venv:
-.venv/bin/pip install pytest pytest-asyncio pytest-mock pytest-cov
-
-# Frontend (npm-workspaces monorepo — install from ROOT, not apps/web)
-npm install --legacy-peer-deps
-```
-
-## 2️⃣ Run Backend Tests
-
-Every service packs its own top-level `app` package, so **tests must run
-per-service** — a combined `pytest services/` run from the repo root breaks on
-shadowed `app.*` imports.
+Run all backend services from the repository root:
 
 ```bash
-# All 15 services + SDK
-for svc in services/*/; do
-  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
-done
-(cd packages/sdk && PYTHONPATH="$PWD" pytest tests --asyncio-mode=auto)
-
-# One service
-cd services/auth-service && pytest tests --asyncio-mode=auto
-
-# One file / one test
-cd services/streaming-service
-pytest tests/test_routes.py -k "end_playback_session" -v
+./run_tests.sh
 ```
 
-## 2b️⃣ Run the Live-Stack Integration Suite
-
-Cross-service integration tests live at `tests/integration/` (repo root). They
-exercise the real HTTPS stack through the Caddy proxy (auth token lifecycle,
-gateway rate limiting, cross-service authorization, billing webhook
-idempotency, contract schemas, health/readiness, pipeline idempotency).
-Skipped automatically when the stack is not reachable.
-
-```bash
-# From repo root — stack must be up (docker compose -f deployments/docker-compose.dev.yml up -d)
-poetry run pytest tests/integration -q    # ~16 min, 110 tests
-```
-
-> ⚠️ The integration suite is **not** part of the per-service loop: the root
-> `pyproject.toml` restricts `testpaths` to `services/*/tests` and
-> `packages/*/tests`, so it never runs in the CI unit-test matrix. Run it
-> explicitly after touching auth/gateway/billing/pipeline code.
-
-## 3️⃣ With Coverage
+Run one service:
 
 ```bash
 cd services/auth-service
-pytest tests --cov=app --cov-report=term-missing --asyncio-mode=auto
+python -m pytest tests --asyncio-mode=auto
 ```
 
-## 4️⃣ Frontend Tests
+Run the SDK:
+
+```bash
+PYTHONPATH="$PWD/packages/sdk" python -m pytest packages/sdk --asyncio-mode=auto -q
+```
+
+Do not run `pytest services/` from the repository root. Each backend service has a top-level `app` package, so combined root-level collection can resolve the wrong service.
+
+## Live integration/security suite
+
+With the development stack running:
+
+```bash
+poetry run pytest tests/integration -q
+```
+
+This suite is also executed by the dedicated CI integration job and is required for the workflow to pass.
+
+## Frontend
+
+From `apps/web/`:
+
+```bash
+npm test -- --run
+npm run type-check
+npm run lint
+npm run build
+npx playwright test
+```
+
+## Coverage
+
+Backend:
+
+```bash
+cd services/auth-service
+python -m pytest tests --cov=app --cov-report=term-missing
+```
+
+Frontend:
 
 ```bash
 cd apps/web
-npx vitest run          # run once (CI uses `npm test -- --run`)
-npx vitest              # watch mode
-npm run type-check      # tsc --noEmit
-npm run lint            # eslint . (Next 16 removed `next lint`)
-npm run build           # production build
+npx vitest run --coverage
 ```
 
-## ⚠️ Not Available (yet)
-
-| Test Type | Status |
-|-----------|--------|
-| Unit/route tests | ✅ 15 services + SDK + frontend |
-| Integration (live dockerized stack) | ✅ `tests/integration/` — 110 tests, run explicitly (see §2b) |
-| E2E (browser) | ❌ Playwright scripts exist but not run in CI |
-| Contract tests | ❌ Pact not wired |
-| Load tests | ❌ k6/Locust not written |
-
-## 🚨 Troubleshooting
-
-- **`fixture 'mocker' not found`** — `pip install pytest-mock` into the venv.
-- **`ModuleNotFoundError: No module named 'app'`** — you're not in the service dir; `cd services/<svc>` first.
-- **`app.main` / `app.models` resolves to the wrong service** — running a combined sweep from the repo root; use the per-service loop above.
-- **Tests pass locally, fail in CI** — CI installs into a fresh service venv (`poetry install --with dev`); mirror with `poetry install` inside the service dir.
-
-## 📊 Test Stats (Aug 18, 2026)
-
-| Suite | Tests |
-|-------|-------|
-| auth-service | 161 |
-| content-service | 92 |
-| streaming-service | 80 |
-| analytics-service | 67 |
-| billing-service | 62 |
-| media-pipeline | 62 |
-| admin-service | 73 |
-| search-service | 56 |
-| user-service | 51 |
-| api-gateway | 39 |
-| moderation-service | 36 |
-| recommendation-service | 43 |
-| uploads-service | 26 |
-| creators-service | 23 |
-| notification-service | 24 |
-| packages/sdk | 98 |
-| **Backend unit total** | **895** |
-| **tests/integration (live stack)** | **110** |
-| apps/web (vitest) | 43 |
-
----
-
-**Last updated**: August 18, 2026
+The executable CI source of truth is `.github/workflows/ci-cd.yml`.
