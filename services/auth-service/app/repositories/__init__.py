@@ -142,9 +142,12 @@ class RefreshTokenRepository(BaseRepository):
             select(RefreshToken)
             .where(RefreshToken.user_id == user_id)
             .order_by(RefreshToken.created_at.desc(), RefreshToken.id.desc())
+            .limit(1)
         )
         result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        # Multiple active refresh tokens are valid; callers asking for "the latest"
+        # must receive one deterministic row rather than scalar_one_or_none().
+        return result.scalars().first()
 
     async def consume(self, token_hash: str) -> RefreshToken | None:
         """Atomically consume a refresh token via DELETE ... RETURNING."""
