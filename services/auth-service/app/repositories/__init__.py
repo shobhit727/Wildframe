@@ -61,6 +61,12 @@ class UserRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_email_for_login(self, email: str) -> User | None:
+        """Fetch the account for login so suspended accounts can receive 403."""
+        stmt = select(User).where(User.email == normalize_email(email))
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_by_id(self, user_id: UUID) -> User | None:
         """Get user by ID."""
         # Inactive accounts must not be resolvable for refresh/verification.
