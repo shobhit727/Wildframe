@@ -53,6 +53,9 @@ async def apply_dlq_retention(
                 ctx.check_hostname = False
                 ctx.verify_mode = ssl.CERT_NONE
                 ssl_context = ctx
+            else:
+                # Use the system trust store when no custom CA is supplied.
+                ssl_context = ssl.create_default_context()
     admin_kwargs: dict = {
         "bootstrap_servers": bootstrap_servers,
         "client_id": f"{client_id}-dlq-admin",
