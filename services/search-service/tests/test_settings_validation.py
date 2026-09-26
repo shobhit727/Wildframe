@@ -222,11 +222,11 @@ class TestDefaults:
     def test_compliance_defaults(self):
         settings = Settings()
 
-        assert settings.compliance_jurisdiction.value == "global"
+        assert settings.compliance_jurisdiction.value == "GLOBAL"
         assert [j.value for j in settings.compliance_additional_jurisdictions] == [
-            "eu",
-            "us",
-            "in",
+            "EU",
+            "US",
+            "IN",
         ]
         assert settings.compliance_dpo_email == "dpo@wildframe.com"
         assert settings.compliance_grievance_officer_email == "grievance@wildframe.com"
