@@ -224,6 +224,7 @@ kafka:
     mechanism: PLAIN
     secretRef: wildframe-kafka-sasl
     securityProtocol: SASL_SSL
+    insecureSkipVerify: false
   acl:
     enabled: true
     services:
