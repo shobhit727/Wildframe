@@ -29,6 +29,7 @@ from typing import Any
 
 import httpx
 import pytest
+from jose import jwt
 
 GATEWAY_URL = os.environ.get("WILDFRAME_GATEWAY_URL", "https://localhost:8000")
 JWT_SECRET = os.environ.get("WILDFRAME_JWT_SECRET", "dev-secret-key")
@@ -153,7 +154,7 @@ def mint_jwt(claims: dict[str, Any], secret: str = JWT_SECRET) -> str:
 
 
 def mint_access_token(user_id: str | uuidlib.UUID, *, exp_delta: int = 900, **extra: Any) -> str:
-    """Mint a realistic access token for the dev secret."""
+    """Mint a realistic RS256 access token using the generated development key."""
     now = int(time.time())
     claims: dict[str, Any] = {
         "sub": str(user_id),
@@ -167,7 +168,8 @@ def mint_access_token(user_id: str | uuidlib.UUID, *, exp_delta: int = 900, **ex
         "exp": now + exp_delta,
     }
     claims.update(extra)
-    return mint_jwt(claims)
+    private_key = JWT_PRIVATE_KEY_FILE.read_text(encoding="utf-8")
+    return jwt.encode(claims, private_key, algorithm="RS256", headers={"kid": "k1"})
 
 
 def auth_headers(token: str) -> dict[str, str]:
