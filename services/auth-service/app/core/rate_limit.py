@@ -14,6 +14,8 @@ from redis.asyncio import Redis
 from app.core.settings import settings
 
 _client: Redis | None = None
+_SCOPE_SALT = settings.SECRET_KEY.encode("utf-8")
+_SCOPE_ITERATIONS = 600_000
 
 
 def _get_client() -> Redis | None:
@@ -38,8 +40,13 @@ async def close_client() -> None:
 
 
 def _scope(key: str) -> str:
-    """Hash the raw key so no PII (emails/IPs) is written into Redis keys."""
-    return hashlib.sha256(key.encode()).hexdigest()
+    """Derive a deterministic scoped key so no PII (emails/IPs) is written into Redis keys."""
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        key.encode("utf-8"),
+        _SCOPE_SALT,
+        _SCOPE_ITERATIONS,
+    ).hex()
 
 
 async def allow(
