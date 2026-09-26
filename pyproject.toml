@@ -75,7 +75,7 @@ email-validator = "^2.1.0"
 pycountry = ">=22.3,<27.0"
 
 pytest-xdist = "^3.5.0"
-faker = "^20.0.0"
+faker = ">=20,<41"
 
 # Code quality
 black = ">=23.11,<27.0"
