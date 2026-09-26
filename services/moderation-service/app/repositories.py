@@ -75,6 +75,8 @@ class ContentFlagRepository:
         return list(result.scalars().all())
 
     async def save(self, flag: ContentFlag) -> ContentFlag:
+        # Re-attach detached/new instances before flushing so updates are persisted.
+        self.session.add(flag)
         flag.updated_at = datetime.now(UTC)
         await self.session.flush()
         return flag
