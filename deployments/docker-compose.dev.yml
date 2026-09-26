@@ -291,6 +291,7 @@ services:
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
       JWT_SECRET_KEY: dev-secret-key
+      JWT_PRIVATE_KEY_FILE: /run/secrets/wildframe-dev-jwt.pem
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
@@ -310,6 +311,8 @@ services:
         condition: service_healthy
     volumes:
     - ../services/auth-service:/app
+    - ../packages/sdk/wildframe_auth:/app/wildframe_auth
+    - ../apps/web/certificates/wildframe-jwt-private.pem:/run/secrets/wildframe-dev-jwt.pem:ro
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
