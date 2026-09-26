@@ -20,6 +20,7 @@ import hashlib
 import hmac
 import json
 import os
+from pathlib import Path
 import threading
 import time
 import uuid as uuidlib
@@ -28,11 +29,18 @@ from typing import Any
 
 import httpx
 import pytest
+from jose import jwt
 
 GATEWAY_URL = os.environ.get("WILDFRAME_GATEWAY_URL", "https://localhost:8000")
 JWT_SECRET = os.environ.get("WILDFRAME_JWT_SECRET", "dev-secret-key")
 STRIPE_WEBHOOK_SECRET = os.environ.get(
-    "WILDFRAME_STRIPE_WEBHOOK_SECRET", "whsec_default_change_me"
+    "WILDFRAME_STRIPE_WEBHOOK_SECRET", "whsec_dev_wildframe"
+)
+JWT_PRIVATE_KEY_FILE = Path(
+    os.environ.get(
+        "WILDFRAME_JWT_PRIVATE_KEY_FILE",
+        "apps/web/certificates/wildframe-jwt-private.pem",
+    )
 )
 
 # Caddy proxies each service's host port with TLS (see AGENTS.md -> HTTPS/TLS).
@@ -146,7 +154,7 @@ def mint_jwt(claims: dict[str, Any], secret: str = JWT_SECRET) -> str:
 
 
 def mint_access_token(user_id: str | uuidlib.UUID, *, exp_delta: int = 900, **extra: Any) -> str:
-    """Mint a realistic access token for the dev secret."""
+    """Mint a realistic RS256 access token using the generated development key."""
     now = int(time.time())
     claims: dict[str, Any] = {
         "sub": str(user_id),
@@ -160,7 +168,8 @@ def mint_access_token(user_id: str | uuidlib.UUID, *, exp_delta: int = 900, **ex
         "exp": now + exp_delta,
     }
     claims.update(extra)
-    return mint_jwt(claims)
+    private_key = JWT_PRIVATE_KEY_FILE.read_text(encoding="utf-8")
+    return jwt.encode(claims, private_key, algorithm="RS256", headers={"kid": "k1"})
 
 
 def auth_headers(token: str) -> dict[str, str]:

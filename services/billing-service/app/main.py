@@ -156,7 +156,7 @@ def create_app() -> FastAPI:
             overall = "not_ready"
 
         try:
-            redis_client = await redis.from_url(settings.REDIS_URL)
+            redis_client = redis.from_url(settings.REDIS_URL)
             await asyncio.wait_for(redis_client.ping(), timeout=2.0)
             await redis_client.close()
             checks["redis"] = "ok"
@@ -199,7 +199,7 @@ def create_app() -> FastAPI:
                 pass
         return await call_next(request)
 
-    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
+    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL, register_metrics=False)
 
     # Gate /metrics behind admin token (#469)
     from fastapi import Depends, Header, HTTPException

@@ -11,7 +11,7 @@ import httpx
 import redis.asyncio as redis
 from fastapi import HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
-from jose import JWTError, jwt
+from jose import JWTError
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
@@ -453,8 +453,9 @@ def _derive_real_ip(socket_ip: str, xff_header: str | None) -> str:
     if not trust_proxy:
         return socket_ip
     trusted = _trusted_proxies()
-    is_peer_trusted = True if not trusted else _is_trusted_ip(socket_ip, trusted)
-    if not is_peer_trusted:
+    # Never trust forwarded headers unless the direct peer is explicitly in
+    # the configured proxy trust set. An empty set is not an implicit wildcard.
+    if not trusted or not _is_trusted_ip(socket_ip, trusted):
         return socket_ip
     if not xff_header:
         return socket_ip
@@ -854,8 +855,8 @@ class AuthenticationMiddleware:
         }
     )
 
-    def __init__(self, jwt_secret: str):
-        self.jwt_secret = jwt_secret
+    def __init__(self, jwks_url: str):
+        self.jwks_url = jwks_url
 
     async def verify_token(self, request: Request) -> dict | None:
         """Verify a JWT token from the Authorization header."""
@@ -868,17 +869,19 @@ class AuthenticationMiddleware:
             if scheme.lower() != "bearer":
                 return None
 
-            # Optional identity extraction only; upstream services enforce audience.
-            # Expiry remains mandatory even at this transparent proxy boundary
-            # (python-jose spells "exp is required" as require_exp, not a
-            # `require` list).
-            payload = jwt.decode(
+            from app.core.settings import settings
+            from wildframe_auth.verifier import get_cached_jwks
+
+            # Verify the auth-service RS256 signature and all security claims.
+            jwks = await get_cached_jwks(self.jwks_url)
+            return verify_jwt_token(
                 token,
-                self.jwt_secret,
-                algorithms=["HS256"],
-                options={"verify_aud": False, "require_exp": True},
+                jwks,
+                audience=settings.JWT_AUDIENCE,
+                issuer=settings.JWT_ISSUER,
+                leeway=settings.JWT_LEEWAY_SECONDS,
+                expected_type="access",
             )
-            return payload
         except (JWTError, ValueError):  # ValueError: malformed auth header
             logger.warning("Token verification failed", exc_info=True)
             return None
@@ -893,9 +896,12 @@ class AuthenticationMiddleware:
             "/redoc",
             "/openapi.json",
         ) or request_path.startswith(("/docs/", "/redoc/", "/openapi.json/"))
-        if is_docs_path and settings.ENVIRONMENT == "production":
-            pass
-        elif any(
+        if is_docs_path:
+            if settings.ENVIRONMENT == "production":
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+            # Documentation is intentionally public only outside production.
+            return None
+        if any(
             request_path == path or request_path.startswith(f"{path}/")
             for path in self.PUBLIC_PATHS
         ):

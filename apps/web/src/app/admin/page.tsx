@@ -15,8 +15,9 @@ import { getSystemStats } from '@/api/admin';
 import type { AdminUser } from '@/types/admin';
 import { useUsers } from '@/hooks/admin';
 
-function formatNumber(n: number) {
-  return new Intl.NumberFormat('en-US').format(n);
+function formatNumber(n: number | null | undefined) {
+  // Missing operational aggregates should render explicitly instead of crashing.
+  return n == null ? '—' : new Intl.NumberFormat('en-US').format(n);
 }
 
 function formatUptime(hours: number) {
@@ -64,7 +65,7 @@ export default function AdminDashboardPage() {
         ) : (
           <>
             <StatCard label="Total Users" value={formatNumber(s.total_users)} hint={`${formatNumber(s.active_users)} active`} trend={{ value: 4.5, positive: true }} icon={<Icons.UsersIcon />} accent="sky" />
-            <StatCard label="Active Streams" value={formatNumber(Math.round(s.active_users * 0.32))} hint="last 24h" trend={{ value: 2.1, positive: true }} icon={<Icons.ActivityIcon />} accent="green" />
+            <StatCard label="Active Streams" value="Not available" hint="last 24h" icon={<Icons.ActivityIcon />} accent="green" />
             <StatCard label="Open Flags" value={formatNumber(s.flagged_content)} hint={`${s.active_alerts} alerts`} trend={{ value: 1.4, positive: false }} icon={<Icons.FlagIcon />} accent="amber" />
             <StatCard label="MRR" value={`$${formatNumber(48250)}`} hint={`uptime ${formatUptime(s.system_uptime_hours)}`} trend={{ value: 6.8, positive: true }} icon={<Icons.DollarIcon />} accent="purple" />
           </>

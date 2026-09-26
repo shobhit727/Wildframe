@@ -97,8 +97,8 @@ async def send_notification(
         kwargs["event_id"] = event_id
     if channels is not None:
         kwargs["channels"] = channels
-    if email_address is not None:
-        kwargs["email_address"] = email_address
+    # email_address is deliberately rejected above until the account-recipient
+    # verification contract is available; this branch is therefore unreachable.
     if template != "generic":
         kwargs["template"] = template
     return await service.send_notification(user_id, title, message, channel, **kwargs)

@@ -170,6 +170,8 @@ class CastMemberCreateRequest(BaseModel):
     bio: str | None = None
     birth_date: datetime | None = None
     image_url: str | None = None
+    # PostgreSQL content_cast.role is NOT NULL; use a stable default for API callers.
+    role: str = Field(default="Actor", min_length=1, max_length=255)
 
     @field_validator("slug")
     @classmethod

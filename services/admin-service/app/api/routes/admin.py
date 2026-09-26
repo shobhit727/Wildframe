@@ -68,7 +68,7 @@ _stepup_jti_lock = asyncio.Lock()
 async def _consume_stepup_jti(jti: str, exp: int | float | None) -> bool:
     if settings.REDIS_URL:
         try:
-            client = await redis.from_url(settings.REDIS_URL, decode_responses=True)
+            client = redis.from_url(settings.REDIS_URL, decode_responses=True)
             ttl = 300
             if isinstance(exp, (int, float)):
                 ttl = max(1, int(exp - datetime.now(UTC).timestamp()))

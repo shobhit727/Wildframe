@@ -298,6 +298,11 @@ def get_policy_for_jurisdiction(jurisdiction: Jurisdiction, **overrides: Any) ->
 
     policy = policy_class(**overrides)
 
+    # Preserve the requested child jurisdiction when only a parent policy class exists.
+    # Otherwise US-* callers can silently receive jurisdiction=US.
+    if jurisdiction not in _POLICY_REGISTRY:
+        policy = policy.model_copy(update={"jurisdiction": jurisdiction})
+
     # Apply parent jurisdiction policies if applicable (hierarchical)
     parent = jurisdiction.parent
     if parent and parent in _POLICY_REGISTRY:
@@ -306,6 +311,7 @@ def get_policy_for_jurisdiction(jurisdiction: Jurisdiction, **overrides: Any) ->
         parent_dict = parent_policy.model_dump()
         parent_dict.update(policy.model_dump(exclude_unset=True))
         policy = policy_class(**parent_dict)
+        policy = policy.model_copy(update={"jurisdiction": jurisdiction})
 
     return policy
 

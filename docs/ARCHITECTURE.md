@@ -589,7 +589,7 @@ Unique identifier tracking a request through all services and logs.
 | HTTP client | httpx (ASGITransport) | In-process app testing |
 | Mocking | unittest.mock, pytest-mock | Stub external dependencies |
 | Coverage | pytest-cov | Line + branch coverage |
-| Frontend unit | Vitest | `apps/web/tests/` |
+| Frontend unit | Vitest | `apps/web/src/__tests__/` |
 | Frontend component | Vitest + Testing Library | `apps/web/tests/components/` |
 | Frontend E2E | Playwright | `apps/web/e2e/` |
 | Integration | pytest + httpx | `tests/integration/` |

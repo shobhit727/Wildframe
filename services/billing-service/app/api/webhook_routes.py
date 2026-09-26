@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.money import CurrencyError, to_minor_units, validate_currency
+from app.core.money import CurrencyError, from_minor_units, to_minor_units, validate_currency
 from app.core.settings import settings
 from app.core.stripe_client import StripeClient, StripeError
 from app.models import (
@@ -223,8 +223,14 @@ async def _handle_invoice_paid(
         user_id_str = metadata.get("user_id")
         if user_id_str:
             user_id = UUID(user_id_str)
-            amount = Decimal(str(invoice_obj["total"])) / Decimal(100)
             currency = invoice_obj.get("currency", "USD").upper()
+            try:
+                validate_currency(currency)
+                total_minor = int(invoice_obj["total"])
+                # Convert using ISO-4217 minor units; dividing by 100 breaks JPY/BHD/etc.
+                amount = from_minor_units(total_minor, currency)
+            except (CurrencyError, KeyError, TypeError, ValueError) as exc:
+                raise BillingError(f"Invalid invoice amount/currency: {exc}") from exc
 
             new_inv = await service.inv_repo.create(
                 user_id=user_id,

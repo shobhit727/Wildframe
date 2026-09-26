@@ -197,7 +197,7 @@ Theme is driven by `next-themes` and exposed via CSS variables so dark mode is a
   resolves; page-level guards read `isAuthenticated` on mount and would
   otherwise bounce freshly-authenticated users (AdminGate → /login →
   middleware → /browse).
-- `src/middleware.ts` redirects unauthenticated requests away from `/account`, `/billing`, `/my-list`, and `/watch`.
+- `src/proxy.ts` redirects unauthenticated requests away from `/account`, `/billing`, `/my-list`, and `/watch`.
 - The Axios client automatically refreshes on 401 once per request, then surfaces the error.
 
 ```ts

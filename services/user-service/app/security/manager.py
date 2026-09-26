@@ -42,7 +42,9 @@ class PasswordManager:
 
     @staticmethod
     def verify_password(password: str, password_hash: str) -> bool:
-        """Verify a password against its hash."""
+        """Verify a password against its hash, treating missing hashes as invalid."""
+        if not password_hash:
+            return False
         try:
             return bcrypt.checkpw(
                 _encode_password(password),

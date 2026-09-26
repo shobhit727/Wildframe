@@ -39,7 +39,7 @@ async def close_client() -> None:
 
 def _scope(key: str) -> str:
     """Hash the raw key so no PII (emails/IPs) is written into Redis keys."""
-    return hashlib.blake2s(key.encode(), digest_size=20).hexdigest()
+    return hashlib.sha256(key.encode()).hexdigest()
 
 
 async def allow(

@@ -10,6 +10,7 @@ from wildframe_observability.wire import wire_observability
 
 from app.api.notification_routes import router as notification_router
 from app.core.database import DatabaseManager
+from app.core.logging import get_correlation_id
 from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -165,7 +166,7 @@ def create_app() -> FastAPI:
             overall = "not_ready"
 
         try:
-            redis_client = await redis.from_url(settings.REDIS_URL)
+            redis_client = redis.from_url(settings.REDIS_URL)
             await asyncio.wait_for(redis_client.ping(), timeout=2.0)
             await redis_client.close()
             checks["redis"] = "ok"
@@ -232,6 +233,7 @@ def create_app() -> FastAPI:
                 "message": "Internal server error",
                 "correlation_id": corr_id,
             },
+            headers={"X-Correlation-ID": corr_id},
         )
 
     return app

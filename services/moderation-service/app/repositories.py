@@ -35,6 +35,9 @@ class ContentFlagRepository:
         result = await self.session.execute(
             insert(ContentFlag)
             .values(
+                # Preserve an explicitly supplied UUID; otherwise SQLAlchemy's default
+                # generates one in the normal path.
+                id=flag.id,
                 content_id=flag.content_id,
                 content_creator_id=flag.content_creator_id,
                 flag_reason=flag.flag_reason,
@@ -75,6 +78,8 @@ class ContentFlagRepository:
         return list(result.scalars().all())
 
     async def save(self, flag: ContentFlag) -> ContentFlag:
+        # Re-attach detached/new instances before flushing so updates are persisted.
+        self.session.add(flag)
         flag.updated_at = datetime.now(UTC)
         await self.session.flush()
         return flag

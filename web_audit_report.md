@@ -61,7 +61,7 @@ Recommendation:
 
 The project includes a CSP builder utility in [apps/web/src/utils/csp.ts](apps/web/src/utils/csp.ts), which is well-structured and contains a strict production policy with nonce support. There is also a test in [apps/web/src/__tests__/security.test.ts](apps/web/src/__tests__/security.test.ts) verifying that `Content-Security-Policy` is not set in the Next config, which suggests the team intentionally moved CSP enforcement out of the config layer.
 
-However, the actual runtime app does not appear to apply CSP through the request middleware. [apps/web/src/middleware.ts](apps/web/src/middleware.ts) handles auth and route protection, but it does not set a `Content-Security-Policy` header. The app also does not appear to attach the generated CSP header in any route or top-level layout.
+However, the actual runtime app does not appear to apply CSP through the request middleware. [apps/web/src/proxy.ts](apps/web/src/middleware.ts) handles auth and route protection, but it does not set a `Content-Security-Policy` header. The app also does not appear to attach the generated CSP header in any route or top-level layout.
 
 Impact:
 

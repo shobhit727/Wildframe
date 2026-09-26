@@ -93,6 +93,10 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
             )
+        if not self.STRIPE_API_KEY.strip():
+            raise ValueError("STRIPE_API_KEY must be set in production")
+        if not self.STRIPE_WEBHOOK_SECRET.strip():
+            raise ValueError("STRIPE_WEBHOOK_SECRET must be set in production")
         if self.STRIPE_API_KEY.startswith("sk_test_"):
             raise ValueError("STRIPE_API_KEY must be a live key in production")
         if self.STRIPE_WEBHOOK_SECRET.startswith("whsec_default"):

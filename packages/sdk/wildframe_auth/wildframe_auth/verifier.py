@@ -53,12 +53,26 @@ def verify_token(
             algorithms=list(ALLOWED_ALGORITHMS),
             audience=audience,
             issuer=issuer,
-            options={"leeway": leeway},
+            options={
+                "leeway": leeway,
+                # Explicitly require every security-critical claim declared by REQUIRED_CLAIMS.
+                "require_exp": True,
+                "require_iat": True,
+                "require_iss": True,
+                "require_aud": True,
+                "require_sub": True,
+                "require_type": True,
+            },
         )
     except ExpiredSignatureError:
         raise
     except JWTError:
         raise
+    # Enforce exact issuer/audience/type after signature verification; omission never fails open.
+    if payload.get("aud") != audience:
+        raise JWTError("invalid audience")
+    if payload.get("iss") != issuer:
+        raise JWTError("invalid issuer")
     if payload.get("type") != expected_type:
         raise JWTError(f"invalid type expected {expected_type}")
     return payload

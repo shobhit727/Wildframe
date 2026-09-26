@@ -93,10 +93,20 @@ class TestPasswordManager:
         # The current settings rounds must be > 4 for this test to be valid.
         assert settings.PASSWORD_BCRYPT_ROUNDS > 4
 
+    def test_long_password_is_not_truncated(self):
+        """#849: passwords beyond bcrypt's historical 72-byte limit remain distinct."""
+        prefix = "a" * 72
+        password_a = prefix + "X"
+        password_b = prefix + "Y"
+        hash_a = PasswordManager.hash_password(password_a)
+
+        assert PasswordManager.verify_password(password_a, hash_a)
+        assert not PasswordManager.verify_password(password_b, hash_a)
+
     def test_dummy_hash_verifies_like_a_real_check(self):
         """#163/#436: the dummy hash accepts nothing but costs full bcrypt work."""
         dummy = PasswordManager.dummy_hash()
-        assert dummy.startswith("$2")
+        assert dummy.startswith("$argon2")
         assert not PasswordManager.verify_password("any-guess", dummy)
 
     def test_normalize_email_canonicalizes_unicode_and_case(self):
@@ -377,7 +387,8 @@ class TestAuthServiceLogin:
         ]
         assert rehashed, "expected a password_hash upgrade update"
         new_hash = rehashed[0]
-        assert int(new_hash.split("$")[2]) == settings.PASSWORD_BCRYPT_ROUNDS
+        # Legacy bcrypt credentials are transparently migrated to Argon2id.
+        assert new_hash.startswith("$argon2")
         assert PasswordManager.verify_password(password, new_hash)
 
     async def test_login_invalid_password(self, auth_service, mock_repositories, user_id):

@@ -14,8 +14,11 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 logger = logging.getLogger(__name__)
 
 
-def setup_tracing() -> None:
-    """Initialize OpenTelemetry tracing with Jaeger exporter."""
+def setup_tracing(app=None) -> None:
+    """Initialize OpenTelemetry tracing with Jaeger exporter.
+
+    FastAPI tracing must be attached to a concrete application instance.
+    """
     if not settings.JAEGER_ENABLED:
         logger.info("Jaeger tracing disabled")
         return
@@ -35,7 +38,8 @@ def setup_tracing() -> None:
         trace.set_tracer_provider(trace_provider)
 
         # Instrument libraries
-        FastAPIInstrumentor.instrument()
+        if app is not None:
+            FastAPIInstrumentor.instrument_app(app, tracer_provider=trace_provider)
         SQLAlchemyInstrumentor().instrument()
         RedisInstrumentor().instrument()
 

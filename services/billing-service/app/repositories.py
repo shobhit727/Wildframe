@@ -15,7 +15,7 @@ on PostgreSQL deadlock (40P01) and lock_not_available (55P03) errors.
 """
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from uuid import UUID
 
 import asyncio
@@ -424,12 +424,22 @@ class MilestoneRepository:
         await self.session.flush()
         # Auto-create the 4 tranches (10/20/30/40)
         percentages = [Decimal("10.00"), Decimal("20.00"), Decimal("30.00"), Decimal("40.00")]
+        allocated = Decimal("0.00")
         for i, pct in enumerate(percentages, start=1):
+            # Round each stored money amount to cents; make the final tranche the
+            # exact remainder so database rounding can never over/under-allocate.
+            if i < len(percentages):
+                amount = (total_commitment * pct / Decimal("100.00")).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+                allocated += amount
+            else:
+                amount = total_commitment - allocated
             tranche = MilestoneTranche(
                 milestone_id=ms.id,
                 tranche_number=i,
                 percentage=pct,
-                amount=total_commitment * pct / Decimal("100.00"),
+                amount=amount,
             )
             self.session.add(tranche)
         await self.session.flush()

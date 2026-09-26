@@ -107,7 +107,8 @@ async def apply_dlq_retention(
             resource.set_config("retention.ms", str(DLQ_RETENTION_MS))
             resource.set_config("segment.ms", str(DLQ_SEGMENT_MS))
             try:
-                await admin.alter_configs(resource)
+                # aiokafka expects an iterable of ConfigResource objects.
+                await admin.alter_configs([resource])
                 configured += 1
             except Exception:  # noqa: BLE001 - per-topic best effort
                 logger.warning("could not set retention on %s", t)
