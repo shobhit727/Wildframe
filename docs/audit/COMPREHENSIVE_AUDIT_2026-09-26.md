@@ -8,7 +8,7 @@ Baseline:
 - Default branch: `main`
 - Remediation branch: `audit/comprehensive-issue-pr-fixes-2026-09-26`
 - Historical closed-issue corpus: 607 issues, audited previously against an older repository head.
-- Current open issue corpus: 100 issues at this audit.
+- Current open issue corpus: 100 issues (#751–#881, with gaps from closed/intervening numbers).
 - Current open PRs found: #835, #838, #839.
 
 ## Branch remediation
@@ -97,7 +97,7 @@ The practical treatment here is:
 
 The branch has not been executed in a local checkout during this audit because the container environment could not clone the repository. Source-level verification was performed through the GitHub repository interface.
 
-A draft pull request is recommended as the CI execution vehicle so GitHub Actions runs the branch's complete test/lint/security/build pipeline against the actual GitHub checkout. No merge into `main` should occur until those checks are reviewed.
+PR #931 is the CI execution vehicle. GitHub Actions run #1458 is currently pending on the latest branch head. No merge into `main` should occur until that run and any follow-up fixes are reviewed.
 
 ## Known audit limitation
 
