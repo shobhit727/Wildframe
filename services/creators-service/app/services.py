@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from app.core.settings import settings
@@ -64,7 +65,9 @@ class CreatorService:
         # A negative floor would imply the platform owes the creator for NOT
         # publishing, which is nonsensical and would break the pool math.
         assert per_minute_amount >= 0, "effective floor must be >= 0"
-        return await self.floor_repo.set_floor(creator_id, per_minute_amount, currency, reason)
+        return await self.floor_repo.set_floor(
+            creator_id, Decimal(str(per_minute_amount)), currency, reason
+        )
 
     # --------------------------------------------------------------------- pool
     async def record_pool_contribution(self, creator_id: UUID, cents: int):

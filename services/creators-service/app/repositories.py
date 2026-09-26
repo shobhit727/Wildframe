@@ -125,8 +125,10 @@ class CreatorPoolBalanceRepository:
             .values(creator_id=creator_id)
             .on_conflict_do_nothing(index_elements=[CreatorPoolBalance.creator_id])
         )
-        bal = await self.get_for_creator(creator_id)
         await self.session.commit()
+        bal = await self.get_for_creator(creator_id)
+        if bal is None:  # pragma: no cover - the insert above guarantees a row
+            raise RuntimeError(f"pool balance missing for creator {creator_id}")
         return bal
 
     async def record_contribution(self, creator_id: UUID, cents: int) -> CreatorPoolBalance:
@@ -304,7 +306,7 @@ class PayoutLedgerRepository:
             creator = result.scalar_one_or_none()
             if creator is None or not creator.is_active:
                 raise CreatorSuspendedError(f"Creator {creator_id} is suspended or does not exist")
-            result = await self.session.execute(
+            insert_result = await self.session.execute(
                 insert(PayoutLedger)
                 .values(
                     creator_id=creator_id,
@@ -322,16 +324,16 @@ class PayoutLedgerRepository:
                 .on_conflict_do_nothing()
                 .returning(PayoutLedger)
             )
-            row = result.scalar_one_or_none()
+            row = insert_result.scalar_one_or_none()
             if row is None:
-                result = await self.session.execute(
+                existing_result = await self.session.execute(
                     select(PayoutLedger).where(
                         PayoutLedger.creator_id == creator_id,
                         PayoutLedger.period_start == period_start,
                         PayoutLedger.period_end == period_end,
                     )
                 )
-                row = result.scalar_one()
+                row = existing_result.scalar_one()
             else:
                 await CreatorPoolBalanceRepository(self.session).accrue(
                     creator_id, pool_topup_cents
