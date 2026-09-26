@@ -485,8 +485,6 @@ class FFmpegPackager(Packager):
     async def _package(
         self, args: list[str], manifest: str, job_root: str, timeout: float | None
     ) -> None:
-        from app.core.stages import require_artifact
-
         code, _, stderr, _, _ = await run_process(
             [self.ffmpeg_bin, "-y", "-v", "error", "-threads", "1", *args],
             timeout=timeout or self.timeout,
@@ -498,7 +496,8 @@ class FFmpegPackager(Packager):
             raise CommandFailure(
                 f"ffmpeg packaging failed: {stderr.decode(errors='replace')[:400]}"
             )
-        require_artifact(manifest)
+        if not os.path.isfile(manifest) or os.path.getsize(manifest) == 0:
+            raise OutputLimitExceeded(f"ffmpeg packaging produced no manifest {manifest!r}")
         from app.core.security import validate_manifest_no_origin_urls
 
         validate_manifest_no_origin_urls(manifest)

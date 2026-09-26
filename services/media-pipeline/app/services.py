@@ -336,13 +336,13 @@ class MediaPipelineService:
         """Release our lease on the job."""
         if job.leased_by == self.worker_id:
             job.leased_by = None
-            job.leased_at = None  # type: ignore[assignment]
+            job.leased_at = None
             await self.job_repo.save(job)
 
     async def _heartbeat_lease(self, job: PipelineJob) -> None:
         """Refresh the lease timestamp."""
         if job.leased_by == self.worker_id:
-            job.leased_at = datetime.now(UTC)  # type: ignore[assignment]
+            job.leased_at = datetime.now(UTC)
             await self.job_repo.save(job)
 
     def _increment_concurrency(self, content_id: UUID, creator_id: UUID | None = None) -> None:
@@ -479,7 +479,7 @@ class MediaPipelineService:
             ctx.update(context)
         # Persist ctx without the injected ports (they are re-injected on
         # advance()); port objects are not JSON-serializable.
-        job.context = {k: v for k, v in ctx.items() if not _is_port(v)}  # type: ignore[assignment]
+        job.context = {k: v for k, v in ctx.items() if not _is_port(v)}
         # Store creator_id in context for per-creator concurrency tracking (#488/#545)
         if creator_id is not None:
             job.context["_creator_id"] = str(creator_id)
@@ -505,7 +505,7 @@ class MediaPipelineService:
         storage_key: str,
         creator_id: UUID | None,
     ) -> None:
-        context = job.context or {}
+        context: dict[str, Any] = job.context or {}
         if (
             job.content_id != content_id
             or job.upload_session_id != upload_session_id
