@@ -445,11 +445,7 @@ class BillingService:
         except Exception:
             pass
         resolved_invoice = None
-        resolved_invoice_id = invoice_id
-        if resolved_invoice_id is not None:
-            resolved_invoice = await self.inv_repo.get(resolved_invoice_id)
-            if resolved_invoice is None:
-                resolved_invoice_id = None
+        resolved_invoice_id = None
         if resolved_invoice_id is None:
             if authoritative_stripe_invoice:
                 try:
@@ -513,30 +509,49 @@ class BillingService:
                             resolved_invoice_id = inv.id
                 except Exception:
                     pass
-        if resolved_invoice_id is None or resolved_invoice is None:
-            if resolved_invoice_id is not None:
-                try:
-                    resolved_invoice = await self.inv_repo.get(resolved_invoice_id)
-                except Exception:
-                    resolved_invoice = None
-            if resolved_invoice is None:
-                refund = await self.refund_repo.create(
-                    refund_id=refund_id,
-                    charge_id=authoritative_charge or charge_id,
-                    amount=amount,
-                    currency=currency,
-                    invoice_id=None,
-                    user_id=user_id,
-                    reason=reason,
-                    status=RefundStatus.PENDING_REVIEW,
-                )
-                self._logger.warning(
-                    "Refund %s pending review: unresolved invoice charge=%s pi=%s",
-                    refund_id,
-                    authoritative_charge,
-                    authoritative_pi,
-                )
-                return refund
+        if resolved_invoice_id is None and invoice_id is not None:
+            # Stripe linkage unavailable (a routine Stripe degradation) — fall
+            # back to the caller-supplied local invoice rather than stranding a
+            # settled refund in PENDING_REVIEW with no invoice to apply against.
+            resolved_invoice = await self.inv_repo.get(invoice_id)
+            if resolved_invoice is not None:
+                resolved_invoice_id = resolved_invoice.id
+        if resolved_invoice is None:
+            refund = await self.refund_repo.create(
+                refund_id=refund_id,
+                charge_id=authoritative_charge or charge_id,
+                amount=amount,
+                currency=currency,
+                invoice_id=None,
+                user_id=user_id,
+                reason=reason,
+                status=RefundStatus.PENDING_REVIEW,
+            )
+            self._logger.warning(
+                "Refund %s pending review: unresolved invoice charge=%s pi=%s",
+                refund_id,
+                authoritative_charge,
+                authoritative_pi,
+            )
+            return refund
+        if invoice_id is not None and invoice_id != resolved_invoice_id:
+            refund = await self.refund_repo.create(
+                refund_id=refund_id,
+                charge_id=authoritative_charge or charge_id,
+                amount=amount,
+                currency=currency,
+                invoice_id=None,
+                user_id=user_id,
+                reason=reason,
+                status=RefundStatus.PENDING_REVIEW,
+            )
+            self._logger.warning(
+                "Refund %s pending review: supplied invoice %s does not match Stripe-linked invoice %s",
+                refund_id,
+                invoice_id,
+                resolved_invoice_id,
+            )
+            return refund
         if resolved_invoice.currency.upper() != currency.upper():
             refund = await self.refund_repo.create(
                 refund_id=refund_id,
@@ -634,7 +649,9 @@ class BillingService:
         All tranches start as LOCKED. They are released one at a time as
         milestones are verified.
         """
-        if caller_id is not None and caller_id != creator_id and not caller_is_admin:
+        if caller_id is None:
+            raise MilestoneAuthorizationError("caller identity required")
+        if caller_id != creator_id and not caller_is_admin:
             raise MilestoneAuthorizationError(
                 "not authorized to create milestone for another creator"
             )
@@ -652,7 +669,7 @@ class BillingService:
         Tranche must be in LOCKED status and the milestone must not be
         KILLED. On release, a corresponding payout accrual is created.
         """
-        if caller_id is not None and not caller_is_admin:
+        if caller_id is None or not caller_is_admin:
             raise MilestoneAuthorizationError("admin privileges required")
         milestone = await self.milestone_repo.get(milestone_id)
         if not milestone:
@@ -696,7 +713,7 @@ class BillingService:
         revert. The reverted funds become available for redistribution in
         the next pool cycle.
         """
-        if caller_id is not None and not caller_is_admin:
+        if caller_id is None or not caller_is_admin:
             raise MilestoneAuthorizationError("admin privileges required")
         milestone = await self.milestone_repo.get(milestone_id)
         if not milestone:
