@@ -255,6 +255,13 @@ jobs:
         working-directory: services/${{ matrix.service }}
         run: poetry install --no-interaction --with dev
 
+      - name: Verify test collection
+        working-directory: services/${{ matrix.service }}
+        run: |
+          set -euo pipefail
+          # Pytest exits non-zero when no tests are collected; keep that failure explicit.
+          PYTHONPATH="$PWD:${PYTHONPATH:-}" poetry run pytest tests --collect-only -q
+
       - name: Run tests with coverage
         working-directory: services/${{ matrix.service }}
         env:
