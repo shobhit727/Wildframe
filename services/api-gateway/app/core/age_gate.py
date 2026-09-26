@@ -15,7 +15,9 @@ JURISDICTION_MINOR_AGE = {"EU": 16, "US": 13, "IN": 18, "GLOBAL": 16}
 
 def is_age_restricted(path: str) -> bool:
     """Check if path requires age verification."""
-    return any(path.startswith(prefix) for prefix in AGE_RESTRICTED_PREFIXES)
+    # Match complete path segments so "/maturity" cannot accidentally match "/maturity-public".
+    normalized = path.rstrip("/") or "/"
+    return any(normalized == prefix or normalized.startswith(f"{prefix}/") for prefix in AGE_RESTRICTED_PREFIXES)
 
 
 def check_age_gate(
