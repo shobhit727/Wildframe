@@ -133,9 +133,10 @@ async def proxy_request(
         if not allowed:
             raise _error_response(429, "Rate limit exceeded", request)
 
-    # Forward request using shared AsyncClient (#123)
-    client = get_shared_client()
+    # Obtain the shared client inside the failure boundary so an unavailable
+    # lifespan cannot escape as an unhandled RuntimeError (#865).
     try:
+        client = get_shared_client()
         original_host = request.headers.get("host", "")
         headers = {
             k: v for k, v in request.headers.items() if k.lower() not in _PROXY_AGENT_HEADERS
@@ -195,6 +196,9 @@ async def proxy_request(
             return payload
     except HTTPException:
         raise
+    except RuntimeError as exc:
+        logger.error("gateway shared client unavailable: %s", exc)
+        raise _error_response(503, "Gateway upstream client unavailable", request)
     except httpx.TimeoutException:
         logger.error(f"Timeout calling {url}{path}")
         raise _error_response(504, "Service timeout", request)
