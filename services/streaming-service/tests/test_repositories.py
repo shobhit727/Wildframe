@@ -7,8 +7,6 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from testcontainers.postgres import PostgresContainer
-
 from app.models import Base, PlaybackSessionStatus
 from app.models.drm import DRMConfig
 from app.models.maturity import ContentMaturity
@@ -21,6 +19,8 @@ async def session() -> AsyncIterator[AsyncSession]:
     with ExitStack() as stack:
         url = os.environ.get("TEST_DATABASE_URL")
         if not url:
+            from testcontainers.postgres import PostgresContainer
+
             postgres = stack.enter_context(PostgresContainer("postgres:15"))
             url = postgres.get_connection_url()
         engine = create_async_engine(make_url(url).set(drivername="postgresql+asyncpg"), echo=False)
