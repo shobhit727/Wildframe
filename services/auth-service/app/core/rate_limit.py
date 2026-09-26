@@ -8,6 +8,7 @@ auth-sensitive endpoints.
 """
 
 import hashlib
+import hmac
 
 from redis.asyncio import Redis
 
@@ -15,7 +16,6 @@ from app.core.settings import settings
 
 _client: Redis | None = None
 _SCOPE_SALT = settings.SECRET_KEY.encode("utf-8")
-_SCOPE_ITERATIONS = 600_000
 
 
 def _get_client() -> Redis | None:
@@ -41,12 +41,13 @@ async def close_client() -> None:
 
 def _scope(key: str) -> str:
     """Derive a deterministic scoped key so no PII (emails/IPs) is written into Redis keys."""
-    return hashlib.pbkdf2_hmac(
-        "sha256",
-        key.encode("utf-8"),
+    # HMAC-SHA256 provides keyed, deterministic pseudonymization without
+    # treating an identifier as a password or invoking password-hashing APIs.
+    return hmac.new(
         _SCOPE_SALT,
-        _SCOPE_ITERATIONS,
-    ).hex()
+        key.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 async def allow(
