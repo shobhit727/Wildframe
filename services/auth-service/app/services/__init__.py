@@ -105,7 +105,7 @@ class AuthService:
     ) -> TokenResponse:
         """Authenticate user and return tokens."""
         # Get user
-        user = await self.user_repo.get_by_email_for_login(request.email)
+        user = await self.user_repo.get_by_email(request.email, include_inactive=True)
 
         if not user:
             logger.warning(f"Login failed: user not found: {request.email}")
