@@ -9,8 +9,8 @@ test.describe('Content Playback (public access)', () => {
 
   test('should load content detail page', async ({ page }) => {
     await page.goto('/watch/1');
-    // The real content detail surface is /watch/[id].
-    await expect(page).toHaveTitle(/Wildframe/i);
+    // Require the actual playback UI; a generic document title must not make a 404 pass.
+    await expect(page.getByText('Starting playback...')).toBeVisible();
   });
 
   test('should load search page', async ({ page }) => {
