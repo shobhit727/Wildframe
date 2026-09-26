@@ -11,6 +11,7 @@ from app.services import (
     BillingError,
     BillingService,
     DuplicatePayoutError,
+    MilestoneAuthorizationError,
     MilestoneKillError,
     TierInvalidError,
 )
@@ -142,18 +143,33 @@ class TestAccruePayout:
 
 
 class TestMilestone:
+    """Branch coverage for release/kill.
+
+    ``release_tranche`` and ``kill_milestone`` are admin-only: they raise
+    ``MilestoneAuthorizationError`` *before* touching the repositories when the
+    caller is missing or not an admin. Every test below therefore supplies an
+    admin caller, so the branch it sets up is the branch that actually runs.
+    (Without one these tests would pass vacuously — ``MilestoneAuthorizationError``
+    subclasses ``BillingError``, so a bare ``pytest.raises(BillingError)`` would
+    swallow the guard and never reach the intended branch.)
+    """
+
+    @staticmethod
+    def _as_admin():
+        return {"caller_id": uuid4(), "caller_is_admin": True}
+
     async def test_release_tranche_missing_milestone(self, service):
         service.milestone_repo.get.return_value = None
 
-        with pytest.raises(BillingError):
-            await service.release_tranche(uuid4(), 1)
+        with pytest.raises(BillingError, match="not found"):
+            await service.release_tranche(uuid4(), 1, **self._as_admin())
 
     async def test_release_tranche_killed_milestone(self, service):
         milestone = MagicMock(status=MilestoneStatus.KILLED)
         service.milestone_repo.get.return_value = milestone
 
         with pytest.raises(MilestoneKillError):
-            await service.release_tranche(uuid4(), 1)
+            await service.release_tranche(uuid4(), 1, **self._as_admin())
 
     async def test_release_tranche_missing_tranche(self, service):
         milestone = MagicMock(status=MilestoneStatus.PENDING)
@@ -162,8 +178,8 @@ class TestMilestone:
             MagicMock(tranche_number=1, status=TrancheStatus.LOCKED)
         ]
 
-        with pytest.raises(BillingError):
-            await service.release_tranche(uuid4(), 2)
+        with pytest.raises(BillingError, match="not found"):
+            await service.release_tranche(uuid4(), 2, **self._as_admin())
 
     async def test_release_tranche_not_locked(self, service):
         milestone = MagicMock(status=MilestoneStatus.PENDING)
@@ -173,7 +189,7 @@ class TestMilestone:
         ]
 
         # RELEASED -> RELEASED is an idempotent no-op (does not raise)
-        tranche = await service.release_tranche(uuid4(), 1)
+        tranche = await service.release_tranche(uuid4(), 1, **self._as_admin())
         assert tranche.status == TrancheStatus.RELEASED
 
     async def test_release_tranche_success_accrues(self, service):
@@ -188,7 +204,7 @@ class TestMilestone:
         service.milestone_repo.get.return_value = milestone
         service.milestone_repo.get_tranches.return_value = [tranche]
 
-        result = await service.release_tranche(milestone.id, 1)
+        result = await service.release_tranche(milestone.id, 1, **self._as_admin())
 
         assert result.status == TrancheStatus.RELEASED
         service.payout_repo.accrue.assert_awaited_once()
@@ -196,8 +212,8 @@ class TestMilestone:
     async def test_kill_milestone_missing(self, service):
         service.milestone_repo.get.return_value = None
 
-        with pytest.raises(BillingError):
-            await service.kill_milestone(uuid4())
+        with pytest.raises(BillingError, match="not found"):
+            await service.kill_milestone(uuid4(), **self._as_admin())
 
     async def test_kill_milestone_reverts_locked_only(self, service):
         milestone = MagicMock(status=MilestoneStatus.PENDING)
@@ -206,11 +222,22 @@ class TestMilestone:
         service.milestone_repo.get.return_value = milestone
         service.milestone_repo.get_tranches.return_value = [locked, released]
 
-        result = await service.kill_milestone(uuid4())
+        result = await service.kill_milestone(uuid4(), **self._as_admin())
 
         assert result.status == MilestoneStatus.KILLED
         assert locked.status == TrancheStatus.REVERTED
         assert released.status == TrancheStatus.RELEASED
+
+    async def test_release_tranche_rejects_a_non_admin_caller(self, service):
+        # The guard is first, so nothing is even read from the repositories.
+        with pytest.raises(MilestoneAuthorizationError, match="admin privileges required"):
+            await service.release_tranche(uuid4(), 1, caller_id=uuid4(), caller_is_admin=False)
+        service.milestone_repo.get.assert_not_awaited()
+
+    async def test_kill_milestone_rejects_a_missing_caller(self, service):
+        with pytest.raises(MilestoneAuthorizationError, match="admin privileges required"):
+            await service.kill_milestone(uuid4())
+        service.milestone_repo.get.assert_not_awaited()
 
 
 class TestCreatorShare:

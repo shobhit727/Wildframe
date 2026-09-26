@@ -6,7 +6,6 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
-from testcontainers.postgres import PostgresContainer
 
 from app.models import (
     Base,
@@ -25,6 +24,8 @@ from app.models import (
 @pytest.fixture
 def session():
     with ExitStack() as stack:
+        from testcontainers.postgres import PostgresContainer  # lazy: keeps collection safe when the dep is absent
+
         url = os.environ.get("TEST_DATABASE_URL")
         if not url:
             postgres = stack.enter_context(PostgresContainer("postgres:15"))

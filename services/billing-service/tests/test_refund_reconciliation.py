@@ -72,6 +72,13 @@ def _make_service():
     return svc
 
 
+def _link_invoice_to_payment_intent(svc, invoice, payment_intent_id="pi_test_123"):
+    purchase = MagicMock(id=uuid4())
+    svc.purchase_repo.get_by_stripe_payment_intent_id = AsyncMock(return_value=purchase)
+    svc.inv_repo.get_by_purchase_id = AsyncMock(return_value=invoice)
+    return payment_intent_id
+
+
 @pytest.mark.asyncio
 async def test_idempotent_duplicate_refund():
     svc = _make_service()
@@ -90,10 +97,12 @@ async def test_partial_refund_applies_to_invoice():
     inv_id = uuid4()
     invoice = MagicMock(id=inv_id, amount=Decimal("10.00"), currency="USD")
     svc.inv_repo.get = AsyncMock(return_value=invoice)
+    payment_intent_id = _link_invoice_to_payment_intent(svc, invoice)
     with patch("app.services.StripeClient.retrieve_refund", side_effect=Exception("not found")):
         with patch("app.services.StripeClient.retrieve_charge", side_effect=Exception("not found")):
             result = await svc.process_refund(
-                "re_partial_1", "ch_1", Decimal("3.00"), "USD", invoice_id=inv_id
+                "re_partial_1", "ch_1", Decimal("3.00"), "USD",
+                invoice_id=inv_id, payment_intent_id=payment_intent_id,
             )
     svc.refund_repo.apply_to_invoice.assert_awaited_once_with(inv_id, Decimal("3.00"))
     assert result.status == RefundStatus.PROCESSED if hasattr(result, "status") else True
@@ -105,13 +114,20 @@ async def test_multiple_refunds_cumulative():
     inv_id = uuid4()
     invoice = MagicMock(id=inv_id, amount=Decimal("10.00"), currency="USD")
     svc.inv_repo.get = AsyncMock(return_value=invoice)
+    payment_intent_id = _link_invoice_to_payment_intent(svc, invoice)
     svc.refund_repo.apply_to_invoice = AsyncMock(return_value=True)
     svc.refund_repo.create = AsyncMock(side_effect=lambda **kwargs: MagicMock(**kwargs))
     with patch("app.services.StripeClient.retrieve_refund", side_effect=Exception("nf")):
         with patch("app.services.StripeClient.retrieve_charge", side_effect=Exception("nf")):
-            r1 = await svc.process_refund("re_1", "ch_1", Decimal("4.00"), "USD", invoice_id=inv_id)
+            r1 = await svc.process_refund(
+                "re_1", "ch_1", Decimal("4.00"), "USD",
+                invoice_id=inv_id, payment_intent_id=payment_intent_id,
+            )
             svc.refund_repo.get_by_refund_id = AsyncMock(return_value=None)
-            r2 = await svc.process_refund("re_2", "ch_1", Decimal("6.00"), "USD", invoice_id=inv_id)
+            r2 = await svc.process_refund(
+                "re_2", "ch_1", Decimal("6.00"), "USD",
+                invoice_id=inv_id, payment_intent_id=payment_intent_id,
+            )
     assert svc.refund_repo.apply_to_invoice.await_count == 2
     assert r1.refund_id == "re_1"
     assert r2.refund_id == "re_2"
@@ -123,12 +139,14 @@ async def test_amount_exceeds_invoice_rejected():
     inv_id = uuid4()
     invoice = MagicMock(id=inv_id, amount=Decimal("5.00"), currency="USD")
     svc.inv_repo.get = AsyncMock(return_value=invoice)
+    payment_intent_id = _link_invoice_to_payment_intent(svc, invoice)
     svc.refund_repo.apply_to_invoice = AsyncMock(return_value=False)
     svc.refund_repo.create = AsyncMock(side_effect=lambda **kwargs: MagicMock(**kwargs))
     with patch("app.services.StripeClient.retrieve_refund", side_effect=Exception("nf")):
         with patch("app.services.StripeClient.retrieve_charge", side_effect=Exception("nf")):
             result = await svc.process_refund(
-                "re_big", "ch_1", Decimal("10.00"), "USD", invoice_id=inv_id
+                "re_big", "ch_1", Decimal("10.00"), "USD",
+                invoice_id=inv_id, payment_intent_id=payment_intent_id,
             )
     assert result.status == RefundStatus.REJECTED
 
@@ -163,6 +181,37 @@ async def test_stripe_lookup_invoice_via_payment_intent():
     svc.inv_repo.get_by_purchase_id.assert_awaited()
     assert result.invoice_id == inv_id
     svc.refund_repo.apply_to_invoice.assert_awaited_once_with(inv_id, Decimal("9.99"))
+
+
+@pytest.mark.asyncio
+async def test_mismatched_metadata_invoice_is_pending_without_mutation():
+    svc = _make_service()
+    authoritative_invoice = MagicMock(
+        id=uuid4(), amount=Decimal("5.00"), currency="USD"
+    )
+    supplied_invoice_id = uuid4()
+    purchase = MagicMock(id=uuid4())
+    svc.purchase_repo.get_by_stripe_payment_intent_id = AsyncMock(return_value=purchase)
+    svc.inv_repo.get_by_purchase_id = AsyncMock(return_value=authoritative_invoice)
+    svc.refund_repo.create = AsyncMock(side_effect=lambda **kwargs: MagicMock(**kwargs))
+    stripe_refund = {
+        "id": "re_wrong_invoice",
+        "amount": 500,
+        "currency": "usd",
+        "charge": "ch_wrong_invoice",
+        "payment_intent": "pi_authoritative",
+    }
+    with patch("app.services.StripeClient.retrieve_refund", return_value=stripe_refund):
+        result = await svc.process_refund(
+            "re_wrong_invoice",
+            "ch_wrong_invoice",
+            Decimal("5.00"),
+            "USD",
+            invoice_id=supplied_invoice_id,
+        )
+    assert result.status == RefundStatus.PENDING_REVIEW
+    assert result.invoice_id is None
+    svc.refund_repo.apply_to_invoice.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -233,11 +282,13 @@ async def test_currency_mismatch_pending_review():
     inv_id = uuid4()
     invoice = MagicMock(id=inv_id, amount=Decimal("10.00"), currency="USD")
     svc.inv_repo.get = AsyncMock(return_value=invoice)
+    payment_intent_id = _link_invoice_to_payment_intent(svc, invoice)
     svc.refund_repo.create = AsyncMock(side_effect=lambda **kwargs: MagicMock(**kwargs))
     with patch("app.services.StripeClient.retrieve_refund", side_effect=Exception("nf")):
         with patch("app.services.StripeClient.retrieve_charge", side_effect=Exception("nf")):
             result = await svc.process_refund(
-                "re_cur_mismatch", "ch_1", Decimal("5.00"), "EUR", invoice_id=inv_id
+                "re_cur_mismatch", "ch_1", Decimal("5.00"), "EUR",
+                invoice_id=inv_id, payment_intent_id=payment_intent_id,
             )
     assert result.status == RefundStatus.PENDING_REVIEW
 

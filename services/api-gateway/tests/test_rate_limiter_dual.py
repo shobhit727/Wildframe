@@ -6,6 +6,20 @@ class FakeRedis:
     def __init__(self):
         self.counts = {}
         self.expires = {}
+        self.leases = {}
+
+    def __await__(self):
+        """Mirror ``redis.asyncio.Redis.__await__``: awaiting the client returns it.
+
+        The real client implements ``__await__`` as
+        ``return self.initialize().__await__()``, so ``await redis.from_url(...)``
+        both initialises and yields the client.
+        """
+
+        async def _identity():
+            return self
+
+        return _identity().__await__()
 
     async def incr(self, key):
         self.counts[key] = self.counts.get(key, 0) + 1
@@ -14,6 +28,20 @@ class FakeRedis:
     async def expire(self, key, window):
         self.expires[key] = window
         return True
+
+    async def eval(self, script, numkeys, key, *args):
+        assert numkeys == 1
+        leases = self.leases.setdefault(key, {})
+        if "ZREMRANGEBYSCORE" in script:
+            lease_id, now, expiry, limit = args
+            leases = {member: exp for member, exp in leases.items() if exp > float(now)}
+            self.leases[key] = leases
+            if len(leases) >= int(limit):
+                return 0
+            leases[lease_id] = float(expiry)
+            return 1
+        lease_id = args[0]
+        return int(leases.pop(lease_id, None) is not None)
 
 
 @pytest.mark.asyncio
@@ -138,9 +166,16 @@ async def test_concurrency_blocks_for_upload():
     limiter.burst_limits["uploads"] = 100
     limiter.concurrency_limits["uploads"] = 2
     ip = "3.3.3.3"
-    assert await limiter.check_rate_limit("uploads", "", ip=ip) is True
-    assert await limiter.check_rate_limit("uploads", "", ip=ip) is True
-    assert await limiter.check_rate_limit("uploads", "", ip=ip) is False
+    allowed1, lease1 = await limiter.acquire_rate_limits(ip, "uploads")
+    allowed2, lease2 = await limiter.acquire_rate_limits(ip, "uploads")
+    allowed3, lease3 = await limiter.acquire_rate_limits(ip, "uploads")
+    assert (allowed1, allowed2, allowed3) == (True, True, False)
+    assert lease1 and lease2 and lease3 is None
+    await limiter.release_rate_limits(lease1, ip, "uploads")
+    allowed4, lease4 = await limiter.acquire_rate_limits(ip, "uploads")
+    assert allowed4 is True
+    await limiter.release_rate_limits(lease2, ip, "uploads")
+    await limiter.release_rate_limits(lease4, ip, "uploads")
 
 
 @pytest.mark.asyncio
@@ -244,12 +279,15 @@ async def test_gateway_uses_both_ip_and_account():
     from unittest.mock import patch
 
     from app.main import app
+    from app.api.gateway_routes import get_optional_user
     import app.main as main
     from fastapi.testclient import TestClient
 
     app.dependency_overrides.clear()
+    app.dependency_overrides[get_optional_user] = lambda: {"sub": "test-user"}
     mock_limiter = MagicMock()
-    mock_limiter.check_rate_limit = AsyncMock(return_value=True)
+    mock_limiter.acquire_rate_limits = AsyncMock(return_value=(True, "lease"))
+    mock_limiter.release_rate_limits = AsyncMock()
     redis_stub = MagicMock()
     redis_stub.ping = AsyncMock(return_value=True)
     shared_mock = MagicMock()
@@ -265,10 +303,10 @@ async def test_gateway_uses_both_ip_and_account():
                 main.rate_limiter = mock_limiter
                 app.state.redis_client = redis_stub
                 client.get("/search/api/v1/items", headers={"Authorization": "Bearer dummy"})
-                assert mock_limiter.check_rate_limit.called
-                _, kwargs = mock_limiter.check_rate_limit.call_args
-                assert "ip" in kwargs
-                assert "account_id" in kwargs
+                assert mock_limiter.acquire_rate_limits.called
+                args, kwargs = mock_limiter.acquire_rate_limits.call_args
+                assert args[0] == "testclient"
+                assert kwargs["account_id"] == "test-user"
                 main.rate_limiter = orig_limiter
 
 
@@ -280,7 +318,8 @@ async def test_gateway_rejects_when_ip_limited():
 
     app.dependency_overrides.clear()
     mock_limiter = MagicMock()
-    mock_limiter.check_rate_limit = AsyncMock(return_value=False)
+    mock_limiter.acquire_rate_limits = AsyncMock(return_value=(False, None))
+    mock_limiter.release_rate_limits = AsyncMock()
     with TestClient(app, base_url="http://test") as client:
         orig_limiter = main.rate_limiter
         main.rate_limiter = mock_limiter
@@ -330,3 +369,307 @@ async def test_upload_finalize_burst():
     assert await limiter.check_rate_limit("uploads", "/complete", ip=ip) is True
     assert await limiter.check_rate_limit("uploads", "/complete", ip=ip) is False
     assert await limiter.check_rate_limit("uploads", "", ip=ip) is True
+
+
+# ---------------------------------------------------------------------------
+# Per-dimension refusals: each of the 9 counters must be able to deny on its own
+# ---------------------------------------------------------------------------
+
+
+class ScriptedRedis:
+    """Redis double whose INCR result can be pinned for individual keys.
+
+    The three dimensions (ip / account / device) all share one limit, so an
+    ordinary counter can never exhaust a downstream dimension before the ip one
+    ahead of it. Scripting the INCR result per key is what makes each
+    dimension's refusal independently observable.
+    """
+
+    def __init__(self, values=None):
+        self.values = dict(values or {})
+        self.touched = []
+        self.leases = {}
+
+    async def incr(self, key):
+        self.touched.append(key)
+        return self.values.get(key, 1)
+
+    async def expire(self, key, window):
+        return True
+
+    async def eval(self, script, numkeys, key, *args):
+        self.touched.append(key)
+        leases = self.leases.setdefault(key, {})
+        if "ZREMRANGEBYSCORE" in script:
+            lease_id, now, expiry, limit = args
+            leases = {member: end for member, end in leases.items() if end > float(now)}
+            self.leases[key] = leases
+            if len(leases) >= int(limit):
+                return 0
+            leases[lease_id] = float(expiry)
+            return 1
+        return int(leases.pop(args[0], None) is not None)
+
+
+def _limiter(redis, fixed=1, burst=100, concurrency=100, service="search"):
+    from app.middleware import RateLimiter
+
+    limiter = RateLimiter(redis)
+    limiter.limits[service] = fixed
+    limiter.burst_limits[service] = burst
+    limiter.concurrency_limits[service] = concurrency
+    return limiter
+
+
+async def test_fixed_window_account_dimension_can_deny_on_its_own():
+    redis = ScriptedRedis({"rate_limit:account:acct:search": 2})
+    limiter = _limiter(redis, fixed=1)
+    assert (
+        await limiter.check_rate_limit(
+            "search", "", ip="1.1.1.1", account_id="acct"
+        )
+        is False
+    )
+    # The ip counter passed, the account counter refused, and nothing further ran.
+    assert redis.touched == [
+        "rate_limit:ip:1.1.1.1:search",
+        "rate_limit:account:acct:search",
+    ]
+
+
+async def test_fixed_window_device_dimension_can_deny_on_its_own():
+    redis = ScriptedRedis({"rate_limit:device:dev-9:search": 2})
+    limiter = _limiter(redis, fixed=1)
+    assert (
+        await limiter.check_rate_limit("search", "", ip="1.1.1.1", device_id="dev-9")
+        is False
+    )
+    assert redis.touched == [
+        "rate_limit:ip:1.1.1.1:search",
+        "rate_limit:device:dev-9:search",
+    ]
+
+
+async def test_burst_account_dimension_can_deny_on_its_own():
+    redis = ScriptedRedis({"rate_limit:burst:account:acct:search": 2})
+    limiter = _limiter(redis, fixed=100, burst=1)
+    assert (
+        await limiter.check_rate_limit(
+            "search", "", ip="1.1.1.1", account_id="acct"
+        )
+        is False
+    )
+    assert redis.touched == [
+        "rate_limit:ip:1.1.1.1:search",
+        "rate_limit:account:acct:search",
+        "rate_limit:burst:ip:1.1.1.1:search",
+        "rate_limit:burst:account:acct:search",
+    ]
+
+
+async def test_burst_device_dimension_can_deny_on_its_own():
+    redis = ScriptedRedis({"rate_limit:burst:device:dev-9:search": 2})
+    limiter = _limiter(redis, fixed=100, burst=1)
+    assert (
+        await limiter.check_rate_limit("search", "", ip="1.1.1.1", device_id="dev-9")
+        is False
+    )
+    assert redis.touched[-1] == "rate_limit:burst:device:dev-9:search"
+
+
+async def test_concurrency_account_dimension_can_deny_on_its_own():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=1)
+    redis.leases["rate_limit:inflight:account:acct:search"] = {"held": float("inf")}
+    allowed, lease_id = await limiter.acquire_rate_limits(
+        "1.1.1.1", "search", account_id="acct"
+    )
+    assert allowed is False
+    assert lease_id is None
+
+
+async def test_concurrency_device_dimension_can_deny_on_its_own():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=1)
+    redis.leases["rate_limit:inflight:device:dev-9:search"] = {"held": float("inf")}
+    allowed, lease_id = await limiter.acquire_rate_limits(
+        "1.1.1.1", "search", device_id="dev-9"
+    )
+    assert allowed is False
+    assert lease_id is None
+
+
+async def test_all_nine_dimensions_passing_admits_the_request():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    assert (
+        await limiter.check_rate_limit(
+            "search", "", ip="1.1.1.1", account_id="acct", device_id="dev-9"
+        )
+        is True
+    )
+    assert len(redis.touched) == 6
+
+
+async def test_check_rate_limits_is_the_public_dual_dimension_entrypoint():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    assert (
+        await limiter.check_rate_limits(
+            ip="1.1.1.1",
+            service="search",
+            path="/api/v1/q",
+            account_id="acct-1",
+            device_id="dev-1",
+        )
+        is True
+    )
+    assert "rate_limit:account:acct-1:search" in redis.touched
+    assert "rate_limit:device:dev-1:search" in redis.touched
+
+
+# ---------------------------------------------------------------------------
+# check_rate_limit: keyword-argument entry points
+# ---------------------------------------------------------------------------
+
+
+async def test_user_id_keyword_is_promoted_to_the_account_dimension():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    assert await limiter.check_rate_limit(user_id="u-1", service="search") is True
+    assert "rate_limit:account:u-1:search" in redis.touched
+    # No ip was supplied, so the ip dimension is keyed on the "unknown" bucket.
+    assert "rate_limit:ip:unknown:search" in redis.touched
+
+
+async def test_service_keyword_supplies_the_service_name():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    assert await limiter.check_rate_limit(ip="2.2.2.2", service="search") is True
+    assert "rate_limit:ip:2.2.2.2:search" in redis.touched
+
+
+async def test_missing_service_with_an_ip_is_a_programming_error():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    with pytest.raises(TypeError, match="service required"):
+        await limiter.check_rate_limit(ip="2.2.2.2")
+
+
+async def test_explicit_path_keyword_is_used_for_dimension_specific_limits():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    limiter.limits["reindex"] = 20
+    assert (
+        await limiter.check_rate_limit("search", "/reindex", ip="3.3.3.3", path="/reindex")
+        is True
+    )
+    assert "rate_limit:ip:3.3.3.3:search" in redis.touched
+
+
+async def test_omitted_path_defaults_to_empty_for_the_dual_dimensions():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    assert await limiter.check_rate_limit("search", ip="3.3.3.3") is True
+    assert "rate_limit:ip:3.3.3.3:search" in redis.touched
+
+
+# ---------------------------------------------------------------------------
+# check_rate_limit: legacy positional (user, service, path) signature
+# ---------------------------------------------------------------------------
+
+
+async def test_legacy_positional_signature_uses_a_user_scoped_key():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    assert await limiter.check_rate_limit("legacy-user", "search") is True
+    # The legacy path checks exactly one key: rate_limit:<user>:<service>.
+    assert redis.touched == ["rate_limit:legacy-user:search"]
+
+
+async def test_legacy_positional_signature_honours_a_third_path_argument():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    assert await limiter.check_rate_limit("legacy-user", "uploads", "/complete") is True
+    assert redis.touched == ["rate_limit:legacy-user:uploads"]
+
+
+async def test_legacy_signature_uses_the_reindex_limit_for_a_reindex_path():
+    redis = FakeRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    limiter.limits["reindex"] = 1
+    # The legacy path applies _get_limit only; bursts are not consulted.
+    assert await limiter.check_rate_limit("legacy-user", "search", "/reindex") is True
+    assert await limiter.check_rate_limit("legacy-user", "search", "/reindex") is False
+    assert "rate_limit:legacy-user:search" in redis.counts
+
+
+async def test_user_id_keyword_takes_the_account_dimension_not_the_legacy_path():
+    """``user_id=`` is indistinguishable from ``account_id=`` at the boundary.
+
+    Because the account dimension is populated before the ip/device dispatch
+    check, passing ``user_id`` selects the *dual* (9-counter) code path, not the
+    legacy single-key path. Pinned because it changes which limits apply.
+    """
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    assert await limiter.check_rate_limit(user_id="kw-user", service="search") is True
+    # Dual path: ip defaults to the "unknown" bucket and the account is counted.
+    assert redis.touched[:2] == [
+        "rate_limit:ip:unknown:search",
+        "rate_limit:account:kw-user:search",
+    ]
+    assert "rate_limit:kw-user:search" not in redis.touched
+
+
+async def test_account_id_keyword_wins_over_a_positional_user_argument():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    assert (
+        await limiter.check_rate_limit("ignored", account_id="acct", service="search")
+        is True
+    )
+    assert redis.touched[:2] == [
+        "rate_limit:ip:unknown:search",
+        "rate_limit:account:acct:search",
+    ]
+
+
+async def test_legacy_signature_service_keyword_is_mixed_with_a_positional_user():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    assert await limiter.check_rate_limit("legacy-user", service="search") is True
+    assert redis.touched == ["rate_limit:legacy-user:search"]
+
+
+async def test_legacy_signature_path_keyword_is_mixed_with_positional_arguments():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    assert (
+        await limiter.check_rate_limit("legacy-user", "search", path="/reindex") is True
+    )
+    assert redis.touched == ["rate_limit:legacy-user:search"]
+
+
+async def test_legacy_signature_without_a_service_admits_the_request():
+    """No dimension can be derived, so there is nothing to enforce."""
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    assert await limiter.check_rate_limit("only-a-user") is True
+    assert redis.touched == []
+
+
+async def test_legacy_signature_with_no_arguments_at_all_admits_the_request():
+    redis = ScriptedRedis()
+    limiter = _limiter(redis, fixed=100, burst=100, concurrency=100)
+    assert await limiter.check_rate_limit() is True
+    assert redis.touched == []
+
+
+async def test_legacy_signature_can_still_be_denied_by_its_own_limit():
+    redis = FakeRedis()
+    limiter = _limiter(redis, fixed=2, burst=100, concurrency=100)
+    assert await limiter.check_rate_limit("legacy-user", "search") is True
+    assert await limiter.check_rate_limit("legacy-user", "search") is True
+    assert await limiter.check_rate_limit("legacy-user", "search") is False
+    assert redis.expires["rate_limit:legacy-user:search"] == 60

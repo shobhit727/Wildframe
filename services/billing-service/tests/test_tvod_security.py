@@ -4,8 +4,7 @@ from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from jose import jwt
-from tests._test_jwks import PRIVATE_PEM
+from tests._auth_tokens import mint_access_token
 
 from app.api.webhook_routes import _handle_checkout_session_completed
 from app.core.settings import settings
@@ -13,16 +12,9 @@ from app.main import create_app
 from app.services import BillingError
 
 
-def _token(user_id):
-    payload = {
-        "sub": str(user_id),
-        "user_id": str(user_id),
-        "role": "user",
-        "type": "access",
-        "aud": settings.JWT_AUDIENCE,
-        "iss": settings.JWT_ISSUER,
-    }
-    return jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
+def _token(user_id, role="user", **overrides):
+    """A realistic auth-service access token (full claim set, RS256, `av`)."""
+    return mint_access_token(user_id, role, **overrides)
 
 
 def _session_event(

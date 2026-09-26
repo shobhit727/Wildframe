@@ -259,3 +259,84 @@ class TestChangePasswordEdgeCases:
         )
 
         assert response.status_code == 422
+
+
+# ==========================================================================
+# validate_password_strength — the NIST-style rules
+#
+# These raises are unreachable through the request schemas (Pydantic's
+# min_length / field validator run first for the length and type rules), so the
+# shared helper is asserted directly.
+# ==========================================================================
+
+
+class TestValidatePasswordStrength:
+    def test_shorter_than_twelve_characters_is_rejected(self):
+        from app.schemas import validate_password_strength
+
+        with pytest.raises(ValueError, match="at least 12 characters"):
+            validate_password_strength("Sh0rt!")
+
+    def test_single_character_class_is_rejected(self):
+        from app.schemas import validate_password_strength
+
+        with pytest.raises(ValueError, match="at least two character types"):
+            validate_password_strength("alllowercaseletters")
+
+    def test_digits_only_is_rejected(self):
+        from app.schemas import validate_password_strength
+
+        with pytest.raises(ValueError, match="at least two character types"):
+            validate_password_strength("123456789012")
+
+    def test_two_character_classes_are_enough(self):
+        from app.schemas import validate_password_strength
+
+        assert validate_password_strength("correct-horse-battery-staple") == (
+            "correct-horse-battery-staple"
+        )
+        assert validate_password_strength("lowercaseonly123") == "lowercaseonly123"
+
+    def test_breach_list_password_is_rejected(self):
+        from app.schemas import validate_password_strength
+
+        with pytest.raises(ValueError, match="too common"):
+            validate_password_strength("Password1234")
+
+    def test_breach_list_check_is_case_insensitive(self):
+        from app.schemas import validate_password_strength
+
+        with pytest.raises(ValueError, match="too common"):
+            validate_password_strength("PASSWORD12345")
+
+    def test_strong_passphrase_with_symbols_passes(self):
+        from app.schemas import validate_password_strength
+
+        assert validate_password_strength("Tr0ub4dor&3!xKcd") == "Tr0ub4dor&3!xKcd"
+
+    def test_registration_schema_enforces_the_same_rules(self):
+        from app.schemas import UserRegisterRequest
+
+        with pytest.raises(ValueError):
+            UserRegisterRequest(email="a@example.com", password="short")
+
+        with pytest.raises(ValueError):
+            UserRegisterRequest(email="a@example.com", password="Password1234")
+
+        ok = UserRegisterRequest(
+            email="a@example.com", password="correct-horse-battery-staple"
+        )
+        assert ok.password == "correct-horse-battery-staple"
+
+    def test_change_password_schema_enforces_the_same_rules(self):
+        from app.schemas import ChangePasswordRequest
+
+        with pytest.raises(ValueError, match="too common"):
+            ChangePasswordRequest(
+                current_password="Whatever123!", new_password="qwerty123456"
+            )
+
+        ok = ChangePasswordRequest(
+            current_password="Whatever123!", new_password="a-long-enough-passphrase"
+        )
+        assert ok.new_password == "a-long-enough-passphrase"
