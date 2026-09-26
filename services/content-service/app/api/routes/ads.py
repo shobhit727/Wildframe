@@ -14,18 +14,23 @@ router = APIRouter(prefix="/ads", tags=["ads"])
 
 
 class AdConfigRequest(BaseModel):
-    """API input model; SQLAlchemy ORM classes must never be used as request schemas."""
+    """Validated API input corresponding to the AdConfig persistence model."""
 
-    name: str = Field(..., min_length=1, max_length=255)
-    enabled: bool = False
-    # Keep the API body aligned with the persisted ad configuration fields.
-    config: dict = Field(default_factory=dict)
+    content_id: UUID
+    consent_gated: bool = True
+    minor_safe: bool = True
+    tcf_required: bool = True
 
 
 @router.post("", status_code=201)
 async def create_ad(request: AdConfigRequest, db: Annotated[AsyncSession, Depends(get_db)]) -> dict:
     """Create an ad configuration from validated API data."""
-    ad = AdConfig(name=request.name, enabled=request.enabled, config=request.config)
+    ad = AdConfig(
+        content_id=request.content_id,
+        consent_gated=request.consent_gated,
+        minor_safe=request.minor_safe,
+        tcf_required=request.tcf_required,
+    )
     db.add(ad)
     await db.flush()
     await db.commit()
