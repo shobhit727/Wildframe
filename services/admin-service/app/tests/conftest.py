@@ -1,0 +1,72 @@
+"""Pytest configuration and fixtures with testcontainers for integration tests."""
+
+import asyncio
+
+import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from testcontainers.postgres import PostgresContainer  # type: ignore[import-untyped]
+
+# Start PostgreSQL container for integration tests
+postgres = PostgresContainer("postgres:15-alpine")
+postgres.start()
+
+# Override DATABASE_URL for tests
+DATABASE_URL = postgres.get_connection_url().replace("psycopg2", "asyncpg")
+
+engine = create_async_engine(DATABASE_URL, echo=False, future=True)
+async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.fixture(scope="session")
+def event_loop():
+    """Event loop fixture."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def create_tables():
+    """Create the application schema once per session."""
+
+    async def _create_all():
+        from app.models.admin import Base
+
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_create_all())
+
+
+@pytest_asyncio.fixture
+async def db():
+    """Database session fixture with transaction rollback."""
+    async with async_session() as session:
+        yield session
+        await session.rollback()
+
+
+@pytest_asyncio.fixture
+async def db_session():
+    """Database session fixture (alias used by integration tests)."""
+    async with async_session() as session:
+        yield session
+        await session.rollback()
+
+
+@pytest_asyncio.fixture
+async def db_with_commit():
+    """Database session fixture that commits (for setup)."""
+    async with async_session() as session:
+        yield session
+        await session.commit()
+
+
+# Cleanup
+def pytest_sessionfinish(session, exitstatus):
+    postgres.stop()
