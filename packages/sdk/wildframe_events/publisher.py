@@ -167,7 +167,7 @@ class KafkaEventPublisher(EventPublisher):
                 ctx = ssl.create_default_context(cafile=env_ca)
                 self.ssl_context = ctx
             elif self.security_protocol in ("SSL", "SASL_SSL"):
-                insecure = os.getenv("KAFKA_SSL_INSECURE", "true").lower() not in (
+                insecure = os.getenv("KAFKA_SSL_INSECURE", "false").lower() not in (
                     "false",
                     "0",
                     "no",
