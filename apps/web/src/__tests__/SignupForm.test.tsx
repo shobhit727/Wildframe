@@ -29,10 +29,10 @@ describe('SignupForm', () => {
     fireEvent.change(screen.getByPlaceholderText('John'), { target: { value: 'Ada' } });
     fireEvent.change(screen.getByPlaceholderText('Doe'), { target: { value: 'Lovelace' } });
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'ada@x.io' } });
-    fireEvent.change(screen.getByPlaceholderText('Create a password'), { target: { value: 'secret1' } });
+    fireEvent.change(screen.getByPlaceholderText('Create a password'), { target: { value: 'secret' } });
     fireEvent.submit(screen.getByRole("button", { name: "Sign Up" }).closest("form")!);
 
-    await waitFor(() => expect(register).toHaveBeenCalledWith('ada@x.io', 'secret1', 'Ada', 'Lovelace'));
+    await waitFor(() => expect(register).toHaveBeenCalledWith('ada@x.io', 'secret', 'Ada', 'Lovelace'));
     await waitFor(() => expect(push).toHaveBeenCalledWith('/browse'));
   });
 
@@ -41,11 +41,11 @@ describe('SignupForm', () => {
     render(<SignupForm />);
 
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'ada@x.io' } });
-    fireEvent.change(screen.getByPlaceholderText('Create a password'), { target: { value: 'secret1' } });
+    fireEvent.change(screen.getByPlaceholderText('Create a password'), { target: { value: 'secret' } });
     fireEvent.submit(screen.getByRole("button", { name: "Sign Up" }).closest("form")!);
 
     await waitFor(() =>
-      expect(screen.getByText(/duplicate/i)).toBeInTheDocument(),
+      expect(screen.getByText(/could not create the account|already exists/i)).toBeInTheDocument(),
     );
     expect(push).not.toHaveBeenCalled();
   });
