@@ -16,6 +16,8 @@ running it on a machine without containers is harmless.
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import os
 import threading
