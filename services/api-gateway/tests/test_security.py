@@ -131,7 +131,7 @@ async def test_verify_token_rejects_a_malformed_authorization_header(auth):
     assert await auth.verify_token(_request(headers={"authorization": "Bearer"})) is None
 
 
-async def test_verify_token_rejects_a_token_signed_with_another_key(auth):
+async def test_verify_token_rejects_an_hs256_token(auth):
     forged = jwt.encode(
         {
             "sub": "attacker",
@@ -149,14 +149,32 @@ async def test_verify_token_rejects_a_token_signed_with_another_key(auth):
 
 
 async def test_verify_token_rejects_an_expired_token(auth):
-    expired = jwt.encode({"sub": "user-1", "exp": int(time.time()) - 60}, SECRET, algorithm="HS256")
-    assert await auth.verify_token(_request(headers={"authorization": f"Bearer {expired}"})) is None
+    expired = _token(exp=int(time.time()) - 60, iat=int(time.time()) - 600)
+    assert await auth.verify_token(
+        _request(headers={"authorization": f"Bearer {expired}"})
+    ) is None
 
 
 async def test_verify_token_requires_an_expiry_claim(auth):
     """Expiry is mandatory even at this transparent-proxy boundary."""
-    no_exp = jwt.encode({"sub": "user-1"}, SECRET, algorithm="HS256")
-    assert await auth.verify_token(_request(headers={"authorization": f"Bearer {no_exp}"})) is None
+    assert _SIGNING_KEY_PEM is not None
+    no_exp_payload = {
+        "sub": "user-1",
+        "user_id": "user-1",
+        "iat": int(time.time()) - 1,
+        "iss": ISSUER,
+        "aud": AUDIENCE,
+        "type": "access",
+    }
+    no_exp = jwt.encode(
+        no_exp_payload,
+        _SIGNING_KEY_PEM,
+        algorithm="RS256",
+        headers={"kid": "test-k1"},
+    )
+    assert await auth.verify_token(
+        _request(headers={"authorization": f"Bearer {no_exp}"})
+    ) is None
 
 
 async def test_verify_token_rejects_audience_mismatch(auth):
