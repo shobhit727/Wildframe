@@ -9,7 +9,7 @@ Perfect for building SaaS products, landing pages, and web applications.
 ## ⚡ Quick Start (2 minutes)
 
 ```bash
-cd /home/phoenix/Desktop/wildframe/apps/web
+cd ./apps/web
 
 # Install dependencies
 npm install
@@ -46,7 +46,7 @@ Container    - Content wrapper
 - ✅ Fully responsive (mobile, tablet, desktop)
 - ✅ Tailwind CSS styling
 - ✅ TypeScript support
-- ✅ Next.js 15 App Router
+- ✅ Next.js 16 App Router
 - ✅ Production-ready
 - ✅ Zero config needed
 
@@ -301,3 +301,10 @@ npm run dev
 Then edit `src/app/page.tsx` to make it yours!
 
 **Happy building!** 🎉
+
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408a` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
