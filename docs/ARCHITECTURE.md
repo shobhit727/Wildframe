@@ -724,21 +724,21 @@ Unique identifier tracking a request through all services and all logs, enabling
 
 ## CI/CD Pipeline
 
-The CI pipeline (GitHub Actions) runs **54 jobs** on every push to main:
+The CI pipeline is defined as 15 GitHub Actions jobs (matrix jobs can expand into multiple executions) on pushes to `main`/`develop` and pull requests targeting `main`:
 
 | Stage | Jobs | Tools |
 |---|---|---|
-| Lint | 1 (Backend) + 1 (Frontend) | ruff, black, mypy, ESLint, Prettier |
-| Unit Tests | 16 (15 services + SDK) | pytest, Vitest |
-| Integration | 1 | pytest + httpx |
-| Contract | 1 | pytest |
-| Frontend E2E | 1 | Playwright |
-| Build | 17 (16 services + frontend) | Docker |
-| Security | 1 | Trivy |
-| Helm | 1 | helm lint |
-| Deploy | 2 | skipped (no AWS creds) |
+| Lint | backend + frontend | ruff, black, mypy, ESLint |
+| Tests | backend matrix + SDK + route contract + frontend + E2E | pytest, Vitest, Playwright |
+| Docker smoke | 2 | Docker builds/smoke checks |
+| Security | 1 | Trivy + supply-chain guard |
+| Helm | 1 | helm lint + render checks |
+| Build/deploy | image builds + staging/production deployment jobs | Docker, Helm, Kubernetes |
 
-**Total time**: ~15-20 minutes
+
+
+
+The exact runtime varies with matrix expansion and GitHub-hosted runner availability.
 
 ---
 
