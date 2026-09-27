@@ -731,6 +731,38 @@ class TestConcurrencyLocks:
 
 class TestAuditLogs:
     @pytest.mark.asyncio
+    async def test_get_audit_logs_returns_recent_entries_and_clamps_pagination(self, admin_service):
+        mock_logs = [
+            MagicMock(
+                id=2,
+                admin_id="admin2",
+                action="newer",
+                resource_type="alert",
+                resource_id="2",
+                changes=None,
+                ip_address="192.168.1.2",
+                created_at="2026-05-21",
+            ),
+            MagicMock(
+                id=1,
+                admin_id="admin1",
+                action="older",
+                resource_type="user",
+                resource_id="1",
+                changes=None,
+                ip_address="192.168.1.1",
+                created_at="2026-05-20",
+            ),
+        ]
+        admin_service.audit_repo.list_recent = AsyncMock(return_value=mock_logs)
+
+        result = await admin_service.get_audit_logs(limit=50, offset=-3)
+
+        admin_service.audit_repo.list_recent.assert_awaited_once_with(50, 0)
+        assert [row["action"] for row in result] == ["newer", "older"]
+        assert result[0]["admin_id"] == "admin2"
+
+    @pytest.mark.asyncio
     async def test_get_audit_logs_by_admin(self, admin_service):
         mock_logs = [
             MagicMock(
