@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from jose import jwt
 
 from app.api.routes.admin import verify_admin_reauth, _stepup_jti_seen
-from app.core.settings import settings
+from app.core.settings import settings\n\n\n@pytest.fixture(autouse=True)\ndef _mock_jwks_verifier(monkeypatch):\n    """Unit-test authorization claims without depending on key material."""\n    monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")\n    monkeypatch.setattr(\n        "app.api.routes.admin.verify_token",\n        lambda token, *args, **kwargs: jwt.get_unverified_claims(token),\n    )
 
 
 def _mint_step_up(
@@ -40,7 +40,7 @@ def _mint_step_up(
         "av": 0,
         "jti": jti or f"stepup_{sub}_{now.timestamp()}_{uuid.uuid4().hex[:4]}",
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(payload, "unit-test-signing-key", algorithm=settings.JWT_ALGORITHM)
 
 
 def _mint_access(sub, exp_offset=300):
@@ -191,7 +191,7 @@ async def test_missing_jti():
         "arv": settings.ADMIN_ROLE_VERSION,
         "av": 0,
     }
-    token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    token = jwt.encode(payload, "unit-test-signing-key", algorithm=settings.JWT_ALGORITHM)
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, token)
     assert exc.value.status_code == 401
