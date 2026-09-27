@@ -54,6 +54,7 @@ isort = "^5.12.0"
 mypy = "^1.7.0"
 faker = "^20.0.0"
 testcontainers = "^3.7.0"
+psycopg2-binary = "^2.9.9"
 httpx = "^0.25.0"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
 wildframe-compliance = {path = "../../packages/sdk/wildframe_compliance", develop = true}
