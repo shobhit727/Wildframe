@@ -47,7 +47,7 @@ Development TLS certificates are **never committed**. Generate them locally:
 
 ```bash
 bash scripts/generate-dev-certs.sh
-# verifies: apps/web/certificates/localhost.pem and localhost-key.pem exist, SANs DNS:localhost,IP:127.0.0.1,IP:::1,IP:192.168.1.14, perms 644
+# verifies: apps/web/certificates/localhost.pem and localhost-key.pem exist, SANs DNS:localhost,IP:127.0.0.1,IP:::1,IP:the host LAN address, perms 644
 ```
 
 The generator is idempotent — re-run after deleting the files to rotate.
@@ -281,3 +281,9 @@ docker compose -f deployments/docker-compose.dev.yml down -v
 - [SERVICE_ARCHITECTURE_PATTERN.md](SERVICE_ARCHITECTURE_PATTERN.md) — Patterns every service follows
 - [FRONTEND_ARCHITECTURE.md](FRONTEND_ARCHITECTURE.md) — Frontend structure and conventions
 - [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) — Promote to staging/production
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408a0` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
