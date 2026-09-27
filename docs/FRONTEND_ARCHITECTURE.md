@@ -2,7 +2,7 @@
 
 The Wildframe web app is a Next.js 15 application using the App Router, TypeScript, TailwindCSS, and a small set of opinionated client libraries.
 
-**Last Updated**: September 7, 2026
+**Last Updated**: September 27, 2026
 **Stack**: Next.js 15 · React 19 · TypeScript 5 · TailwindCSS 4 · TanStack Query · Zustand · Axios
 
 ---
@@ -328,9 +328,3 @@ Coverage target: 70%+ on `src/components/` and `src/hooks/`.
 - [SERVICE_ARCHITECTURE_PATTERN.md](SERVICE_ARCHITECTURE_PATTERN.md) — Backend layout this UI talks to
 - [API_DOCUMENTATION.md](API_DOCUMENTATION.md) — Endpoints consumed by `src/api/`
 - [DEVELOPMENT.md](DEVELOPMENT.md) — Day-to-day dev workflow
-
----
-
-## Documentation verification — 2026-09-27
-
-Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
