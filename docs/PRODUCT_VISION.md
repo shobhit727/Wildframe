@@ -259,3 +259,10 @@ Strongly typed, useful comments, no duplication, no massive classes/functions,
 loose coupling, SOLID, testable, production-ready. Public functions documented.
 Modules own one responsibility. **Never optimize for writing less code or moving
 quickly. Optimize for software that operates in production.**
+
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
