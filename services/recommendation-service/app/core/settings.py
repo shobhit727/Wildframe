@@ -50,6 +50,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     KAFKA_CONSUMER_GROUP: str = "recommendation-service"
     JWT_SECRET_KEY: str | None = None
     JWT_ALGORITHM: str = "HS256"
+    JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
     JWT_EXPIRATION_MINUTES: int = 15

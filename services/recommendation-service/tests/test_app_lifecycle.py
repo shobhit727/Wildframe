@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+import wildframe_auth
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from jose import jwt
@@ -31,6 +32,22 @@ from app.core.settings import settings
 from app.main import create_app
 from app.repositories import RecommendationRepository, UserPreferencesRepository
 from app.services import RecommendationService
+from tests._test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
+
+
+class _Endpoint:
+    """The auth service's JWKS endpoint, as the routes see it."""
+
+    def __init__(self) -> None:
+        self.jwks = JWKS
+        self.raises: Exception | None = None
+
+    async def fetch(self, url: str):
+        if self.raises is not None:
+            raise self.raises
+        return self.jwks
+
 
 # ----------------------------------------------------------------------
 # Fakes / helpers
@@ -108,6 +125,11 @@ def _path_request(user_id: str) -> Request:
 
 
 def _access_token(**claims) -> str:
+    """Mint a real RS256 access token signed by the test JWKS key.
+
+    Signed with RS256 over the in-memory RSA key from ``tests/_test_jwks.py``,
+    because the service no longer accepts a shared-secret HS256 token at all.
+    """
     import time
 
     base = {
@@ -115,15 +137,27 @@ def _access_token(**claims) -> str:
         "type": "access",
         "aud": settings.JWT_AUDIENCE,
         "iss": settings.JWT_ISSUER,
+        "av": 0,
         "iat": int(time.time()),
         "exp": int(time.time()) + 900,
     }
     base.update(claims)
     return jwt.encode(
         {k: v for k, v in base.items() if v is not None},
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
+        PRIVATE_PEM,
+        algorithm="RS256",
+        headers={"kid": "k1"},
     )
+
+
+@pytest.fixture(autouse=True)
+def _stub_jwks_endpoint(monkeypatch):
+    """Serve the test JWKS and clear the SDK cache around every test."""
+    ep = _Endpoint()
+    monkeypatch.setattr(wildframe_auth.verifier, "fetch_jwks", ep.fetch)
+    clear_jwks_cache()
+    yield ep
+    clear_jwks_cache()
 
 
 # ----------------------------------------------------------------------
@@ -662,14 +696,44 @@ class TestGetCurrentUserId:
         assert resolved == user_id
 
     @pytest.mark.asyncio
-    async def test_user_id_claim_is_accepted_as_a_fallback(self):
+    async def test_a_token_carrying_only_user_id_is_refused(self):
+        """The shared verifier requires ``sub``; the old ``user_id`` fallback is unreachable.
+
+        Under the deleted HS256 path a token carrying only ``user_id`` was
+        accepted and ``sub or user_id`` supplied the identity. The SDK verifier
+        requires ``sub`` as a claim, so such a token is now rejected outright
+        rather than silently reinterpreting a different claim as the identity.
+        """
+        from fastapi import HTTPException
+
+        token = _access_token(sub=None, user_id=str(uuid4()))
+
+        with pytest.raises(HTTPException) as excinfo:
+            await get_current_user_id(f"Bearer {token}")
+
+        assert excinfo.value.status_code == 401
+        assert excinfo.value.detail == "Invalid token"
+
+    @pytest.mark.asyncio
+    async def test_the_user_id_fallback_still_resolves_when_the_verifier_allows_it(
+        self, monkeypatch
+    ):
+        """The ``sub or user_id`` branch is retained, so it stays covered.
+
+        Unreachable through the real verifier, so the decode is stubbed. Deleting
+        the branch instead would be a second, unrelated change; keeping it
+        covered means a future refactor cannot silently drop the fallback.
+        """
+        import app.api.recommendation_routes as routes
+
         user_id = uuid4()
 
-        resolved = await get_current_user_id(
-            f"Bearer {_access_token(sub=None, user_id=str(user_id))}"
-        )
+        async def _stub(token: str) -> dict:
+            return {"user_id": str(user_id)}
 
-        assert resolved == user_id
+        monkeypatch.setattr(routes, "_decode_token", _stub)
+
+        assert await get_current_user_id("Bearer anything") == user_id
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("header", [None, "", "Basic abc", "bearer-not", "Token x"])
@@ -684,6 +748,12 @@ class TestGetCurrentUserId:
 
     @pytest.mark.asyncio
     async def test_refresh_token_is_rejected_as_an_access_token(self):
+        """Token-type separation (#221), now enforced inside the shared verifier.
+
+        The message is the generic one rather than the old "Invalid token type":
+        the rejection happens during verification, so there is no longer a
+        hand-written ``type`` check reporting its own detail.
+        """
         from fastapi import HTTPException
 
         token = _access_token(type="refresh")
@@ -692,7 +762,7 @@ class TestGetCurrentUserId:
             await get_current_user_id(f"Bearer {token}")
 
         assert excinfo.value.status_code == 401
-        assert excinfo.value.detail == "Invalid token type"
+        assert excinfo.value.detail == "Invalid token"
 
     @pytest.mark.asyncio
     async def test_token_without_a_type_claim_is_rejected(self):
@@ -704,7 +774,7 @@ class TestGetCurrentUserId:
             await get_current_user_id(f"Bearer {token}")
 
         assert excinfo.value.status_code == 401
-        assert excinfo.value.detail == "Invalid token type"
+        assert excinfo.value.detail == "Invalid token"
 
     @pytest.mark.asyncio
     async def test_undecodable_token_is_401(self):
@@ -717,19 +787,29 @@ class TestGetCurrentUserId:
         assert excinfo.value.detail == "Invalid token"
 
     @pytest.mark.asyncio
-    async def test_token_signed_with_another_secret_is_401(self):
+    async def test_token_signed_by_another_key_is_401(self):
+        """An RS256 token from an RSA key that is not in the JWKS is refused."""
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
         from fastapi import HTTPException
 
+        intruder = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         token = jwt.encode(
             {
                 "sub": str(uuid4()),
                 "type": "access",
                 "aud": settings.JWT_AUDIENCE,
                 "iss": settings.JWT_ISSUER,
+                "av": 0,
                 "exp": 9999999999,
             },
-            "a-totally-different-signing-secret-value",
-            algorithm=settings.JWT_ALGORITHM,
+            intruder.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            ).decode(),
+            algorithm="RS256",
+            headers={"kid": "k1"},
         )
 
         with pytest.raises(HTTPException) as excinfo:
@@ -739,13 +819,19 @@ class TestGetCurrentUserId:
 
     @pytest.mark.asyncio
     async def test_token_without_a_subject_is_401(self):
+        """``sub`` is a required claim, so this is refused during verification.
+
+        It used to surface as "Invalid token subject" from the hand-written
+        fallback; the SDK verifier requires ``sub``, so the token is now
+        rejected at the signature boundary with the generic message.
+        """
         from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as excinfo:
             await get_current_user_id(f"Bearer {_access_token(sub=None)}")
 
         assert excinfo.value.status_code == 401
-        assert excinfo.value.detail == "Invalid token subject"
+        assert excinfo.value.detail == "Invalid token"
 
     @pytest.mark.asyncio
     async def test_non_uuid_subject_is_401(self):
