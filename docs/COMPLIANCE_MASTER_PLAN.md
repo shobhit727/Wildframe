@@ -185,9 +185,3 @@
 **Total:** 25 issues, 29 agents, 5 validated plans (`tmp/plan.json`, `tmp/plan-710.json`, `tmp/plan-711.json`, `tmp/plan-batchA.json`, `tmp/plan-batchB.json`, `tmp/plan-batchC.json`), 60+ files, zero parallel write conflicts.
 
 **No further action — all issues closed per oldest→newest, docs updated.**
-
----
-
-## Documentation verification — 2026-09-27
-
-Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
