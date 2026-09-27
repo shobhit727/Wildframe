@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -72,26 +72,6 @@ class ContentViewEventRepository:
         await self.session.flush()
         return event
 
-    async def get_by_content(self, content_id: UUID, limit: int = 100) -> list[ContentViewEvent]:
-        stmt = (
-            select(ContentViewEvent)
-            .where(ContentViewEvent.content_id == content_id)
-            .order_by(ContentViewEvent.created_at.desc(), ContentViewEvent.id.desc())
-            .limit(limit)
-        )
-        result = await self.session.execute(stmt)
-        return list(result.scalars().all())
-
-    async def get_by_viewer(self, viewer_id: UUID, limit: int = 100) -> list[ContentViewEvent]:
-        stmt = (
-            select(ContentViewEvent)
-            .where(ContentViewEvent.viewer_id == viewer_id)
-            .order_by(ContentViewEvent.created_at.desc(), ContentViewEvent.id.desc())
-            .limit(limit)
-        )
-        result = await self.session.execute(stmt)
-        return list(result.scalars().all())
-
 
 class CreatorAnalyticsSnapshotRepository:
     def __init__(self, session: AsyncSession):
@@ -134,48 +114,10 @@ class CreatorAnalyticsSnapshotRepository:
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
-    async def get_for_creator_in_range(
-        self, creator_id: UUID, period_start: datetime, period_end: datetime
-    ) -> list[CreatorAnalyticsSnapshot]:
-        stmt = (
-            select(CreatorAnalyticsSnapshot)
-            .where(
-                and_(
-                    CreatorAnalyticsSnapshot.creator_id == creator_id,
-                    CreatorAnalyticsSnapshot.period_start >= period_start,
-                    CreatorAnalyticsSnapshot.period_end <= period_end,
-                )
-            )
-            .order_by(CreatorAnalyticsSnapshot.period_start, CreatorAnalyticsSnapshot.id)
-        )
-        result = await self.session.execute(stmt)
-        return list(result.scalars().all())
-
 
 class ContentPerformanceMetricsRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
-
-    async def create(
-        self,
-        content_id: UUID,
-        views_7d: int = 0,
-        views_30d: int = 0,
-        avg_completion_pct: float = 0.0,
-        revenue_7d: float = 0.0,
-        revenue_30d: float = 0.0,
-    ) -> ContentPerformanceMetrics:
-        metrics = ContentPerformanceMetrics(
-            content_id=content_id,
-            views_7d=views_7d,
-            views_30d=views_30d,
-            avg_completion_pct=avg_completion_pct,
-            revenue_7d=revenue_7d,
-            revenue_30d=revenue_30d,
-        )
-        self.session.add(metrics)
-        await self.session.flush()
-        return metrics
 
     async def get_by_content(self, content_id: UUID) -> ContentPerformanceMetrics | None:
         stmt = select(ContentPerformanceMetrics).where(

@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
 
+from app.api import moderation_routes
 from app.api.moderation_routes import get_moderation_service
 from app.core.settings import settings
 from app.main import app
@@ -33,6 +34,24 @@ def make_token(*, sub: str, role: str, token_type: str = "access", arv: int = 0)
         settings.JWT_SECRET_KEY,
         algorithm=settings.JWT_ALGORITHM,
     )
+
+
+CREATOR = uuid4()
+
+
+@pytest.fixture(autouse=True)
+def stub_content_owner(monkeypatch):
+    """Resolve content ownership from a stub, not a live content-service.
+
+    The flag route derives the strike target server-side; a reporter-supplied
+    creator is no longer accepted, so the HTTP tests must supply the lookup.
+    """
+
+    async def _resolve(_content_id):
+        return CREATOR
+
+    monkeypatch.setattr(moderation_routes, "resolve_content_owner", _resolve)
+    return CREATOR
 
 
 ADMIN = make_token(sub=str(uuid4()), role="admin")
@@ -197,6 +216,33 @@ class TestFlagContent:
         )
 
         assert service.flag_content.await_args.kwargs["reporter_id"] != forged_id
+
+    def test_strike_target_comes_from_content_service_not_the_body(
+        self, client, service, stub_content_owner
+    ):
+        """A reporter must not be able to aim a strike at a creator of their choice.
+
+        The strike (and the automatic suspension behind it) is issued against the
+        creator that content-service says owns the content, so a body field
+        naming another creator is ignored.
+        """
+        app.dependency_overrides[get_moderation_service] = override(service)
+        attacker_chosen = str(uuid4())
+
+        response = client.post(
+            "/api/v1/moderation/flags",
+            headers={"Authorization": f"Bearer {USER}"},
+            json={
+                "content_id": str(uuid4()),
+                "flag_reason": "copyright",
+                "content_creator_id": attacker_chosen,
+            },
+        )
+
+        assert response.status_code == 201
+        resolved = service.flag_content.await_args.kwargs["content_creator_id"]
+        assert resolved == stub_content_owner
+        assert str(resolved) != attacker_chosen
 
 
 class TestQueue:

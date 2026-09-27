@@ -50,8 +50,6 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     # Signed playback URLs (#489, #491)
     PLAYBACK_URL_SIGNING_SECRET: str = "dev-playback-signing-secret-change-in-production"
     PLAYBACK_URL_TTL_SECONDS: int = 3600
-    # Entitlement check (#587)
-    ENTITLEMENT_CHECK_ENABLED: bool = True
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

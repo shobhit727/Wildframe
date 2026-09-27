@@ -31,9 +31,6 @@ def reset_catalog_client():
     import app.services as services_module
 
     original = services_module._catalog_client
-    original_class = services_module._catalog_client_class
     services_module._catalog_client = None
-    services_module._catalog_client_class = None
     yield
     services_module._catalog_client = original
-    services_module._catalog_client_class = original_class

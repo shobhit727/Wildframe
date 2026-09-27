@@ -154,6 +154,7 @@ class ContentRepository(BaseRepository):
         is_premium: bool = False,
         can_download: bool = True,
         can_stream: bool = True,
+        price_usd: float | None = None,
         genres: list[Genre] | None = None,
     ) -> Content:
         """Create a new content."""
@@ -174,6 +175,7 @@ class ContentRepository(BaseRepository):
             is_premium=is_premium,
             can_download=can_download,
             can_stream=can_stream,
+            price_usd=price_usd,
             genres=genres or [],
         )
         self.session.add(content)

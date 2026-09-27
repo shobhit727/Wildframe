@@ -314,37 +314,44 @@ async def get_my_ledger(
     stmt = select(PayoutLedger).where(PayoutLedger.creator_id == acct.id)
     result = await service.ledger_repo.session.execute(stmt)
     rows = result.scalars().all()
-    return [
-        PayoutLedgerResponse(
-            id=r.id,
-            creator_id=r.creator_id,
-            idempotency_key=r.idempotency_key,
-            period_start=r.period_start,
-            period_end=r.period_end,
-            view_minutes=r.view_minutes,
-            floor_cents=r.floor_cents,
-            pool_topup_cents=r.pool_topup_cents,
-            share_cents=r.share_cents,
-            stripe_fee_cents=r.stripe_fee_cents,
-            net_cents=r.net_cents,
-            stripe_transfer_id=r.stripe_transfer_id,
-            status=r.status,
-            created_at=r.created_at,
-        )
-        for r in rows
-    ]
+    return [_to_payout_response(r) for r in rows]
+
+
+def _to_payout_response(r) -> PayoutLedgerResponse:
+    return PayoutLedgerResponse(
+        id=r.id,
+        creator_id=r.creator_id,
+        idempotency_key=r.idempotency_key,
+        period_start=r.period_start,
+        period_end=r.period_end,
+        view_minutes=r.view_minutes,
+        floor_cents=r.floor_cents,
+        pool_topup_cents=r.pool_topup_cents,
+        share_cents=r.share_cents,
+        stripe_fee_cents=r.stripe_fee_cents,
+        net_cents=r.net_cents,
+        stripe_transfer_id=r.stripe_transfer_id,
+        status=r.status,
+        created_at=r.created_at,
+    )
 
 
 # ------------------------------------------------------------------ payouts
-@router.post("/me/payouts", response_model=PayoutLedgerResponse)
-async def accrue_my_payout(
+# Accrual is an internal accounting operation: earned_cents, view_minutes and
+# stripe_fee_cents come from platform records, never from the creator's own
+# client. There is deliberately no /me/payouts self-service write.
+
+
+@admin_router.post("/{creator_id}/payouts", response_model=PayoutLedgerResponse)
+async def admin_accrue_payout(
+    creator_id: UUID,
     payload: PayoutAccrualRequest,
-    user_id: Annotated[UUID, Depends(current_user)],
+    admin_id: Annotated[UUID, Depends(current_admin)],
     service: Annotated[CreatorService, Depends(get_service)],
 ):
     """Accrue a payout period. Idempotent on (creator, period) — re-posting the
     same period returns the existing ledger row unchanged."""
-    acct = await service.get_profile(user_id)
+    acct = await service.acct_repo.get(creator_id)
     if acct is None:
         raise HTTPException(status_code=404, detail="creator not found")
     if not acct.is_active:
@@ -360,22 +367,7 @@ async def accrue_my_payout(
         )
     except CreatorSuspendedError:
         raise HTTPException(status_code=403, detail="creator suspended")
-    return PayoutLedgerResponse(
-        id=row.id,
-        creator_id=row.creator_id,
-        idempotency_key=row.idempotency_key,
-        period_start=row.period_start,
-        period_end=row.period_end,
-        view_minutes=row.view_minutes,
-        floor_cents=row.floor_cents,
-        pool_topup_cents=row.pool_topup_cents,
-        share_cents=row.share_cents,
-        stripe_fee_cents=row.stripe_fee_cents,
-        net_cents=row.net_cents,
-        stripe_transfer_id=row.stripe_transfer_id,
-        status=row.status,
-        created_at=row.created_at,
-    )
+    return _to_payout_response(row)
 
 
 # -------------------------------------------------------------------- admin
@@ -438,7 +430,10 @@ async def admin_release_tranche(
         raise HTTPException(status_code=404, detail="milestone not found")
     t = await service.release_tranche(mid, threshold)
     if t is None:
-        raise HTTPException(status_code=404, detail="tranche not found")
+        raise HTTPException(
+            status_code=404,
+            detail="tranche not releasable (missing, already released/rolled back, or killed)",
+        )
     return _to_t_response(t)
 
 

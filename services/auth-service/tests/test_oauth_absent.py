@@ -17,6 +17,7 @@ deliberate change reviewed against the audit's requirements:
 """
 
 import re
+from pathlib import Path
 
 OAUTH_IDENTIFIERS = re.compile(
     r"\boauth\b|authorization.?code|redirect_uri|client_id|client_secret",
@@ -27,7 +28,11 @@ OAUTH_IDENTIFIERS = re.compile(
 def _runtime_sources():
     from pathlib import Path
 
-    repo = Path(__file__).resolve().parents[2]
+    # Repo root: this file is <repo>/services/auth-service/tests/<file>, so the
+    # service directories live under parents[3]/"services". Pointing at
+    # parents[2] resolved to <repo>/services/services/... which does not exist,
+    # and the scan silently yielded nothing.
+    repo = Path(__file__).resolve().parents[3]
     for svc in ("auth-service", "api-gateway"):
         base = repo / "services" / svc
         if not base.exists():
@@ -82,5 +87,5 @@ def test_no_oauth_identifiers_in_runtime_code() -> None:
     hits = []
     for path in _runtime_sources():
         if OAUTH_IDENTIFIERS.search(path.read_text(errors="ignore")):
-            hits.append(str(path.relative_to(path.parents[3])))
+            hits.append(str(path.relative_to(Path(__file__).resolve().parents[3])))
     assert not hits, f"OAuth references in runtime code: {hits}"

@@ -10,6 +10,12 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
+def _utcnow() -> datetime:
+    """Naive UTC now. Every timestamp column here is TIMESTAMP WITHOUT TIME
+    ZONE; asyncpg rejects tz-aware datetimes for those (DataError)."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 class Base(DeclarativeBase):
     """SQLAlchemy 2.0 declarative base (mypy-friendly vs declarative_base())."""
 
@@ -23,17 +29,15 @@ class Event(Base):
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
     event_data: Mapped[dict | None] = mapped_column(JSON)
     content_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(UTC), index=True
-    )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     __table_args__ = (Index("idx_events_user_type", "user_id", "event_type"),)
 
     def __init__(self, **kwargs):
         if "timestamp" not in kwargs:
-            kwargs["timestamp"] = datetime.now(UTC)
+            kwargs["timestamp"] = _utcnow()
         if "created_at" not in kwargs:
-            kwargs["created_at"] = datetime.now(UTC)
+            kwargs["created_at"] = _utcnow()
         super().__init__(**kwargs)
 
 
@@ -52,7 +56,7 @@ class ContentViewEvent(Base):
     )  # 240p, 360p, 480p, 720p, 1080p, 4k
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     __table_args__ = (
         Index("idx_view_events_content", "content_id", "created_at"),
         Index("idx_view_events_viewer", "viewer_id", "created_at"),
@@ -72,7 +76,7 @@ class CreatorAnalyticsSnapshot(Base):
     revenue_earned: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     period_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     period_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     __table_args__ = (Index("idx_creator_analytics_creator", "creator_id", "period_end"),)
 
 
@@ -89,9 +93,7 @@ class ContentPerformanceMetrics(Base):
     avg_completion_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)  # 0-100
     revenue_7d: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     revenue_30d: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
     __table_args__ = (
         Index("idx_content_perf_views_7d", "views_7d"),
         Index("idx_content_perf_views_30d", "views_30d"),

@@ -97,8 +97,6 @@ async def send_notification(
         kwargs["event_id"] = event_id
     if channels is not None:
         kwargs["channels"] = channels
-    if email_address is not None:
-        kwargs["email_address"] = email_address
     if template != "generic":
         kwargs["template"] = template
     return await service.send_notification(user_id, title, message, channel, **kwargs)

@@ -14,6 +14,7 @@ from app.models import (
     Base,
     RevenueTier,
     RegionFloor,
+    MilestoneTranche,
 )
 
 from app.repositories import (
@@ -21,6 +22,7 @@ from app.repositories import (
     PurchaseRepository,
     InvoiceRepository,
     RegionFloorRepository,
+    MilestoneRepository,
 )
 
 
@@ -126,3 +128,38 @@ async def test_region_floor_repository(db_session: AsyncSession):
     assert fetched.currency == "USD"
     assert fetched.floor_low == Decimal("0.10")
     assert fetched.floor_high == Decimal("0.20")
+
+
+class _RecordingSession:
+    """Minimal session stub: MilestoneRepository.create only adds and flushes."""
+
+    def __init__(self) -> None:
+        self.added: list[object] = []
+
+    def add(self, obj: object) -> None:
+        self.added.append(obj)
+
+    async def flush(self) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "commitment",
+    [Decimal("999.99"), Decimal("0.03"), Decimal("1.00"), Decimal("12345.67")],
+)
+async def test_milestone_tranches_sum_to_commitment(commitment: Decimal):
+    """Tranches must never exceed the commitment (#854).
+
+    Rounding every tranche independently to NUMERIC(12,2) over-allocated up to
+    2c per milestone, and the kill path only reverses already-released money, so
+    the excess was unrecoverable.
+    """
+    session = _RecordingSession()
+    repo = MilestoneRepository(session)  # type: ignore[arg-type]
+    await repo.create(uuid4(), "project", commitment)
+
+    tranches = [obj for obj in session.added if isinstance(obj, MilestoneTranche)]
+    assert len(tranches) == 4
+    assert sum((t.amount for t in tranches), Decimal("0.00")) == commitment
+    assert all(t.amount >= 0 for t in tranches)

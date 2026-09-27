@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 
 # Graceful shutdown state (#426)
-_shutdown_event: asyncio.Event | None = None
 _in_flight_requests = 0
 _in_flight_lock = asyncio.Lock()
 _MAX_DRAIN_SECONDS = 30
@@ -26,9 +25,7 @@ _MAX_DRAIN_SECONDS = 30
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage FastAPI application lifespan."""
-    global _shutdown_event
     # Startup
-    _shutdown_event = asyncio.Event()
     app.state.shutting_down = False
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
@@ -39,6 +36,13 @@ async def lifespan(app: FastAPI):
         logger.error("Database health check failed")
         raise RuntimeError("Database is not healthy on startup")
 
+    # Redis backs client_event_id idempotency; fail open when unavailable.
+    try:
+        app.state.redis_client = await redis.from_url(settings.REDIS_URL)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Redis unavailable at startup; client_event_id dedup disabled: %s", e)
+        app.state.redis_client = None
+
     logger.info("All startup checks passed")
 
     yield
@@ -46,7 +50,6 @@ async def lifespan(app: FastAPI):
     # Shutdown (#426): stop accepting new requests, drain in-flight, close clients
     logger.info(f"Shutting down {settings.SERVICE_NAME}")
     app.state.shutting_down = True
-    _shutdown_event.set()
 
     # Wait for in-flight requests to complete (bounded)
     try:
@@ -63,6 +66,10 @@ async def lifespan(app: FastAPI):
             _in_flight_requests,
         )
 
+    redis_client = getattr(app.state, "redis_client", None)
+    if redis_client is not None:
+        await redis_client.aclose()
+        app.state.redis_client = None
     await close_content_client()
     await DatabaseManager.close()
     logger.info("Shutdown complete")
@@ -126,15 +133,18 @@ def create_app() -> FastAPI:
         if not db_ok:
             overall = "not_ready"
 
+        redis_client = None
         try:
             redis_client = await redis.from_url(settings.REDIS_URL)
             await asyncio.wait_for(redis_client.ping(), timeout=2.0)
-            await redis_client.close()
             checks["redis"] = "ok"
         except Exception as e:  # noqa: BLE001
             logger.error("Redis readiness check failed: %s", e)
             checks["redis"] = "down"
             overall = "not_ready"
+        finally:
+            if redis_client is not None:
+                await redis_client.aclose()
 
         payload = {
             "status": overall,
@@ -170,7 +180,12 @@ def create_app() -> FastAPI:
                 pass
         return await call_next(request)
 
-    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
+    wire_observability(
+        app,
+        service_name=settings.SERVICE_NAME,
+        log_level=settings.LOG_LEVEL,
+        register_metrics=False,  # the token-gated route below owns /metrics (#469)
+    )
 
     # Gate /metrics behind admin token (#469)
     from fastapi import Depends, Header, HTTPException

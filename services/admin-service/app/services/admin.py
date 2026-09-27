@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secrets import is_sensitive_config_key, mask_value
-from app.models.admin import ContentModeration, SystemAlert
+from app.models.admin import ContentModeration, SystemAlert, UserModeration
 from app.repositories.admin import (
     AdminAuditLogRepository,
     ContentModerationRepository,
@@ -356,9 +356,13 @@ class AdminService:
         ]
 
     # System Stats
-    async def get_system_stats(
-        self, total_users: int | None = None, suspended_users: int | None = None
-    ) -> dict:
+    async def get_system_stats(self) -> dict:
+        """Real aggregates only — no caller-supplied or placeholder numbers.
+
+        ``total_users``/``active_users`` stay ``None``: the user directory is
+        owned by user-service, which exposes no count endpoint, so this service
+        cannot know them. A made-up total is worse than an explicit ``None``.
+        """
         flagged_content = await self.db.scalar(
             select(func.count())
             .select_from(ContentModeration)
@@ -372,13 +376,17 @@ class AdminService:
             .select_from(SystemAlert)
             .where(SystemAlert.is_active.is_(True), SystemAlert.acknowledged.is_(False))
         )
+        suspended_users = await self.db.scalar(
+            select(func.count())
+            .select_from(UserModeration)
+            .where(
+                UserModeration.is_active.is_(True),
+                UserModeration.status.in_(("suspended", "banned")),
+            )
+        )
         return {
-            "total_users": total_users,
-            "active_users": (
-                total_users - suspended_users
-                if total_users is not None and suspended_users is not None
-                else None
-            ),
+            "total_users": None,
+            "active_users": None,
             "suspended_users": suspended_users,
             "flagged_content": flagged_content,
             "active_alerts": active_alerts,

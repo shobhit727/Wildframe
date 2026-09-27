@@ -191,7 +191,45 @@ class TestFloorBalanceLedger:
         assert body[0]["net_cents"] == 3
 
 
+def _mint_token(role: str) -> str:
+    from datetime import timedelta
+
+    from jose import jwt
+
+    from app.core.settings import settings
+
+    payload = {
+        "sub": str(uuid4()),
+        "type": "access",
+        "role": role,
+        "aud": settings.JWT_AUDIENCE,
+        "iss": settings.JWT_ISSUER,
+        "iat": datetime.now(UTC),
+        "exp": datetime.now(UTC) + timedelta(minutes=15),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
 class TestPayouts:
+    """Accrual is an admin/internal operation: a creator must not be able to
+    declare their own earned_cents, view_minutes or fees."""
+
+    CREATOR_ID = "11111111-1111-1111-1111-111111111111"
+    URL = f"/api/v1/admin/creators/{CREATOR_ID}/payouts"
+
+    def _body(self):
+        return {
+            "period_start": "2026-01-01T00:00:00+00:00",
+            "period_end": "2026-01-31T00:00:00+00:00",
+            "view_minutes": 10,
+            "earned_cents": 6,
+            "stripe_fee_cents": 1,
+        }
+
+    def test_creator_cannot_self_declare_payout(self, client, service):
+        response = client.post("/api/v1/creators/me/payouts", json=self._body())
+        assert response.status_code == 404
+
     def test_accrue_payout_success(self, client, service):
         row = MagicMock()
         row.id = uuid4()
@@ -208,34 +246,34 @@ class TestPayouts:
         row.stripe_transfer_id = None
         row.status = "accrued"
         row.created_at = datetime.now(UTC)
+        service.acct_repo.get = AsyncMock(return_value=make_acct())
         service.accrue_payout = AsyncMock(return_value=row)
 
         response = client.post(
-            "/api/v1/creators/me/payouts",
-            json={
-                "period_start": "2026-01-01T00:00:00+00:00",
-                "period_end": "2026-01-31T00:00:00+00:00",
-                "view_minutes": 10,
-                "earned_cents": 6,
-                "stripe_fee_cents": 1,
-            },
+            self.URL,
+            json=self._body(),
+            headers={"Authorization": f"Bearer {_mint_token('admin')}"},
         )
 
         assert response.status_code == 200
         assert response.json()["net_cents"] == 6
         service.accrue_payout.assert_awaited_once()
 
-    def test_accrue_payout_no_profile_returns_404(self, client, service):
-        service.get_profile.return_value = None
-
+    def test_accrue_payout_requires_admin(self, client, service):
         response = client.post(
-            "/api/v1/creators/me/payouts",
-            json={
-                "period_start": "2026-01-01T00:00:00+00:00",
-                "period_end": "2026-01-31T00:00:00+00:00",
-            },
+            self.URL,
+            json=self._body(),
+            headers={"Authorization": f"Bearer {_mint_token('user')}"},
         )
+        assert response.status_code == 403
 
+    def test_accrue_payout_unknown_creator_returns_404(self, client, service):
+        service.acct_repo.get = AsyncMock(return_value=None)
+        response = client.post(
+            self.URL,
+            json=self._body(),
+            headers={"Authorization": f"Bearer {_mint_token('admin')}"},
+        )
         assert response.status_code == 404
 
 
@@ -274,28 +312,6 @@ class TestAdminCreatorAuth:
 
     MILESTONE_URL = "/api/v1/admin/creators/11111111-1111-1111-1111-111111111111/milestones"
 
-    def _mint(self, role: str) -> str:
-        from datetime import timedelta
-
-        from jose import jwt
-
-        from app.core.settings import settings
-
-        payload = {
-            "sub": str(uuid4()),
-            "type": "access",
-            "role": role,
-            "aud": settings.JWT_AUDIENCE,
-            "iss": settings.JWT_ISSUER,
-            "iat": datetime.now(UTC),
-            "exp": datetime.now(UTC) + timedelta(minutes=15),
-        }
-        return jwt.encode(
-            payload,
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
-        )
-
     def _make_milestone(self):
         ms = MagicMock()
         ms.id = uuid4()
@@ -325,7 +341,7 @@ class TestAdminCreatorAuth:
         assert response.status_code == 401
 
     def test_regular_user_rejected_403(self, client, service):
-        token = self._mint("user")
+        token = _mint_token("user")
         response = client.post(
             self.MILESTONE_URL,
             json={"title": "x", "total_cents": 100, "currency": "USD"},
@@ -334,7 +350,7 @@ class TestAdminCreatorAuth:
         assert response.status_code == 403
 
     def test_admin_token_accepted_200(self, client, service):
-        token = self._mint("admin")
+        token = _mint_token("admin")
         service.acct_repo.get = AsyncMock(return_value=make_acct())
         service.create_milestone = AsyncMock(return_value=self._make_milestone())
         response = client.post(
@@ -345,7 +361,7 @@ class TestAdminCreatorAuth:
         assert response.status_code == 200
 
     def test_admin_release_tranche_requires_admin(self, client, service):
-        token = self._mint("user")
+        token = _mint_token("user")
         response = client.post(
             "/api/v1/admin/creators/11111111-1111-1111-1111-111111111111/milestones/22222222-2222-2222-2222-222222222222/release",
             json={"threshold": 100},

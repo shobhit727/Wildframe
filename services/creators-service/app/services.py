@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
 from app.core.settings import settings
@@ -148,8 +148,15 @@ class CreatorService:
         floor = await self.floor_repo.get_floor_for_creator(creator_id)
         per_minute = floor.per_minute_amount if floor is not None else 0.0
 
-        # floor_due is in cents; per_minute is in major currency units.
-        floor_due_cents = int(per_minute * 100) * max(0, view_minutes)
+        # floor_due is in cents; per_minute is in major currency units. Multiply
+        # in Decimal and round once at the cents boundary — truncating the
+        # per-minute rate first silently underpaid every creator with a
+        # fractional-cent floor (e.g. 0.005 USD/min became 0 cents/min).
+        floor_due_cents = int(
+            (Decimal(str(per_minute)) * 100 * max(0, view_minutes)).to_integral_value(
+                rounding=ROUND_HALF_UP
+            )
+        )
 
         # Only backfill the gap below the floor.
         floor_topup = max(0, floor_due_cents - max(0, earned_cents))
@@ -163,9 +170,9 @@ class CreatorService:
         # Contractual invariant: creator keeps >= 55% of net.
         # Why: the ≥55% creator share is a contractual floor, not a target
         # (PRODUCT_VISION §3). If this fails, the platform is mispricing fees.
-        assert (
-            net_cents <= 0 or share_cents >= 0.55 * net_cents
-        ), "creator share must be >= 55% of net (contractual floor)"
+        assert net_cents <= 0 or share_cents >= 0.55 * net_cents, (
+            "creator share must be >= 55% of net (contractual floor)"
+        )
 
         # Idempotency key: one ledger row per (creator, period). A retried
         # payout / retried webhook resolves to the same key and therefore the
@@ -186,10 +193,12 @@ class CreatorService:
         )
 
     # ------------------------------------------------------------- suspension
-    async def process_inbound_suspension(self, event_key: str, payload: dict) -> None:
+    async def process_inbound_suspension(self, event_id: UUID, payload: dict) -> None:
         """Process a creator.suspended inbound event: deactivate the creator.
 
-        Idempotent: replaying the same event_key is a no-op.
+        ``event_id`` is the ``inbound_events`` row id (generated independently
+        of ``event_key``), so the row that ran is the row that gets marked
+        processed. Replaying an already-processed event is a no-op.
         """
         if self.inbound_repo is None:
             raise CreatorSuspendedError("inbound event repository not configured")
@@ -198,7 +207,7 @@ class CreatorService:
         if acct is None:
             raise CreatorSuspendedError(f"Creator {creator_id} does not exist")
         await self.acct_repo.update(acct, is_active=False, kyc_status="suspended")
-        await self.inbound_repo.mark_processed(UUID(event_key))
+        await self.inbound_repo.mark_processed(event_id)
 
     async def drain_inbound_events(self, limit: int = 100) -> int:
         """Process PENDING inbound events (polling consumer for creator.suspended)."""
@@ -211,10 +220,17 @@ class CreatorService:
                 await self.inbound_repo.mark_failed(event.id)
                 continue
             try:
-                await self.process_inbound_suspension(event.event_key, event.payload)
+                await self.process_inbound_suspension(event.id, event.payload)
                 processed += 1
-            except Exception:
-                logger.exception("inbound event %s failed; will retry", event.id)
+            except CreatorSuspendedError:
+                # Permanent: the event names a creator that does not exist.
+                # FAILED is terminal (get_pending selects PENDING only), so this
+                # needs operator action rather than a silent retry claim.
+                logger.exception("inbound event %s is unprocessable; marked FAILED", event.id)
                 await self.inbound_repo.mark_failed(event.id)
+            except Exception:
+                # Transient: leave the row PENDING. A creator.suspended event
+                # must never be dropped because one poll hit a bad moment.
+                logger.exception("inbound event %s failed; stays PENDING for retry", event.id)
         await self.inbound_repo.session.commit()
         return processed

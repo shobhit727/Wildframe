@@ -401,7 +401,10 @@ async def create_episode(
     service: Annotated[ContentService, Depends(get_content_service)],
 ):
     """Create a new episode."""
-    return await service.create_episode(content_id, season_id, request)
+    episode = await service.create_episode(content_id, season_id, request)
+    if not episode:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+    return episode
 
 
 @router.get(

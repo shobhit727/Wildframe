@@ -607,12 +607,24 @@ jobs:
           for svc in $SERVICES; do
             kubectl rollout status "deployment/$svc" -n wildframe-staging --timeout=5m
           done
-      - name: Verify service health endpoints
+      - name: Verify every Service has ready endpoints
         run: |
           set -euo pipefail
-          kubectl -n wildframe-staging run wildframe-smoke --rm --attach=true --restart=Never \
-            --image=curlimages/curl:8.16.0 -- \
-            sh -ec 'for svc in api-gateway auth-service user-service content-service streaming-service admin-service media-pipeline creators-service moderation-service uploads-service search-service analytics-service billing-service recommendation-service notification-service; do curl --fail --silent --show-error --max-time 10 "http://$svc/health" >/dev/null; done'
+          # No probe pod: the chart installs a namespace-wide default-deny
+          # NetworkPolicy, so a bare pod is denied egress to every service, and
+          # `kubectl run --attach` never propagated the container exit code —
+          # the old curl loop could not fail this job. Each app's health path is
+          # already gated by its readiness probe + rollout status above; this
+          # proves every Service selects ready pods behind the declared port.
+          for svc in $SERVICES; do
+            endpoints=$(kubectl -n wildframe-staging get endpoints "$svc" \
+              -o jsonpath='{.subsets[*].addresses[*].ip}')
+            if [ -z "$endpoints" ]; then
+              echo "no ready endpoints for $svc"
+              kubectl -n wildframe-staging get svc "$svc" -o yaml
+              exit 1
+            fi
+          done
 
   deploy-production:
     name: Deploy Production
@@ -670,12 +682,24 @@ jobs:
           for svc in $SERVICES; do
             kubectl rollout status "deployment/$svc" -n wildframe-production --timeout=10m
           done
-      - name: Verify service health endpoints
+      - name: Verify every Service has ready endpoints
         run: |
           set -euo pipefail
-          kubectl -n wildframe-production run wildframe-smoke --rm --attach=true --restart=Never \
-            --image=curlimages/curl:8.16.0 -- \
-            sh -ec 'for svc in api-gateway auth-service user-service content-service streaming-service admin-service media-pipeline creators-service moderation-service uploads-service search-service analytics-service billing-service recommendation-service notification-service; do curl --fail --silent --show-error --max-time 10 "http://$svc/health" >/dev/null; done'
+          # No probe pod: the chart installs a namespace-wide default-deny
+          # NetworkPolicy, so a bare pod is denied egress to every service, and
+          # `kubectl run --attach` never propagated the container exit code —
+          # the old curl loop could not fail this job. Each app's health path is
+          # already gated by its readiness probe + rollout status above; this
+          # proves every Service selects ready pods behind the declared port.
+          for svc in $SERVICES; do
+            endpoints=$(kubectl -n wildframe-production get endpoints "$svc" \
+              -o jsonpath='{.subsets[*].addresses[*].ip}')
+            if [ -z "$endpoints" ]; then
+              echo "no ready endpoints for $svc"
+              kubectl -n wildframe-production get svc "$svc" -o yaml
+              exit 1
+            fi
+          done
       - name: Deployment summary
         run: |
           echo "Production deployment verified for commit $GITHUB_SHA"

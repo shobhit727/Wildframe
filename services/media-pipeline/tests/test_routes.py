@@ -16,6 +16,9 @@ from app.services import PipelineError
 
 pytestmark = pytest.mark.asyncio
 
+#: Authenticated caller shared by the fixtures below so job ownership can match.
+CURRENT_USER = uuid4()
+
 
 def make_job(**overrides):
     job = MagicMock()
@@ -23,7 +26,8 @@ def make_job(**overrides):
     job.content_id = uuid4()
     job.upload_session_id = uuid4()
     job.status = MagicMock(value="running")
-    job.current_stage = "virus_scan"
+    job.stage_versions = {"virus_scan": 1}
+    job.context = {"_creator_id": str(CURRENT_USER)}
     job.retries = 1
     job.error = None
     job.stage_versions = {"virus_scan": 1}
@@ -46,7 +50,7 @@ def make_log():
 @pytest.fixture
 def client():
     app.dependency_overrides.clear()
-    app.dependency_overrides[get_current_user_id] = lambda: uuid4()
+    app.dependency_overrides[get_current_user_id] = lambda: CURRENT_USER
     yield TestClient(app, base_url="http://localhost")
     app.dependency_overrides.clear()
 
@@ -183,6 +187,18 @@ class TestGetJob:
         response = client.get(f"/api/v1/pipeline/jobs/{uuid4()}")
 
         assert response.status_code == 404
+
+    def test_get_job_hides_other_creators_jobs(self, client, service):
+        """A signed-in creator must not read another creator's job trail."""
+        job = make_job(context={"_creator_id": str(uuid4())})
+        service.job_repo.get.return_value = job
+        service.log_repo.list_for_job.return_value = [make_log()]
+        app.dependency_overrides[get_pipeline_service] = override(service)
+
+        response = client.get(f"/api/v1/pipeline/jobs/{job.id}")
+
+        assert response.status_code == 404
+        service.log_repo.list_for_job.assert_not_awaited()
 
 
 class TestLegacyRoutes:
