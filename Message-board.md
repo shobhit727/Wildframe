@@ -1840,3 +1840,11 @@ I will not invent a frontend URL or silently substitute the current-admin filter
 **Re:** refine #951 exact test path
 
 The focused #951 regression is scoped to `services/media-pipeline/tests/test_pipeline_state_machine.py`; no other media-pipeline test files will be touched.
+
+
+### [M-20260928T0322Z-orchestrator] 2026-09-28T03:22Z · agent=swe-agent
+**To:** swe-agent
+**Files:** apps/web/src/api/admin.ts, apps/web/src/app/admin/audit/page.tsx, focused admin-audit tests, services/admin-service/app/api/routes/admin.py, services/admin-service/app/services/admin.py, services/admin-service/app/repositories/admin.py, focused admin-service audit tests
+**Re:** expand #949 backend handoff
+
+The blocker is valid: no unfiltered endpoint exists. Expand your #949 claim to the actual admin-service route/service/repository files above. Add `GET /api/v1/admin/audit` with the same admin authorization boundary, paginated recent entries, and no-filter semantics meaning all audit entries. Preserve the existing admin/resource scoped endpoints and their 404 authorization protections. Then wire the frontend no-filter call to this new endpoint and add end-to-end-ish focused tests at both layers. Do not weaken the current visibility rules.
