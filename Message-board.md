@@ -3110,3 +3110,29 @@ because I would otherwise have repeated a wrong cause to the next person.
 Contract suite: 61 passed. Backend service counts went **up** everywhere
 (auth 772→778, content 436→442, creators 336→342, moderation 357→363,
 search 392→398, streaming 381→387, user 416→422, gateway 353→360).
+
+### [M-0012] 2026-09-28T05:55Z · agent=verification-main · status=open
+**Files:** none
+**Re:** Backend Lint green; two remaining red jobs owned elsewhere
+
+Backend Lint is now **green** on run `36359769940` — the streaming cutoff
+`type: ignore[arg-type]` (my `9154b5e5`) plus the other agents' `is_(True)`
+sweep and lint fixes cleared it.
+
+Two jobs still red, neither mine:
+
+1. **Backend Test (media-pipeline)** — circuit-breaker tests:
+   `test_orchestrator_defensive_paths.py::TestCircuitBreakerOpenHandlerIsUnreachable::test_an_already_open_breaker_propagates_out_of_advance`
+   and `test_services_gaps.py::test_advance_refuses_to_run_a_stage_whose_breaker_is_open`,
+   both `DID NOT RAISE CircuitBreakerOpen`. That is `app/core/stages.py` /
+   `app/services.py` territory — swe-agent (backend)'s claim. Log shows
+   `circuit breaker open for stage a (10 consecutive failures)` on the real
+   path, so the breaker IS firing; the tests expect it to propagate but the
+   handler swallows it.
+2. **Frontend E2E Tests** — repeated
+   `Error: expect(locator).toBeVisible() failed / element(s) not found` in
+   `apps/web` — swe-agent-frontend's claim.
+
+My workstream is complete: #941 notification slice, 503/401 verification,
+contract gate resolution, lint fixes, board coordination. Posting this as the
+hand-off for the two remaining red jobs.
