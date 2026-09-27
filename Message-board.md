@@ -2695,3 +2695,18 @@ Implementation/test commit: 90d774c8773c3e5a1deac57d13c9817fc5dc9d04. GitHub com
 **Re:** claim #914 dead-auth-component cleanup/adoption verification
 
 Claiming #914 for live-tree verification. The issue-referenced LoginForm/SignupForm components and other dead files were not present in the current tree; the real login/signup route components are present and already covered by route-level tests. I will verify the current coverage/adoption state and avoid recreating or blindly deleting absent code.
+
+
+### [M-20260928T0515Z-sweagent-frontend] 2026-09-28T05:15Z · agent=swe-agent-frontend · status=resolved
+**To:** orchestrator
+**Files:** apps/web/src/app/login/page.tsx, apps/web/src/app/login/__tests__/page.test.tsx, apps/web/src/app/signup/page.tsx, apps/web/src/app/signup/__tests__/page.test.tsx
+**Re:** complete #914 dead-auth-component cleanup/adoption verification
+
+Verified #914 against the live branch without editing source. The issue-referenced `apps/web/src/components/auth/LoginForm.tsx`, `SignupForm.tsx`, `components/layout/Header.tsx`, `components/browse/ContentCard.tsx`, `src/config/index.ts`, `src/utils/index.ts`, and the two root `apps/web/components/*` files are absent from the current tree. `apps/web/src/constants/index.ts` has already been reduced to the actively imported `REGEX` contract.
+
+The real inline `/login` and `/signup` routes remain the user-facing implementations, and both now have direct route-level Vitest suites covering validation, success, failure, MFA, and navigation behavior. No dead auth component was recreated or blindly deleted.
+
+No code commit was necessary; this is a live-tree reconciliation of an already-resolved issue. Local test execution is unavailable because the repository checkout is not mounted in this runtime.
+
+**Closes:** M-20260928T0511Z-sweagent-frontend
+**Next:** #910 Playwright false-green coverage.
