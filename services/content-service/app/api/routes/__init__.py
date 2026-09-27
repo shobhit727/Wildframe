@@ -7,11 +7,11 @@ from typing import Annotated
 from uuid import UUID
 
 import httpx
-from jose import jwt
+from jose import JWTError
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from jose.exceptions import JWTError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from wildframe_auth import JWKSUnavailableError, verify_token_with_jwks
 
 from app.core.database import db_manager
 from app.core.settings import settings
@@ -135,6 +135,47 @@ async def _enforce_auth_version(authorization: str, payload: dict) -> None:
             )
 
 
+async def _decode_token(token: str) -> dict:
+    """Verify an access token against auth-service's published JWKS.
+
+    This boundary used to hand-roll its own symmetric HMAC decode, making
+    content-service a shared-secret verifier (#941): ``JWT_SECRET_KEY`` is a
+    committed development value and ``DEV_ENVIRONMENTS`` exempts it from the
+    production validator, so a forged HS256 token carrying any ``sub`` and
+    ``role: "admin"`` reached the admin-only catalog mutations. The HS256 path
+    is deleted rather than rotated -- rotating would keep the service on one
+    symmetric key and reject genuine RS256 tokens.
+
+    Token-type separation (#221) is delegated to the shared verifier via
+    ``expected_type="access"``: a refresh token shares the audience but is not
+    accepted here.
+    """
+    # JWKSUnavailableError must be caught *before* JWTError: it is a JWTError
+    # subclass, and it is the branch that keeps a JWKS outage (fetch failure,
+    # or a body that is not a JWKS) a 503 instead of a 401. Everything else the
+    # verifier rejects — bad signature, expired, wrong audience, unknown kid —
+    # stays a 401.
+    try:
+        return await verify_token_with_jwks(
+            token,
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            url=settings.JWT_JWKS_URL,
+            expected_type="access",
+        )
+    except JWKSUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Token verification is unavailable",
+        ) from exc
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+
 async def _require_identity(
     authorization: str | None, *, with_role: bool = False
 ) -> tuple[UUID, str | None, int]:
@@ -144,32 +185,7 @@ async def _require_identity(
             detail="Missing or invalid authorization header",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    token = authorization.removeprefix("Bearer ")
-    jwt_secret = settings.JWT_SECRET_KEY
-    if not jwt_secret:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Server misconfiguration: JWT signing key is not set",
-        )
-    try:
-        payload = jwt.decode(
-            token,
-            jwt_secret,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-            )
-    except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    payload = await _decode_token(authorization.removeprefix("Bearer "))
     await _enforce_auth_version(authorization, payload)
     sub = payload.get("sub")
     if not sub:

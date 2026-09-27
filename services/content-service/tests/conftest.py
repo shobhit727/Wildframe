@@ -3,10 +3,35 @@ from contextlib import ExitStack
 
 import pytest
 import pytest_asyncio
+import wildframe_auth
 from unittest.mock import AsyncMock, MagicMock, patch
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from wildframe_auth.verifier import clear_jwks_cache
+
+from tests._test_jwks import JWKS
+
+
+@pytest.fixture(autouse=True)
+def _published_jwks(monkeypatch):
+    """Serve the in-memory JWKS instead of reaching for auth-service over HTTP.
+
+    ``app/api/routes/__init__.py`` verifies access tokens against
+    auth-service's published JWKS. Patching only the outbound fetch leaves the
+    real SDK verifier in the path, so signature verification is still exercised
+    for real -- but no test here waits out the 5s fetch timeout against a
+    host that does not exist in CI. The keypair is generated at import time in
+    ``tests/_test_jwks.py``; no private key is committed.
+    """
+
+    async def fetch(url):
+        return JWKS
+
+    monkeypatch.setattr(wildframe_auth.verifier, "fetch_jwks", fetch)
+    clear_jwks_cache()
+    yield
+    clear_jwks_cache()
 
 
 @pytest.fixture(scope="session")

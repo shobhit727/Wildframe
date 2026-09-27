@@ -20,6 +20,8 @@ from httpx import ASGITransport, AsyncClient
 from jose import jwt
 from sqlalchemy.exc import IntegrityError
 
+from tests._test_jwks import PRIVATE_PEM
+
 from app.api.routes import (
     JobStatus,
     ReindexJob,
@@ -772,6 +774,14 @@ class TestReindexEndpoints:
 
 # ------------------------------------------------------------- auth helpers
 def _token(**claims) -> str:
+    """A genuine RS256 access token over the in-memory keypair in ``_test_jwks``.
+
+    The service verifies signatures against auth-service's JWKS, so a token
+    signed with the shared development secret no longer authenticates. Every
+    identity test below mints real RS256 instead; what is under test is who is
+    allowed, not how the signature is checked (``test_content_jwks_verification.py``
+    covers the latter).
+    """
     from datetime import timedelta
 
     payload = {
@@ -782,10 +792,11 @@ def _token(**claims) -> str:
         "arv": 0,
         "aud": settings.JWT_AUDIENCE,
         "iss": settings.JWT_ISSUER,
+        "iat": datetime.now(UTC),
         "exp": datetime.now(UTC) + timedelta(minutes=15),
     }
     payload.update(claims)
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
 
 
 def _introspection_client(status_code=200, json_value=None, json_error=None, exc=None):
@@ -936,27 +947,53 @@ class TestIdentityDependencies:
         )
 
     async def test_refresh_tokens_are_rejected_as_access_tokens(self):
+        """#221: token-type separation survives the move to the shared verifier.
+
+        The detail is now the service's generic ``"Invalid or expired token"``
+        rather than the old ``"Invalid token type"``: the type check lives
+        inside the verifier now, so this service no longer learns *why* a token
+        was rejected. Pinned so the message change is a decision, not a
+        regression.
+        """
         token = _token(type="refresh")
 
         with pytest.raises(HTTPException) as exc:
             await get_current_user(f"Bearer {token}")
 
         assert exc.value.status_code == 401
-        assert exc.value.detail == "Invalid token type"
+        assert exc.value.detail == "Invalid or expired token"
 
     async def test_a_token_signed_with_another_key_is_rejected(self):
+        """A well-formed RS256 token from an unpublished key must not authenticate.
+
+        Mints with a second RSA keypair that auth-service never publishes, so
+        the refusal is a genuine signature check rather than a claim the old
+        shared-secret decode could not express.
+        """
         from datetime import timedelta
 
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        intruder = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = intruder.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode()
         forged = jwt.encode(
             {
                 "sub": str(uuid4()),
                 "type": "access",
+                "av": 1,
                 "aud": settings.JWT_AUDIENCE,
                 "iss": settings.JWT_ISSUER,
+                "iat": datetime.now(UTC),
                 "exp": datetime.now(UTC) + timedelta(minutes=15),
             },
-            "not-the-service-secret",
-            algorithm=settings.JWT_ALGORITHM,
+            pem,
+            algorithm="RS256",
+            headers={"kid": "k1"},
         )
 
         with pytest.raises(HTTPException) as exc:
