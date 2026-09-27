@@ -20,6 +20,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -266,6 +268,15 @@ class TestGetCurrentAdminId:
         assert exc.value.detail == "Invalid token"
 
     async def test_rejects_a_token_signed_with_another_key(self):
+        # A token whose signature does not match the published JWKS: mint with
+        # a second RSA key under the same kid, so the failure is signature
+        # mismatch rather than a malformed PEM.
+        other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        other_pem = other.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode()
         token = jwt.encode(
             {
                 "sub": ADMIN,
@@ -275,8 +286,9 @@ class TestGetCurrentAdminId:
                 "iss": settings.JWT_ISSUER,
                 "aud": settings.JWT_AUDIENCE,
             },
-            "an-attacker-controlled-key",
-            algorithm=settings.JWT_ALGORITHM,
+            other_pem,
+            algorithm="RS256",
+            headers={"kid": "k1"},
         )
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(token))

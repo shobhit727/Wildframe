@@ -26,7 +26,6 @@ from app.models import (
     OutboxEventStatus,
     UploadChunk,
     UploadSession,
-    UploadSessionStatus,
 )
 from app.repositories import UploadChunkRepository
 from app.services import UploadService
