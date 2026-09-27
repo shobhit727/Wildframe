@@ -307,7 +307,7 @@ jobs:
 
       - name: Run SDK tests
         run: |
-          pip install -e packages/sdk/wildframe_events -e packages/sdk/wildframe_observability -e packages/sdk/wildframe_compliance
+          pip install -e packages/sdk/wildframe_auth -e packages/sdk/wildframe_events -e packages/sdk/wildframe_observability -e packages/sdk/wildframe_compliance
           PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest -c pyproject.toml packages/sdk/wildframe_compliance/tests/ packages/sdk/wildframe_events/tests/ packages/sdk/wildframe_observability/tests/ --asyncio-mode=auto -q --cov=packages/sdk --cov-report=term-missing:skip-covered
 
       - name: Print slowest tests
@@ -561,7 +561,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
-          skip-dirs: "apps/web/node_modules,apps/web/.next,node_modules,.git,.github,docs,tests,scripts,.cache,.github,__pycache__,*.pyc,*.pyo,*.pyd,apps/web/certificates"
+          skip-dirs: "apps/web/node_modules,apps/web/.next,node_modules,.git,.github,docs,tests,scripts,.cache,.github,__pycache__,*.pyc,*.pyo,*.pyd"
 
       - name: Upload Trivy results
         if: always()
