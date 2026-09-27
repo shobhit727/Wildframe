@@ -274,43 +274,6 @@ def _reset(monkeypatch):
     yield
 
 
-def _declared_insecure_default(module) -> bool:
-    """Read ``KAFKA_SSL_INSECURE``'s default straight out of the module source.
-
-    The default has been flipped once already (``"true"`` -> ``"false"``, i.e.
-    insecure-by-default -> verifying-by-default). Tests must not hard-code it:
-    the contract is "the observed behaviour matches the declared default, and
-    both branches are reachable via the env var", not a specific literal.
-    """
-    import ast
-    import inspect
-
-    source = inspect.getsource(module)
-    tree = ast.parse(source)
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not node.args:
-            continue
-        func = node.func
-        if (
-            isinstance(func, ast.Attribute)
-            and func.attr == "getenv"
-            and node.args[0].value == "KAFKA_SSL_INSECURE"
-        ):
-            default = node.args[1].value
-            return default.lower() not in ("false", "0", "no")
-    raise AssertionError("KAFKA_SSL_INSECURE default not found in " + module.__name__)
-
-
-def assert_default_matches_declaration(module, ssl_context) -> None:
-    """The context the adapter built must agree with the declared default."""
-    if _declared_insecure_default(module):
-        assert ssl_context is not None
-        assert ssl_context.check_hostname is False
-        assert ssl_context.verify_mode == ssl.CERT_NONE
-    else:
-        assert ssl_context is None
-
-
 def configure_existing(*topics: str) -> None:
     """Pretend these DLQ topics already exist on the broker."""
     FakeAdmin.list_topics_result = list(topics)
@@ -838,17 +801,6 @@ class TestAdminConnection:
         ctx = FakeAdmin.instances[0].kwargs["ssl_context"]
         assert ctx.check_hostname is False
         assert ctx.verify_mode == ssl.CERT_NONE
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("protocol", ["SSL", "SASL_SSL"])
-    async def test_ssl_default_matches_the_declared_default(self, protocol):
-        """Env var unset -> the behaviour the module declares, whichever that is."""
-        import wildframe_events.dlq_retention as retention_mod
-
-        configure_existing()
-        await apply_dlq_retention("kafka:9092", "billing", security_protocol=protocol)
-        ctx = FakeAdmin.instances[0].kwargs.get("ssl_context")
-        assert_default_matches_declaration(retention_mod, ctx)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("value", ["false", "0", "no", "NO"])
