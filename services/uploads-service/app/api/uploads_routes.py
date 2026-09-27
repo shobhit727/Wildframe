@@ -36,10 +36,16 @@ async def get_current_user_id(
             detail="Missing or invalid authorization header",
         )
     token = authorization.removeprefix("Bearer ")
+    jwt_secret = settings.JWT_SECRET_KEY
+    if not jwt_secret:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Server misconfiguration: JWT signing key is not set",
+        )
     try:
         payload = jwt.decode(
             token,
-            settings.JWT_SECRET_KEY,
+            jwt_secret,
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,

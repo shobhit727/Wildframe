@@ -570,7 +570,11 @@ class BillingService:
                 currency,
             )
             return refund
-        applied = await self.refund_repo.apply_to_invoice(resolved_invoice_id, amount)
+        # ``resolved_invoice`` is non-None from the guard above, and every branch
+        # that sets it also sets ``resolved_invoice_id`` to its id. Reading the id
+        # off the invoice keeps the two from drifting apart and needs no extra
+        # narrowing of the parallel optional.
+        applied = await self.refund_repo.apply_to_invoice(resolved_invoice.id, amount)
         status = RefundStatus.PROCESSED if applied else RefundStatus.REJECTED
         if status == RefundStatus.REJECTED:
             self._logger.warning(

@@ -6,8 +6,10 @@ import logging
 import time
 import uuid
 import zlib
+from collections.abc import Awaitable
 from contextlib import asynccontextmanager
 from types import MappingProxyType
+from typing import Any, cast
 
 import httpx
 import redis.asyncio as redis
@@ -196,6 +198,18 @@ def get_shared_client() -> httpx.AsyncClient:
     return _shared_client
 
 
+async def _eval_script(client: redis.Redis, script: str, numkeys: int, *args: str) -> Any:
+    """Run a Lua script on an async Redis client and return its reply.
+
+    redis-py types ``eval`` as ``Awaitable[str] | str`` because a single command
+    mixin backs both the sync and the asyncio client; on ``redis.asyncio.Redis``
+    the call always returns a coroutine, so the union is narrowed once here
+    instead of at every call site. Values are passed as strings because that is
+    the contract redis-py encodes them to anyway (its encoder stringifies ints).
+    """
+    return await cast("Awaitable[Any]", client.eval(script, numkeys, *args))
+
+
 class RateLimiter:
     """Independent IP and account limits with burst and concurrency.
 
@@ -378,14 +392,15 @@ return 1
         acquired: list[str] = []
         try:
             for key in keys:
-                result = await self.redis.eval(
+                result = await _eval_script(
+                    self.redis,
                     self._ACQUIRE_LEASE_SCRIPT,
                     1,
                     key,
                     lease_id,
-                    now,
-                    expiry,
-                    limit,
+                    str(now),
+                    str(expiry),
+                    str(limit),
                 )
                 if not result:
                     await self.release_concurrency_lease(lease_id, acquired)
@@ -403,7 +418,7 @@ return 1
     async def release_concurrency_lease(self, lease_id: str, keys: list[str]) -> None:
         for key in keys:
             try:
-                await self.redis.eval(self._RELEASE_LEASE_SCRIPT, 1, key, lease_id)
+                await _eval_script(self.redis, self._RELEASE_LEASE_SCRIPT, 1, key, lease_id)
             except Exception:  # noqa: BLE001
                 logger.warning("Failed to release in-flight rate-limit lease")
 

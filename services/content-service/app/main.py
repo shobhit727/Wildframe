@@ -37,9 +37,11 @@ async def lifespan(app: FastAPI):
 
         from wildframe_events.dlq_retention import apply_dlq_retention
 
-        asyncio.create_task(
-            apply_dlq_retention(settings.KAFKA_BOOTSTRAP_SERVERS, settings.SERVICE_NAME)
-        )
+        # Retention tuning is best-effort and must never block startup, so an
+        # unset broker list skips the task instead of raising here.
+        bootstrap_servers = settings.KAFKA_BOOTSTRAP_SERVERS
+        if bootstrap_servers:
+            asyncio.create_task(apply_dlq_retention(bootstrap_servers, settings.SERVICE_NAME))
 
     # Database health check
     db_healthy = await db_manager.health_check()

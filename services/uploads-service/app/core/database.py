@@ -25,7 +25,10 @@ class DatabaseManager:
         # Pool budget (#64/#427/#296) and server-side timeouts (#429/#430):
         # NullPool for SQLite (in-memory tests), capped QueuePool + asyncpg
         # statement/lock timeouts for PostgreSQL.
-        if settings.DATABASE_URL.startswith("sqlite"):
+        database_url = settings.DATABASE_URL
+        if not database_url:
+            raise RuntimeError("DATABASE_URL is not configured")
+        if database_url.startswith("sqlite"):
             pool_kwargs: dict = {}
             connect_args: dict = {}
         else:
@@ -45,7 +48,7 @@ class DatabaseManager:
                 },
             }
         cls.engine = create_async_engine(
-            settings.DATABASE_URL,
+            database_url,
             echo=False,
             future=True,
             connect_args=connect_args,

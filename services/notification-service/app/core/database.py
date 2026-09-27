@@ -28,7 +28,10 @@ class DatabaseManager:
         # statement/lock timeouts for PostgreSQL.
         from app.core.settings import settings  # runtime import to avoid circular deps
 
-        if settings.DATABASE_URL.startswith("sqlite"):
+        database_url = settings.DATABASE_URL
+        if not database_url:
+            raise RuntimeError("DATABASE_URL is not configured")
+        if database_url.startswith("sqlite"):
             pool_kwargs: dict = {}
             connect_args: dict = {}
         else:
@@ -48,7 +51,7 @@ class DatabaseManager:
                 },
             }
         cls.engine = create_async_engine(
-            settings.DATABASE_URL,
+            database_url,
             echo=False,
             future=True,
             connect_args=connect_args,

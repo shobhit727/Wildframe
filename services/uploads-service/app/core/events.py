@@ -200,7 +200,10 @@ def _build_publisher() -> EventPublisher:
     from app.core.settings import settings
 
     if settings.EVENT_PUBLISHER == "kafka":
+        bootstrap_servers = settings.KAFKA_BOOTSTRAP_SERVERS
+        if not bootstrap_servers:
+            raise RuntimeError("KAFKA_BOOTSTRAP_SERVERS is not configured")
         return KafkaEventPublisher(
-            bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+            bootstrap_servers=bootstrap_servers,
         )
     return InMemoryEventPublisher()

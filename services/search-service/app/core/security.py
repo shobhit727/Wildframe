@@ -42,13 +42,16 @@ def verify_token(request: Request) -> Identity | None:
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         return None
+    jwt_secret = settings.JWT_SECRET_KEY
+    if not jwt_secret:
+        raise RuntimeError("JWT_SECRET_KEY is not configured")
     try:
         scheme, token = auth_header.split(None, 1)
         if scheme.lower() != "bearer":
             return None
         payload = jwt.decode(
             token,
-            settings.JWT_SECRET_KEY,
+            jwt_secret,
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
@@ -125,7 +128,10 @@ def encode_cursor(query: str, content_type: str | None, limit: int, sort_values:
         {"scope": _scope_hash(query, content_type, limit), "sort": sort_values},
         separators=(",", ":"),
     ).encode()
-    signature = hmac.new(settings.JWT_SECRET_KEY.encode(), raw, hashlib.sha256).digest()
+    jwt_secret = settings.JWT_SECRET_KEY
+    if not jwt_secret:
+        raise RuntimeError("JWT_SECRET_KEY is not configured")
+    signature = hmac.new(jwt_secret.encode(), raw, hashlib.sha256).digest()
     return (
         base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
         + "."
@@ -135,11 +141,16 @@ def encode_cursor(query: str, content_type: str | None, limit: int, sort_values:
 
 def decode_cursor(cursor: str, query: str, content_type: str | None, limit: int) -> list:
     """Verify a cursor's signature and scope; raises ValueError when tampered."""
+    # Narrow before the try: a missing signing key is a server misconfiguration
+    # and must not be reported to the client as an invalid cursor.
+    jwt_secret = settings.JWT_SECRET_KEY
+    if not jwt_secret:
+        raise RuntimeError("JWT_SECRET_KEY is not configured")
     try:
         raw_b64, sig_b64 = cursor.rsplit(".", 1)
         raw = base64.urlsafe_b64decode(raw_b64 + "=" * (-len(raw_b64) % 4))
         sig = base64.urlsafe_b64decode(sig_b64 + "=" * (-len(sig_b64) % 4))
-        expected = hmac.new(settings.JWT_SECRET_KEY.encode(), raw, hashlib.sha256).digest()
+        expected = hmac.new(jwt_secret.encode(), raw, hashlib.sha256).digest()
         if not hmac.compare_digest(expected, sig):
             raise ValueError("tampered cursor")
         payload = json.loads(raw)

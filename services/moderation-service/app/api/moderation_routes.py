@@ -81,10 +81,15 @@ async def _verify_token(
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization.replace("Bearer ", "")
+    jwt_secret = settings.JWT_SECRET_KEY
+    if not jwt_secret:
+        raise HTTPException(
+            status_code=503, detail="Server misconfiguration: JWT signing key is not set"
+        )
     try:
         payload = jwt.decode(
             token,
-            settings.JWT_SECRET_KEY,
+            jwt_secret,
             algorithms=[settings.JWT_ALGORITHM],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,

@@ -64,15 +64,21 @@ class TokenManager:
         expires = datetime.now(UTC) + expires_delta
         payload = {"sub": str(user_id), "exp": expires, "iat": datetime.now(UTC), "type": "access"}
 
-        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+        jwt_secret = settings.JWT_SECRET_KEY
+        if not jwt_secret:
+            raise RuntimeError("JWT_SECRET_KEY is not configured")
+        return jwt.encode(payload, jwt_secret, algorithm=settings.JWT_ALGORITHM)
 
     @staticmethod
     def verify_token(token: str, token_type: str = "access") -> dict[str, Any] | None:
         """Verify and decode a JWT token."""
+        jwt_secret = settings.JWT_SECRET_KEY
+        if not jwt_secret:
+            raise RuntimeError("JWT_SECRET_KEY is not configured")
         try:
             payload = jwt.decode(
                 token,
-                settings.JWT_SECRET_KEY,
+                jwt_secret,
                 algorithms=[settings.JWT_ALGORITHM],
                 audience=settings.JWT_AUDIENCE,
             )
