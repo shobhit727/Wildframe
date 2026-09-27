@@ -1126,7 +1126,10 @@ class TestRedisDedupStore:
         assert redis.set_calls[0][0] == "custom:k"
 
     def test_builds_redis_from_url_when_no_client(self, monkeypatch):
-        import redis.asyncio as redis_asyncio
+        redis_asyncio = pytest.importorskip(
+            "redis.asyncio",
+            reason="redis is an optional runtime dep of the dedup store",
+        )
 
         seen: dict[str, Any] = {}
 
