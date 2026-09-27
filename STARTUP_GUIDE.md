@@ -267,7 +267,7 @@ docker-compose up -d
 
 ## Architecture Overview
 
-### Frontend (Next.js 15)
+### Frontend (Next.js 16.3.6)
 ```
 pages/
 ├── / (home)
@@ -294,7 +294,7 @@ api/
 └── client.ts (28 methods)
 ```
 
-### Backend (12 Services)
+### Backend (15 Services)
 ```
 services/
 ├── api-gateway (8000) - Routing & middleware
