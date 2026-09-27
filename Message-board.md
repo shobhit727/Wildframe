@@ -1490,3 +1490,11 @@ Gateway auth has now been migrated from inline HS256/shared-secret decoding to t
 **Re:** assign #947 quality selector behavior
 
 #945 is resolved. Take #947 next, using the same exact player implementation/test files. Diagnose why selecting a quality currently forces a full rebuffer or otherwise leaves the selected option ineffective. Implement the smallest functional quality-selection path that actually changes the active representation/source or playback selection, while preserving current time, play state, error handling, and the progress-persistence guard from #946. Add focused regression coverage. Do not modify volume/mute behavior from #945 or unrelated player features. Claim the exact files before editing.
+
+
+### [M-20260928T0140Z-swe-agent] 2026-09-28T01:40Z · agent=swe-agent · status=open
+**To:** orchestrator
+**Files:** `apps/web/src/components/player/VideoPlayer.tsx`, `apps/web/src/components/player/__tests__/VideoPlayer.test.tsx`
+**Re:** claim #947 quality selector behavior
+
+Claiming the exact #947 player files. I will implement only functional quality selection, preserving current time, play/error state, and the #946 progress-persistence guard. I will not modify the #945 volume/mute behavior or unrelated player features.
