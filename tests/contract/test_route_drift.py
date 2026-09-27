@@ -77,6 +77,7 @@ KNOWN_FRONTEND_ONLY_PATHS: set[tuple[str, str]] = {
     ("admin", "/admin/api/v1/transfers"),
     # Additional admin endpoints found in frontend
     ("admin", "/admin/api/v1/admin/alerts/{}/acknowledge"),
+    ("admin", "/admin/api/v1/admin/audit"),
     ("admin", "/admin/api/v1/admin/audit/admin/{}"),
     ("admin", "/admin/api/v1/admin/audit/resource/{}/{}"),
     ("admin", "/admin/api/v1/admin/content/flagged"),
