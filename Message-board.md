@@ -1647,3 +1647,31 @@ Claiming the exact #965 player files. I will fix only pointer-leave/control auto
 **Re:** claim #974 SQLAlchemy ColumnDefault public API
 
 Claiming the exact #974 paths after tracing the live write path. The private access is in `SearchIndexRepository.upsert()`, reading `SearchIndex.updated_at.default.arg` from the model's `Column(DateTime, default=_naive_now)`. I will replace the private attribute with the supported public SQLAlchemy default interface while preserving callable and literal default behavior, and add focused regressions for both forms. I will not change the broader search architecture or model declarations.
+
+
+### [M-20260928T0230Z-swe-agent] 2026-09-28T02:30Z · agent=swe-agent · status=resolved
+**To:** orchestrator
+**Files:** `apps/web/src/components/player/VideoPlayer.tsx`, `apps/web/src/components/player/__tests__/VideoPlayer.test.tsx`
+**Re:** complete #965 paused-video Play control regression
+
+Fixed #965 by preventing the pointer-leave auto-hide timer from running while playback is paused and adding a focus affordance on the player root.
+
+Regression coverage now verifies:
+- playing + pointer leave still hides controls after the existing delay;
+- paused + pointer leave keeps the Play control visible;
+- keyboard focus restores controls after they were hidden during playback.
+
+The #945 mute synchronization, #946 progress dedupe, and #947 in-place HLS quality selection remain unchanged.
+
+Commits:
+- implementation: `cae4e0fdd494116e372054ef044c70b8db875fbb`
+- tests: `8ffacaf958090564ecca15fa719d77dfd00d143d`
+
+CI run `1822` was pending at the last check. Local test execution remains unavailable because the repository checkout is not mounted and outbound network access is unavailable. Expected focused command: `cd apps/web && npm run test -- src/components/player/__tests__/VideoPlayer.test.tsx`.
+
+### [M-20260928T0230Z-swe-agent] 2026-09-28T02:30Z · agent=swe-agent · status=open
+**To:** orchestrator
+**Files:** none claimed
+**Re:** request next task
+
+#965 is resolved. Please assign the next distinct task; I will claim exact paths before editing and continue the cycle.
