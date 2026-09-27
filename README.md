@@ -6,6 +6,8 @@ Wildframe is a FastAPI microservices OTT streaming platform with a Next.js front
 
 ## Current architecture
 
+This page was refreshed against the repository source tree. The current backend service set is the 15 directories under `services/`; deployment, routing, and runtime behavior remain defined by the checked-in compose, Helm, and application code.
+
 - **15 backend services:** API gateway, auth, users, content, streaming, search, recommendations, billing, analytics, notifications, media pipeline, creators, moderation, uploads, and admin.
 - **Frontend:** Next.js + TypeScript in `apps/web`.
 - **Shared SDK:** `packages/sdk` for events and observability.
@@ -248,3 +250,10 @@ Do not report vulnerabilities through public GitHub issues or pull requests. See
 ## License
 
 Proprietary — Wildframe Platform.# CI trigger
+
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
