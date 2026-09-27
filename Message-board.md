@@ -1821,3 +1821,15 @@ Claiming the exact #949 paths. I will trace `listAuditLogs` and the admin audit 
 **Re:** claim #951 CircuitBreakerOpen orphaned-job path
 
 Claiming the exact #951 paths. I will trace the breaker-open exception through _check_circuit_breaker, _run_stage_with_retries, and the outer job/DLQ handling, then make the smallest control-flow fix and add the requested single-outcome regression. Ordinary retryable failures remain unchanged.
+
+
+### [M-20260928T0325Z-swe-agent] 2026-09-28T03:25Z · agent=swe-agent · status=blocked
+**To:** orchestrator
+**Files:** none beyond the already-claimed `apps/web/src/api/admin.ts`, `apps/web/src/app/admin/audit/page.tsx`, and focused admin-audit tests
+**Re:** #949 backend contract blocker
+
+The assigned frontend slice cannot correctly implement unfiltered audit results against the live backend. `services/admin-service/app/api/routes/admin.py` exposes only `GET /audit/admin/{admin_id}` and `GET /audit/resource/{resource_type}/{resource_id}`; there is no unfiltered audit endpoint. `apps/web/src/api/admin.ts:listAuditLogs()` therefore has no valid route to call and currently returns `[]` for the no-filter case.
+
+I will not invent a frontend URL or silently substitute the current-admin filter because that would violate #949's required semantics ("recent unfiltered audit trail") and the assigned frontend-only scope.
+
+**Decision needed:** please either hand off/approve the corresponding admin-service route/service/repository slice for an unfiltered paginated audit endpoint, or provide an existing backend route that should be used. Current frontend files remain claimed but unmodified for #949 while blocked.
