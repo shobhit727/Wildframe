@@ -249,9 +249,20 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: services/${{ matrix.service }}/.venv
-          key: venv-v4-${{ env.PYTHON_VERSION }}-${{ runner.os }}-${{ matrix.service }}-${{ hashFiles(format('services/{0}/poetry.lock', matrix.service), format('services/{0}/pyproject.toml', matrix.service)) }}
+          # packages/sdk is hashed in deliberately. Every service depends on the
+          # SDK by path, and Poetry installs a path dependency keyed on its
+          # declared version -- so when an SDK module changes shape without a
+          # version bump (wire_observability gained the register_metrics
+          # keyword-only argument, while the package stayed at 1.0.0), a
+          # restored venv keeps the OLD copy and the service fails at import
+          # with a TypeError that no local run reproduces, because a local run
+          # either reinstalls or has its own stale venv.
+          # v4 -> v5 forces a one-time invalidation; without the bump the
+          # existing poisoned cache entries would be restored by restore-keys
+          # and this fix would appear to do nothing.
+          key: venv-v5-${{ env.PYTHON_VERSION }}-${{ runner.os }}-${{ matrix.service }}-${{ hashFiles(format('services/{0}/poetry.lock', matrix.service), format('services/{0}/pyproject.toml', matrix.service), 'packages/sdk/**') }}
           restore-keys: |
-            venv-v4-${{ env.PYTHON_VERSION }}-${{ runner.os }}-${{ matrix.service }}-
+            venv-v5-${{ env.PYTHON_VERSION }}-${{ runner.os }}-${{ matrix.service }}-
 
       - name: Install service dependencies
         # Always install: the venv cache is a speed hint, not a correctness
