@@ -2,11 +2,11 @@
 
 **Version**: 1.0.0  
 **Last Updated**: September 27, 2026
-**Stability**: Production-Ready
+**Stability**: Active development
 
 ## Overview
 
-Wildframe uses a comprehensive observability stack to monitor system health, performance, and user experience. This guide covers metrics collection, logging, tracing, and alerting.
+The repository includes Prometheus, Grafana, Loki, and Jaeger in the development compose stack. Individual service instrumentation and production deployment behavior must be verified from the current source and deployment configuration. This guide covers metrics collection, logging, tracing, and alerting.
 
 **Time to read**: 20 minutes  
 **Prerequisites**: Understanding of monitoring concepts, Prometheus/Grafana basics
