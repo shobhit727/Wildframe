@@ -192,23 +192,46 @@ class TestFloorBalanceLedger:
         assert body[0]["net_cents"] == 3
 
 
+@pytest.fixture(autouse=True)
+def _stub_jwks(monkeypatch):
+    """Patch the JWKS *fetch* seam only.
+
+    The routes still verify real RS256 signatures through ``wildframe_auth``;
+    only the outbound HTTP call is replaced, so these tests cannot pass because
+    a verifier was stubbed out.
+    """
+    from tests._test_jwks import JWKS
+    from wildframe_auth.verifier import clear_jwks_cache
+
+    async def fetch(_url):
+        return JWKS
+
+    monkeypatch.setattr("wildframe_auth.verifier.fetch_jwks", fetch)
+    clear_jwks_cache()
+    yield
+    clear_jwks_cache()
+
+
 def _mint_token(role: str) -> str:
     from datetime import timedelta
 
     from jose import jwt
 
     from app.core.settings import settings
+    from tests._test_jwks import PRIVATE_PEM
 
+    now = datetime.now(UTC)
     payload = {
         "sub": str(uuid4()),
         "type": "access",
         "role": role,
         "aud": settings.JWT_AUDIENCE,
         "iss": settings.JWT_ISSUER,
-        "iat": datetime.now(UTC),
-        "exp": datetime.now(UTC) + timedelta(minutes=15),
+        "iat": now,
+        "av": 0,
+        "exp": now + timedelta(minutes=15),
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
 
 
 class TestPayouts:

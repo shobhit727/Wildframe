@@ -23,6 +23,9 @@ import pytest
 from fastapi import HTTPException
 from jose import jwt
 
+from tests._test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
+
 from app.api.moderation_routes import _enforce_auth_version, _verify_token
 from app.core.events import InMemoryEventPublisher, set_event_publisher
 from app.core.settings import settings
@@ -301,9 +304,28 @@ def _mock_client(*, status_code=200, payload=None, json_error=None, exc=None):
     return client
 
 
+@pytest.fixture(autouse=True)
+def _stub_jwks(monkeypatch):
+    """Replace the JWKS *fetch* seam only; verification itself stays real."""
+
+    async def fetch(_url):
+        return JWKS
+
+    monkeypatch.setattr("wildframe_auth.verifier.fetch_jwks", fetch)
+    clear_jwks_cache()
+    yield
+    clear_jwks_cache()
+
+
+def _rs256(claims: dict) -> str:
+    """Sign ``claims`` RS256 with the runtime-generated test key."""
+    return jwt.encode(claims, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
+
+
 def _mint(*, av=2, arv=0, role="user", typ="access", sub=None):
     sub = sub or str(uuid4())
-    token = jwt.encode(
+    now = datetime.now(UTC)
+    token = _rs256(
         {
             "sub": sub,
             "role": role,
@@ -312,10 +334,9 @@ def _mint(*, av=2, arv=0, role="user", typ="access", sub=None):
             "arv": arv,
             "aud": settings.JWT_AUDIENCE,
             "iss": settings.JWT_ISSUER,
-            "exp": datetime.now(UTC) + timedelta(minutes=15),
-        },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
+            "iat": now,
+            "exp": now + timedelta(minutes=15),
+        }
     )
     return token, sub
 
@@ -431,22 +452,30 @@ class TestVerifyTokenGuards:
 
     @pytest.mark.parametrize("typ", ["refresh", "admin_step_up", "api_key", None])
     async def test_token_type_separation(self, typ):
+        """#221: the shared verifier enforces ``expected_type="access"``.
+
+        The detail string is now the generic "Invalid token" because the type
+        check moved inside the SDK verifier, which raises ``JWTError``; the
+        status code and the refusal are unchanged.
+        """
         token, _ = _mint(typ=typ)
         with pytest.raises(HTTPException) as exc:
             await _verify_token(f"Bearer {token}", require_admin=False)
         assert exc.value.status_code == 401
-        assert exc.value.detail == "Invalid token type"
+        assert exc.value.detail == "Invalid token"
 
     async def test_wrong_audience(self):
-        token = jwt.encode(
+        now = datetime.now(UTC)
+        token = _rs256(
             {
                 "sub": "u1",
                 "type": "access",
+                "av": 2,
                 "aud": "another-api",
                 "iss": settings.JWT_ISSUER,
-            },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
+                "iat": now,
+                "exp": now + timedelta(minutes=15),
+            }
         )
         with pytest.raises(HTTPException) as exc:
             await _verify_token(f"Bearer {token}", require_admin=False)
@@ -468,15 +497,17 @@ class TestVerifyTokenGuards:
         assert exc.value.detail == "Admin privileges required"
 
     async def test_a_missing_admin_role_is_refused_the_admin_dependency(self):
-        token = jwt.encode(
+        now = datetime.now(UTC)
+        token = _rs256(
             {
                 "sub": "u1",
                 "type": "access",
+                "av": 2,
                 "aud": settings.JWT_AUDIENCE,
                 "iss": settings.JWT_ISSUER,
-            },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
+                "iat": now,
+                "exp": now + timedelta(minutes=15),
+            }
         )
         client = _mock_client(payload={})
         with patch("app.api.moderation_routes.httpx.AsyncClient", return_value=client):
@@ -499,21 +530,51 @@ class TestVerifyTokenGuards:
         with patch("app.api.moderation_routes.httpx.AsyncClient", return_value=client):
             assert await _verify_token(f"Bearer {token}", require_admin=True) == sub
 
-    async def test_falls_back_to_the_user_id_claim(self):
-        token = jwt.encode(
+    async def test_a_user_id_only_token_is_no_longer_accepted(self):
+        """The legacy ``user_id``-only claim no longer authenticates.
+
+        Under the deleted shared-secret path this token resolved to
+        ``"legacy-1"`` via the ``sub or user_id`` fallback. The SDK verifier
+        requires ``sub`` as a claim, so it is refused rather than silently
+        reinterpreting a different claim as the caller's identity.
+        """
+        now = datetime.now(UTC)
+        token = _rs256(
             {
                 "user_id": "legacy-1",
                 "type": "access",
                 "role": "user",
+                "av": 2,
                 "aud": settings.JWT_AUDIENCE,
                 "iss": settings.JWT_ISSUER,
-            },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
+                "iat": now,
+                "exp": now + timedelta(minutes=15),
+            }
+        )
+        with pytest.raises(HTTPException) as exc:
+            await _verify_token(f"Bearer {token}", require_admin=False)
+        assert exc.value.status_code == 401
+        assert exc.value.detail == "Invalid token"
+
+    async def test_sub_is_preferred_when_both_subject_claims_are_present(self):
+        sub, user_id = str(uuid4()), str(uuid4())
+        now = datetime.now(UTC)
+        token = _rs256(
+            {
+                "sub": sub,
+                "user_id": user_id,
+                "type": "access",
+                "role": "user",
+                "av": 2,
+                "aud": settings.JWT_AUDIENCE,
+                "iss": settings.JWT_ISSUER,
+                "iat": now,
+                "exp": now + timedelta(minutes=15),
+            }
         )
         client = _mock_client(payload={})
         with patch("app.api.moderation_routes.httpx.AsyncClient", return_value=client):
-            assert await _verify_token(f"Bearer {token}", require_admin=False) == "legacy-1"
+            assert await _verify_token(f"Bearer {token}", require_admin=False) == sub
 
     async def test_introspection_runs_before_the_admin_role_check(self):
         # A revoked token must be rejected as 401 even if the role claim is fine.

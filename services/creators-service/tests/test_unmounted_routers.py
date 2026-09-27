@@ -35,6 +35,8 @@ from app.api.routes import payout as payout_routes
 from app.core.database import get_db
 from app.core.settings import settings
 from app.models import CreatorOnboarding, CreatorPayout
+from tests._test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
 
 pytestmark = pytest.mark.unit
 
@@ -240,18 +242,44 @@ class TestPayoutRouter:
 
 
 # ------------------------------------------------------------------ jwt guards
+@pytest.fixture(autouse=True)
+def _stub_jwks(monkeypatch):
+    """Patch the JWKS *fetch* seam, not the verifier.
+
+    The guards keep doing real RS256 verification through ``wildframe_auth`` --
+    JWKS cache, single-flight, unknown-kid backoff and all -- exactly as in
+    production. Only the outbound HTTP call is replaced, so these tests cannot
+    pass for the wrong reason (a stubbed verifier would accept anything).
+    """
+
+    async def fetch(_url):
+        return JWKS
+
+    monkeypatch.setattr("wildframe_auth.verifier.fetch_jwks", fetch)
+    clear_jwks_cache()
+    yield
+    clear_jwks_cache()
+
+
+def _rs256(payload: dict) -> str:
+    """Sign ``payload`` RS256 with the runtime-generated test key."""
+    return jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
+
+
 def _token(**claims) -> str:
+    now = datetime.now(UTC)
     payload = {
         "sub": str(uuid4()),
         "type": "access",
         "role": "user",
         "aud": settings.JWT_AUDIENCE,
         "iss": settings.JWT_ISSUER,
-        "iat": datetime.now(UTC),
-        "exp": datetime.now(UTC) + timedelta(minutes=15),
+        "iat": now,
+        "av": 0,
+        "exp": now + timedelta(minutes=15),
     }
     payload.update(claims)
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return _rs256(payload)
 
 
 class TestCurrentUser:
@@ -260,22 +288,31 @@ class TestCurrentUser:
 
         assert await current_user(f"Bearer {_token(sub=sub)}") == UUID(sub)
 
-    async def test_falls_back_to_the_user_id_claim(self):
-        user_id = str(uuid4())
+    async def test_a_token_without_a_sub_claim_is_rejected(self):
+        """The shared verifier requires ``sub``; the old ``user_id`` fallback is unreachable.
 
-        token = jwt.encode(
+        Under the deleted HS256 path a token carrying only ``user_id`` was
+        accepted and ``sub or user_id`` supplied the identity. The SDK verifier
+        requires ``sub`` as a claim, so such a token is now rejected outright
+        rather than silently reinterpreting a different claim as the identity.
+        """
+        token = _rs256(
             {
-                "user_id": user_id,
+                "user_id": str(uuid4()),
                 "type": "access",
                 "aud": settings.JWT_AUDIENCE,
                 "iss": settings.JWT_ISSUER,
+                "iat": datetime.now(UTC),
+                "av": 0,
                 "exp": datetime.now(UTC) + timedelta(minutes=15),
-            },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
+            }
         )
 
-        assert await current_user(f"Bearer {token}") == UUID(user_id)
+        with pytest.raises(Exception) as exc:
+            await current_user(f"Bearer {token}")
+
+        assert exc.value.status_code == 401
+        assert exc.value.detail == "Invalid token"
 
     @pytest.mark.parametrize("header", [None, "", "Basic abc", "bearer lower-case"])
     async def test_missing_or_non_bearer_header_is_rejected(self, header):
@@ -295,24 +332,26 @@ class TestCurrentUser:
         with pytest.raises(Exception) as exc:
             await current_user(f"Bearer {_token(type='refresh')}")
 
-        assert exc.value.detail == "Invalid token type"
+        assert exc.value.status_code == 401
+        assert exc.value.detail == "Invalid token"
 
     async def test_token_without_any_subject_is_rejected(self):
-        token = jwt.encode(
+        token = _rs256(
             {
                 "type": "access",
                 "aud": settings.JWT_AUDIENCE,
                 "iss": settings.JWT_ISSUER,
+                "iat": datetime.now(UTC),
+                "av": 0,
                 "exp": datetime.now(UTC) + timedelta(minutes=15),
-            },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
+            }
         )
 
         with pytest.raises(Exception) as exc:
             await current_user(f"Bearer {token}")
 
-        assert exc.value.detail == "Invalid token subject"
+        assert exc.value.status_code == 401
+        assert exc.value.detail == "Invalid token"
 
     async def test_non_uuid_subject_is_rejected(self):
         with pytest.raises(Exception) as exc:
@@ -321,16 +360,16 @@ class TestCurrentUser:
         assert exc.value.detail == "Invalid token subject"
 
     async def test_token_with_the_wrong_audience_is_rejected(self):
-        token = jwt.encode(
+        token = _rs256(
             {
                 "sub": str(uuid4()),
                 "type": "access",
                 "aud": "some-other-api",
                 "iss": settings.JWT_ISSUER,
+                "iat": datetime.now(UTC),
+                "av": 0,
                 "exp": datetime.now(UTC) + timedelta(minutes=15),
-            },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
+            }
         )
 
         with pytest.raises(Exception) as exc:
@@ -362,7 +401,8 @@ class TestCurrentAdmin:
         with pytest.raises(Exception) as exc:
             await current_admin(f"Bearer {_token(role='admin', type='refresh')}")
 
-        assert exc.value.detail == "Invalid token type"
+        assert exc.value.status_code == 401
+        assert exc.value.detail == "Invalid token"
 
     async def test_non_admin_token_is_forbidden(self):
         with pytest.raises(Exception) as exc:
@@ -372,22 +412,23 @@ class TestCurrentAdmin:
         assert exc.value.detail == "Admin privileges required"
 
     async def test_admin_token_without_a_subject_is_rejected(self):
-        token = jwt.encode(
+        token = _rs256(
             {
                 "role": "admin",
                 "type": "access",
                 "aud": settings.JWT_AUDIENCE,
                 "iss": settings.JWT_ISSUER,
+                "iat": datetime.now(UTC),
+                "av": 0,
                 "exp": datetime.now(UTC) + timedelta(minutes=15),
-            },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
+            }
         )
 
         with pytest.raises(Exception) as exc:
             await current_admin(f"Bearer {token}")
 
-        assert exc.value.detail == "Invalid token subject"
+        assert exc.value.status_code == 401
+        assert exc.value.detail == "Invalid token"
 
     async def test_admin_token_with_a_non_uuid_subject_is_rejected(self):
         with pytest.raises(Exception) as exc:

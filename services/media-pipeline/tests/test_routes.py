@@ -13,11 +13,33 @@ from app.api.media_pipeline_routes import get_current_user_id, get_pipeline_serv
 from app.core.settings import settings
 from app.main import app
 from app.services import PipelineError
+from tests._test_jwks import JWKS
+from tests._test_jwks import PRIVATE_PEM as PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
 
 pytestmark = pytest.mark.asyncio
 
 #: Authenticated caller shared by the fixtures below so job ownership can match.
 CURRENT_USER = uuid4()
+
+
+@pytest.fixture(autouse=True)
+def _stub_jwks(monkeypatch):
+    """Replace the JWKS *fetch* seam only.
+
+    The few tests here that exercise the real auth dependency still do real
+    RS256 verification through ``wildframe_auth``; only the outbound HTTP call
+    is replaced, so a stubbed verifier cannot make them pass for the wrong
+    reason.
+    """
+
+    async def fetch(_url):
+        return JWKS
+
+    monkeypatch.setattr("wildframe_auth.verifier.fetch_jwks", fetch)
+    clear_jwks_cache()
+    yield
+    clear_jwks_cache()
 
 
 def make_job(**overrides):
@@ -100,15 +122,27 @@ class TestPipelineAuth:
         assert response.status_code == 401
 
     def test_start_rejects_expired_token(self, client):
+        """An expired token is refused before any pipeline work is started.
+
+        Expiry is set an hour in the past rather than a minute: the shared JWKS
+        verifier allows a 60s ``leeway`` for clock skew, so a token that expired
+        one minute ago is still inside the window and is *meant* to be accepted.
+        """
         app.dependency_overrides.pop(get_current_user_id, None)
+        now = datetime.now(timezone.utc)
         token = jose_jwt.encode(
             {
                 "sub": str(uuid4()),
+                "type": "access",
+                "aud": settings.JWT_AUDIENCE,
                 "iss": settings.JWT_ISSUER,
-                "exp": datetime.now(timezone.utc) - timedelta(minutes=1),
+                "av": 0,
+                "iat": int((now - timedelta(hours=2)).timestamp()),
+                "exp": now - timedelta(hours=1),
             },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
+            PRIVATE_PEM,
+            algorithm="RS256",
+            headers={"kid": "k1"},
         )
         response = client.post(
             f"/api/v1/pipeline/jobs/{uuid4()}/start",
@@ -116,6 +150,7 @@ class TestPipelineAuth:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid token"
 
     def test_get_job_requires_token(self, client):
         app.dependency_overrides.pop(get_current_user_id, None)

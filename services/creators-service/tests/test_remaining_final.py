@@ -6,19 +6,20 @@ the inbound-event consumer (suspension processing plus the pending-event drain
 with its retry bookkeeping) are all covered here against repository doubles.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from jose import jwt
+from jose import JWTError, jwt
 
 from app.core.settings import settings
 from app.models import CreatorSuspendedError
 from app.models import MilestoneTranche
 from app.repositories import InboundEventRepository
 from app.services import CreatorService
+from tests._test_jwks import JWKS, PRIVATE_PEM
 
 # In-memory database for the repository tests (no PostgreSQL-specific SQL here).
 SQLITE_URL = "sqlite+aiosqlite:///:memory:"
@@ -696,26 +697,48 @@ class TestJwtAudienceIsEnforcedElsewhere:
         assert settings.JWT_AUDIENCE == "wildframe-api"
         assert settings.JWT_ISSUER == "wildframe-auth"
 
-    def test_a_service_token_decodes_for_this_service(self):
-        token = jwt.encode(
-            {
-                "sub": str(uuid4()),
-                "type": "access",
-                "role": "admin",
-                "aud": settings.JWT_AUDIENCE,
-                "iss": settings.JWT_ISSUER,
-                "exp": datetime.now() + timedelta(minutes=15),
-            },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
-        )
+    def test_a_service_token_verifies_for_this_service(self):
+        """An auth-service RS256 token verifies here, and an HS256 one does not.
 
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
+        This used to encode *and* decode with ``settings.JWT_SECRET_KEY`` --
+        which asserted only that the service agreed with itself. The JWKS is
+        what auth-service actually publishes, so the pair now runs through the
+        SDK verifier, which is the thing that has to accept the real token and
+        refuse the forged one.
+        """
+        from wildframe_auth.verifier import verify_token
 
-        assert payload["role"] == "admin"
+        now = datetime.now(UTC)
+        payload = {
+            "sub": str(uuid4()),
+            "type": "access",
+            "role": "admin",
+            "aud": settings.JWT_AUDIENCE,
+            "iss": settings.JWT_ISSUER,
+            "iat": int(now.timestamp()),
+            "av": 0,
+            "exp": int((now + timedelta(minutes=15)).timestamp()),
+        }
+        genuine = jwt.encode(
+            payload,
+            PRIVATE_PEM,
+            algorithm="RS256",
+            headers={"kid": "k1"},
+        )
+        forged = jwt.encode(payload, "dev-secret-key", algorithm="HS256")
+
+        claims = verify_token(
+            genuine,
+            JWKS,
+            settings.JWT_AUDIENCE,
+            settings.JWT_ISSUER,
+        )
+        assert claims["role"] == "admin"
+
+        with pytest.raises(JWTError):
+            verify_token(
+                forged,
+                JWKS,
+                settings.JWT_AUDIENCE,
+                settings.JWT_ISSUER,
+            )
