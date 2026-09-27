@@ -1,6 +1,6 @@
 # Wildframe Status
 
-**Last reviewed:** August 2026
+**Last reviewed:** September 27, 2026
 
 ## Overall
 
@@ -93,12 +93,16 @@ Historical files such as completion summaries and old quick-start variants are r
 
 Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/OPERATIONS.md`, and `SECURITY.md` as the current operational documentation.
 
-## Security and QA hardening (Aug 2026)
+## Security and QA hardening
+
+GitHub currently reports **165 open issues** as of September 27, 2026. Issue state is maintained by GitHub; the closed-issue history below is not a substitute for the live issue tracker. The newest open audit item is #975, concerning cleartext access through the development Caddy listener.
 
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
 #62, #63, #168, #214, #217, #218, #221, #222, #223, #225, #227, #228, #536, and #41 (open items: #45 DRM held as backlog).
+
+Historical hardening record:
 
 Newest additions:
 
