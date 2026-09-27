@@ -77,6 +77,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     CORS_ALLOW_CREDENTIALS: bool = True
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8005
+    METRICS_TOKEN: str = ""
     compliance_jurisdiction: Jurisdiction = Jurisdiction.GLOBAL
     compliance_additional_jurisdictions: list[Jurisdiction] = [
         Jurisdiction.EU,

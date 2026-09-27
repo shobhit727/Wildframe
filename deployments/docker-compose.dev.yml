@@ -721,6 +721,9 @@ services:
       dockerfile: services/search-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       ELASTICSEARCH_URL: http://elasticsearch:9200
       CONTENT_SERVICE_URL: http://content-service:8000
       REDIS_URL: redis://redis:6379/5
