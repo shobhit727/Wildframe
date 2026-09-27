@@ -5,6 +5,21 @@ import path from "node:path";
 export default defineConfig({
   plugins: [react()],
   test: {
+    // The suite runs many files concurrently; on a loaded machine a few
+    // render-heavy tests exceed vitest's 5s default even though they are
+    // not slow in isolation (Row.test.tsx runs in ~2s on its own). This
+    // is contention, not a regression, so raise the ceiling rather than
+    // splitting files or weakening the assertions.
+    // Reset module mocks and restore spies between tests. Without this a
+    // file that mutates a shared module (the api client, the auth store)
+    // leaks it into files that run later, which showed up as
+    // my-list's empty-state tests passing alone and failing in the suite.
+    restoreMocks: true,
+    clearMocks: true,
+    mockReset: true,
+    testTimeout: 20000,
+    hookTimeout: 20000,
+
     environment: "jsdom",
     globals: true,
     setupFiles: ["./vitest.setup.ts"],

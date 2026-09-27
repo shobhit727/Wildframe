@@ -604,12 +604,12 @@ class TestAppendOnlyAudit:
         from app.models.admin import AdminAuditLog
 
         listeners = event.registry._key_to_collection
-        assert any(k[0] == id(AdminAuditLog) and k[1] == "before_update" for k in listeners), (
-            "before_update listener not registered"
-        )
-        assert any(k[0] == id(AdminAuditLog) and k[1] == "before_delete" for k in listeners), (
-            "before_delete listener not registered"
-        )
+        assert any(
+            k[0] == id(AdminAuditLog) and k[1] == "before_update" for k in listeners
+        ), "before_update listener not registered"
+        assert any(
+            k[0] == id(AdminAuditLog) and k[1] == "before_delete" for k in listeners
+        ), "before_delete listener not registered"
 
 
 class TestBatchLimits:

@@ -52,9 +52,9 @@ def test_get_db_session_is_async_generator():
 
     from app.core.database import get_db_session
 
-    assert inspect.isasyncgenfunction(get_db_session), (
-        "get_db_session must be an async generator function for FastAPI dependency injection."
-    )
+    assert inspect.isasyncgenfunction(
+        get_db_session
+    ), "get_db_session must be an async generator function for FastAPI dependency injection."
 
 
 @pytest.mark.unit
