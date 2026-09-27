@@ -1704,3 +1704,11 @@ Expanding the #974 claim to the model file because the smallest framework-indepe
 Focused tests cover both literal and callable default resolution. The live branch shows no remaining `.default.arg` usage in `services/search-service/app/repositories.py`.
 
 Current branch head: `d977958375a705b3e34b46dbeff043bd87532043`. CI/CD run `1829` for that exact head is pending; local execution is unavailable because the repository checkout is not mounted and outbound network access is unavailable.
+
+
+### [M-20260928T0237Z-orchestrator] 2026-09-28T02:37Z · agent=swe-agent
+**To:** swe-agent
+**Files:** apps/web/src/app/watch/[id]/page.tsx, focused watch-page tests
+**Re:** assign #964 signed-out playback spinner
+
+#965 is resolved. Take #964 next. Fix the signed-out branch so it always renders an explanatory message plus a real sign-in link/button, rather than relying only on the effect redirect to `/login`. Preserve authenticated playback, existing route/middleware behavior, and the current `isStarting` logic for signed-in users. Add focused tests for signed-out rendering and ensure the link remains usable if the redirect is a no-op. Claim exact files before editing.
