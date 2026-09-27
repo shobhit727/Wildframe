@@ -33,6 +33,7 @@ from app.api.routes import (
     router,
 )
 from app.core.settings import settings
+from app.schemas import ContentCreateRequest, ContentUpdateRequest
 from app.models import (
     CastMember,
     Content,
@@ -330,6 +331,35 @@ CONTENT_BODY = {
 
 
 class TestContentEndpoints:
+
+    async def test_create_content_normalizes_aware_release_date_to_naive_utc(self, client, service):
+        response = await client.post(
+            "/api/v1/content",
+            json={**CONTENT_BODY, "release_date": "2026-01-02T03:04:05+05:30"},
+        )
+
+        assert response.status_code == 201
+        request = service.create_content.await_args.args[0]
+        assert isinstance(request, ContentCreateRequest)
+        assert request.release_date == datetime(2026, 1, 1, 21, 34, 5)
+        assert request.release_date.tzinfo is None
+
+    async def test_update_content_normalizes_aware_release_date_to_naive_utc(self, client, service):
+        content_id = uuid4()
+
+        response = await client.put(
+            f"/api/v1/content/{content_id}",
+            json={"release_date": "2026-01-02T03:04:05+05:30"},
+        )
+
+        assert response.status_code == 200
+        request = service.update_content.await_args.args[1]
+        assert isinstance(request, ContentUpdateRequest)
+        assert request.release_date == datetime(2026, 1, 1, 21, 34, 5)
+        assert request.release_date.tzinfo is None
+
+    def test_release_date_model_uses_naive_database_contract(self):
+        assert Content.__table__.c.release_date.type.timezone is False
     async def test_create_content(self, client, service):
         response = await client.post("/api/v1/content", json=CONTENT_BODY)
 
