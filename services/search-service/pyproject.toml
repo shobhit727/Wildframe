@@ -34,6 +34,7 @@ wildframe-events = {path = "../../packages/sdk/wildframe_events", develop = true
 aiokafka = "^0.10.0"
 wildframe-compliance = {path = "../../packages/sdk/wildframe_compliance", develop = true}
 prometheus-client = "^0.18.0"
+wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 
 [tool.poetry.group.dev.dependencies]
 types-python-jose = "^3.3.4"
