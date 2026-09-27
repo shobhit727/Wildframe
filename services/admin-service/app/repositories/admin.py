@@ -297,9 +297,7 @@ class AdminAuditLogRepository:
     async def delete(self, *args, **kwargs) -> None:
         raise AuditLogAppendOnlyError("admin audit logs are append-only: deletion is not permitted")
 
-    async def list_recent(
-        self, limit: int = 50, offset: int = 0
-    ) -> list[AdminAuditLog]:
+    async def list_recent(self, limit: int = 50, offset: int = 0) -> list[AdminAuditLog]:
         query = (
             select(AdminAuditLog)
             .order_by(desc(AdminAuditLog.created_at), desc(AdminAuditLog.id))
