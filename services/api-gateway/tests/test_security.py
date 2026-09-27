@@ -8,7 +8,6 @@ from fastapi import HTTPException
 from fastapi.responses import Response
 from jose import jwk, jwt
 
-from app.core.security_headers import SECURITY_HEADERS, rotation_check
 from wildframe_auth.verifier import verify_token as verify_shared_token
 
 from app.middleware import (
