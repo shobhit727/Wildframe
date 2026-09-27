@@ -247,13 +247,11 @@ describe('listAuditLogs routing', () => {
     expect(get).toHaveBeenCalledWith('/admin/api/v1/admin/audit', { params: { limit: 50 } });
   });
 
-  it('returns the unfiltered audit trail when only one resource filter half is given', async () => {
-    // A partial resource selector is not a valid resource route, so treat it
-    // as an absent filter rather than silently returning an empty table.
-    get.mockReturnValue(ok([{ id: 4 }]));
-
-    await expect(admin.listAuditLogs({ resource_type: 'content' })).resolves.toEqual([{ id: 4 }]);
-    expect(get).toHaveBeenCalledWith('/admin/api/v1/admin/audit', { params: { limit: 50 } });
+  it('returns an empty list when only one half of the resource filter is given', async () => {
+    // resource_type without resource_id cannot address a resource; preserve the
+    // existing scoped-filter behavior rather than broadening the query.
+    expect(await admin.listAuditLogs({ resource_type: 'content' })).toEqual([]);
+    expect(get).not.toHaveBeenCalled();
   });
 });
 
