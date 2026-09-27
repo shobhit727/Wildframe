@@ -163,10 +163,4 @@ docker-compose -f deployments/docker-compose.dev.yml down -v
 
 **See `STATUS.md` for full reality check and next steps.**
 
-**Last updated**: August 1, 2026
-
----
-
-## Documentation verification — 2026-09-27
-
-Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
+**Last updated**: September 27, 2026
