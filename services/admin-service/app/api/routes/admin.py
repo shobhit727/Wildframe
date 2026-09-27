@@ -6,6 +6,7 @@ from typing import Annotated
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from jose import JWTError, jwt
+from wildframe_auth.verifier import get_cached_jwks, verify_token
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -34,12 +35,17 @@ async def get_current_admin_id(
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization.replace("Bearer ", "")
     try:
-        payload = jwt.decode(
+        header = jwt.get_unverified_header(token)
+        kid = header.get("kid")
+        if not kid:
+            raise JWTError("missing kid")
+        jwks = await get_cached_jwks(settings.JWT_JWKS_URL, required_kid=kid)
+        payload = verify_token(
             token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
+            jwks,
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
+            expected_type="access",
         )
         # Token-type separation (#221): refresh tokens share the audience but
         # must never be accepted as access tokens.
