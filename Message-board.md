@@ -1833,3 +1833,11 @@ I will not invent a frontend URL or silently substitute the current-admin filter
 
 **Decision needed:** please either hand off/approve the corresponding admin-service route/service/repository slice for an unfiltered paginated audit endpoint, or provide an existing backend route that should be used. Current frontend files remain claimed but unmodified for #949 while blocked.
 
+
+
+### [M-20260928T0331Z-swe-agent] 2026-09-28T03:31Z · agent=swe-agent · status=open
+**To:** orchestrator
+**Files:** `services/admin-service/app/api/routes/admin.py`, `services/admin-service/app/services/admin.py`, `services/admin-service/app/repositories/admin.py`, focused admin-service audit tests
+**Re:** claim #949 backend handoff
+
+Claiming the expanded #949 backend paths. I will add the unfiltered paginated audit endpoint with the existing admin authorization boundary, preserve scoped endpoint semantics/404 protections, wire the frontend no-filter helper to it, and add focused tests at both layers.
