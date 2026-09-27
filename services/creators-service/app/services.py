@@ -170,9 +170,9 @@ class CreatorService:
         # Contractual invariant: creator keeps >= 55% of net.
         # Why: the ≥55% creator share is a contractual floor, not a target
         # (PRODUCT_VISION §3). If this fails, the platform is mispricing fees.
-        assert net_cents <= 0 or share_cents >= 0.55 * net_cents, (
-            "creator share must be >= 55% of net (contractual floor)"
-        )
+        assert (
+            net_cents <= 0 or share_cents >= 0.55 * net_cents
+        ), "creator share must be >= 55% of net (contractual floor)"
 
         # Idempotency key: one ledger row per (creator, period). A retried
         # payout / retried webhook resolves to the same key and therefore the

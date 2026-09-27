@@ -208,4 +208,3 @@ class ContentPerformanceMetricsRepository:
         self.session.add(metrics)
         await self.session.flush()
         return metrics
-

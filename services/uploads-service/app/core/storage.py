@@ -25,6 +25,7 @@ import hashlib
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from functools import partial
 
 logger = logging.getLogger(__name__)
 
@@ -549,10 +550,14 @@ class S3StoragePort(StoragePort):
             }
             if marker is not None:
                 params["PartNumberMarker"] = marker
-            page = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda p=params: self._client.list_parts(**p),
-            )
+
+            # A named closure, not a lambda: run_in_executor needs a callable
+            # whose return type is inferable, and a lambda with a default
+            # argument erases it.
+            def _fetch_page() -> dict:
+                return dict(self._client.list_parts(**params))
+
+            page = await asyncio.get_event_loop().run_in_executor(None, _fetch_page)
             parts.extend(page.get("Parts", []))
             if not page.get("IsTruncated"):
                 break
@@ -580,10 +585,11 @@ class S3StoragePort(StoragePort):
         loop = asyncio.get_event_loop()
         for key in dict.fromkeys([*chunk_keys, final_key]):
             try:
-                await loop.run_in_executor(
-                    None,
-                    lambda k=key: self._client.delete_object(Bucket=self.bucket, Key=k),
-                )
+
+                def _delete(k: str) -> None:
+                    self._client.delete_object(Bucket=self.bucket, Key=k)
+
+                await loop.run_in_executor(None, partial(_delete, key))
             except Exception as exc:  # noqa: BLE001
                 if not _is_missing_resource(exc):
                     raise
