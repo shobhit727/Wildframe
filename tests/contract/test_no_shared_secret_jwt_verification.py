@@ -8,7 +8,9 @@ with ``ENVIRONMENT: development``, and ``DEV_ENVIRONMENTS`` skips the production
 secret validator for exactly that value), so the shared-secret path is not a
 theoretical weakness.
 
-The migration is now complete on this audit branch: service token verification uses the shared RS256/JWKS path, and the settings gate below prevents any service from regressing to an HS256 default.
+    The migration is now complete on this audit branch: service token verification uses the shared
+    RS256/JWKS path, and the settings gate below prevents any service from regressing to an HS256
+    default.
 
 Two complementary checks, because neither alone is sufficient:
 
@@ -108,6 +110,20 @@ ALL_SERVICES = sorted(SERVICE_NAMES)
 
 UNMIGRATED_SERVICES: set[str] = set()
 
+
+#: Kept defined even while UNMIGRATED_SERVICES is empty. The reason is
+#: referenced when building SERVICE_CASES below, and that list is evaluated at
+#: import time -- so if this constant goes away with the last migrated entry, the
+#: next person to add a service back gets a NameError during collection instead
+#: of a marked xfail, and the whole gate fails to load. An empty container hides
+#: this class of bug completely; ruff's F821 is what caught it.
+_XFAIL_REASON = (
+    "#941: this service verifies tokens with a shared HMAC secret, so a token is "
+    "forgeable by anyone with repository access. Marked xfail so one unmigrated "
+    "service does not block the whole suite; strict=True means migrating THIS "
+    "service turns it into a failure that must be resolved by removing it from "
+    "UNMIGRATED_SERVICES."
+)
 
 SERVICE_CASES = [
     (
