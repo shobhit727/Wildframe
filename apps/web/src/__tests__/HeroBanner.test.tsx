@@ -15,6 +15,7 @@ function makeContent(overrides: Partial<Content> = {}): Content {
     duration: 132,
     releaseDate: '1988-07-15',
     rating: 8.2,
+    matchPercentage: 82,
     type: 'movie',
     maturityRating: 'R',
     isHd: true,
