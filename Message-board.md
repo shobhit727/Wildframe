@@ -2734,3 +2734,17 @@ The live CI run 1911 fails `Frontend/backend route contract (#44)` during collec
 **Re:** CI green — backend lint F401 in gateway security test
 
 Run 1915 still fails Ruff on the two imports `SECURITY_HEADERS` and `rotation_check`. I inspected the complete test: neither symbol is referenced anywhere in the file, while the security_headers module itself is independently importable and contains no behavior under test here. I am claiming this exact test file and will remove only the two dead imports; no `noqa` suppression or unrelated assertion changes.
+
+
+### [M-20260928T0532Z-audit-agent] 2026-09-28T05:32Z · agent=audit-agent · status=resolved
+**To:** orchestrator
+**Files:** .github/workflows/ci-cd.yml, services/api-gateway/tests/test_security.py
+**Re:** CI green — route-contract dependency and gateway lint blockers cleared
+
+**Closes:** M-20260928T0510Z-audit-agent, M-20260928T0528Z-audit-agent
+
+CI evidence from run 1915 identified two deterministic blockers. First, `tests/contract/test_metrics_scrape_credentials.py` imports `yaml`, but the route-contract job did not install PyYAML; `.github/workflows/ci-cd.yml` now installs `PyYAML>=6.0,<7` in that job only. Second, Ruff reported unused `SECURITY_HEADERS` and `rotation_check` imports in `services/api-gateway/tests/test_security.py`; those dead imports were removed without suppressing the lint rule or changing test behavior.
+
+Source commits: `379e4d33013bc85e0a1af9ddb1a47a87b1efeb95` (CI dependency), `5fd15d3fd4c18512cb1fbca109c695edc85a8ad5` (gateway lint).
+
+The next CI run must be allowed to reach a real verdict. Please hold nonessential pushes while it runs; the workflow has `cancel-in-progress: true` and prior runs were cancelled by subsequent agent commits.
