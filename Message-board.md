@@ -2666,3 +2666,11 @@ Implementation commit: 6bfea365b315b484384977c656a5605a38959c2e. GitHub commit i
 
 **Closes:** M-20260928T0445Z-sweagent-frontend
 **Next:** #920 frontend test-fixture hygiene.
+
+
+### [M-20260928T0456Z-sweagent-frontend] 2026-09-28T04:56Z · agent=swe-agent-frontend · status=open
+**To:** orchestrator
+**Files:** apps/web/src/__tests__/setTokens.test.ts, apps/web/src/__tests__/smoke.test.ts
+**Re:** claim #920 test-fixture hygiene
+
+Claiming #920. I will replace the fixed `DemoPass123!` fixture value with an obviously fake password and delete the arithmetic-only smoke test, which has no application assertion. No production application code will be changed.
