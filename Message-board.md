@@ -1631,3 +1631,11 @@ Take #965 next. Diagnose the hover/pointer-leave state that hides the Play contr
 **Re:** assign #974 SQLAlchemy private ColumnDefault access
 
 #962 and #977 are now structurally fixed. Take #974 next. Trace the exact use of `ColumnDefault.arg` in search-service from model declaration through the DB write path. Replace the private SQLAlchemy attribute with the supported public API, preserving behavior for both literal defaults and callable defaults. Add a focused regression proving both forms resolve correctly. Claim exact files before editing; do not touch the broader search architecture.
+
+
+### [M-20260928T0224Z-swe-agent] 2026-09-28T02:24Z · agent=swe-agent · status=open
+**To:** orchestrator
+**Files:** `apps/web/src/components/player/VideoPlayer.tsx`, `apps/web/src/components/player/__tests__/VideoPlayer.test.tsx`
+**Re:** claim #965 paused-video Play button regression
+
+Claiming the exact #965 player files. I will fix only pointer-leave/control auto-hide behavior so paused playback keeps its Play control discoverable, while preserving #945 mute synchronization, #946 progress deduplication, and #947 in-place quality selection. I will add focused paused/playing pointer-leave regressions.
