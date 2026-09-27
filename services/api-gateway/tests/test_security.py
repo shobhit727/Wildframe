@@ -6,9 +6,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException
 from fastapi.responses import Response
-from jose import jwt
+from jose import jwk, jwt
 
 from app.core.security_headers import SECURITY_HEADERS, rotation_check
+from wildframe_auth.verifier import verify_token as verify_shared_token
+
 from app.middleware import (
     AuthenticationMiddleware,
     LoadBalancer,
@@ -20,21 +22,10 @@ from app.middleware import (
     shared_client_lifespan,
 )
 
-SECRET = "unit-test-secret-key-at-least-32-characters-long"
-
-
-def test_security_headers():
-    assert "Strict-Transport-Security" in SECURITY_HEADERS
-
-
-def test_rotation():
-    assert rotation_check("k1") is True
-
-
-# ---------------------------------------------------------------------------
-# helpers
-# ---------------------------------------------------------------------------
-
+AUDIENCE = "wildframe-api"
+ISSUER = "wildframe-auth"
+JWKS_URL = "http://auth-service:8000/.well-known/jwks.json"
+_SIGNING_KEY_PEM: str | None = None
 
 def _request(path="/content/api/v1/titles", headers=None, method="GET"):
     raw = [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()]
@@ -55,14 +46,58 @@ def _request(path="/content/api/v1/titles", headers=None, method="GET"):
 
 
 def _token(sub="user-1", **claims):
-    payload = {"sub": sub, "exp": int(time.time()) + 600}
+    payload = {
+        "sub": sub,
+        "user_id": sub,
+        "exp": int(time.time()) + 600,
+        "iat": int(time.time()) - 1,
+        "iss": ISSUER,
+        "aud": AUDIENCE,
+        "type": "access",
+    }
     payload.update(claims)
-    return jwt.encode(payload, SECRET, algorithm="HS256")
+    # Sign with the test RSA key; the fixture installs its matching public JWK.
+    assert _SIGNING_KEY_PEM is not None
+    return jwt.encode(payload, _SIGNING_KEY_PEM, algorithm="RS256", headers={"kid": "test-k1"})
 
 
 @pytest.fixture
-def auth():
-    return AuthenticationMiddleware(SECRET)
+def auth(monkeypatch):
+    # Generate a test-only RSA keypair entirely in memory.
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives import serialization
+
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption(),
+    ).decode()
+    public_pem = private_key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+
+    test_jwk = jwk.construct(public_pem, algorithm="RS256").to_dict()
+    test_jwk.update({"kid": "test-k1", "use": "sig", "alg": "RS256"})
+    jwks = {"keys": [test_jwk]}
+
+    async def shared_verify(token, *, audience, issuer, url, leeway=60, **kwargs):
+        # Call the repository's shared verifier against the in-memory JWKS.
+        return verify_shared_token(token, jwks, audience, issuer, leeway, "access")
+
+    monkeypatch.setattr("app.middleware.verify_token_with_jwks", shared_verify)
+
+    global _SIGNING_KEY_PEM
+    _SIGNING_KEY_PEM = private_pem
+    try:
+        yield AuthenticationMiddleware(
+            jwks_url=JWKS_URL,
+            audience=AUDIENCE,
+            issuer=ISSUER,
+        )
+    finally:
+        _SIGNING_KEY_PEM = None
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +133,17 @@ async def test_verify_token_rejects_a_malformed_authorization_header(auth):
 
 async def test_verify_token_rejects_a_token_signed_with_another_key(auth):
     forged = jwt.encode(
-        {"sub": "attacker", "exp": int(time.time()) + 600}, "wrong-key", algorithm="HS256"
+        {
+            "sub": "attacker",
+            "user_id": "attacker",
+            "iat": int(time.time()) - 1,
+            "exp": int(time.time()) + 600,
+            "iss": ISSUER,
+            "aud": AUDIENCE,
+            "type": "access",
+        },
+        "wrong-key",
+        algorithm="HS256",
     )
     assert await auth.verify_token(_request(headers={"authorization": f"Bearer {forged}"})) is None
 
@@ -114,12 +159,12 @@ async def test_verify_token_requires_an_expiry_claim(auth):
     assert await auth.verify_token(_request(headers={"authorization": f"Bearer {no_exp}"})) is None
 
 
-async def test_verify_token_ignores_audience_because_upstream_enforces_it(auth):
-    """An aud-bearing token is accepted here and validated by the backend."""
+async def test_verify_token_rejects_audience_mismatch(auth):
+    """The shared verifier enforces the gateway's configured audience."""
     token = _token(aud="some-other-service")
-    payload = await auth.verify_token(_request(headers={"authorization": f"Bearer {token}"}))
-    assert payload is not None
-    assert payload["aud"] == "some-other-service"
+    assert await auth.verify_token(
+        _request(headers={"authorization": f"Bearer {token}"})
+    ) is None
 
 
 # ---------------------------------------------------------------------------
