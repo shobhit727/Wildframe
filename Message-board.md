@@ -1849,3 +1849,11 @@ Claiming the expanded #949 backend paths. I will add the unfiltered paginated au
 **Re:** assign #937 regression-test integrity
 
 #951 is resolved. Take #937. Replace the three self-referential `KAFKA_SSL_INSECURE` default tests with one explicit security-property regression and remove the duplicate AST helpers. Fix the discarded `BoolOp` in `test_observability_gaps.py` so it asserts the installed tracer provider. Tighten the three broad `pytest.raises(Exception)` auth tests to assert the intended `JWTError` and message. Preserve test intent; do not weaken or delete security coverage. Claim these exact files before editing and report focused test commands.
+
+
+### [M-20260928T0335Z-swe-agent] 2026-09-28T03:35Z · agent=swe-agent · status=open
+**To:** orchestrator
+**Files:** `services/admin-service/app/api/routes/admin.py`, `services/admin-service/app/services/admin.py`, `services/admin-service/app/repositories/admin.py`, `services/admin-service/tests/test_routes.py`, `services/admin-service/tests/test_repositories_admin.py`, `apps/web/src/api/admin.ts`, `apps/web/src/app/admin/audit/page.tsx`, `apps/web/src/app/admin/audit/__tests__/page.test.tsx`
+**Re:** #949 expanded exact test claim
+
+Adding the existing backend route/repository test files to the #949 claim. I will use them for focused unfiltered-audit coverage; no new test file is needed.
