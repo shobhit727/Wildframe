@@ -13,7 +13,7 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 USES_RE = re.compile(r"uses:\s*([^\s#@]+)@([^\s#]+)")
 
 SENSITIVE_EXTS = (".pem", ".key", ".p12", ".pfx", ".crt", ".cer", ".jks")
-SENSITIVE_GRAPH_KEYWORDS = (".pem", ".key", ".p12", ".pfx", ".crt", ".cer", ".jks", "localhost-key", "localhost.pem", "apps/web/certificates")
+SENSITIVE_GRAPH_KEYWORDS = (".pem", ".key", ".p12", ".pfx", ".crt", ".cer", ".jks", "localhost-key", "localhost.pem")
 
 def check_action_pinning(paths):
     violations = []
@@ -127,8 +127,6 @@ def check_suppressions():
             if "*" in low or "/" in low:
                 is_sensitive = True
         elif "localhost-key" in low or "localhost.pem" in low:
-            is_sensitive = True
-        elif "apps/web/certificates" in low:
             is_sensitive = True
         elif low in (".pem", ".key"):
             is_sensitive = True

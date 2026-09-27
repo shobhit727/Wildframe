@@ -47,6 +47,12 @@ class FakeJobRepo:
     async def get(self, job_id: UUID):
         return self.jobs.get(job_id)
 
+    async def get_by_idempotency_key(self, key: str):
+        for job in self.jobs.values():
+            if getattr(job, "idempotency_key", None) == key:
+                return job
+        return None
+
     async def get_by_upload_session(self, upload_session_id: UUID):
         for job in self.jobs.values():
             if job.upload_session_id == upload_session_id:

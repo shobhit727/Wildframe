@@ -75,11 +75,10 @@ async def _read_capped(stream: asyncio.StreamReader, limit: int) -> tuple[bytes,
         if not chunk:
             break
         total += len(chunk)
-        if total > limit:
-            # Keep only the first ``limit`` bytes of the stream for diagnostics.
-            chunks = [b"".join(chunks)[:limit]] if len(chunks) == 1 else [b"".join(chunks)[:limit]]
-            continue
         chunks.append(chunk)
+        if total >= limit:
+            # Retain the beginning of the cap-tripping chunk for diagnostics.
+            break
     captured = b"".join(chunks)[:limit]
     return captured, total
 

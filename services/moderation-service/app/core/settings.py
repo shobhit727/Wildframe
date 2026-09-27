@@ -100,6 +100,8 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
             )
+        if not self.JWT_SECRET_KEY.strip():
+            raise ValueError("JWT_SECRET_KEY must be set in production")
         if self.JWT_SECRET_KEY in KNOWN_INSECURE_JWT_SECRETS:
             raise ValueError(
                 "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."

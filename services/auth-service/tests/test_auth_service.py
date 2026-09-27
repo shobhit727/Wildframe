@@ -93,10 +93,20 @@ class TestPasswordManager:
         # The current settings rounds must be > 4 for this test to be valid.
         assert settings.PASSWORD_BCRYPT_ROUNDS > 4
 
+    def test_long_password_is_not_truncated(self):
+        """#849: passwords beyond bcrypt's historical 72-byte limit remain distinct."""
+        prefix = "a" * 72
+        password_a = prefix + "X"
+        password_b = prefix + "Y"
+        hash_a = PasswordManager.hash_password(password_a)
+
+        assert PasswordManager.verify_password(password_a, hash_a)
+        assert not PasswordManager.verify_password(password_b, hash_a)
+
     def test_dummy_hash_verifies_like_a_real_check(self):
         """#163/#436: the dummy hash accepts nothing but costs full bcrypt work."""
         dummy = PasswordManager.dummy_hash()
-        assert dummy.startswith("$2")
+        assert dummy.startswith("$argon2")
         assert not PasswordManager.verify_password("any-guess", dummy)
 
     def test_normalize_email_canonicalizes_unicode_and_case(self):
@@ -190,9 +200,20 @@ class TestTokenManager:
             return base64.urlsafe_b64encode(b).decode().rstrip("=")
 
         prev_priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        prev_pem = prev_priv.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
+        prev_pem = prev_priv.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode()
         nums = prev_priv.public_key().public_numbers()
-        prev_jwk = {"kty":"RSA","kid":"k0","use":"sig","alg":"RS256","n":_b64(nums.n),"e":_b64(nums.e)}
+        prev_jwk = {
+            "kty": "RSA",
+            "kid": "k0",
+            "use": "sig",
+            "alg": "RS256",
+            "n": _b64(nums.n),
+            "e": _b64(nums.e),
+        }
         user_id = str(uuid4())
         now = datetime.now(UTC)
         payload = {
@@ -336,6 +357,7 @@ class TestAuthServiceLogin:
 
         # Exactly one verification happened, against the shared dummy hash.
         assert len(calls) == 1
+        # Compare against the exact cached dummy hash used by the verifier.
         assert calls[0][1] == PasswordManager.dummy_hash()
 
     async def test_login_upgrades_low_cost_hash_on_success(
@@ -377,7 +399,8 @@ class TestAuthServiceLogin:
         ]
         assert rehashed, "expected a password_hash upgrade update"
         new_hash = rehashed[0]
-        assert int(new_hash.split("$")[2]) == settings.PASSWORD_BCRYPT_ROUNDS
+        # Legacy bcrypt credentials are transparently migrated to Argon2id.
+        assert new_hash.startswith("$argon2")
         assert PasswordManager.verify_password(password, new_hash)
 
     async def test_login_invalid_password(self, auth_service, mock_repositories, user_id):

@@ -1,5 +1,4 @@
 import base64
-import json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -9,7 +8,7 @@ from jose import jwt
 from jose import JWTError
 
 from app.core.settings import settings
-from app.core.jwt_verifier import verify_with_jwks, verify_token, get_cached_jwks, clear_cache
+from app.core.jwt_verifier import verify_with_jwks
 
 
 def _b64url_int(n: int) -> str:

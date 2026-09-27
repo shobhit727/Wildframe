@@ -30,8 +30,12 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     JWT_SECRET_KEY: str | None = None
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
     JWT_EXPIRATION_MINUTES: int = 15
+    JWT_ISSUER: str = "wildframe-auth"
+    JWT_AUDIENCE: str = "wildframe-api"
+    JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
+    JWT_LEEWAY_SECONDS: int = 60
     REDIS_URL: str | None = None
     LOG_LEVEL: str = "INFO"
     SERVER_HOST: str = "0.0.0.0"

@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import (
 )
 import pytest
 import pytest_asyncio
-from testcontainers.postgres import PostgresContainer
 from app.models import (
     Base,
     PipelineJob,
@@ -31,6 +30,8 @@ async def db_session() -> AsyncIterator[AsyncSession]:
     with ExitStack() as stack:
         url = os.environ.get("TEST_DATABASE_URL")
         if not url:
+            from testcontainers.postgres import PostgresContainer
+
             postgres = stack.enter_context(PostgresContainer("postgres:15"))
             url = postgres.get_connection_url()
         engine = create_async_engine(

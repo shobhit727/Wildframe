@@ -25,7 +25,7 @@ export default function proxy(request: NextRequest) {
 
   // Protect dashboard routes
   const protectedRoutes = ['/browse', '/watch', '/my-list', '/account', '/billing'];
-  const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route));
+  const isProtectedRoute = protectedRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 
   if (isProtectedRoute && !token) {
     return withCsp(NextResponse.redirect(new URL('/login', request.url)), csp);

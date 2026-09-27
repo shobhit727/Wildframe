@@ -54,10 +54,12 @@ class UserRepository(BaseRepository):
             logger.error(f"Error creating user: {e!s}")
             raise
 
-    async def get_by_email(self, email: str) -> User | None:
-        """Get user by email (NFC-normalized + casefolded, #161)."""
-        # Inactive (disabled/soft-deleted) accounts can never authenticate.
-        stmt = select(User).where(User.email == normalize_email(email), User.is_active.is_(True))
+    async def get_by_email(self, email: str, include_inactive: bool = False) -> User | None:
+        """Get a normalized user by email; login may explicitly inspect inactive accounts."""
+        stmt = select(User).where(User.email == normalize_email(email))
+        if not include_inactive:
+            # Normal callers must not expose disabled/soft-deleted accounts.
+            stmt = stmt.where(User.is_active.is_(True))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -142,9 +144,12 @@ class RefreshTokenRepository(BaseRepository):
             select(RefreshToken)
             .where(RefreshToken.user_id == user_id)
             .order_by(RefreshToken.created_at.desc(), RefreshToken.id.desc())
+            .limit(1)
         )
         result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        # Multiple active refresh tokens are valid; callers asking for "the latest"
+        # must receive one deterministic row rather than scalar_one_or_none().
+        return result.scalars().first()
 
     async def consume(self, token_hash: str) -> RefreshToken | None:
         """Atomically consume a refresh token via DELETE ... RETURNING."""

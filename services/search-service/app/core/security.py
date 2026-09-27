@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import HTTPException, Request
-from jose import jwt
+from jose import JWTError, jwt
+from wildframe_auth.verifier import get_cached_jwks, verify_token as verify_jwt_token
 from wildframe_observability.logging import correlation_id_var
 
 from app.core.settings import settings
@@ -37,8 +38,8 @@ class Identity:
         return self.arv == settings.ADMIN_ROLE_VERSION
 
 
-def verify_token(request: Request) -> Identity | None:
-    """Verify a bearer JWT (HS256, exp required). Returns None for anonymous."""
+async def verify_token(request: Request) -> Identity | None:
+    """Verify a bearer JWT with the shared RS256/JWKS verifier."""
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         return None
@@ -46,13 +47,17 @@ def verify_token(request: Request) -> Identity | None:
         scheme, token = auth_header.split(None, 1)
         if scheme.lower() != "bearer":
             return None
-        payload = jwt.decode(
+        header = jwt.get_unverified_header(token)
+        kid = header.get("kid")
+        if not kid:
+            return None
+        jwks = await get_cached_jwks(settings.JWT_JWKS_URL, required_kid=kid)
+        payload = verify_jwt_token(
             token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
+            jwks,
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
-            options={"require_exp": True},
+            expected_type="access",
         )
         # Token-type separation (#221): refresh tokens are not access tokens.
         if payload.get("type") != "access":
@@ -65,18 +70,20 @@ def verify_token(request: Request) -> Identity | None:
             role=str(payload.get("role") or "user"),
             arv=int(payload.get("arv") or 0),
         )
-    except Exception:  # noqa: BLE001 - invalid/expired/malformed tokens are anonymous
+    except (JWTError, ValueError, TypeError):
+        return None
+    except Exception:  # noqa: BLE001 - JWKS/network failures are treated as anonymous
         return None
 
 
 async def get_optional_identity(request: Request) -> Identity | None:
     """Optional auth dependency for public search endpoints."""
-    return verify_token(request)
+    return await verify_token(request)
 
 
 async def get_required_identity(request: Request) -> Identity:
     """Auth dependency: 401 when no valid bearer token is present."""
-    identity = verify_token(request)
+    identity = await verify_token(request)
     if identity is None:
         raise HTTPException(
             status_code=401,
@@ -125,7 +132,7 @@ def encode_cursor(query: str, content_type: str | None, limit: int, sort_values:
         {"scope": _scope_hash(query, content_type, limit), "sort": sort_values},
         separators=(",", ":"),
     ).encode()
-    signature = hmac.new(settings.JWT_SECRET_KEY.encode(), raw, hashlib.sha256).digest()
+    signature = hmac.new(settings.CURSOR_SIGNING_SECRET.encode(), raw, hashlib.sha256).digest()
     return (
         base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
         + "."
@@ -139,7 +146,7 @@ def decode_cursor(cursor: str, query: str, content_type: str | None, limit: int)
         raw_b64, sig_b64 = cursor.rsplit(".", 1)
         raw = base64.urlsafe_b64decode(raw_b64 + "=" * (-len(raw_b64) % 4))
         sig = base64.urlsafe_b64decode(sig_b64 + "=" * (-len(sig_b64) % 4))
-        expected = hmac.new(settings.JWT_SECRET_KEY.encode(), raw, hashlib.sha256).digest()
+        expected = hmac.new(settings.CURSOR_SIGNING_SECRET.encode(), raw, hashlib.sha256).digest()
         if not hmac.compare_digest(expected, sig):
             raise ValueError("tampered cursor")
         payload = json.loads(raw)

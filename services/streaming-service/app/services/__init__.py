@@ -409,7 +409,7 @@ segment-001.ts
                 episode_id=request.episode_id,
                 device_id=request.device_id,
                 resolution=request.resolution,
-                total_bytes=0,  # Would be set from file size
+                total_bytes=request.total_bytes,
             )
             await self.download_repo.commit()
             return download

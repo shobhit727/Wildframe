@@ -133,9 +133,10 @@ TRANCHE_TRANSITIONS: Mapping[TrancheStatus, tuple[TrancheStatus, ...]] = {
 }
 
 PAYOUT_TRANSITIONS: Mapping[str, tuple[str, ...]] = {
-    "accrued": ("accrued", "paid", "cancelled"),
-    "paid": ("paid",),
-    "cancelled": ("cancelled",),
+    # Match the persisted PayoutStatus enum exactly: accrued -> transferring -> completed.
+    "accrued": ("accrued", "transferring"),
+    "transferring": ("transferring", "completed"),
+    "completed": ("completed",),
 }
 
 

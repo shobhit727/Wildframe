@@ -7,6 +7,7 @@ from typing import Annotated
 # from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -29,7 +30,11 @@ async def verify_dsar_identity(
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing auth")
     token = authorization.removeprefix("Bearer ")
-    payload = TokenManager.verify_token(token, token_type="access")
+    try:
+        payload = TokenManager.verify_token(token, token_type="access")
+    except JWTError:
+        # Token-type mismatches and malformed tokens are authentication failures, not 500s.
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid access token")
     if not payload or str(payload.get("user_id")) != str(request.user_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User mismatch")
     # In dev, accept any token + email match; in prod would check OTP/document

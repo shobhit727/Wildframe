@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 import bcrypt
 from jose import jwt
 from jose.exceptions import ExpiredSignatureError, JWTError
+from wildframe_auth.verifier import get_cached_jwks, verify_token as verify_jwt_token
 
 from app.core.settings import settings
 
@@ -42,7 +43,9 @@ class PasswordManager:
 
     @staticmethod
     def verify_password(password: str, password_hash: str) -> bool:
-        """Verify a password against its hash."""
+        """Verify a password against its hash, treating missing hashes as invalid."""
+        if not password_hash:
+            return False
         try:
             return bcrypt.checkpw(
                 _encode_password(password),
@@ -64,17 +67,20 @@ class TokenManager:
         expires = datetime.now(UTC) + expires_delta
         payload = {"sub": str(user_id), "exp": expires, "iat": datetime.now(UTC), "type": "access"}
 
-        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+        from app.security.jwks import get_private_key_pem
+        return jwt.encode(payload, get_private_key_pem(), algorithm="RS256", headers={"kid": settings.JWT_KEY_ID})
 
     @staticmethod
-    def verify_token(token: str, token_type: str = "access") -> dict[str, Any] | None:
+    async def verify_token(token: str, token_type: str = "access") -> dict[str, Any] | None:
         """Verify and decode a JWT token."""
         try:
-            payload = jwt.decode(
-                token,
-                settings.JWT_SECRET_KEY,
-                algorithms=[settings.JWT_ALGORITHM],
-                audience=settings.JWT_AUDIENCE,
+            header = jwt.get_unverified_header(token)
+            kid = header.get("kid")
+            if not kid:
+                raise JWTError("missing kid")
+            jwks = await get_cached_jwks(settings.JWT_JWKS_URL, required_kid=kid)
+            payload = verify_jwt_token(
+                token, jwks, audience=settings.JWT_AUDIENCE, issuer=settings.JWT_ISSUER, expected_type=token_type
             )
 
             if payload.get("type") != token_type:

@@ -4,18 +4,22 @@ set -u
 GW="${WF_API_URL:-https://localhost:8000}"
 DEMO_EMAIL="${WILDFRAME_DEMO_EMAIL:-${DEMO_EMAIL:-demo@wildframe.com}}"
 DEMO_PASS="${WILDFRAME_DEMO_PASSWORD:-${DEMO_PASS:-${DEMO_PASSWORD:-}}}"
-HACK_EMAIL="hacker@wildframe.com"; HACK_PASS="HackerPass123!"
+HACK_EMAIL="${WILDFRAME_HACK_EMAIL:-hacker@wildframe.com}"
+# Negative-test credentials are supplied at runtime and are never committed.
+HACK_PASS="${WILDFRAME_HACK_PASSWORD:-}"
 if [ -z "$DEMO_PASS" ]; then echo "DEMO_PASS not set: export WILDFRAME_DEMO_PASSWORD (or DEMO_PASSWORD) to match seed_demo" >&2; exit 1; fi
+if [ -z "$HACK_PASS" ]; then echo "WILDFRAME_HACK_PASSWORD not set" >&2; exit 1; fi
 CURL="curl -sk"
 
-jq_get() { python3 -c "import json,sys;d=json.load(sys.stdin);print(eval(sys.argv[1]))" "$1" 2>/dev/null; }
+# Extract one top-level JSON field without eval(), so untrusted API output is never executed.
+jq_get() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[sys.argv[1]])' "$1" 2>/dev/null; }
 
 echo "== setup tokens =="
-DEMO_TOKEN=$($CURL -X POST $GW/auth/api/v1/auth/login -H "Content-Type: application/json" -d "{\"email\":\"$DEMO_EMAIL\",\"password\":\"$DEMO_PASS\"}" | jq_get "d['access_token']")
+DEMO_TOKEN=$($CURL -X POST $GW/auth/api/v1/auth/login -H "Content-Type: application/json" -d "{\"email\":\"$DEMO_EMAIL\",\"password\":\"$DEMO_PASS\"}" | jq_get "access_token")
 $CURL -X POST $GW/auth/api/v1/auth/register -H "Content-Type: application/json" -d "{\"email\":\"$HACK_EMAIL\",\"password\":\"$HACK_PASS\",\"first_name\":\"Hack\",\"last_name\":\"Er\"}" -o /dev/null
-HACK_TOKEN=$($CURL -X POST $GW/auth/api/v1/auth/login -H "Content-Type: application/json" -d "{\"email\":\"$HACK_EMAIL\",\"password\":\"$HACK_PASS\"}" | jq_get "d['access_token']")
-DEMO_UID=$($CURL -H "Authorization: Bearer $DEMO_TOKEN" $GW/auth/api/v1/auth/me | jq_get "d['id']")
-HACK_UID=$($CURL -H "Authorization: Bearer $HACK_TOKEN" $GW/auth/api/v1/auth/me | jq_get "d['id']")
+HACK_TOKEN=$($CURL -X POST $GW/auth/api/v1/auth/login -H "Content-Type: application/json" -d "{\"email\":\"$HACK_EMAIL\",\"password\":\"$HACK_PASS\"}" | jq_get "access_token")
+DEMO_UID=$($CURL -H "Authorization: Bearer $DEMO_TOKEN" $GW/auth/api/v1/auth/me | jq_get "id")
+HACK_UID=$($CURL -H "Authorization: Bearer $HACK_TOKEN" $GW/auth/api/v1/auth/me | jq_get "id")
 echo "demo=$DEMO_UID hacker=$HACK_TOKEN>0 && ok"
 
 check() { # name expected actual
@@ -26,7 +30,7 @@ echo "== A. auth bypass =="
 check "no-token /auth/me -> 401" 401 "$($CURL -o /dev/null -w '%{http_code}' $GW/auth/api/v1/auth/me)"
 TAMPERED="${DEMO_TOKEN%?}x"
 check "tampered JWT /auth/me -> 401" 401 "$($CURL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TAMPERED" $GW/auth/api/v1/auth/me)"
-REFRESH=$($CURL -X POST $GW/auth/api/v1/auth/login -H "Content-Type: application/json" -d "{\"email\":\"$DEMO_EMAIL\",\"password\":\"$DEMO_PASS\"}" | jq_get "d['refresh_token']")
+REFRESH=$($CURL -X POST $GW/auth/api/v1/auth/login -H "Content-Type: application/json" -d "{\"email\":\"$DEMO_EMAIL\",\"password\":\"$DEMO_PASS\"}" | jq_get "refresh_token")
 check "refresh-as-access on /users/me -> 401/403" 401 "$($CURL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $REFRESH" $GW/users/api/v1/users/me)"
 FAKE=$($CURL -H "Authorization: Bearer $DEMO_TOKEN" $GW/auth/api/v1/auth/me >/dev/null; python3 - <<EOF
 import base64,json,time
@@ -46,7 +50,7 @@ check "hacker audit log -> 403" 403 "$($CURL -o /dev/null -w '%{http_code}' -H "
 
 echo "== C. IDOR =="
 # demo creates a playlist item; hacker tries to read/modify it
-PLIST=$($CURL -X POST -H "Authorization: Bearer $DEMO_TOKEN" -H "Content-Type: application/json" -d '{"name":"secret"}' $GW/users/api/v1/playlists | jq_get "d['id']")
+PLIST=$($CURL -X POST -H "Authorization: Bearer $DEMO_TOKEN" -H "Content-Type: application/json" -d '{"name":"secret"}' $GW/users/api/v1/playlists | jq_get "id")
 if [ -n "$PLIST" ] && [ "$PLIST" != "None" ]; then
   check "hacker GET demo playlist -> 403/404" 403 "$($CURL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $HACK_TOKEN" $GW/users/api/v1/playlists/$PLIST)"
 else
@@ -55,7 +59,7 @@ fi
 check "hacker GET demo profile -> 403" 403 "$($CURL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $HACK_TOKEN" $GW/users/api/v1/profiles/$DEMO_UID)"
 check "hacker GET demo subscription -> 403" 403 "$($CURL -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $HACK_TOKEN" $GW/billing/api/v1/billing/subscription/$DEMO_UID)"
 # playback session idor: start session as demo, end as hacker
-SESS=$($CURL -X POST -H "Authorization: Bearer $DEMO_TOKEN" -H "Content-Type: application/json" -d '{"user_id":"'$DEMO_UID'","content_id":"f0dd096f-00ce-4022-a131-cd5249f18f28","device_id":"idor-test"}' $GW/streaming/api/v1/playback-sessions | jq_get "d['id']")
+SESS=$($CURL -X POST -H "Authorization: Bearer $DEMO_TOKEN" -H "Content-Type: application/json" -d '{"user_id":"'$DEMO_UID'","content_id":"f0dd096f-00ce-4022-a131-cd5249f18f28","device_id":"idor-test"}' $GW/streaming/api/v1/playback-sessions | jq_get "id")
 if [ -n "$SESS" ] && [ "$SESS" != "None" ]; then
   check "hacker ends demo session -> 403" 403 "$($CURL -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $HACK_TOKEN" $GW/streaming/api/v1/playback-sessions/$SESS/end)"
 else
@@ -73,7 +77,7 @@ check "XFF-spoofed /auth/me still works (not IP-bound)" 200 "$XF"
 
 echo "== E. stored XSS payload through API =="
 XSS_TITLE='<script>alert(1)</script><img src=x onerror=window.__xss=42>'
-CC=$($CURL -X POST -H "Authorization: Bearer $DEMO_TOKEN" -H "Content-Type: application/json" -d '{"title":"'"$XSS_TITLE"'","description":"<svg onload=alert(3)>","content_type":"movie","genres":[]}' $GW/content/api/v1/content | jq_get "d['id']")
+CC=$($CURL -X POST -H "Authorization: Bearer $DEMO_TOKEN" -H "Content-Type: application/json" -d '{"title":"'"$XSS_TITLE"'","description":"<svg onload=alert(3)>","content_type":"movie","genres":[]}' $GW/content/api/v1/content | jq_get "id")
 echo "created xss content id: $CC"
 echo "$CC" > /tmp/opencode/xss_content_id
 echo "== done =="

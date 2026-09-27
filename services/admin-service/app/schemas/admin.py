@@ -92,9 +92,11 @@ class AdminAuditLogResponse(BaseModel):
 
 
 class SystemStatsResponse(BaseModel):
-    total_users: int
-    active_users: int
-    suspended_users: int
+    # User counts are unavailable until the admin/user service contract exposes
+    # an authoritative aggregate; do not turn that absence into a 500.
+    total_users: int | None
+    active_users: int | None
+    suspended_users: int | None
     flagged_content: int
     active_alerts: int
     system_uptime_hours: float

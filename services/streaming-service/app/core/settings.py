@@ -41,9 +41,10 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     DATABASE_URL: str | None = None
     REDIS_URL: str | None = None
     JWT_SECRET_KEY: str | None = None
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
     JWT_ISSUER: str = "wildframe-auth"
     JWT_AUDIENCE: str = "wildframe-api"
+    JWT_JWKS_URL: str = "http://auth-service:8001/.well-known/jwks.json"
     ADMIN_ROLE_VERSION: int = 0
     JWT_EXPIRATION_MINUTES: int = 15
     DB_POOL_SIZE: int = 5
@@ -74,6 +75,8 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
         if environment in DEV_ENVIRONMENTS:
             for key, value in DEV_DEFAULTS.items():
                 values.setdefault(key, value)
+            if environment in {"", "development", "test"}:
+                values.setdefault("JWT_ALGORITHM", "HS256")
         return values
 
     @model_validator(mode="after")
@@ -101,23 +104,12 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
             )
-        if self.JWT_SECRET_KEY is None:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        # Upstream guard: also reject empty / whitespace-only secrets.
-        if not self.JWT_SECRET_KEY.strip():
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if self.JWT_SECRET_KEY.strip() in KNOWN_INSECURE_JWT_SECRETS:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if len(self.JWT_SECRET_KEY) < 32:
-            raise ValueError(
-                "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
-            )
+        if self.JWT_ALGORITHM != "RS256":
+            raise ValueError("JWT_ALGORITHM must be RS256.")
+        if not self.JWT_JWKS_URL.strip():
+            raise ValueError("JWT_JWKS_URL must be set explicitly when ENVIRONMENT is not development.")
+        if not self.JWT_ISSUER.strip() or not self.JWT_AUDIENCE.strip():
+            raise ValueError("JWT_ISSUER and JWT_AUDIENCE must be set explicitly when ENVIRONMENT is not development.")
         # The playback signing secret is a plain str carrying a shipped dev
         # default, so a non-development deploy that omits the env var would
         # otherwise sign playback URLs with that dev secret.

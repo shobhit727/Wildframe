@@ -8,7 +8,7 @@ import html
 import re
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-_TAGS = re.compile(r"<[^>]+>")
+_TAGS = re.compile(r"<[^>]*>")
 
 # (subject, html_body, text_body) triplets; {field} placeholders are filled
 # with sanitized (escaped) values for HTML, tag-stripped plain values for text.

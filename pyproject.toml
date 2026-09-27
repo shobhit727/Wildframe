@@ -66,6 +66,8 @@ opentelemetry-instrumentation-sqlalchemy = "^0.41b0"
 opentelemetry-instrumentation-redis = "^0.41b0"
 prometheus-client = ">=0.18,<0.27"
 python-json-logger = ">=2,<5"
+# OpenTelemetry 0.41b0 imports pkg_resources, which setuptools 81 removed.
+setuptools = "<81"
 
 # Utils
 httpx = ">=0.25,<0.29"

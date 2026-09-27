@@ -224,12 +224,12 @@ tests across 7 modules + `conftest.py`:
 
 ```bash
 # From repo root — stack must be up; skips itself if the stack is down
-poetry run pytest tests/integration -q    # ~12 min
+poetry run pytest tests/integration -q    # ~16 min
 ```
 
 > ⚠️ The integration suite is deliberately **excluded** from the per-service
 > loop (root `pyproject.toml` `testpaths` only cover `services/*/tests` and
-> `packages/*/tests`), so CI's unit matrix does not run it. It is not
+> `packages/*/tests`), and is executed by the dedicated `integration-tests` CI job. It is not
 > testcontainers-based; it treats the compose stack as the test target.
 > HTTP requests use `verify=False` (self-signed dev certs), and IP-keyed
 > requests are paced (≤3 per 60 s window) so the gateway rate limiter does
@@ -261,52 +261,16 @@ cd apps/web
 npx playwright test --reporter=github
 ```
 
-**Test count:** 9 tests total (3 suites × 3 tests each)
+**Test count:** 10 tests across 3 test files.
 
 **Configuration:** `apps/web/playwright.config.ts`
 - Base URL: `https://localhost:3000` (HTTPS with self-signed certs)
-- Single browser: Chromium (CI), multi-browser locally
+- Browser projects: Chromium only; this is the single configured Playwright project in CI and local runs
 - Web server: Starts `npm run dev` automatically
 - HTTPS errors ignored (self-signed certs)
 - Timeout: 300s for web server startup
 
 ---
-
-### Live-stack integration suite (`tests/integration/`, repo root)
-
-Since Aug 2026 the repo ships a cross-service integration suite that runs
-against the **real dockerized stack** through the Caddy proxy (HTTPS). 87
-tests across 7 modules + `conftest.py`:
-
-- `test_gateway_auth.py` — edge auth matrix through the gateway (expired /
-  wrong-audience / malformed tokens, public vs. protected routes) and the
-  gateway rate limiter (429 flood test, run last with drain sleeps).
-- `test_auth_token_lifecycle.py` — register → login → refresh → logout /
-  token revocation.
-- `test_authorization_cross_service.py` — per-service authorization and
-  audience verification (auth, content, analytics, billing, creators,
-  notification, search, streaming, admin, media-pipeline).
-- `test_billing_webhook_idempotency.py` — Stripe webhook: signature
-  verification (unsigned → 400), first delivery `handled:true`, replay
-  `idempotent:true`, exactly one PAID invoice row.
-- `test_contract_schemas.py` — shared response shapes across services.
-- `test_health_readiness.py` — `/health` and `/ready` for every service
-  (search `/ready` regression).
-- `test_pipeline_idempotency.py` — media-pipeline job start/get now require
-  a verified JWT; repeated `start` calls are idempotent.
-
-```bash
-# From repo root — stack must be up; skips itself if the stack is down
-poetry run pytest tests/integration -q    # ~12 min
-```
-
-> ⚠️ The integration suite is deliberately **excluded** from the per-service
-> loop (root `pyproject.toml` `testpaths` only cover `services/*/tests` and
-> `packages/*/tests`), so CI's unit matrix does not run it. It is not
-> testcontainers-based; it treats the compose stack as the test target.
-> HTTP requests use `verify=False` (self-signed dev certs), and IP-keyed
-> requests are paced (≤3 per 60 s window) so the gateway rate limiter does
-> not flake the suite.
 
 ### Route Contract Tests
 
@@ -316,7 +280,7 @@ Static analysis test that validates frontend API calls match backend routes:
 pytest tests/contract -q
 ```
 
-16 tests verifying frontend paths resolve to registered backend routes.
+24 contract/supply-chain tests cover frontend route drift, committed-private-key checks, and archive-sandbox invariants.
 Known frontend-only paths are documented in `tests/contract/test_route_drift.py`.
 
 ### Smoke test (after deployment)

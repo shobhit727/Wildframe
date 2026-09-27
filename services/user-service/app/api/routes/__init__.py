@@ -96,7 +96,7 @@ async def get_current_user_id(
             headers={"WWW-Authenticate": "Bearer"},
         )
     token = authorization.removeprefix("Bearer ")
-    payload = TokenManager.verify_token(token)
+    payload = await TokenManager.verify_token(token)
     if not payload or "sub" not in payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

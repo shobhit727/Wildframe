@@ -9,6 +9,16 @@ from app.api.routes.admin import verify_admin_reauth, _stepup_jti_seen
 from app.core.settings import settings
 
 
+@pytest.fixture(autouse=True)
+def _mock_jwks_verifier(monkeypatch):
+    """Unit-test authorization claims without depending on key material."""
+    monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
+    monkeypatch.setattr(
+        "app.api.routes.admin.verify_token",
+        lambda token, *args, **kwargs: jwt.get_unverified_claims(token),
+    )
+
+
 def _mint_step_up(
     sub,
     role="admin",
@@ -40,7 +50,7 @@ def _mint_step_up(
         "av": 0,
         "jti": jti or f"stepup_{sub}_{now.timestamp()}_{uuid.uuid4().hex[:4]}",
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(payload, "unit-test-signing-key", algorithm=settings.JWT_ALGORITHM)
 
 
 def _mint_access(sub, exp_offset=300):
@@ -191,7 +201,7 @@ async def test_missing_jti():
         "arv": settings.ADMIN_ROLE_VERSION,
         "av": 0,
     }
-    token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    token = jwt.encode(payload, "unit-test-signing-key", algorithm=settings.JWT_ALGORITHM)
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, token)
     assert exc.value.status_code == 401
