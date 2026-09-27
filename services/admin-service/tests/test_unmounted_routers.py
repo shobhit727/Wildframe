@@ -105,6 +105,7 @@ class TestRoutersAreUnmountedInProduction:
             "/api/v1/admin/alerts",
             "/api/v1/admin/alerts/critical",
             "/api/v1/admin/alerts/{alert_id}/acknowledge",
+            "/api/v1/admin/audit",
             "/api/v1/admin/audit/admin/{admin_id}",
             "/api/v1/admin/audit/resource/{resource_type}/{resource_id}",
             "/api/v1/admin/config",
