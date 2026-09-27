@@ -8,10 +8,17 @@ import pytest
 from fastapi import Request
 from fastapi.responses import Response, StreamingResponse
 from fastapi.testclient import TestClient
+from jose import jwk, jwt
+
+from wildframe_auth.verifier import verify_token as verify_shared_token
 
 from app.middleware import BodyLimitMiddleware, _release_global_budget, _acquire_global_budget
 import app.middleware as mw
 from app.core.settings import settings
+
+#: RSA key the test bearer is signed with; set by the ``gateway`` fixture's
+#: in-memory JWKS so the shared verifier can actually verify it.
+_SIGNING_KEY_PEM: str | None = None
 
 
 def _make_request(
@@ -484,10 +491,43 @@ def gateway(upstream, limiter_result=True, app=None):
     """
     import app.main as main
     from app.middleware import AuthenticationMiddleware
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives import serialization
 
     if app is None:
         app = main.app
     app.dependency_overrides.clear()
+
+    # Generate a test-only RSA keypair and install a matching in-memory JWKS,
+    # so the middleware's shared verifier can actually verify the tokens the
+    # tests mint. Without this the HS256 bearer is rejected and every
+    # authenticated path silently drops its account dimension.
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption(),
+    ).decode()
+    public_pem = (
+        private_key.public_key()
+        .public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
+    )
+    test_jwk = jwk.construct(public_pem, algorithm="RS256").to_dict()
+    test_jwk.update({"kid": "test-k1", "use": "sig", "alg": "RS256"})
+    jwks = {"keys": [test_jwk]}
+
+    async def shared_verify(token, *, audience, issuer, url, leeway=60, **kwargs):
+        # Call the repository's shared verifier against the in-memory JWKS.
+        return verify_shared_token(token, jwks, audience, issuer, leeway, "access")
+
+    patcher = patch("app.middleware.verify_token_with_jwks", shared_verify)
+
+    global _SIGNING_KEY_PEM
+    _SIGNING_KEY_PEM = private_pem
 
     saved_limiter = main.rate_limiter
     saved_auth = main.auth_middleware
@@ -501,7 +541,9 @@ def gateway(upstream, limiter_result=True, app=None):
     limiter.release_rate_limits = AsyncMock(return_value=None)
 
     try:
-        with patch("app.api.gateway_routes.get_shared_client", return_value=upstream):
+        with patcher, patch(
+            "app.api.gateway_routes.get_shared_client", return_value=upstream
+        ):
             with TestClient(app, base_url="http://test") as client:
                 main.rate_limiter = limiter
                 main.auth_middleware = AuthenticationMiddleware(
@@ -521,9 +563,29 @@ def gateway(upstream, limiter_result=True, app=None):
 
 
 def _bearer(sub="user-42"):
+    """Mint an RS256 access token the middleware can actually verify.
+
+    The middleware runs the shared JWKS verifier, so an HS256 token minted
+    with a hardcoded secret is rejected as 401 — which silently drops the
+    account dimension from the rate-limit lease.
+    """
     from jose import jwt
 
-    return jwt.encode({"sub": sub, "exp": int(time.time()) + 600}, "test-secret", algorithm="HS256")
+    assert _SIGNING_KEY_PEM is not None
+    return jwt.encode(
+        {
+            "sub": sub,
+            "type": "access",
+            "aud": "wildframe-api",
+            "iss": "wildframe-auth",
+            "av": 0,
+            "exp": int(time.time()) + 600,
+            "iat": int(time.time()) - 1,
+        },
+        _SIGNING_KEY_PEM,
+        algorithm="RS256",
+        headers={"kid": "test-k1"},
+    )
 
 
 # -- gateway's own service routes -----------------------------------------
@@ -785,7 +847,11 @@ def test_missing_shared_client_surfaces_as_a_502_bad_gateway():
                 limiter.acquire_rate_limits = AsyncMock(return_value=(True, None))
                 limiter.release_rate_limits = AsyncMock(return_value=None)
                 main.rate_limiter = limiter
-                main.auth_middleware = AuthenticationMiddleware("test-secret")
+                main.auth_middleware = AuthenticationMiddleware(
+                    jwks_url="http://auth-service:8000/.well-known/jwks.json",
+                    audience="wildframe-api",
+                    issuer="wildframe-auth",
+                )
                 main.app.state.redis_client = None
                 resp = client.get("/content/api/v1/x")
     finally:
