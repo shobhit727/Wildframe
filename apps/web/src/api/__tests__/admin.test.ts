@@ -240,16 +240,20 @@ describe('listAuditLogs routing', () => {
     expect(get.mock.calls[0][0]).toBe('/admin/api/v1/admin/audit/admin/a1');
   });
 
-  it('returns an empty list and issues no request when no filter is usable', async () => {
-    expect(await admin.listAuditLogs()).toEqual([]);
-    expect(get).not.toHaveBeenCalled();
+  it('fetches the recent unfiltered audit trail when no filter is supplied', async () => {
+    get.mockReturnValue(ok([{ id: 3 }]));
+
+    await expect(admin.listAuditLogs()).resolves.toEqual([{ id: 3 }]);
+    expect(get).toHaveBeenCalledWith('/admin/api/v1/admin/audit', { params: { limit: 50 } });
   });
 
-  it('returns an empty list when only one half of the resource filter is given', async () => {
-    // resource_type without resource_id cannot address a resource; hitting the
-    // list endpoint here would return every audit row on screen.
-    expect(await admin.listAuditLogs({ resource_type: 'content' })).toEqual([]);
-    expect(get).not.toHaveBeenCalled();
+  it('returns the unfiltered audit trail when only one resource filter half is given', async () => {
+    // A partial resource selector is not a valid resource route, so treat it
+    // as an absent filter rather than silently returning an empty table.
+    get.mockReturnValue(ok([{ id: 4 }]));
+
+    await expect(admin.listAuditLogs({ resource_type: 'content' })).resolves.toEqual([{ id: 4 }]);
+    expect(get).toHaveBeenCalledWith('/admin/api/v1/admin/audit', { params: { limit: 50 } });
   });
 });
 
