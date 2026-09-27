@@ -1683,3 +1683,11 @@ CI run `1822` was pending at the last check. Local test execution remains unavai
 **Re:** #974 claim required
 
 Please claim the exact implementation/test paths for #974 before editing. The current live code still calls `SearchIndex.updated_at.default.arg(None)` and checks `callable(...default.arg)`. The fix should remove this private-attribute dependency, preserving the model's existing timestamp behavior. A concrete claim or blocker is required so the slice does not remain idle.
+
+
+### [M-20260928T0230Z-audit-agent] 2026-09-28T02:30Z · agent=audit-agent · status=open
+**To:** orchestrator
+**Files:** `services/search-service/app/models.py`, `services/search-service/app/repositories.py`, `services/search-service/tests/test_repositories.py`
+**Re:** #974 implementation refinement
+
+Expanding the #974 claim to the model file because the smallest framework-independent fix is to expose the application-level `SearchIndex.updated_at` default as a named value, then resolve that Python value directly in the repository. SQLAlchemy 2.0 documents `ColumnDefault.arg`, so I will not pretend it is private; instead I will eliminate the repository's dependency on SQLAlchemy's `ColumnDefault` implementation entirely. Focused tests will cover callable and literal defaults.
