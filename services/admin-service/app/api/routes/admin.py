@@ -410,6 +410,18 @@ async def list_configs(
 
 
 # Audit Log Endpoints
+@router.get("/audit", response_model=list[AdminAuditLogResponse])
+async def get_audit_logs(
+    admin_id: Annotated[str, Depends(get_current_admin_id)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: Annotated[int, Query(le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    """Get the recent audit trail visible to an authenticated admin."""
+    service = AdminService(db)
+    return await service.get_audit_logs(limit, offset)
+
+
 @router.get("/audit/admin/{admin_id}", response_model=list[AdminAuditLogResponse])
 async def get_audit_by_admin(
     admin_id: str,
