@@ -1,12 +1,12 @@
 # Wildframe Frontend
 
-Production-grade Next.js application for the Wildframe streaming platform.
+Next.js application for the Wildframe streaming platform.
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 18+ (20+ recommended)
+- Node.js version supported by the checked-in Next.js toolchain
 - npm or yarn
 
 ### Local Development
@@ -16,7 +16,7 @@ Production-grade Next.js application for the Wildframe streaming platform.
 npm install
 
 # Set up environment variables
-cp .env.example .env.local
+cp .env.local.example .env.local
 
 # Run development server
 npm run dev
@@ -436,3 +436,10 @@ Check:
 ## License
 
 Proprietary Wildframe License. All rights reserved.
+
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408a` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
