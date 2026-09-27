@@ -24,7 +24,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jose import jwt
-from jose.exceptions import ExpiredSignatureError
+from jose.exceptions import ExpiredSignatureError, JWTError
 
 # ---------------------------------------------------------------------------
 # Make ``wildframe_auth.verifier`` importable (no .pth entry for it).
@@ -268,7 +268,7 @@ class TestVerifyTokenRejections:
         trusted = gen_keypair("kid-primary")
         attacker = gen_keypair("kid-primary")  # same kid, different material
         token = make_token(attacker)
-        with pytest.raises(Exception) as exc:
+        with pytest.raises(JWTError, match="signature") as exc:
             verify_token(token, trusted["jwks"], AUDIENCE, ISSUER)
         assert "signature" in str(exc.value).lower()
 
@@ -334,7 +334,7 @@ class TestVerifyTokenRejections:
     def test_missing_required_claims_rejected(self, kp):
         for claim in ("aud", "sub", "iat", "exp", "iss"):
             token = make_token(kp, drop=(claim,))
-            with pytest.raises(Exception):
+            with pytest.raises(JWTError, match="missing required claims"):
                 verify_token(token, kp["jwks"], AUDIENCE, ISSUER)
 
     def test_access_requires_integer_auth_version(self, kp):
@@ -351,7 +351,7 @@ class TestVerifyTokenRejections:
 
     def test_missing_audience_and_supplied_audience_is_accepted(self, kp):
         token = make_token(kp, drop=("aud",))
-        with pytest.raises(Exception):
+        with pytest.raises(JWTError, match="missing required claims"):
             verify_token(token, kp["jwks"], AUDIENCE, ISSUER)
 
     def test_audience_mismatch_is_rejected_when_claim_present(self, kp):
