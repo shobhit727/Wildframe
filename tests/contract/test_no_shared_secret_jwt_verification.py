@@ -97,21 +97,46 @@ def _service_python_files(service: str) -> list[Path]:
 #: ``strict=True`` means this test FAILS if it unexpectedly starts passing, so
 #: migrating even one service forces the marker to be removed rather than left
 #: to rot. The defect is tracked in #941; the test is the gate, not a comment.
-#: Services that were observed decoding with the shared secret. The gate is
-#: parametrised per service rather than aggregated so that migrating one service
-#: produces a visible XPASS(strict) failure for that service alone, instead of
-#: staying silently red until the last one is converted.
-KNOWN_SHARED_SECRET_SERVICES = [
+#: Every service is checked. Listing only the known-bad services would mean a
+#: migrated service silently drops off the gate the moment it is fixed, which is
+#: exactly when you most want it covered -- so the parametrisation spans all of
+#: them and only the still-unfixed ones carry a marker.
+ALL_SERVICES = sorted(SERVICE_NAMES)
+
+#: Services that have not been migrated yet. Removing one from this set is the
+#: single switch that turns its assertion from xfail into a real check; there is
+#: no other edit needed, and no way to make it pass by deleting the test.
+#:
+#: ``creators-service``, ``media-pipeline`` and ``moderation-service`` left this
+#: set in `c30a5d97`, which moved them onto ``wildframe_auth``. They are still
+#: asserted on, unmarked, so a regression would be caught.
+UNMIGRATED_SERVICES = {
     "analytics-service",
     "content-service",
-    "creators-service",
-    "media-pipeline",
-    "moderation-service",
     "notification-service",
     "recommendation-service",
     "search-service",
     "uploads-service",
     "user-service",
+}
+
+_XFAIL_REASON = (
+    "#941: open. This service verifies tokens with the committed shared HS256 "
+    "secret, so a token is forgeable by anyone with repository access. Marked "
+    "xfail so one unmigrated service does not block the whole suite; "
+    "strict=True means migrating THIS service turns it into a failure that must "
+    "be resolved by removing it from UNMIGRATED_SERVICES."
+)
+
+SERVICE_CASES = [
+    pytest.param(
+        service,
+        marks=pytest.mark.xfail(strict=True, reason=_XFAIL_REASON),
+        id=service,
+    )
+    if service in UNMIGRATED_SERVICES
+    else pytest.param(service, id=service)
+    for service in ALL_SERVICES
 ]
 
 
@@ -128,17 +153,7 @@ def _offending_files(service: str) -> list[str]:
     ]
 
 
-@pytest.mark.parametrize("service", KNOWN_SHARED_SECRET_SERVICES)
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#941: open. This service verifies tokens with the committed shared HS256 "
-        "secret, so a token is forgeable by anyone with repository access. Marked "
-        "xfail so one unmigrated service does not block the whole suite; "
-        "strict=True means migrating THIS service turns it into a failure that "
-        "must be resolved by removing the marker."
-    ),
-)
+@pytest.mark.parametrize("service", SERVICE_CASES)
 def test_service_does_not_verify_with_a_shared_secret(service: str) -> None:
     offenders = _offending_files(service)
     assert not offenders, (
