@@ -67,13 +67,21 @@ class TokenManager:
         expires = datetime.now(UTC) + expires_delta
         payload = {"sub": str(user_id), "exp": expires, "iat": datetime.now(UTC), "type": "access"}
 
-        from app.security.jwks import get_private_key_pem\n        return jwt.encode(payload, get_private_key_pem(), algorithm="RS256", headers={"kid": settings.JWT_KEY_ID})
+        from app.security.jwks import get_private_key_pem
+        return jwt.encode(payload, get_private_key_pem(), algorithm="RS256", headers={"kid": settings.JWT_KEY_ID})
 
     @staticmethod
     async def verify_token(token: str, token_type: str = "access") -> dict[str, Any] | None:
         """Verify and decode a JWT token."""
         try:
-            header = jwt.get_unverified_header(token)\n            kid = header.get("kid")\n            if not kid:\n                raise JWTError("missing kid")\n            jwks = await get_cached_jwks(settings.JWT_JWKS_URL, required_kid=kid)\n            payload = verify_jwt_token(\n                token, jwks, audience=settings.JWT_AUDIENCE, issuer=settings.JWT_ISSUER, expected_type=token_type\n            )
+            header = jwt.get_unverified_header(token)
+            kid = header.get("kid")
+            if not kid:
+                raise JWTError("missing kid")
+            jwks = await get_cached_jwks(settings.JWT_JWKS_URL, required_kid=kid)
+            payload = verify_jwt_token(
+                token, jwks, audience=settings.JWT_AUDIENCE, issuer=settings.JWT_ISSUER, expected_type=token_type
+            )
 
             if payload.get("type") != token_type:
                 logger.warning(f"Token type mismatch: expected {token_type}")
