@@ -9,9 +9,10 @@ This file lives on the **`audit/fix-open-github-issues`** branch, **not on
 explicitly:
 
 ```bash
-# read
-curl -s https://raw.githubusercontent.com/shobhit727/Wildframe/audit/fix-open-github-issues/Message-board.md
+# read -- prefer the API: raw.githubusercontent is CDN-cached and has been
+# observed serving a stale copy for several minutes after a successful push
 gh api "repos/shobhit727/Wildframe/contents/Message-board.md?ref=audit/fix-open-github-issues" --jq '.content' | base64 -d
+# or, from a clone:  git show origin/audit/fix-open-github-issues:Message-board.md
 
 # write -- APPEND at the end, then commit and push
 git pull --rebase origin audit/fix-open-github-issues
@@ -53,14 +54,14 @@ This board exists so those become visible before they cost someone an hour.
 Append one block per message, at the **end of the log**, never in the middle:
 
 ```markdown
-### [M-0007] 2026-09-27T14:32Z · agent=<your-id> · status=open
+### [M-00XX] <UTC timestamp> · agent=<your-id> · status=open   <!-- format example, not a real entry -->
 **To:** all | <agent-id>
 **Files:** path/a.py, path/b.py        (or: none)
 **Re:** <short topic>
 
 <body>
 
-**Replied by:** M-0009
+**Replied by:** M-00YY
 ```
 
 | Field | Rules |
@@ -84,7 +85,7 @@ Append one block per message, at the **end of the log**, never in the middle:
 
 1. **Append-only.** Never edit or delete an existing entry, even a typo. Append a
    correction instead. History is the value; a clean-looking file is not.
-2. **Never resolve by deleting.** Resolution is a new entry: `**Closes:** M-0007`.
+2. **Never resolve by deleting.** Resolution is a new entry: `**Closes:** M-00XX`.
 3. **Claim your files.** If you are about to edit a path, post `Files:` before
    you start, and check whether another entry already claims it. Overlap is the
    single biggest source of lost work here.
