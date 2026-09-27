@@ -8,10 +8,7 @@ with ``ENVIRONMENT: development``, and ``DEV_ENVIRONMENTS`` skips the production
 secret validator for exactly that value), so the shared-secret path is not a
 theoretical weakness.
 
-At the time of writing this is a **known, open, exploited** bypass: eight
-services still decode with ``jwt.decode(token, settings.JWT_SECRET_KEY, ...)``.
-This test is expected to FAIL until they are migrated. It is the regression
-gate that makes the two schemes structurally unable to diverge again.
+The migration is now complete on this audit branch: service token verification uses the shared RS256/JWKS path, and the settings gate below prevents any service from regressing to an HS256 default.
 
 Two complementary checks, because neither alone is sufficient:
 
@@ -103,22 +100,8 @@ def _service_python_files(service: str) -> list[Path]:
 #: them and only the still-unfixed ones carry a marker.
 ALL_SERVICES = sorted(SERVICE_NAMES)
 
-#: Services that have not been migrated yet. Removing one from this set is the
-#: single switch that turns its assertion from xfail into a real check; there is
-#: no other edit needed, and no way to make it pass by deleting the test.
-#:
-#: ``creators-service``, ``media-pipeline`` and ``moderation-service`` left this
-#: set in `c30a5d97`, which moved them onto ``wildframe_auth``. They are still
-#: asserted on, unmarked, so a regression would be caught.
 UNMIGRATED_SERVICES: set[str] = set()
 
-_XFAIL_REASON = (
-    "#941: open. This service verifies tokens with the committed shared HS256 "
-    "secret, so a token is forgeable by anyone with repository access. Marked "
-    "xfail so one unmigrated service does not block the whole suite; "
-    "strict=True means migrating THIS service turns it into a failure that must "
-    "be resolved by removing it from UNMIGRATED_SERVICES."
-)
 
 SERVICE_CASES = [
     (
@@ -187,15 +170,6 @@ def _probe_service_settings(service: str) -> dict:
     return json.loads(line)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#941: open. 13 services still declare JWT_ALGORITHM=HS256, which is "
-        "either the live bypass or a dormant default that becomes the bypass "
-        "the moment a verifier is wired to it. strict=True so the marker is "
-        "removed as each default is corrected."
-    ),
-)
 def test_no_service_declares_hs256_as_its_algorithm() -> None:
     """No service may carry ``JWT_ALGORITHM = "HS256"``.
 
