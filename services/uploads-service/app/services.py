@@ -257,7 +257,7 @@ class UploadService:
             raise UploadError(
                 f"session {session_id} is {session.status.value}; no more chunks accepted"
             )
-        if datetime.now(UTC) > session.expires_at:
+        if self._is_expired(session.expires_at, datetime.now(UTC)):
             raise UploadError(f"upload session {session_id} has expired")
         if index < 0 or index >= session.total_chunks:
             raise UploadError(f"chunk index {index} out of range [0, {session.total_chunks})")
@@ -309,6 +309,19 @@ class UploadService:
         return chunk
 
     @staticmethod
+    def _is_expired(expires_at: datetime, now: datetime) -> bool:
+        """Compare upload expiry timestamps without assuming a DB timezone mode.
+
+        PostgreSQL ``TIMESTAMP WITHOUT TIME ZONE`` values can arrive as naive
+        datetimes even when the SQLAlchemy model declares a timezone-aware
+        column. Treat a naive value as UTC at this service boundary so legacy
+        or manually-created rows cannot cause a naive/aware comparison error.
+        """
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        return now > expires_at
+
+    @staticmethod
     def _expected_chunk_size(session: UploadSession, index: int) -> int:
         """Byte count a chunk must hold per the session's chunk plan."""
         if index < session.total_chunks - 1:
@@ -347,7 +360,7 @@ class UploadService:
             return session
         if session.status == UploadSessionStatus.ABORTED:
             raise UploadError(f"session {session_id} is aborted")
-        if datetime.now(UTC) > session.expires_at:
+        if self._is_expired(session.expires_at, datetime.now(UTC)):
             raise UploadError(f"upload session {session_id} has expired")
 
         received = await self.repo.received_indices(session_id)
