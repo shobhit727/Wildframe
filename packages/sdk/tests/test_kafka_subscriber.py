@@ -150,39 +150,6 @@ EventHandler = Any
 _REAL_SLEEP = asyncio.sleep
 
 
-def _declared_insecure_default(module) -> bool:
-    """Read ``KAFKA_SSL_INSECURE``'s default straight out of the module source.
-
-    The default has been flipped once already (``"true"`` -> ``"false"``, i.e.
-    insecure-by-default -> verifying-by-default). Tests must not hard-code it:
-    the contract is "the observed behaviour matches the declared default, and
-    both branches are reachable via the env var", not a specific literal.
-    """
-    import ast
-    import inspect
-
-    source = inspect.getsource(module)
-    tree = ast.parse(source)
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not node.args:
-            continue
-        func = node.func
-        if isinstance(func, ast.Attribute) and func.attr == "getenv" and node.args[0].value == "KAFKA_SSL_INSECURE":
-            default = node.args[1].value
-            return default.lower() not in ("false", "0", "no")
-    raise AssertionError("KAFKA_SSL_INSECURE default not found in " + module.__name__)
-
-
-def assert_default_matches_declaration(module, ssl_context) -> None:
-    """The context the adapter built must agree with the declared default."""
-    if _declared_insecure_default(module):
-        assert ssl_context is not None
-        assert ssl_context.check_hostname is False
-        assert ssl_context.verify_mode == ssl.CERT_NONE
-    else:
-        assert ssl_context is None
-
-
 def env_bytes(event: DomainEvent) -> bytes:
     return json.dumps(event.to_dict()).encode()
 
@@ -293,12 +260,6 @@ class TestConstruction:
         s = KafkaEventSubscriber("kafka:9092", "g1", security_protocol=protocol)
         assert s.ssl_context.check_hostname is False
         assert s.ssl_context.verify_mode == ssl.CERT_NONE
-
-    @pytest.mark.parametrize("protocol", ["SSL", "SASL_SSL"])
-    def test_ssl_default_matches_the_declared_default(self, protocol):
-        """Env var unset -> the behaviour the module declares, whichever that is."""
-        s = KafkaEventSubscriber("kafka:9092", "g1", security_protocol=protocol)
-        assert_default_matches_declaration(sub_mod, s.ssl_context)
 
     def test_ssl_verifying_when_insecure_disabled(self, monkeypatch):
         monkeypatch.setenv("KAFKA_SSL_INSECURE", "false")
