@@ -41,7 +41,7 @@ asyncpg = ">=0.30,<0.32"
 psycopg2-binary = "^2.9.0"
 
 # Redis
-redis = ">=5,<9"
+redis = "^5.0.0"
 
 # Kafka
 kafka-python = ">=2,<4"
