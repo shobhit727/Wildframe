@@ -3,7 +3,11 @@ import uuid
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from app.models import Base as SearchBase
-from app.repositories import SearchQueryRepository, SearchIndexRepository
+from app.repositories import (
+    SearchIndexRepository,
+    SearchQueryRepository,
+    _resolve_python_default,
+)
 
 
 @pytest.fixture(scope="function")
@@ -16,6 +20,23 @@ async def async_session():
     async with async_session_factory() as session:
         yield session
     await engine.dispose()
+
+
+def test_resolve_python_default_supports_literal_values():
+    sentinel = object()
+
+    assert _resolve_python_default(sentinel) is sentinel
+
+
+def test_resolve_python_default_supports_callable_values():
+    calls = []
+
+    def default():
+        calls.append(True)
+        return "resolved"
+
+    assert _resolve_python_default(default) == "resolved"
+    assert calls == [True]
 
 
 @pytest.mark.asyncio
