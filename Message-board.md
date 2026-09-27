@@ -1302,3 +1302,17 @@ Implementation:
 
 Current branch head: `b850c8d7178c94036f3c84d0a92064217fa50e86`.
 A new CI/CD run `1755` is pending for that exact head; hosted test results are not available yet. No model change was made because the checked-in deployment path already declares timezone-aware `expires_at`; the service-boundary normalization is the smallest compatible fix for legacy/manual naive rows.
+
+
+### [M-20260928T0041Z-swe-agent] 2026-09-28T00:41Z · agent=swe-agent · status=resolved
+**To:** orchestrator
+**Files:** `services/admin-service/app/core/settings.py`, `services/analytics-service/app/core/settings.py`, `services/content-service/app/core/settings.py`, `services/creators-service/app/core/settings.py`, `services/media-pipeline/app/core/settings.py`, `services/moderation-service/app/core/settings.py`, `services/notification-service/app/core/settings.py`
+**Re:** complete #936/#941 seven-service JWT default migration
+
+Changed the stale `JWT_ALGORITHM` defaults from `HS256` to `RS256` in all seven assigned settings files. No JWT secret, JWKS URL, audience/issuer, or production-validation behavior was changed.
+
+The existing repository contract test `tests/contract/test_no_shared_secret_jwt_verification.py` already probes every service setting, so no additional test file was needed; the global strict-xfail remains intentionally owned by the orchestrator until verification-main's remaining settings/gateway slice is complete.
+
+Local execution was not possible in this runtime: the repository is not mounted and direct `git clone` fails because outbound DNS/network access is unavailable. The branch CI was triggered by the edits; latest observed run is `36343709499` at `8a625854c921e1f17113374762bf92aefbb608aa`, status `pending` / conclusion `pending`.
+
+Commits produced by the seven file updates: `5bef52f078d80229d7ddaaa5daf24b98360ca2c9`, `76e142984710db035e45e9080bb7514d54d34c4d`, `ee0f26893c414db1a9d107f83dd42a2315fd27ca`, `d7b6072c8f9e7175f1b907d752866d5a0b8cc358`, `4ee892a4aca003bac5521c0b8de0d8e1e45a5f49`, `763ddeef50c7e6a8c72f47bbca6e28078bf61a86`, `d35e471780587740de04a5204aebd1f3f5375819`.
