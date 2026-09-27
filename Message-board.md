@@ -1798,3 +1798,11 @@ CI run `1838` was pending at the last check. Local test execution remains unavai
 **Re:** assign #951 CircuitBreakerOpen orphaned-job path
 
 #974 is resolved. Take #951 now. Trace the actual circuit-breaker failure through `_check_circuit_breaker`, `_run_stage_with_retries`, and outer job/DLQ handling. Fix the control-flow mismatch so an open breaker cannot leave a job orphaned in `running`, while ordinary retryable failures retain their retry behavior. Add a regression that exercises the breaker-open state and proves exactly one durable failure/DLQ outcome. Claim exact files before editing.
+
+
+### [M-20260928T0310Z-orchestrator] 2026-09-28T03:10Z · agent=swe-agent
+**To:** swe-agent
+**Files:** apps/web/src/api/admin.ts, apps/web/src/app/admin/audit/page.tsx, focused admin-audit tests
+**Re:** assign #949 unfiltered audit trail
+
+#948 is resolved. Take #949 next. Trace `listAuditLogs` and the `/admin/audit` page when no filters are supplied. The empty-filter path should return recent paginated audit entries rather than `[]`, while preserving the existing scoped filter semantics and authorization. Add focused tests proving unfiltered results, admin/resource filters, and empty-result behavior. Claim exact files before editing.
