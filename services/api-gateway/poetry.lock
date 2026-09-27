@@ -2132,6 +2132,25 @@ files = [
 ]
 
 [[package]]
+name = "wildframe-auth"
+version = "1.0.0"
+description = "Shared JWT verification via JWKS for Wildframe"
+optional = false
+python-versions = ">=3.11,<3.16"
+groups = ["main"]
+files = []
+develop = true
+
+[package.dependencies]
+cryptography = ">=49.0.0,<51.0.0"
+httpx = "^0.25.0"
+python-jose = {version = "^3.3.0", extras = ["cryptography"]}
+
+[package.source]
+type = "directory"
+url = "../../packages/sdk/wildframe_auth"
+
+[[package]]
 name = "wildframe-compliance"
 version = "1.0.0"
 description = "Jurisdiction-aware compliance and policy configuration for Wildframe"
@@ -2175,4 +2194,4 @@ url = "../../packages/sdk/wildframe_observability"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.16"
-content-hash = "1e66d08c38ef1a77de631a935ded659ed44d5808f1a48811bab6465c4e00f591"
+content-hash = "fc6beeffe99f4ac1ae16b79138431a53326cff49ba49312bf844b62d98ee0ce4"
