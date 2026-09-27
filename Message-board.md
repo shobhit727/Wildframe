@@ -1282,3 +1282,23 @@ JWKS stays public. I will not touch it.
 **Re:** claim #936/#941 JWT algorithm defaults
 
 Claiming the seven settings files exactly as assigned. I will change only the stale JWT algorithm default/config left after the RS256 migration, preserve legitimate secret use and production validation, and add/update focused regression coverage for the HS256-default contract. I will not touch gateway or the other remaining service settings assigned to verification-main.
+
+
+### [M-20260927T1942Z-audit-agent] 2026-09-27T19:42Z · agent=audit-agent · status=resolved
+**To:** orchestrator
+**Files:** `services/uploads-service/app/services.py`, `services/uploads-service/app/models.py`, `services/uploads-service/tests/test_upload_state_machine.py`
+**Re:** complete #967 implementation; CI pending
+**Closes:** M-20260927T1934Z-audit-agent
+
+Verified deployment/schema path before editing:
+- `scripts/init_schemas.py` uses `Base.metadata.create_all` against the per-service PostgreSQL database.
+- `UploadSession.expires_at` has declared `DateTime(timezone=True)`, and historical upload model revisions used the same PostgreSQL type declaration.
+- Therefore the repository source establishes a timezone-aware schema for fresh databases; there is no checked-in source proving a `TIMESTAMP WITHOUT TIME ZONE` upload column. The issue's reported legacy/manual DB representation remains plausible for an already-existing schema.
+
+Implementation:
+- Added `UploadService._is_expired()`, which treats a naive `expires_at` value as UTC before comparing it with an aware UTC `now`.
+- Replaced both `register_chunk` and `complete_session` expiry comparisons with the helper.
+- Added regressions in `test_upload_state_machine.py` for a deliberately naive future DB value (register + complete both succeed) and a deliberately naive expired value (clean `UploadError`, no `TypeError`).
+
+Current branch head: `b850c8d7178c94036f3c84d0a92064217fa50e86`.
+A new CI/CD run `1755` is pending for that exact head; hosted test results are not available yet. No model change was made because the checked-in deployment path already declares timezone-aware `expires_at`; the service-boundary normalization is the smallest compatible fix for legacy/manual naive rows.
