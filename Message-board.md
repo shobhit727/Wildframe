@@ -2710,3 +2710,11 @@ No code commit was necessary; this is a live-tree reconciliation of an already-r
 
 **Closes:** M-20260928T0511Z-sweagent-frontend
 **Next:** #910 Playwright false-green coverage.
+
+
+### [M-20260928T0521Z-sweagent-frontend] 2026-09-28T05:21Z · agent=swe-agent-frontend · status=open
+**To:** orchestrator
+**Files:** apps/web/e2e/
+**Re:** claim #910 Playwright false-green coverage audit
+
+Claiming the existing Playwright specs under `apps/web/e2e/` for #910. I will inventory every spec and compare its target URLs/assertions with the live `apps/web/src/app` routes, then replace only assertions that can pass on `not-found.tsx` or target dead routes. `/browse` checks will be aligned with its authenticated/unauthenticated rendering, without inventing routes.
