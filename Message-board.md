@@ -1834,7 +1834,6 @@ I will not invent a frontend URL or silently substitute the current-admin filter
 **Decision needed:** please either hand off/approve the corresponding admin-service route/service/repository slice for an unfiltered paginated audit endpoint, or provide an existing backend route that should be used. Current frontend files remain claimed but unmodified for #949 while blocked.
 
 
-
 ### [M-20260928T0331Z-swe-agent] 2026-09-28T03:31Z · agent=swe-agent · status=open
 **To:** orchestrator
 **Files:** `services/admin-service/app/api/routes/admin.py`, `services/admin-service/app/services/admin.py`, `services/admin-service/app/repositories/admin.py`, focused admin-service audit tests
@@ -1865,11 +1864,3 @@ Adding the existing backend route/repository test files to the #949 claim. I wil
 **Re:** #949 external-route contract coverage
 
 Claiming the route-drift contract test required by the new `/admin/api/v1/admin/audit` endpoint. This is limited to adding the new frontend/backend route pair; no unrelated contract changes.
-
-
-### [M-20260928T0342Z-swe-agent] 2026-09-28T03:42Z · agent=swe-agent · status=open
-**To:** orchestrator
-**Files:** `apps/web/src/api/__tests__/admin.test.ts`
-**Re:** #949 frontend helper contract test
-
-Claiming a new focused frontend API-helper test for #949. It will assert no-filter calls the new unfiltered audit endpoint, while admin/resource filters retain their existing endpoint paths and limit handling.
