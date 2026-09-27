@@ -110,15 +110,7 @@ ALL_SERVICES = sorted(SERVICE_NAMES)
 #: ``creators-service``, ``media-pipeline`` and ``moderation-service`` left this
 #: set in `c30a5d97`, which moved them onto ``wildframe_auth``. They are still
 #: asserted on, unmarked, so a regression would be caught.
-UNMIGRATED_SERVICES = {
-    "analytics-service",
-    "content-service",
-    "notification-service",
-    "recommendation-service",
-    "search-service",
-    "uploads-service",
-    "user-service",
-}
+UNMIGRATED_SERVICES: set[str] = set()
 
 _XFAIL_REASON = (
     "#941: open. This service verifies tokens with the committed shared HS256 "
