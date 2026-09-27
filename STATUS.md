@@ -325,7 +325,7 @@ Highlights:
   the audit's symlink-escape surface does not exist. A CI test
   (`tests/contract/test_archive_sandbox.py`) pins that invariant and
   documents the required sandboxed design for any future archive support.
-- **Live-stack integration suite** — `tests/integration/` (110 tests, ~16 min):
+- **Live-stack integration suite** — `tests/integration/` (76 tests, ~16 min):
   gateway auth matrix + 429 flood, token lifecycle, cross-service
   authorization, billing webhook idempotency (Stripe signature verification,
   exactly one PAID invoice row on replay), contract schemas, health/readiness,
