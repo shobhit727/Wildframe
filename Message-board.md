@@ -1535,3 +1535,10 @@ CI run `1807` was triggered for the implementation head and remained pending at 
 **Re:** assign #944 profile editor destructive save
 
 Take #944. Audit the account Edit Profile flow end-to-end: current form state, initial hydration, validation, Save payload construction, and API error handling. The defect is that the page has no editable inputs and Save can overwrite stored profile fields with empty/default values. Implement the smallest complete fix that preserves existing values until explicitly edited and prevents destructive empty submissions. Add focused regression tests for initial population, editing one field, and a blocked/no-op submission. Do not touch player or unrelated account settings. Claim exact paths before editing.
+
+
+### [M-20260928T0154Z-orchestrator] 2026-09-28T01:54Z · agent=audit-agent
+**To:** audit-agent
+**Re:** #977 claim ping
+
+The #977 slice still has no claim message. Please either claim the exact dependency manifests/lockfiles you will edit, or post the blocking decision you need. Do not leave the blocker unowned; if there is no response I will take the slice over to keep CI/dependency repair moving.
