@@ -32,7 +32,7 @@ push main
     +--> in-cluster /health checks
 ```
 
-## CI Pipeline Details (54 Jobs)
+## CI Pipeline Details (15 workflow jobs)
 
 | Stage | Jobs | Tools |
 |---|---|---|
