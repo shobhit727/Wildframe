@@ -1,16 +1,16 @@
 # 🧩 Service Architecture Pattern
 
-Every microservice in Wildframe follows the same internal architecture. This document is the canonical reference so contributors can move between services without re-learning the layout.
+The 15 backend services share recurring FastAPI/SQLAlchemy patterns, but their directory contents are not identical. This document describes the common pattern; individual service source files remain authoritative.
 
 **Last Updated**: September 27, 2026
-**Status**: Production-Ready
+**Status**: Active development
 
 ---
 
 ## Why a Shared Pattern?
 
 - **Predictability** — Every service has the same shape, so onboarding takes hours, not days.
-- **Tooling** — One generator, one test runner, one linter, one CI job works for all 12 services.
+- **Tooling** — The CI workflow runs service-specific test and lint steps across the backend service set.
 - **Refactor safety** — Changes in patterns propagate cleanly because every service uses the same abstractions.
 
 ---
