@@ -83,7 +83,7 @@ async def get_optional_identity(request: Request) -> Identity | None:
 
 async def get_required_identity(request: Request) -> Identity:
     """Auth dependency: 401 when no valid bearer token is present."""
-    identity = verify_token(request)
+    identity = await verify_token(request)
     if identity is None:
         raise HTTPException(
             status_code=401,
