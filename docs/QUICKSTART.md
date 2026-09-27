@@ -169,7 +169,7 @@ pytest tests --asyncio-mode=auto
 
 ### Live-Stack Integration Suite
 
-Needs the compose stack up (~12 min, 87 tests):
+Needs the compose stack up (~12 min, 76 tests):
 
 ```bash
 poetry run pytest tests/integration -q
