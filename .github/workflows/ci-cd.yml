@@ -325,7 +325,7 @@ jobs:
         run: >-
           python -m pip install --quiet
           "pytest<8" "pytest-cov<5"
-          "cryptography" "python-jose[cryptography]"
+          "cryptography" "python-jose[cryptography]" "PyYAML>=6.0,<7"
 
       - name: Detect frontend/backend route drift
         run: python -m pytest tests/contract -q
