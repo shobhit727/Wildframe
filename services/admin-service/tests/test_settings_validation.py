@@ -91,64 +91,14 @@ class TestProductionRejections:
         with pytest.raises(ValidationError, match="REDIS_URL must be set explicitly"):
             Settings(**_prod(REDIS_URL=None))
 
-    def test_missing_jwt_secret(self):
-        with pytest.raises(ValidationError, match="JWT_SECRET_KEY must be set to a strong"):
-            Settings(**_prod(JWT_SECRET_KEY=None))
-
-    @pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
-    def test_blank_jwt_secret_rejected(self, blank):
-        with pytest.raises(ValidationError, match="strong random value"):
-            Settings(**_prod(JWT_SECRET_KEY=blank))
-
-    @pytest.mark.parametrize("insecure", KNOWN_INSECURE_JWT_SECRETS)
-    def test_known_insecure_jwt_secrets(self, insecure):
-        with pytest.raises(ValidationError, match="strong random value"):
-            Settings(**_prod(JWT_SECRET_KEY=insecure))
-
-    def test_short_jwt_secret(self):
-        with pytest.raises(ValidationError, match="at least 32 characters"):
-            Settings(**_prod(JWT_SECRET_KEY="a" * 31))
-
-    def test_exactly_32_char_jwt_secret_is_accepted(self):
-        secret = "z" * 32
-        s = Settings(**_prod(JWT_SECRET_KEY=secret))
-        assert s.JWT_SECRET_KEY == secret
-
     def test_missing_kafka_bootstrap_servers(self):
         with pytest.raises(ValidationError, match="KAFKA_BOOTSTRAP_SERVERS must be set"):
             Settings(**_prod(KAFKA_BOOTSTRAP_SERVERS=None))
 
-
-class TestUpstreamComplianceGuard:
-    def test_local_validator_is_the_only_enforcement_layer(self):
-        # The docstring on ``validate_production_secrets`` credits an "upstream
-        # production guard" with rejecting blank secrets and a
-        # ``default_secrets`` list. Pin what the installed mixin actually does
-        # so the test suite tells the truth about how many layers exist.
-        from wildframe_compliance.settings import ComplianceSettingsMixin
-
-        own = {
-            name
-            for name in vars(ComplianceSettingsMixin)
-            if not name.startswith("__") and not name.startswith("_")
-        }
-        assert "default_secrets" not in own, (
-            "upstream mixin now exposes default_secrets; the local "
-            "KNOWN_INSECURE_JWT_SECRETS list must be re-checked for overlap"
-        )
-        # No upstream validator is declared either: the local one is the guard.
-        assert not [n for n in own if n.startswith("validate")]
-
-    def test_blank_secret_is_rejected_by_the_local_guard_alone(self):
-        # Proves the local validator alone is sufficient for the blank case
-        # attributed to the upstream guard in the docstring.
-        with pytest.raises(ValidationError, match="strong random value"):
-            Settings(**_prod(JWT_SECRET_KEY="   "))
-
-    @pytest.mark.parametrize("insecure", KNOWN_INSECURE_JWT_SECRETS)
-    def test_each_locally_enforced_secret_is_actually_rejected(self, insecure):
-        with pytest.raises(ValidationError):
-            Settings(**_prod(JWT_SECRET_KEY=insecure))
+    def test_legacy_jwt_secret_is_optional_under_rs256_jwks(self):
+        settings = Settings(**_prod(JWT_SECRET_KEY=None))
+        assert settings.JWT_ALGORITHM == "RS256"
+        assert settings.JWT_SECRET_KEY is None
 
 
 class TestGetSettings:
