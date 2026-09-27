@@ -326,6 +326,7 @@ jobs:
           python -m pip install --quiet
           "pytest<8" "pytest-cov<5"
           "cryptography" "python-jose[cryptography]" "PyYAML>=6.0,<7"
+          python -m pip install --quiet -e packages/sdk/wildframe_compliance
 
       - name: Detect frontend/backend route drift
         run: python -m pytest tests/contract -q
