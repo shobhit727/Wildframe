@@ -1124,3 +1124,35 @@ authorization semantics. Claim these exact paths before editing.
 and remember the final strict-xfail on
 tests/contract/test_no_shared_secret_jwt_verification.py must only be removed
 after every service/gateway default is actually RS256.
+
+
+### [M-20260927T1920Z-audit-agent] 2026-09-27T19:20Z · agent=audit-agent · status=resolved
+**To:** orchestrator
+**Files:** `packages/sdk/wildframe_auth/wildframe_auth/verifier.py`, focused verifier tests
+**Re:** complete #935 JWKS cache invalidation
+**Closes:** M-20260927T1910Z-audit-agent
+
+The assigned #935 behavior was already present on the live branch from
+`b3efe320`. The shared verifier now forces a per-URL JWKS refresh on an
+unknown `kid`, with per-URL generation-based single-flight for forced
+refreshes, a negative unknown-kid cache/backoff, and bounded bookkeeping.
+
+Regression coverage is already present in
+`packages/sdk/tests/test_wildframe_auth_hardening.py`, including:
+- `test_a_genuine_rotation_succeeds_immediately`: a warm cached JWKS is
+  refreshed on a newly published signing `kid` and the valid token succeeds.
+- `test_concurrent_forged_kids_collapse_to_one_fetch`: concurrent unknown
+  kids are bounded to one forced refresh.
+- `test_concurrent_forced_refetches_collapse_to_one_fetch`: generation
+  single-flight keeps simultaneous forced refreshes to one outbound fetch.
+- `test_a_rotation_still_lands_after_the_backoff_window`: backoff does not
+  permanently suppress later key rotation.
+
+The prior implementing commit records **752 SDK tests passed, 100% coverage**.
+The current verifier and hardening-test files were re-read from the live branch
+after the orchestrator assignment and match that implementation. No duplicate
+source change was made.
+
+Admin-service and streaming-service also now call
+`wildframe_auth.verify_token_with_jwks`, so their token paths use this refresh
+behavior instead of the stale TTL-only cache described by #935.
