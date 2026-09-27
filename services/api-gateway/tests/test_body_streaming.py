@@ -504,7 +504,11 @@ def gateway(upstream, limiter_result=True, app=None):
         with patch("app.api.gateway_routes.get_shared_client", return_value=upstream):
             with TestClient(app, base_url="http://test") as client:
                 main.rate_limiter = limiter
-                main.auth_middleware = AuthenticationMiddleware("test-secret")
+                main.auth_middleware = AuthenticationMiddleware(
+                    jwks_url="http://auth-service:8000/.well-known/jwks.json",
+                    audience="wildframe-api",
+                    issuer="wildframe-auth",
+                )
                 app.state.redis_client = None
                 try:
                     yield client, upstream.captured, limiter
