@@ -218,7 +218,7 @@ export default function Dashboard() {
 ## 🔗 Resources
 
 ### Learning
-- [Next.js 15 Documentation](https://nextjs.org/docs)
+- [Next.js 16.3.6 Documentation](https://nextjs.org/docs)
 - [React 19 Documentation](https://react.dev)
 - [Tailwind CSS Guide](https://tailwindcss.com/docs)
 - [TypeScript Handbook](https://www.typescriptlang.org/docs)
