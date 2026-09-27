@@ -15,7 +15,7 @@ React + Next.js 16.3.6 frontend for the Wildframe Netflix-like streaming platfor
 
 ## Tech Stack
 
-- **Framework**: Next.js 15 (App Router)
+- **Framework**: Next.js 16.3.6 (App Router)
 - **UI Library**: React 19
 - **Styling**: Tailwind CSS
 - **State Management**: Zustand
