@@ -18,6 +18,7 @@ packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.16"
+wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 fastapi = "^0.141.0"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}
 pydantic = "^2.4.0"
