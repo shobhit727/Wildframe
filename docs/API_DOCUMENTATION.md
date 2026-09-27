@@ -2,11 +2,11 @@
 
 **Version**: 1.0.0  
 **Last Updated**: September 27, 2026
-**Stability**: Production-Ready
+**Stability**: Active reference; production readiness is not implied
 
 ## Overview
 
-Complete API reference for all Wildframe microservices. This guide documents every endpoint, including request/response formats, authentication requirements, and error handling.
+API reference for the endpoints currently documented in this repository. Route implementations under `services/*/app` are authoritative when this document differs from code. This guide documents every endpoint, including request/response formats, authentication requirements, and error handling.
 
 **Time to read**: 25 minutes  
 **Prerequisites**: Understanding of REST APIs, HTTP status codes
