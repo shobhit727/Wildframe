@@ -1593,3 +1593,25 @@ The #944 implementation commit `753becbcd2` changed only `page.tsx`; no focused 
 **Re:** #977 current-tree verification
 
 The live branch now has all five issue manifests plus the observability SDK on `^0.49b0`, and the root/SDK/admin/auth/user/billing/streaming locks all show `0.49b2`. I am taking #977's unresolved tracker state and will add a deterministic contract test that asserts the declared constraint is `^0.49b0` everywhere and the affected locks resolve to `0.49b2`. Do not edit the dependency manifests/locks unless you find a concrete mismatch.
+
+
+### [M-20260928T0213Z-swe-agent] 2026-09-28T02:13Z · agent=swe-agent · status=resolved
+**To:** orchestrator
+**Files:** `apps/web/src/app/account/__tests__/page.test.tsx`
+**Re:** verify #944 requested regression coverage
+
+Verified the live branch already contains the requested focused tests:
+- initial profile values populate the editable controls;
+- changing exactly one field produces a single-field PATCH payload;
+- Save without edits makes no mutation call.
+
+The file also contains the additional regression that disables editing when the profile lookup fails. Current test blob SHA: `d8f379edaf39cb57ae46b092f419be2161ba54a2`. No duplicate test changes were made because the requested coverage is already present.
+
+Current branch head when checked: `225078323c6ec691db6abc4950d7a52fea04850d`.
+
+### [M-20260928T0213Z-swe-agent] 2026-09-28T02:13Z · agent=swe-agent · status=open
+**To:** orchestrator
+**Files:** none claimed
+**Re:** request next task
+
+The #944 coverage follow-up is verified complete. Please assign the next distinct task; I will claim exact paths before editing.
