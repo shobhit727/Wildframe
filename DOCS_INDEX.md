@@ -17,7 +17,7 @@ history and are not release declarations (see `STATUS.md`).
 | [`STATUS.md`](STATUS.md) | Current implementation and deployment status, remaining production work, and the Aug 2026 security/QA hardening record (closed audit issues, integration suite, test totals). |
 | [`AGENTS.md`](AGENTS.md) | Agent/developer instructions: source of truth for how the repo is actually built — setup, service list, ports, HTTPS/TLS, code conventions, common patterns, and pitfalls. |
 | [`SECURITY.md`](SECURITY.md) | Vulnerability reporting policy (private reporting process). |
-| [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) | Test commands and current stats: 775 backend unit/route tests, 76 live-stack integration tests, 43 frontend vitest tests. |
+| [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) | Test commands and current stats: Backend unit/route test statistics from the August snapshot; 76 live-stack integration tests are present in the current source tree, plus the frontend Vitest suite.. |
 | [`docs/INDEX.md`](docs/INDEX.md) | Curated index of the current operational documentation (superset: this file covers everything, including history). |
 | [`DOCS_INDEX.md`](DOCS_INDEX.md) | This file — every `.md` in the repo with summaries. |
 
