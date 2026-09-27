@@ -485,8 +485,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Generate dev TLS certificates (if missing)
-        run: bash scripts/generate-dev-certs.sh
+      # No certificate generation here. Nothing in this job needs one -- Trivy,
+      # the SARIF upload and Semgrep never read a cert, and each job gets a
+      # fresh runner so no later job can inherit files from this one. Generating
+      # them here meant scanning them a step later, which failed on keys the job
+      # had just written.
+      #
+      # This is deliberately NOT solved with a skip-dirs entry for
+      # apps/web/certificates. That suppresses the scanner over a path that holds
+      # private keys, which .github/scripts/verify-supply-chain.py rejects on
+      # purpose, and it also walks back a real control: a suppression there
+      # could hide a key that someone committed by force. Removing the
+      # unnecessary step keeps both the scan and the guard intact.
+      #
+      # Jobs that genuinely need certificates must generate their own. Tracked
+      # separately as #916 (frontend-e2e has no cert step).
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -498,7 +511,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
-          skip-dirs: "apps/web/node_modules,apps/web/.next,node_modules,.git,.github,docs,tests,scripts,.cache,.github,__pycache__,*.pyc,*.pyo,*.pyd,apps/web/certificates"
+          skip-dirs: "apps/web/node_modules,apps/web/.next,node_modules,.git,.github,docs,tests,scripts,.cache,.github,__pycache__,*.pyc,*.pyo,*.pyd"
 
       - name: Upload Trivy results
         if: always()
