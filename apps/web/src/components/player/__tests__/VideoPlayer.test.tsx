@@ -490,18 +490,32 @@ describe('playback progress reporting', () => {
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
   });
 
-  it('fires one PATCH per timeupdate event while parked on a 30s boundary', async () => {
-    // BUG (VideoPlayer.tsx:127): the guard `Math.floor(t) % 30 === 0` is true
-    // for every timeupdate inside that whole second. `timeupdate` fires ~4x/s,
-    // so a scrubbing or buffering stream issues ~4 identical PATCHes per
-    // second. A "last persisted second" ref is the missing piece.
+  it('fires one PATCH per target second despite repeated timeupdate events', async () => {
+    // Regression for #946: timeupdate can fire several times inside the same
+    // second while buffering or scrubbing, but that second needs only one PATCH.
     renderPlayer();
 
     emitTimeUpdate(30);
     emitTimeUpdate(30);
-    emitTimeUpdate(30);
+    emitTimeUpdate(30.9);
 
-    expect(apiMocks.updatePlaybackPosition).toHaveBeenCalledTimes(3);
+    expect(apiMocks.updatePlaybackPosition).toHaveBeenCalledTimes(1);
+    expect(apiMocks.updatePlaybackPosition).toHaveBeenCalledWith('s1', 30);
+  });
+
+  it('does not re-persist a target second after scrubbing back into it', async () => {
+    // The deduplication must survive backward seeks so a boundary cannot be
+    // replayed by repeated scrub/timeupdate events.
+    renderPlayer();
+
+    emitTimeUpdate(30.8);
+    emitTimeUpdate(60);
+    emitTimeUpdate(30.2);
+    emitTimeUpdate(30.7);
+
+    expect(apiMocks.updatePlaybackPosition).toHaveBeenCalledTimes(2);
+    expect(apiMocks.updatePlaybackPosition).toHaveBeenNthCalledWith(1, 's1', 30.8);
+    expect(apiMocks.updatePlaybackPosition).toHaveBeenNthCalledWith(2, 's1', 60);
   });
 });
 
