@@ -27,6 +27,7 @@ opentelemetry-sdk = "^1.21.0"
 opentelemetry-exporter-jaeger = "^1.21.0"
 setuptools = ">=84,<86"
 cryptography = ">=41.0.7,<51.0.0"
+wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 
 [tool.poetry.group.dev.dependencies]
 types-python-jose = "^3.3.4"
