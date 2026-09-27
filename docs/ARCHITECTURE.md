@@ -595,7 +595,7 @@ Unique identifier tracking a request through all services and logs.
 | Integration | pytest + httpx | `tests/integration/` |
 | Contract | pytest + static analysis | `tests/contract/` |
 
-### CI Pipeline (54 jobs)
+### CI Pipeline (see `.github/workflows/ci-cd.yml`; job count is generated from the current matrix and should not be treated as a fixed number)
 
 ```yaml
 # Backend
@@ -781,3 +781,9 @@ The CI pipeline (GitHub Actions) runs **54 jobs** on every push to main:
 ---
 
 **Last Updated**: September 7, 2026
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
