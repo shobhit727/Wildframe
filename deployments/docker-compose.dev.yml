@@ -631,6 +631,9 @@ services:
       # together with that suite, not just here.
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       AUTH_SERVICE_URL: http://auth-service:8000
+      JWT_JWKS_URL: http://auth-service:8000/.well-known/jwks.json
+      JWT_ISSUER: wildframe-auth
+      JWT_AUDIENCE: wildframe-api
       USER_SERVICE_URL: http://user-service:8000
       CONTENT_SERVICE_URL: http://content-service:8000
       REDIS_URL: redis://redis:6379/3
@@ -657,6 +660,7 @@ services:
     - ../services/api-gateway:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_auth:/app/wildframe_auth
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
