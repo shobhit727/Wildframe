@@ -148,39 +148,6 @@ def _clean_kafka_env(monkeypatch):
         monkeypatch.delenv(var, raising=False)
 
 
-def _declared_insecure_default(module) -> bool:
-    """Read ``KAFKA_SSL_INSECURE``'s default straight out of the module source.
-
-    The default has been flipped once already (``"true"`` -> ``"false"``, i.e.
-    insecure-by-default -> verifying-by-default). Tests must not hard-code it:
-    the contract is "the observed behaviour matches the declared default, and
-    both branches are reachable via the env var", not a specific literal.
-    """
-    import ast
-    import inspect
-
-    source = inspect.getsource(module)
-    tree = ast.parse(source)
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not node.args:
-            continue
-        func = node.func
-        if isinstance(func, ast.Attribute) and func.attr == "getenv" and node.args[0].value == "KAFKA_SSL_INSECURE":
-            default = node.args[1].value
-            return default.lower() not in ("false", "0", "no")
-    raise AssertionError("KAFKA_SSL_INSECURE default not found in " + module.__name__)
-
-
-def assert_default_matches_declaration(module, ssl_context) -> None:
-    """The context the adapter built must agree with the declared default."""
-    if _declared_insecure_default(module):
-        assert ssl_context is not None
-        assert ssl_context.check_hostname is False
-        assert ssl_context.verify_mode == ssl.CERT_NONE
-    else:
-        assert ssl_context is None
-
-
 def evt(**kw: Any) -> DomainEvent:
     payload = kw.pop("payload", {"n": 1})
     return DomainEvent(topic=kw.pop("topic", "content.uploaded"), key=kw.pop("key", "k-1"), payload=payload, **kw)
@@ -286,15 +253,11 @@ class TestSSLContextResolution:
         assert pub.ssl_context.check_hostname is False
         assert pub.ssl_context.verify_mode == ssl.CERT_NONE
 
-    @pytest.mark.parametrize("protocol", ["SSL", "SASL_SSL"])
-    def test_ssl_protocol_default_matches_the_declared_default(self, protocol):
-        """The env var being unset must yield exactly the behaviour the module
-        declares — no more, no less. This is the assertion that survives a
-        change to the declared default."""
-        import wildframe_events.publisher as publisher_mod
-
-        pub = KafkaEventPublisher("kafka:9092", security_protocol=protocol)
-        assert_default_matches_declaration(publisher_mod, pub.ssl_context)
+    def test_ssl_verification_is_on_by_default(self, monkeypatch):
+        """The unset insecure flag must not disable certificate verification."""
+        monkeypatch.setenv("KAFKA_SECURITY_PROTOCOL", "SASL_SSL")
+        monkeypatch.delenv("KAFKA_SSL_INSECURE", raising=False)
+        assert KafkaEventPublisher("kafka:9092").ssl_context is None
 
     @pytest.mark.parametrize("value", ["false", "FALSE", "0", "no", "No"])
     def test_ssl_protocol_verifying_when_insecure_disabled(self, monkeypatch, value):
