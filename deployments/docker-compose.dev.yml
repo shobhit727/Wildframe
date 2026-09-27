@@ -237,7 +237,9 @@ services:
     - wildframe-network
   web:
     restart: unless-stopped
-    image: deployments-web:latest
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
     environment:
       - NODE_ENV=production
       - NEXT_TELEMETRY_DISABLED=1
@@ -290,7 +292,7 @@ services:
       REFRESH_TOKEN_EXPIRATION_DAYS: 7
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       JWT_PRIVATE_KEY_FILE: /run/secrets/wildframe-dev-jwt.pem
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
@@ -339,7 +341,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
@@ -381,7 +383,7 @@ services:
       REDIS_URL: redis://redis:6379/3
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
@@ -423,7 +425,7 @@ services:
       DLQ_RETENTION_MS: '604800000'
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
@@ -466,7 +468,7 @@ services:
       REDIS_URL: redis://redis:6379/3
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
@@ -505,7 +507,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${STREAMING_SERVICE_KAFKA_USERNAME:-streaming-service}
@@ -544,7 +546,7 @@ services:
       DLQ_RETENTION_MS: '604800000'
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${SEARCH_SERVICE_KAFKA_USERNAME:-search-service}
@@ -584,7 +586,7 @@ services:
       DLQ_RETENTION_MS: '604800000'
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${RECOMMENDATION_SERVICE_KAFKA_USERNAME:-recommendation-service}
@@ -621,7 +623,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${BILLING_SERVICE_KAFKA_USERNAME:-billing-service}
@@ -658,7 +660,7 @@ services:
       CONTENT_SERVICE_URL: http://content-service:8000
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${ANALYTICS_SERVICE_KAFKA_USERNAME:-analytics-service}
@@ -693,7 +695,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${NOTIFICATION_SERVICE_KAFKA_USERNAME:-notification-service}
@@ -728,7 +730,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${CREATORS_SERVICE_KAFKA_USERNAME:-creators-service}
@@ -765,7 +767,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${MODERATION_SERVICE_KAFKA_USERNAME:-moderation-service}
@@ -802,7 +804,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${UPLOADS_SERVICE_KAFKA_USERNAME:-uploads-service}
@@ -839,7 +841,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       LOG_LEVEL: DEBUG
       ENVIRONMENT: development
-      JWT_SECRET_KEY: dev-secret-key
+
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${MEDIA_PIPELINE_KAFKA_USERNAME:-media-pipeline}
