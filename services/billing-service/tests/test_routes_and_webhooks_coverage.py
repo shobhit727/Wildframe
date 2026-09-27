@@ -187,7 +187,11 @@ async def test_purchase_route_validation_and_success(monkeypatch):
     with pytest.raises(HTTPException):
         await routes.purchase_title(request, service, user)
 
-    monkeypatch.setattr(routes.StripeClient, "create_tvod_purchase_session", MagicMock(return_value={"id": "cs_1", "url": "https://checkout"}))
+    monkeypatch.setattr(
+        routes.StripeClient,
+        "create_tvod_purchase_session",
+        MagicMock(return_value={"id": "cs_1", "url": "https://checkout"}),
+    )
     result = await routes.purchase_title(request, service, user)
     assert result["checkout_session_id"] == "cs_1"
 
@@ -208,12 +212,21 @@ async def test_milestone_and_payout_routes():
 
     other = uuid4()
     with pytest.raises(HTTPException):
-        await routes.create_milestone(request.model_copy(update={"creator_id": other}), service, payload, "Bearer token")
+        await routes.create_milestone(
+            request.model_copy(update={"creator_id": other}), service, payload, "Bearer token"
+        )
 
-    tranche = SimpleNamespace(tranche_number=1, percentage=Decimal("10"), amount=Decimal("100"), status=TrancheStatus.RELEASED)
+    tranche = SimpleNamespace(
+        tranche_number=1,
+        percentage=Decimal("10"),
+        amount=Decimal("100"),
+        status=TrancheStatus.RELEASED,
+    )
     service.release_tranche.return_value = tranche
     admin = uuid4()
-    result = await routes.release_tranche(uuid4(), routes.ReleaseTrancheRequest(tranche_number=1), service, admin)
+    result = await routes.release_tranche(
+        uuid4(), routes.ReleaseTrancheRequest(tranche_number=1), service, admin
+    )
     assert result["status"] == "released"
 
     service.release_tranche.side_effect = routes.MilestoneAuthorizationError("forbidden")
@@ -313,7 +326,11 @@ async def test_webhook_payment_intent_refund_and_endpoint(monkeypatch):
     with pytest.raises(HTTPException):
         await webhooks.stripe_webhook(request, service, "bad")
 
-    monkeypatch.setattr(webhooks.StripeClient, "handle_webhook", MagicMock(return_value={"id": "evt_1", "type": "unknown"}))
+    monkeypatch.setattr(
+        webhooks.StripeClient,
+        "handle_webhook",
+        MagicMock(return_value={"id": "evt_1", "type": "unknown"}),
+    )
     service.webhook_events_repo = MagicMock()
     service.webhook_events_repo.claim = AsyncMock(return_value=False)
     assert (await webhooks.stripe_webhook(request, service, ""))["idempotent"] is True
@@ -324,6 +341,10 @@ async def test_webhook_payment_intent_refund_and_endpoint(monkeypatch):
     assert result["handled"] is False
 
     monkeypatch.setitem(webhooks._EVENT_HANDLERS, "known", AsyncMock())
-    monkeypatch.setattr(webhooks.StripeClient, "handle_webhook", MagicMock(return_value={"id": "evt_2", "type": "known"}))
+    monkeypatch.setattr(
+        webhooks.StripeClient,
+        "handle_webhook",
+        MagicMock(return_value={"id": "evt_2", "type": "known"}),
+    )
     result = await webhooks.stripe_webhook(request, service, "")
     assert result["handled"] is True

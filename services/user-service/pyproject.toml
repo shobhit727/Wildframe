@@ -33,6 +33,7 @@ python-multipart = ">=0.0.6,<0.0.32"
 aiokafka = "^0.10.0"
 python-json-logger = "^2.0.0"
 httpx = "^0.25.0"
+wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
 wildframe-compliance = {path = "../../packages/sdk/wildframe_compliance", develop = true}
 opentelemetry-api = "^1.20.0"

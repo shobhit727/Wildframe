@@ -1,6 +1,6 @@
 """Low-level billing coverage: Stripe adapter, JWT verifier, and repositories."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -10,7 +10,7 @@ from jose import JWTError
 
 from app.core import jwt_verifier
 from app.core.stripe_client import StripeClient, StripeError
-from app.models import InvoiceStatus, MilestoneStatus, RefundStatus, RevenueTier, SubscriptionStatus, TrancheStatus
+from app.models import RefundStatus, RevenueTier
 from app.repositories import (
     CreatorPoolRepository,
     InvoiceRepository,
@@ -168,7 +168,6 @@ async def test_webhook_repository_claim_replay_and_state_transitions():
     assert await repo.fail("evt", "error") is True
     await repo.commit()
 
-    from sqlalchemy.exc import IntegrityError
 
     s.add.reset_mock()
     s.flush.side_effect = IntegrityError("stmt", {}, Exception("dup"))
@@ -195,4 +194,6 @@ async def test_refund_and_payout_duplicate_paths():
 
     payout = PayoutLedgerRepository(s)
     payout.get_by_idempotency_key = AsyncMock(return_value=existing)
-    assert await payout.accrue(uid, Decimal("1"), "USD", "k", datetime.now(UTC), datetime.now(UTC)) is existing
+    assert await payout.accrue(
+        uid, Decimal("1"), "USD", "k", datetime.now(UTC), datetime.now(UTC)
+    ) is existing
