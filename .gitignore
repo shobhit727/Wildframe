@@ -180,6 +180,7 @@ scripts/dev/.tmp/
 # Dev TLS certificates — generated locally via scripts/generate-dev-certs.sh, never committed (issue #788)
 apps/web/certificates/*.pem
 apps/web/certificates/*.key
+apps/web/certificates/*_password
 !apps/web/certificates/.gitkeep
 playwright/.cache/
 .serena/

@@ -10,8 +10,25 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CERT_DIR="$REPO_ROOT/apps/web/certificates"
 KEY_FILE="$CERT_DIR/localhost-key.pem"
 CRT_FILE="$CERT_DIR/localhost.pem"
+KAFKA_KEYSTORE="$CERT_DIR/kafka-keystore.pem"
+KAFKA_TRUSTSTORE="$CERT_DIR/kafka-truststore.pem"
+KAFKA_KEYSTORE_PW="$CERT_DIR/kafka_keystore_password"
+KAFKA_KEY_PW="$CERT_DIR/kafka_key_password"
 
 mkdir -p "$CERT_DIR"
+
+# cp-kafka reads the keystore and key passwords from FILES named by
+# KAFKA_SSL_KEYSTORE_CREDENTIALS / KAFKA_SSL_KEY_CREDENTIALS, bind-mounted from
+# here. Generated rather than hand-created so a clean checkout yields a
+# working broker. Dev-only value: the matching private key is gitignored and
+# the certificate is self-signed.
+ensure_kafka_passwords() {
+  local password="${KAFKA_SSL_KEYSTORE_PASSWORD:-wildframe-dev}"
+  printf '%s' "$password" > "$KAFKA_KEYSTORE_PW"
+  printf '%s' "$password" > "$KAFKA_KEY_PW"
+  chmod 644 "$KAFKA_KEYSTORE_PW" "$KAFKA_KEY_PW"
+}
+
 
 if [[ -f "$KEY_FILE" && -f "$CRT_FILE" ]]; then
   echo "Dev certificates already exist at $CERT_DIR — skipping generation."
@@ -22,6 +39,10 @@ if [[ -f "$KEY_FILE" && -f "$CRT_FILE" ]]; then
     cp "$CRT_FILE" "$CERT_DIR/kafka-truststore.pem"
     chmod 644 "$CERT_DIR/kafka-keystore.pem" "$CERT_DIR/kafka-truststore.pem"
     echo "Generated Kafka PEM keystore/truststore from the existing pair."
+  fi
+  if [[ ! -f "$KAFKA_KEYSTORE_PW" || ! -f "$KAFKA_KEY_PW" ]]; then
+    ensure_kafka_passwords
+    echo "Generated Kafka keystore/key password files."
   fi
   echo "  $KEY_FILE"
   echo "  $CRT_FILE"
@@ -64,11 +85,10 @@ chmod 644 "$KEY_FILE" "$CRT_FILE"
 # Kafka's PEM keystore format requires the private key and certificate
 # concatenated in ONE file; the truststore is the certificate alone. Caddy and
 # Grafana consume the two base files separately, so neither can be reused as-is.
-KAFKA_KEYSTORE="$CERT_DIR/kafka-keystore.pem"
-KAFKA_TRUSTSTORE="$CERT_DIR/kafka-truststore.pem"
 cat "$KEY_FILE" "$CRT_FILE" > "$KAFKA_KEYSTORE"
 cp "$CRT_FILE" "$KAFKA_TRUSTSTORE"
 chmod 644 "$KAFKA_KEYSTORE" "$KAFKA_TRUSTSTORE"
+ensure_kafka_passwords
 
 echo "Generated:"
 echo "  $KEY_FILE"

@@ -69,15 +69,46 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_INTER_BROKER_USER}" password="${KAFKA_INTER_BROKER_PASSWORD}" user_admin="${KAFKA_ADMIN_PASSWORD}" user_auth-service="${AUTH_SERVICE_KAFKA_PASSWORD}" user_user-service="${USER_SERVICE_KAFKA_PASSWORD}" user_content-service="${CONTENT_SERVICE_KAFKA_PASSWORD}" user_streaming-service="${STREAMING_SERVICE_KAFKA_PASSWORD}" user_search-service="${SEARCH_SERVICE_KAFKA_PASSWORD}" user_recommendation-service="${RECOMMENDATION_SERVICE_KAFKA_PASSWORD}" user_billing-service="${BILLING_SERVICE_KAFKA_PASSWORD}" user_analytics-service="${ANALYTICS_SERVICE_KAFKA_PASSWORD}" user_notification-service="${NOTIFICATION_SERVICE_KAFKA_PASSWORD}" user_creators-service="${CREATORS_SERVICE_KAFKA_PASSWORD}" user_moderation-service="${MODERATION_SERVICE_KAFKA_PASSWORD}" user_uploads-service="${UPLOADS_SERVICE_KAFKA_PASSWORD}" user_media-pipeline="${MEDIA_PIPELINE_KAFKA_PASSWORD}" user_admin-service="${ADMIN_SERVICE_KAFKA_PASSWORD}";'
-      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/localhost.pem
+      # Kept as a NAMED "KafkaServer" section, which is the form Kafka looks up.
+      # NOTE this alone is NOT sufficient: BrokerToControllerChannelManager resolves
+      # its JAAS via the java.security.auth.login.config system property, so a
+      # named section here is still not found. See the KAFKA_OPTS note below.
+      KAFKA_SASL_JAAS_CONFIG: 'KafkaServer { org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_INTER_BROKER_USER:-kafka}" password="${KAFKA_INTER_BROKER_PASSWORD:-wildframe-dev}" user_admin="${KAFKA_ADMIN_PASSWORD:-wildframe-dev}" user_auth-service="${AUTH_SERVICE_KAFKA_PASSWORD}" user_user-service="${USER_SERVICE_KAFKA_PASSWORD}" user_content-service="${CONTENT_SERVICE_KAFKA_PASSWORD}" user_streaming-service="${STREAMING_SERVICE_KAFKA_PASSWORD}" user_search-service="${SEARCH_SERVICE_KAFKA_PASSWORD}" user_recommendation-service="${RECOMMENDATION_SERVICE_KAFKA_PASSWORD}" user_billing-service="${BILLING_SERVICE_KAFKA_PASSWORD}" user_analytics-service="${ANALYTICS_SERVICE_KAFKA_PASSWORD}" user_notification-service="${NOTIFICATION_SERVICE_KAFKA_PASSWORD}" user_creators-service="${CREATORS_SERVICE_KAFKA_PASSWORD}" user_moderation-service="${MODERATION_SERVICE_KAFKA_PASSWORD}" user_uploads-service="${UPLOADS_SERVICE_KAFKA_PASSWORD}" user_media-pipeline="${MEDIA_PIPELINE_KAFKA_PASSWORD}" user_admin-service="${ADMIN_SERVICE_KAFKA_PASSWORD}"; }'
+      # A PEM keystore must be the private key AND certificate concatenated in one
+      # file; localhost.pem is the certificate only, so it cannot serve as a
+      # keystore. scripts/generate-dev-certs.sh emits both bundles below.
+      # cp-kafka's entrypoint (etc/confluent/docker/configure) derives
+      # KAFKA_SSL_KEYSTORE_LOCATION from *_FILENAME and hard-fails without it, so
+      # the FILENAME vars are what actually select the generated bundles.
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka-keystore.pem
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/kafka-keystore.pem
       KAFKA_SSL_KEYSTORE_TYPE: PEM
-      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/localhost.pem
+      KAFKA_SSL_TRUSTSTORE_FILENAME: kafka-truststore.pem
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/kafka-truststore.pem
       KAFKA_SSL_TRUSTSTORE_TYPE: PEM
       KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ""
-      KAFKA_SSL_KEYSTORE_PASSWORD: ${KAFKA_SSL_KEYSTORE_PASSWORD}
-      KAFKA_SSL_KEY_PASSWORD: ${KAFKA_SSL_KEY_PASSWORD}
-      KAFKA_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_SSL_TRUSTSTORE_PASSWORD}
+      # The entrypoint reads the key/keystore passwords from these two files
+      # (dev-only; Kafka ignores them for PEM keystores, but they must exist).
+      KAFKA_SSL_KEY_CREDENTIALS: kafka_key_password
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: kafka_keystore_password
+      # Kafka ignores the store password for PEM keystores, but the variables must
+      # still be SET or they interpolate to empty and the broker misconfigures.
+      # Dev-only defaults; a real .env value takes precedence when present.
+      KAFKA_SSL_KEYSTORE_PASSWORD: ${KAFKA_SSL_KEYSTORE_PASSWORD:-wildframe-dev}
+      KAFKA_SSL_KEY_PASSWORD: ${KAFKA_SSL_KEY_PASSWORD:-wildframe-dev}
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_SSL_TRUSTSTORE_PASSWORD:-wildframe-dev}
+      # cp-kafka's entrypoint hard-fails with `dub ensure KAFKA_OPTS` whenever
+      # ADVERTISED_LISTENERS contains a SASL_ endpoint, so this must be non-empty.
+      # Heap settings only.
+      #
+      # NOTE: do NOT add -Djava.security.auth.login.config here. The broker's
+      # broker-to-controller channel does need a named `KafkaServer` JAAS entry,
+      # but that property is global to every JVM in the container, so it is also
+      # inherited by cp-kafka's preflight `cub zk-ready` tooling and by the
+      # healthcheck CLI. Both then try SASL against the dev ZooKeeper (which has
+      # no SASL) and the container restart-loops at the preflight stage. Resolving
+      # that properly is a design change, not a one-line fix -- see the report.
+      KAFKA_OPTS: -Xms256M -Xmx512M
     ports:
     - 9092:9092
     - 29092:29092
@@ -86,12 +117,16 @@ services:
     # Dev TLS certificates are generated locally via scripts/generate-dev-certs.sh (never committed, issue #788).
     # Mount the directory so Caddy/Grafana/Kafka all see the same generated pair.
     - ../apps/web/certificates:/etc/kafka/secrets:ro
+    # SASL_SSL credentials for the broker healthcheck (see deployments/kafka-client.properties).
+    - ./kafka-client.properties:/etc/kafka/kafka-client.properties:ro
     healthcheck:
       test:
       - CMD
       - kafka-broker-api-versions
       - --bootstrap-server
       - localhost:29092
+      - --command-config
+      - /etc/kafka/kafka-client.properties
       interval: 15s
       timeout: 15s
       retries: 10
@@ -111,7 +146,7 @@ services:
     healthcheck:
       test:
       - CMD-SHELL
-      - cub zk-ready localhost 2181 5
+      - cub zk-ready localhost 2181
       interval: 10s
       timeout: 5s
       retries: 5
@@ -238,6 +273,13 @@ services:
   web:
     restart: unless-stopped
     image: deployments-web:latest
+    # apps/web/Dockerfile builds from the repo root (it COPYs the workspace
+    # package.json + package-lock.json, apps/web, and packages/), so the context
+    # must be `..` exactly like the 15 backend services. Without this key no
+    # image was ever produced and `image:` alone could only ever pull/push.
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
     environment:
       - NODE_ENV=production
       - NEXT_TELEMETRY_DISABLED=1
