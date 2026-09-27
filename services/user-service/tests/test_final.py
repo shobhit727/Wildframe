@@ -75,7 +75,7 @@ def test_login_rate_limit_defaults_match_the_auth_service_window():
 def test_jwt_settings_match_the_platform_contract():
     settings = Settings()
 
-    assert settings.JWT_ALGORITHM == "HS256"
+    assert settings.JWT_ALGORITHM == "RS256"
     assert settings.JWT_AUDIENCE == "wildframe-api"
     assert settings.JWT_ISSUER == "wildframe-auth"
     assert settings.JWT_EXPIRATION_MINUTES == 15
