@@ -15,8 +15,8 @@ import httpx
 import redis.asyncio as redis
 from fastapi import HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
-from jose import jwt
 from jose.exceptions import JWTError
+from wildframe_auth import JWKSUnavailableError, verify_token_with_jwks
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
@@ -968,11 +968,13 @@ class AuthenticationMiddleware:
         }
     )
 
-    def __init__(self, jwt_secret: str):
-        self.jwt_secret = jwt_secret
+    def __init__(self, *, jwks_url: str, audience: str, issuer: str):
+        self.jwks_url = jwks_url
+        self.audience = audience
+        self.issuer = issuer
 
     async def verify_token(self, request: Request) -> dict | None:
-        """Verify a JWT token from the Authorization header."""
+        """Verify a bearer JWT with the shared RS256/JWKS verifier."""
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             return None
@@ -982,19 +984,20 @@ class AuthenticationMiddleware:
             if scheme.lower() != "bearer":
                 return None
 
-            # Optional identity extraction only; upstream services enforce audience
-            # (AGENTS.md: the gateway is the one decode with no audience check).
-            # Expiry remains mandatory even at this transparent proxy boundary —
-            # python-jose spells that ``require_exp``; an unknown ``require`` key
-            # is ignored silently, which would accept exp-less tokens.
-            payload = jwt.decode(
+            # The gateway only extracts optional identity for rate limiting and
+            # routing context. The shared verifier enforces RS256, required claims,
+            # and bounded JWKS rotation refreshes.
+            return await verify_token_with_jwks(
                 token,
-                self.jwt_secret,
-                algorithms=["HS256"],
-                options={"verify_aud": False, "require_exp": True},
+                audience=self.audience,
+                issuer=self.issuer,
+                url=self.jwks_url,
+                leeway=60,
             )
-            return payload
-        except (JWTError, ValueError, TypeError):  # ValueError: malformed auth header
+        except (JWTError, JWKSUnavailableError, ValueError, TypeError):
+            # Invalid/expired tokens and temporary JWKS failures must not make the
+            # transparent proxy itself reject downstream requests; upstream services
+            # remain the authorization boundary.
             logger.warning("Token verification failed", exc_info=True)
             return None
 
