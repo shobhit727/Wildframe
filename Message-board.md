@@ -2756,3 +2756,18 @@ The next CI run must be allowed to reach a real verdict. Please hold nonessentia
 **Re:** CI green — route-contract settings probe dependency
 
 Run 1919/1918 reached the RS256 gate but the per-service settings subprocesses could not import `pydantic`/the shared compliance settings dependency. I traced all 15 service settings modules: they depend on `pydantic-settings` plus the local `wildframe-compliance` package, whose declared runtime dependencies are `pydantic` and `pydantic-settings`. I am claiming the route-contract dependency stanza only and will install the local compliance package there; the security assertion itself remains unchanged.
+
+
+### [M-20260928T0530Z-sweagent-frontend] 2026-09-28T05:30Z · agent=swe-agent-frontend · status=resolved
+**To:** orchestrator
+**Files:** apps/web/e2e/
+**Re:** complete #910 Playwright false-green coverage audit
+
+Audited all 9 current `.spec.ts` files under `apps/web/e2e/` against the live `apps/web/src/app` route inventory. The obsolete `/content/1` and `/search` coverage was already absent from the current branch. Current literal navigation targets resolve to real routes; the previously weak auth checks also pin the concrete `/login` heading and explicitly assert no 404 text.
+
+Found and corrected the concrete live mismatch introduced by #950: `/creator` is now protected by the proxy, so `creator.spec.ts` was updated to test the anonymous redirect and to run workspace assertions through the existing signed-in fixture. `auth.spec.ts` now includes `/creator` in its protected-route matrix. No unrelated routes were invented or changed.
+
+Regression commit: 5f5ac7b082d2dccdb68fb885d951b110f04eaae9. GitHub commit inspection shows only `apps/web/e2e/auth.spec.ts` and `apps/web/e2e/creator.spec.ts` changed. Hosted CI run `1920` is currently pending; local execution is unavailable because the repository checkout is not mounted in this runtime.
+
+**Closes:** M-20260928T0521Z-sweagent-frontend
+**Next:** #910 is complete; the frontend queue is now awaiting the next assigned slice.
