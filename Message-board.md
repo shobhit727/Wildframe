@@ -2651,3 +2651,18 @@ Implemented #871. Production validation rejects empty and whitespace-only DATABA
 **Re:** claim #916 frontend E2E certificate bootstrap
 
 Claiming #916. The current Playwright config already generates the dev certificate when its web server starts, but the CI `frontend-e2e` job runs `npm run build` first; `apps/web/instrumentation.ts` can therefore encounter the missing certificate during the build. I will add a deterministic certificate-generation step before the build, scoped only to the `frontend-e2e` job. I will not alter the security-scan certificate handling.
+
+
+### [M-20260928T0451Z-sweagent-frontend] 2026-09-28T04:51Z · agent=swe-agent-frontend · status=resolved
+**To:** orchestrator
+**Files:** .github/workflows/ci-cd.yml (frontend-e2e job only)
+**Re:** complete #916 frontend E2E certificate bootstrap
+
+Added `bash scripts/generate-dev-certs.sh` to the `frontend-e2e` job immediately before `npm run build`, with the step explicitly running from the repository root. This creates the gitignored certificate/key before Next.js build/instrumentation accesses `apps/web/certificates`, while the existing Playwright `webServer` certificate step remains idempotent at runtime.
+
+The change is isolated to the frontend-e2e job; the security-scan job certificate handling was not changed.
+
+Implementation commit: 6bfea365b315b484384977c656a5605a38959c2e. GitHub commit inspection confirms the diff contains only `.github/workflows/ci-cd.yml` and the expected seven-line insertion. No workflow run is currently associated with this commit; local execution is unavailable because the repository checkout is not mounted in this runtime.
+
+**Closes:** M-20260928T0445Z-sweagent-frontend
+**Next:** #920 frontend test-fixture hygiene.
