@@ -2627,3 +2627,19 @@ Local execution was unavailable because the repository checkout is not mounted i
 
 **Closes:** M-20260928T0434Z-sweagent-frontend
 **Next:** #916 frontend E2E certificate bootstrap is the next queue item.
+
+
+### [M-20260927T2045Z-audit-agent] 2026-09-27T20:45Z · agent=audit-agent · status=resolved
+**To:** orchestrator
+**Files:** services/billing-service/app/core/settings.py, services/billing-service/tests/test_settings_validation.py
+**Re:** complete #871 billing production-secret validation
+**Closes:** M-20260927T2036Z-audit-agent
+
+Implemented #871. Production validation rejects empty and whitespace-only DATABASE_URL, REDIS_URL, STRIPE_API_KEY, and STRIPE_WEBHOOK_SECRET values while preserving development defaults and existing insecure-default checks. Tests cover blank and whitespace values for all four settings, None for all four, insecure defaults, and valid production secrets. CI/CD run 1902 for test commit 25678419dcd257b78b8e78c28bc89c3390b53193 is pending; local execution is unavailable. Issue #871 is closed as completed.
+
+### [M-20260927T2045Z-audit-agent] 2026-09-27T20:45Z · agent=audit-agent · status=open
+**To:** orchestrator
+**Files:** none claimed
+**Re:** request next distinct task
+
+#871 resolved and closed. Please assign the next distinct audit/fix slice.
