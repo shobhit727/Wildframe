@@ -179,17 +179,25 @@ from app.core import settings as settings_module
 
 class TestEncodePasswordGuard:
     def test_password_longer_than_the_cap_is_rejected(self):
-        with pytest.raises(ValueError, match=f"maximum length of {PASSWORD_MAX_LENGTH}"):
+        with pytest.raises(ValueError, match=f"cannot be longer than {PASSWORD_MAX_LENGTH} bytes"):
             PasswordManager.hash_password("a" * (PASSWORD_MAX_LENGTH + 1))
 
-    def test_bcrypt_own_72_byte_limit_makes_the_128_cap_unreachable(self):
-        """BUG: the app-level cap (128) is above bcrypt's hard limit (72 bytes).
+    def test_bcrypt_own_72_byte_limit_is_the_app_cap(self):
+        """The app cap is bcrypt's limit, measured in bytes.
 
-        ``UserRegisterRequest.password`` allows up to 128 characters, so a
-        73-128 character password passes Pydantic validation and then raises
-        ``ValueError: password cannot be longer than 72 bytes`` inside
-        ``hash_password``. Registration surfaces that as a 500, not a 422.
-        Asserted as-is; not fixed here.
+        This used to be a real bug in both directions. The cap was 128
+        *characters*, above bcrypt's hard limit of 72 *bytes*, so:
+
+        - a 73-128 character password passed Pydantic validation and then
+          raised inside ``hash_password``, surfacing registration as a 500
+          rather than a 422; and
+        - worse, ``bcrypt.hashpw`` silently truncates at 72 bytes, so
+          ``verify_password("a" * 73, hash_password("a" * 72))`` returned
+          True. Any password sharing its first 72 bytes with another one
+          authenticated against it.
+
+        Both are covered below. The cap is enforced in bytes, so 40
+        multi-byte characters (80 bytes) is also rejected.
         """
         with pytest.raises(ValueError, match="72 bytes"):
             PasswordManager.hash_password("a" * 73)
@@ -197,6 +205,15 @@ class TestEncodePasswordGuard:
         # Within bcrypt's own limit the round trip works.
         hashed = PasswordManager.hash_password("a" * 72)
         assert PasswordManager.verify_password("a" * 72, hashed)
+
+        # The truncation property: an over-long password must NOT
+        # authenticate against a hash of its own 72-byte prefix.
+        assert PasswordManager.verify_password("a" * 73, hashed) is False
+
+    def test_the_cap_is_measured_in_bytes_not_characters(self):
+        # 40 two-byte characters is 80 bytes, which bcrypt would truncate.
+        with pytest.raises(ValueError, match="cannot be longer than 72 bytes"):
+            PasswordManager.hash_password("\u00e9" * 40)
 
     def test_verification_of_a_73_char_password_is_silently_false(self):
         """``verify_password`` swallows the same ValueError, so an over-long

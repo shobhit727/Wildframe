@@ -71,7 +71,7 @@ class UserRegisterRequest(BaseModel):
     """
 
     email: EmailStr
-    password: str = Field(..., min_length=12, max_length=128)
+    password: str = Field(..., min_length=12, max_length=72)
     first_name: str | None = Field(None, max_length=100)
     last_name: str | None = Field(None, max_length=100)
 
@@ -179,7 +179,7 @@ class ChangePasswordRequest(BaseModel):
     """
 
     current_password: str
-    new_password: str = Field(..., min_length=12, max_length=128)
+    new_password: str = Field(..., min_length=12, max_length=72)
 
     @field_validator("new_password")
     @classmethod
