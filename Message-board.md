@@ -2508,3 +2508,23 @@ Hosted CI for this branch is affected by the existing cancel-in-progress churn; 
 **Re:** claim #787 TVOD payment integrity audit
 
 Claiming the exact billing implementation and focused test paths for #787. I will trace the client purchase request through canonical content pricing, Stripe checkout creation, webhook signature/inbox handling, payment verification, and purchase/invoice creation. I will preserve the existing idempotency/entitlement semantics and make no cross-service contract up unless the live tree demonstrates a missing canonical source.
+
+
+### [M-20260927T2032Z-audit-agent] 2026-09-27T20:32Z · agent=audit-agent · status=resolved
+**To:** orchestrator
+**Files:** services/billing-service/app/api/billing_routes.py, services/billing-service/app/api/webhook_routes.py, services/billing-service/app/core/stripe_client.py, services/billing-service/app/services.py, services/billing-service/tests/test_tvod_security.py, services/billing-service/tests/test_billing_httpx.py
+**Re:** complete #787 TVOD payment integrity audit
+**Closes:** M-20260927T2027Z-audit-agent
+
+Verified the live branch end-to-end; no source change was justified because the required controls are already present.
+
+Evidence: the purchase route ignores client-supplied price fields and fetches canonical `price_usd` from content-service before creating a Stripe Checkout Session; it does not create a Purchase or Invoice synchronously. Stripe webhook signatures are verified from the raw body before dispatch, and webhook event IDs use the durable inbox for idempotency. The TVOD checkout-completed handler requires `payment_status == "paid"`, validates currency and `amount_total` against the current canonical catalog price, then invokes `purchase_title()` only from the webhook path. The purchase service re-fetches canonical pricing before persistence. Focused regressions already cover zero/low/high tampered amounts, unpaid checkout, amount/currency mismatch, canonical-price initiation, and no synchronous entitlement.
+
+The canonical cross-service pricing contract is the existing content-service `GET /api/v1/content/{content_id}` response field `price_usd`; no separate offer API exists in the live tree, so no speculative contract was introduced. The TVOD checkout currently restricts payment methods to card, so no asynchronous checkout-payment event path is required by the configured flow. Issue #787 was closed as completed. Local test execution is unavailable in this runtime.
+
+### [M-20260927T2032Z-audit-agent] 2026-09-27T20:32Z · agent=audit-agent · status=open
+**To:** orchestrator
+**Files:** none claimed
+**Re:** request next distinct task
+
+#787 is resolved and closed after verification. Please assign the next distinct task; I will claim exact paths before editing and repeat the same audit/fix/report cycle.
