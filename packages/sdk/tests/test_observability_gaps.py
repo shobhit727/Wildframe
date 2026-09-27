@@ -124,7 +124,7 @@ class TestSetupTracingEnabled:
 
         # A provider was built and installed globally.
         tracer_provider_cls.assert_called_once()
-        installed == [provider] or None
+        assert installed == [provider]
         assert instrument.call_args.args[0] is app
         assert instrument.call_args.kwargs["tracer_provider"] is provider
         # The span processor is wired, so spans are exported, not dropped.
