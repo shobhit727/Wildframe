@@ -3,12 +3,12 @@
 ## Platform Overview
 
 **Wildframe** is a complete Netflix-like streaming platform with:
-- ✅ **12 Production-Ready Microservices** (Auth, User, Content, Streaming, Search, Admin, Recommendation, Billing, Analytics, Notification, Media Pipeline, API Gateway)
-- ✅ **Modern Next.js 15 Frontend** with 10 pages and 6+ reusable components
+- ✅ **15 backend services in the repository** (Auth, User, Content, Streaming, Search, Admin, Recommendation, Billing, Analytics, Notification, Media Pipeline, API Gateway)
+- ✅ **Next.js 16.3.6 frontend** with 10 pages and 6+ reusable components
 - ✅ **Full Video Streaming** with HLS/DASH adaptive bitrate
 - ✅ **JWT Authentication** with token refresh
 - ✅ **Subscription Management** (4 tiers: free/basic/premium/family)
-- ✅ **Docker Containerization** (14 containers)
+- ✅ **Docker Compose development stack**
 
 ---
 
@@ -25,7 +25,7 @@
 
 ### 1. Start Backend (All Services)
 ```bash
-cd /home/phoenix/Desktop/wildframe
+cd /path/to/Wildframe
 docker-compose -f deployments/docker-compose.dev.yml up -d
 ```
 
@@ -325,7 +325,7 @@ databases/
 - Modify frontend pages in `/src/app/`
 - Modify components in `/src/components/`
 - Backend services in `/services/*/`
-- See [CONTRIBUTING.md](../../docs/CONTRIBUTING.md)
+- See [CONTRIBUTING.md](docs/CONTRIBUTING.md)
 
 ### 2. Testing
 - Frontend: `npm run test` + `npm run test:e2e`
@@ -335,24 +335,24 @@ databases/
 ### 3. Deployment
 - Frontend: Vercel, Netlify, or Docker
 - Backend: Kubernetes (manifests in `/infrastructure/kubernetes/`)
-- See [DEPLOYMENT_GUIDE.md](../../docs/DEPLOYMENT_GUIDE.md)
+- See [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)
 
 ### 4. Monitoring
 - Prometheus metrics on port 9090
 - Grafana dashboard on port 3000 (also running on frontend)
 - Jaeger tracing on port 6831
-- See [OPERATIONS_GUIDE.md](../../docs/OPERATIONS_GUIDE.md)
+- See [OPERATIONS.md](docs/OPERATIONS.md)
 
 ---
 
 ## Project Documentation
 
-- [README.md](../../README.md) - Project overview
-- [FRONTEND_COMPLETE.md](../../FRONTEND_COMPLETE.md) - Frontend status
+- [README.md](README.md) - Project overview
+- [FRONTEND_COMPLETE.md](FRONTEND_COMPLETE.md) - Frontend status
 - [DEPLOYMENT_GUIDE.md](../../docs/DEPLOYMENT_GUIDE.md) - Production deployment
-- [API_DOCUMENTATION.md](../../docs/API_DOCUMENTATION.md) - API reference
-- [ARCHITECTURE.md](../../ARCHITECTURE.md) - System design
-- [CONTRIBUTING.md](../../docs/CONTRIBUTING.md) - Development guidelines
+- [API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md) - API reference
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System design
+- [CONTRIBUTING.md](docs/CONTRIBUTING.md) - Development guidelines
 
 ---
 
@@ -364,7 +364,7 @@ databases/
 
 ---
 
-**Platform Status**: ✅ **PRODUCTION READY**  
+**Platform Status**: Active development; this guide documents the development stack, not a production-readiness claim  
 **Last Updated**: September 27, 2026
-**Version**: 1.0.0-complete
+**Version**: Current repository state
 
