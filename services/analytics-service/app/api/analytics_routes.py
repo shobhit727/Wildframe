@@ -4,6 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from jose import JWTError, jwt
+from wildframe_auth.verifier import get_cached_jwks, verify_token
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,12 +42,17 @@ async def get_current_user_claims(
         )
     token = authorization.removeprefix("Bearer ")
     try:
-        payload = jwt.decode(
+        header = jwt.get_unverified_header(token)
+        kid = header.get("kid")
+        if not kid:
+            raise JWTError("missing kid")
+        jwks = await get_cached_jwks(settings.JWT_JWKS_URL, required_kid=kid)
+        payload = verify_token(
             token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
+            jwks,
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
+            expected_type="access",
         )
         # Token-type separation (#221): refresh tokens share the audience but
         # must never be accepted as access tokens.
@@ -57,6 +63,8 @@ async def get_current_user_claims(
             )
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Authentication service unavailable") from None
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
         raise HTTPException(
