@@ -33,7 +33,7 @@ Wait 10-15 seconds for all services to initialize...
 
 ### 2. Start Frontend
 ```bash
-cd /home/phoenix/Desktop/wildframe/apps/web
+cd ./apps/web
 npm install  # First time only
 npm run dev
 ```
@@ -83,7 +83,7 @@ docker-compose -f deployments/docker-compose.dev.yml logs -f api-gateway
 ### Frontend Startup
 
 ```bash
-cd /home/phoenix/Desktop/wildframe/apps/web
+cd ./apps/web
 
 # Install dependencies (first time only)
 npm install
@@ -367,3 +367,10 @@ databases/
 **Platform Status**: ✅ **PRODUCTION READY**  
 **Last Updated**: 2024  
 **Version**: 1.0.0-complete
+
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
