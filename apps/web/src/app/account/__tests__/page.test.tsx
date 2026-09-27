@@ -41,6 +41,8 @@ const PROFILE = {
   language: 'en',
   profile_completeness: 80,
   created_at: '2024-01-15T00:00:00Z',
+  bio: 'Math and machine learning.',
+  phone_number: '+44 20 7946 0958',
 } satisfies Partial<UserProfile> as UserProfile;
 
 function tab(name: RegExp | string) {
@@ -177,43 +179,58 @@ describe('AccountPage (/account)', () => {
       expect(apiClient.updateProfile).not.toHaveBeenCalled();
     });
 
-    it('persists the profile values it holds when Save is pressed', async () => {
+    it('hydrates the editable fields from the loaded profile', async () => {
       renderWithQuery(<AccountPage />);
       await screen.findByRole('heading', { name: 'Account' });
-      await waitFor(() => expect(apiClient.getProfile).toHaveBeenCalled());
+      await waitFor(() => expect(screen.getByText('GB')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+      expect(screen.getByRole('textbox', { name: 'Bio' })).toHaveValue('Math and machine learning.');
+      expect(screen.getByRole('textbox', { name: 'Phone number' })).toHaveValue('+44 20 7946 0958');
+      expect(screen.getByRole('textbox', { name: 'Country' })).toHaveValue('GB');
+    });
+
+    it('submits only the profile field that was explicitly changed', async () => {
+      renderWithQuery(<AccountPage />);
+      await screen.findByRole('heading', { name: 'Account' });
+      await waitFor(() => expect(screen.getByText('GB')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+      fireEvent.change(screen.getByRole('textbox', { name: 'Bio' }), {
+        target: { value: 'Updated bio' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() =>
+        expect(apiClient.updateProfile).toHaveBeenCalledWith('u-1', {
+          bio: 'Updated bio',
+        }),
+      );
+      expect(apiClient.updateProfile).toHaveBeenCalledTimes(1);
+    });
+
+    it('blocks a no-op Save without making an update request', async () => {
+      renderWithQuery(<AccountPage />);
+      await screen.findByRole('heading', { name: 'Account' });
+      await waitFor(() => expect(screen.getByText('GB')).toBeInTheDocument());
 
       fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
       fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-      // NOTE: the Profile tab exposes no editable inputs, so this payload is
-      // entirely server-derived. See the reported bug for the data-loss case
-      // when the profile query has not resolved.
-      await waitFor(() => expect(apiClient.updateProfile).toHaveBeenCalledWith('u-1', {
-        bio: '',
-        phone_number: '',
-        country: 'GB',
-      }));
+      expect(apiClient.updateProfile).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
     });
 
-    it('submits empty strings for unset profile fields when the lookup failed', async () => {
+    it('disables profile editing when the profile lookup fails', async () => {
       apiClient.getProfile.mockRejectedValue(new Error('users 500'));
 
       renderWithQuery(<AccountPage />);
       await screen.findByRole('heading', { name: 'Account' });
       await waitFor(() => expect(screen.getAllByText('—').length).toBeGreaterThan(0));
 
-      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-
-      // `formData.x ?? undefined` does not turn '' into undefined, so the
-      // "leave it alone" intent in the code does not hold. Documented as a bug.
-      await waitFor(() =>
-        expect(apiClient.updateProfile).toHaveBeenCalledWith('u-1', {
-          bio: '',
-          phone_number: '',
-          country: '',
-        }),
-      );
+      expect(screen.getByRole('button', { name: 'Edit' })).toBeDisabled();
+      expect(apiClient.updateProfile).not.toHaveBeenCalled();
     });
 
     it('reports a failed profile save and stays in edit mode', async () => {
