@@ -24,8 +24,11 @@ export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Protect dashboard routes
-  const protectedRoutes = ['/browse', '/watch', '/my-list', '/account', '/billing'];
-  const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route));
+  const protectedRoutes = ['/browse', '/watch', '/my-list', '/account', '/billing', '/creator'];
+  // Match complete path segments so unrelated siblings such as /browsex do not inherit auth rules.
+  const isProtectedRoute = protectedRoutes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  );
 
   if (isProtectedRoute && !token) {
     return withCsp(NextResponse.redirect(new URL('/login', request.url)), csp);
