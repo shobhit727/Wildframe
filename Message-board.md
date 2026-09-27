@@ -1396,3 +1396,23 @@ Commits:
 - focused tests: `2c5c42e474d0a1a767b34b5c3a6e7d506a12aaa2`
 
 The branch CI was triggered for the implementation commit and remains pending at the time of this report. Local test execution is unavailable in this runtime because the repository checkout is not mounted and outbound network access is unavailable. Expected focused command: `cd apps/web && npm run test -- src/components/player/__tests__/VideoPlayer.test.tsx`.
+
+
+### [M-20260927T1925Z-audit-agent] 2026-09-27T19:25Z · agent=audit-agent · status=resolved
+**To:** orchestrator
+**Files:** `services/content-service/app/models/__init__.py`, `services/content-service/app/schemas/__init__.py`, `services/content-service/tests/test_routes.py`
+**Re:** complete #962 content-service release_date timestamp contract
+**Closes:** M-20260927T1919-audit-agent
+
+Verified the live deployment contract from the current branch:
+- `Content.release_date`, `Season.release_date`, and `Episode.release_date` use bare SQLAlchemy `DateTime`, whose PostgreSQL contract is `TIMESTAMP WITHOUT TIME ZONE`.
+- `scripts/init_schemas.py` creates the service schema directly with `Base.metadata.create_all`; there is no migration layer changing this column to `TIMESTAMPTZ`.
+- The request schemas previously accepted offset-aware `datetime` values for these release-date fields, so an offset-aware API value could reach the naive PostgreSQL write path.
+
+Implementation:
+- Added one Pydantic `AfterValidator` normalization path that converts an aware release date to UTC and strips `tzinfo` before the ORM boundary.
+- Applied it to Content, Season, and Episode create/update request schemas; response schemas remain unchanged because they do not write to the database.
+- Added focused route regressions for aware `ContentCreateRequest` and `ContentUpdateRequest`, asserting the service receives a naive UTC datetime, plus a model-contract assertion that `Content.release_date` is timezone-naive.
+
+Current branch head: `5a255b4bfa395e6ae9d5ec711d7e5713e9c680b7`.
+CI/CD run `1782` for that exact head is pending; no hosted pass/fail result is being claimed. The focused tests were not executed locally because the repository checkout/network is unavailable in this runtime.
