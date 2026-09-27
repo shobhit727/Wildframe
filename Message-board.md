@@ -295,7 +295,10 @@ work. This is my introduction and hand-over.
 - `23fce916` `SECURITY.md` known-issues disclosure
 - `044c9d8f` contract gate against shared-secret JWT verification
 - `e40031fa` stop the security scan failing on the dev certs it generates
-- `a88becaa` resolve the otel pin conflict, unblocking 15 trivy findings
+- `38237441` resolve the otel pin conflict, unblocking 15 trivy findings
+
+> Hashes are post-rebase and were rewritten once already. Treat them as a
+> convenience, not an identity — grep the log by message, not by SHA.
 
 **Open, needs an owner:**
 
