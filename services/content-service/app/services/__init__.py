@@ -4,6 +4,7 @@ Orchestrates repositories and business rules.
 """
 
 import logging
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +38,13 @@ from app.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _db_datetime(value: datetime | None) -> datetime | None:
+    """Normalize aware timestamps for PostgreSQL TIMESTAMP WITHOUT TIME ZONE columns."""
+    if value is None or value.tzinfo is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 class ContentService:
@@ -145,7 +153,7 @@ class ContentService:
                 slug=request.slug,
                 description=request.description,
                 content_type=ContentType(request.content_type),
-                release_date=request.release_date,
+                release_date=_db_datetime(request.release_date),
                 duration_minutes=request.duration_minutes,
                 original_language=request.original_language,
                 country=request.country,
@@ -296,7 +304,7 @@ class ContentService:
                 title=request.title,
                 description=request.description,
                 poster_url=request.poster_url,
-                release_date=request.release_date,
+                release_date=_db_datetime(request.release_date),
             )
             await self.content_repo.commit()
             return await self.season_repo.get_by_id(season.id)  # type: ignore[arg-type]
@@ -341,6 +349,8 @@ class ContentService:
             if not season or season.content_id != content_id:
                 return None
             update_data = request.model_dump(exclude_unset=True)
+            if "release_date" in update_data:
+                update_data["release_date"] = _db_datetime(update_data["release_date"])
             season = await self.season_repo.update(season_id, **update_data)
             await self.content_repo.commit()
             return season
@@ -364,7 +374,7 @@ class ContentService:
                 duration_minutes=request.duration_minutes,
                 description=request.description,
                 thumbnail_url=request.thumbnail_url,
-                release_date=request.release_date,
+                release_date=_db_datetime(request.release_date),
                 is_available=request.is_available,
             )
 
@@ -433,6 +443,8 @@ class ContentService:
             if not episode or episode.season_id != season_id:
                 return None
             update_data = request.model_dump(exclude_unset=True)
+            if "release_date" in update_data:
+                update_data["release_date"] = _db_datetime(update_data["release_date"])
             episode = await self.episode_repo.update(episode_id, **update_data)
             await self.content_repo.commit()
             return episode
