@@ -541,9 +541,7 @@ def gateway(upstream, limiter_result=True, app=None):
     limiter.release_rate_limits = AsyncMock(return_value=None)
 
     try:
-        with patcher, patch(
-            "app.api.gateway_routes.get_shared_client", return_value=upstream
-        ):
+        with patcher, patch("app.api.gateway_routes.get_shared_client", return_value=upstream):
             with TestClient(app, base_url="http://test") as client:
                 main.rate_limiter = limiter
                 main.auth_middleware = AuthenticationMiddleware(
@@ -569,8 +567,6 @@ def _bearer(sub="user-42"):
     with a hardcoded secret is rejected as 401 — which silently drops the
     account dimension from the rate-limit lease.
     """
-    from jose import jwt
-
     assert _SIGNING_KEY_PEM is not None
     return jwt.encode(
         {
