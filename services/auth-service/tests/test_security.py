@@ -98,24 +98,6 @@ class TestTokenManager:
         with pytest.raises(JWTError):
             TokenManager.verify_token(access_token, token_type="refresh")
 
-    def test_extract_user_id(self, token_manager):
-        """Test user ID extraction from token."""
-        user_id = uuid4()
-        email = "test@example.com"
-
-        token = TokenManager.create_access_token(user_id, email)
-        extracted_id = TokenManager.extract_user_id(token)
-
-        assert extracted_id == user_id
-
-    def test_extract_user_id_invalid_token(self, token_manager):
-        """Test user ID extraction from invalid token."""
-        invalid_token = "invalid.token.here"
-
-        extracted_id = TokenManager.extract_user_id(invalid_token)
-
-        assert extracted_id is None
-
     def test_token_expiration(self, token_manager):
         """Test that expired tokens fail verification."""
         user_id = uuid4()
@@ -364,50 +346,6 @@ class TestInstanceTokenHelpers:
 
     def test_hash_refresh_token_matches_hash_token(self):
         assert TokenManager.hash_refresh_token("abc") == TokenManager.hash_token("abc")
-
-
-class TestExtractUserId:
-    def test_extracts_the_user_id_without_verifying(self):
-        from app.models import User
-
-        user_id = uuid4()
-        user = User(id=user_id, email="extract@example.com", password_hash="h")
-
-        token = TokenManager().create_access_token_for_user(user)
-
-        assert TokenManager.extract_user_id(token) == user_id
-
-    def test_garbage_token_is_none(self):
-        assert TokenManager.extract_user_id("not.a.jwt") is None
-
-    def test_token_without_a_user_id_is_none(self):
-        from jose import jwt
-
-        now = datetime.now(UTC)
-        token = jwt.encode(
-            {"sub": "x", "type": "access", "iat": now, "exp": now + timedelta(minutes=5)},
-            "secret",
-            algorithm="HS256",
-        )
-
-        assert TokenManager.extract_user_id(token) is None
-
-    def test_non_uuid_user_id_is_none(self):
-        from jose import jwt
-
-        now = datetime.now(UTC)
-        token = jwt.encode(
-            {
-                "user_id": "not-a-uuid",
-                "type": "access",
-                "iat": now,
-                "exp": now + timedelta(minutes=5),
-            },
-            "secret",
-            algorithm="HS256",
-        )
-
-        assert TokenManager.extract_user_id(token) is None
 
 
 class TestSecretCipher:

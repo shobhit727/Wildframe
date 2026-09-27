@@ -1,6 +1,5 @@
 import base64
 import hashlib
-import json
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -299,27 +298,6 @@ class TokenManager:
                 raise
             logger.warning(f"Token verification failed: {e}")
             return None
-
-    @staticmethod
-    def extract_user_id(token: str) -> UUID | None:
-        try:
-            payload = jwt.decode(
-                token,
-                "",
-                algorithms=[settings.JWT_ALGORITHM],
-                options={
-                    "verify_signature": False,
-                    "verify_aud": False,
-                    "verify_iss": False,
-                    "verify_exp": False,
-                },
-            )
-            user_id_str = payload.get("user_id")
-            if user_id_str:
-                return UUID(user_id_str)
-        except (JWTError, ValueError, IndexError, UnicodeDecodeError, json.JSONDecodeError):
-            pass
-        return None
 
     def create_access_token_for_user(self, user: User) -> str:
         return TokenManager.create_access_token(user.id, user.email, user.auth_version)
