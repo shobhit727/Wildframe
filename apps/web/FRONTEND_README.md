@@ -1,6 +1,6 @@
 # Wildframe Web Frontend
 
-React + Next.js 15 frontend for the Wildframe Netflix-like streaming platform.
+React + Next.js 16.3.6 frontend for the Wildframe Netflix-like streaming platform.
 
 ## Features
 
