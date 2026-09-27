@@ -198,15 +198,22 @@ def test_no_service_declares_hs256_as_its_algorithm() -> None:
     bypass survived an RS256 migration in the first place.
     """
     offenders: list[str] = []
+    unprobeable: list[str] = []
     for service in SERVICE_NAMES:
         probed = _probe_service_settings(service)
         if "error" in probed:
-            continue
+            unprobeable.append(f"  services/{service}: {probed['error']}")
         if probed.get("algorithm") == "HS256":
             offenders.append(
                 f"  services/{service}/app/core/settings.py"
                 f"  JWT_ALGORITHM={probed['algorithm']!r}"
             )
+    assert not unprobeable, (
+        "These services could not be probed, so this test did not check them:\n"
+        + "\n".join(unprobeable)
+        + "\n\nInstall the service dependencies in this job. Skipping them made "
+        "this assertion pass without having looked at them."
+    )
     assert not offenders, (
         "These services declare HS256 as their JWT algorithm. Any verifier wired\n"
         "to that default is forgeable with the committed development secret.\n"
