@@ -1,6 +1,6 @@
 # Wildframe Status
 
-**Last reviewed:** August 2026
+**Last reviewed:** September 27, 2026
 
 ## Overall
 
@@ -93,12 +93,16 @@ Historical files such as completion summaries and old quick-start variants are r
 
 Use `README.md`, this file, `docs/INDEX.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/OPERATIONS.md`, and `SECURITY.md` as the current operational documentation.
 
-## Security and QA hardening (Aug 2026)
+## Security and QA hardening
+
+GitHub currently reports **165 open issues** as of September 27, 2026. Issue state is maintained by GitHub; the closed-issue history below is not a substitute for the live issue tracker. The newest open audit item is #975, concerning cleartext access through the development Caddy listener.
 
 GitHub security-audit issues are being closed oldest-first with code, unit
 tests, and live verification against the running HTTPS stack. Closed so far
 include #42, #43, #44, #46, #47, #49, #51, #52, #54, #55, #57, #58, #60, #61,
 #62, #63, #168, #214, #217, #218, #221, #222, #223, #225, #227, #228, #536, and #41 (open items: #45 DRM held as backlog).
+
+Historical hardening record:
 
 Newest additions:
 
@@ -325,7 +329,7 @@ Highlights:
   the audit's symlink-escape surface does not exist. A CI test
   (`tests/contract/test_archive_sandbox.py`) pins that invariant and
   documents the required sandboxed design for any future archive support.
-- **Live-stack integration suite** — `tests/integration/` (110 tests, ~16 min):
+- **Live-stack integration suite** — `tests/integration/` (76 tests, ~16 min):
   gateway auth matrix + 429 flood, token lifecycle, cross-service
   authorization, billing webhook idempotency (Stripe signature verification,
   exactly one PAID invoice row on replay), contract schemas, health/readiness,
@@ -342,3 +346,4 @@ Test totals (Aug 18, 2026): 895 backend unit/route tests + 110 integration
 tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
 tests. One known pre-existing failure, billing
 `test_release_tranche_not_locked`, is unrelated to the hardening work.
+

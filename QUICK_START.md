@@ -163,4 +163,4 @@ docker-compose -f deployments/docker-compose.dev.yml down -v
 
 **See `STATUS.md` for full reality check and next steps.**
 
-**Last updated**: August 1, 2026
+**Last updated**: September 27, 2026

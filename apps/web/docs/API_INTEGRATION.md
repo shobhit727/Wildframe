@@ -393,3 +393,4 @@ DELETE /api/content/{id}       - Delete content
 5. **Store tokens securely** (localStorage for SPAs)
 6. **Implement auto-refresh** for token expiration
 7. **CORS** - Configure backend for frontend origin
+

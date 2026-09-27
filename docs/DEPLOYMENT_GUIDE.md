@@ -32,13 +32,13 @@ push main
     +--> in-cluster /health checks
 ```
 
-## CI Pipeline Details (54 Jobs)
+## CI Pipeline Details (15 workflow jobs)
 
 | Stage | Jobs | Tools |
 |---|---|---|
 | Lint | 1 (Backend) + 1 (Frontend) | ruff, black, mypy, ESLint, Prettier |
 | Unit Tests | 16 (15 services + SDK) | pytest, Vitest |
-| Integration | 1 | pytest + httpx (87 tests, ~12 min) |
+| Integration | 1 | pytest + httpx (current integration test suite, ~12 min) |
 | Contract | 1 | pytest (16 route drift tests) |
 | Frontend E2E | 1 | Playwright (9 tests: auth, content, subscription) |
 | Build | 17 (16 services + frontend) | Docker |

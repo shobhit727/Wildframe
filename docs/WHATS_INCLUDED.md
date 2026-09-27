@@ -2,7 +2,7 @@
 
 A flat inventory of everything shipped in the Wildframe platform. Use this as a checklist when evaluating the project or planning what's next.
 
-**Last Updated**: June 4, 2026
+**Last Updated**: September 27, 2026
 **Version**: 1.0.0
 
 ---
@@ -50,8 +50,8 @@ A flat inventory of everything shipped in the Wildframe platform. Use this as a 
 
 ## Frontend (1 App)
 
-- Next.js 15 (App Router) + React 19
-- TypeScript 5 strict mode
+- Next.js 16.3.6 (App Router) + React 19
+- TypeScript 6.0.3 strict mode
 - TailwindCSS 4 with design tokens
 - TanStack Query for server state
 - Zustand for client state
@@ -227,3 +227,4 @@ These are tracked as next-quarter targets.
 - [QUICKSTART.md](QUICKSTART.md) — Get it running
 - [ARCHITECTURE.md](ARCHITECTURE.md) — How it fits together
 - [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) — Promote to production
+

@@ -1,7 +1,7 @@
 # 📖 Glossary
 
 **Version**: 1.0.0  
-**Last Updated**: May 28, 2026  
+**Last Updated**: September 27, 2026
 **Stability**: Reference
 
 ## A
@@ -533,3 +533,4 @@ A security model that doesn't trust any user or service by default.
 - [Architecture Guide](ARCHITECTURE.md)
 - [Database Schema](DATABASE_SCHEMA.md)
 - [Operations Guide](OPERATIONS.md)
+

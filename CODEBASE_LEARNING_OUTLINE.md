@@ -243,3 +243,4 @@ Use small changes to test your understanding:
 7. Run the frontend contract tests after changing an API DTO.
 
 The goal is not to memorize every file. For each feature, be able to locate the route, contract, business rule, persistence operation, event side effect, frontend caller, and test that protects it.
+

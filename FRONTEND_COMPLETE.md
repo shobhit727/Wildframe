@@ -9,7 +9,7 @@
 
 | Area | Status |
 |------|--------|
-| Next.js 15 setup | ✅ Configured |
+| Next.js 16.3.6 setup | ✅ Configured |
 | Pages (10) | ✅ Created (skeletons) |
 | Components (6) | ✅ Created (skeletons) |
 | API Client | ✅ 28 methods (stubs) |
@@ -94,4 +94,4 @@ apps/web/
 
 The old document claimed "PRODUCTION READY ✅" with 15,000+ lines. Actual: ~2,000 lines of scaffolds. The backend services don't have their endpoints fully implemented either (email/MFA 501, no integration tests).
 
-**Last updated**: August 1, 2026
+**Last updated**: September 27, 2026

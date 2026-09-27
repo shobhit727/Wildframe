@@ -81,3 +81,4 @@ locust -f load-tests/locustfile.py --worker --master-host=localhost
 - `POST start playback` exercises streaming-service (DB write + manifest).
 - 429s mean the gateway rate limiter kicked in (raise `RATE_LIMIT_*` settings
   or reduce concurrency); 403 on stream start means a mismatched `user_id`.
+

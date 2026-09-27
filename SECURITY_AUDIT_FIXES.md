@@ -271,3 +271,4 @@ Open/backlog: #45 (DRM scope — backlog by decision).
 - Verify the affected tests in GitHub Actions.
 - Review each security change independently before merging.
 - Do not treat unresolved audit issues as fixed merely because this PR exists.
+

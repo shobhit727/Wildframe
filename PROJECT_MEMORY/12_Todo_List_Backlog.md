@@ -80,12 +80,12 @@
 - [x] Fix rate limiting implementation across services — gateway limiter wired (Aug 9), auth-service login limiting
 
 ## Placeholder Memory Structure
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/features/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/bugs/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/performance/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/security/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/api/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/database/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/history/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/planning/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/decisions/
+- ./PROJECT_MEMORY/features/
+- ./PROJECT_MEMORY/bugs/
+- ./PROJECT_MEMORY/performance/
+- ./PROJECT_MEMORY/security/
+- ./PROJECT_MEMORY/api/
+- ./PROJECT_MEMORY/database/
+- ./PROJECT_MEMORY/history/
+- ./PROJECT_MEMORY/planning/
+- ./PROJECT_MEMORY/decisions/

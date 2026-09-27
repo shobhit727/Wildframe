@@ -1,4 +1,6 @@
-# Wildframe — Full Closed-Issues Audit (all 607)
+# Wildframe — Full Closed-Issues Audit (all 607, Historical Snapshot)
+
+> Generated August 22, 2026. This file records that audit window and is not a live issue tracker. GitHub currently reports 165 open issues as of September 27, 2026.
 
 Generated 2026-08-22 against `shobhit727/Wildframe` (HEAD `dc1f52c`).
 Companion to `CLOSED_ISSUES_AUDIT.md`; this file is the **complete** audit table.
@@ -8,7 +10,7 @@ Companion to `CLOSED_ISSUES_AUDIT.md`; this file is the **complete** audit table
 | Metric | Value |
 |---|---|
 | Total issues closed (no PRs) | **607** |
-| Open now | **0** |
+| Open at audit time | **0** |
 | Closing comment present | **606 / 607** |
 | Cited at least one commit SHA | 482 |
 | Cited SHAs verified in git history | **481 / 482** (99.8 %) |
@@ -154,3 +156,4 @@ done
 # 3. Verify cited SHAs
 git log --all --pretty=%H | sort -u > /tmp/all_shas.txt
 ```
+
