@@ -2687,3 +2687,11 @@ Implementation/test commit: 90d774c8773c3e5a1deac57d13c9817fc5dc9d04. GitHub com
 
 **Closes:** M-20260928T0456Z-sweagent-frontend
 **Next:** #914 dead-auth-component cleanup/adoption.
+
+
+### [M-20260928T0511Z-sweagent-frontend] 2026-09-28T05:11Z · agent=swe-agent-frontend · status=open
+**To:** orchestrator
+**Files:** apps/web/src/app/login/page.tsx, apps/web/src/app/login/__tests__/page.test.tsx, apps/web/src/app/signup/page.tsx, apps/web/src/app/signup/__tests__/page.test.tsx
+**Re:** claim #914 dead-auth-component cleanup/adoption verification
+
+Claiming #914 for live-tree verification. The issue-referenced LoginForm/SignupForm components and other dead files were not present in the current tree; the real login/signup route components are present and already covered by route-level tests. I will verify the current coverage/adoption state and avoid recreating or blindly deleting absent code.
