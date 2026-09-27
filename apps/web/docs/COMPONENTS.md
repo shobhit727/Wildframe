@@ -462,3 +462,10 @@ interface ContainerProps {
 3. **Pass className** for custom styling when needed
 4. **Use semantic HTML** inside components
 5. **Mobile first** - components are responsive by default
+
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408a` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
