@@ -152,16 +152,21 @@ export function VideoPlayer({
 
   const toggleMute = () => {
     if (!videoRef.current) return;
-    videoRef.current.muted = !isMuted;
-    setIsMuted(!isMuted);
+    const element = videoRef.current;
+    element.muted = !element.muted;
+    setIsMuted(element.muted);
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!videoRef.current) return;
+    const element = videoRef.current;
     const v = Number(e.target.value);
-    videoRef.current.volume = v;
+    element.volume = v;
+    // Moving the slider above zero is an explicit request for audible playback,
+    // so keep the media element and button state synchronized.
+    element.muted = v === 0;
     setVolume(v);
-    setIsMuted(v === 0);
+    setIsMuted(element.muted);
   };
 
   const toggleFullscreen = async () => {
