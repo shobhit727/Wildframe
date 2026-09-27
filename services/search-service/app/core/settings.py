@@ -1,6 +1,8 @@
 """Configuration settings for Search Service."""
 
-from pydantic import model_validator
+import secrets
+
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 from wildframe_compliance.jurisdiction import Jurisdiction
@@ -39,7 +41,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     JWT_ALGORITHM: str = "RS256"
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_JWKS_URL: str = "http://auth-service:8001/.well-known/jwks.json"
-    CURSOR_SIGNING_SECRET: str = "dev-cursor-signing-secret-change-in-production"
+    # Generate a per-process development key; production must supply a stable secret via the environment.\n    CURSOR_SIGNING_SECRET: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
     JWT_ISSUER: str = "wildframe-auth"
     DATABASE_POOL_SIZE: int = 5
     DATABASE_MAX_OVERFLOW: int = 5
@@ -102,7 +104,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
             )
-        if self.KAFKA_BOOTSTRAP_SERVERS is None:
+        if not self.CURSOR_SIGNING_SECRET.strip():\n            raise ValueError("CURSOR_SIGNING_SECRET must be set explicitly when ENVIRONMENT is not development.")\n        if self.KAFKA_BOOTSTRAP_SERVERS is None:
             raise ValueError(
                 "KAFKA_BOOTSTRAP_SERVERS must be set explicitly when ENVIRONMENT is not development."
             )
