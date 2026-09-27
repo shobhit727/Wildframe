@@ -529,12 +529,14 @@ class S3StoragePort(StoragePort):
         return metadata
 
     async def _list_all_parts(self, *, final_key: str, upload_id: str) -> list[dict]:
-        """Every uploaded part of ``upload_id``, following S3's pagination.
+        """Every uploaded part of ``upload_id``, in ascending PartNumber order.
 
         ``ListParts`` returns at most 1,000 parts per response while a session
         may declare up to ``MAX_CHUNKS_PER_SESSION`` chunks, so a single call
-        would silently under-report the plan. Parts come back in ascending
-        PartNumber order, which is what ``complete_upload``'s 1..N check needs.
+        would silently under-report the plan. The result is sorted rather than
+        taken as-is: ``complete_upload``'s 1..N check and ``get_chunk_metadata``'s
+        "this part was never uploaded" early exit both read the listing as
+        ascending, and an out-of-order page would reject a complete upload.
         """
         parts: list[dict] = []
         marker: int | str | None = None
@@ -553,10 +555,12 @@ class S3StoragePort(StoragePort):
             )
             parts.extend(page.get("Parts", []))
             if not page.get("IsTruncated"):
-                return parts
+                break
             marker = page.get("NextPartNumberMarker")
             if marker is None:
-                return parts
+                break
+        parts.sort(key=lambda part: part["PartNumber"])
+        return parts
 
     async def cleanup_upload(
         self,

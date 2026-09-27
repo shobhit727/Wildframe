@@ -24,6 +24,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.events import InMemoryEventPublisher
 from app.core.settings import settings
 from app.core.storage import (
     PresignedUpload,
@@ -40,6 +41,9 @@ from app.core.storage import (
     set_storage,
     storage_key_for,
 )
+from app.models import UploadSessionStatus
+from app.services import UploadService
+from tests.test_upload_state_machine import FakeRepo
 
 
 def _sha(text: str) -> str:
@@ -407,10 +411,8 @@ def test_s3_port_passes_none_endpoint_url_when_unset(s3_client):
     assert created[0]["endpoint_url"] is None
 
 
-def test_s3_port_clamps_the_presign_ttl_and_starts_with_no_upload_ids(s3_client):
-    port = _s3_port(ttl_seconds=99999, max_ttl_seconds=3600)
-    assert port.ttl_seconds == 3600
-    assert port._upload_ids == {}
+def test_s3_port_clamps_the_presign_ttl(s3_client):
+    assert _s3_port(ttl_seconds=99999, max_ttl_seconds=3600).ttl_seconds == 3600
 
 
 # ---------------------------------------------------------------------------
@@ -418,21 +420,20 @@ def test_s3_port_clamps_the_presign_ttl_and_starts_with_no_upload_ids(s3_client)
 # ---------------------------------------------------------------------------
 
 
-async def test_begin_upload_creates_a_multipart_upload_once_per_session(s3_client):
+async def test_begin_upload_creates_a_multipart_upload_against_the_final_key(s3_client):
     client, _ = s3_client
     client.create_multipart_upload.return_value = {"UploadId": "upload-1"}
     port = _s3_port()
     session_id = str(uuid4())
 
-    assert await port.begin_upload(session_id=session_id, mime="video/mp4") == "upload-1"
-    # A second call is memoized, not a second multipart upload.
+    # The id is returned to the caller, which persists it on the session row:
+    # the port itself keeps nothing that ties the upload to this process.
     assert await port.begin_upload(session_id=session_id, mime="video/mp4") == "upload-1"
     client.create_multipart_upload.assert_called_once_with(
         Bucket="wildframe-uploads",
         Key=storage_key_for(session_id, None),
         ContentType="video/mp4",
     )
-    assert port._upload_ids == {session_id: "upload-1"}
 
 
 async def test_begin_upload_raises_when_s3_returns_no_upload_id(s3_client):
@@ -441,7 +442,6 @@ async def test_begin_upload_raises_when_s3_returns_no_upload_id(s3_client):
     port = _s3_port()
     with pytest.raises(StorageError, match="returned no UploadId"):
         await port.begin_upload(session_id=str(uuid4()), mime="video/mp4")
-    assert port._upload_ids == {}
 
 
 # ---------------------------------------------------------------------------
@@ -476,29 +476,30 @@ async def test_create_upload_presigns_a_put_for_a_single_shot_object(s3_client):
     client.create_multipart_upload.assert_not_called()
 
 
-async def test_create_upload_presigns_a_part_when_the_upload_id_is_known(s3_client):
+async def test_create_upload_presigns_a_part_against_the_final_key_and_part_number(s3_client):
     client, _ = s3_client
     client.generate_presigned_url.return_value = "https://s3/part"
     port = _s3_port()
     session_id = str(uuid4())
-    port._upload_ids[session_id] = "upload-1"
 
     presigned = await port.create_upload(
         session_id=session_id,
         filename="clip.mp4",
         mime="video/mp4",
         chunk_index=4,
-        upload_id="upload-explicit",
+        upload_id="upload-persisted",
     )
 
-    # Part numbers are 1-based; chunk_index 4 is part 5.
-    assert presigned.storage_key == storage_key_for(session_id, 4)
+    # A part is addressed by the key its UploadId was created against — the
+    # final object key — plus a 1-based PartNumber (index 4 is part 5). Signing
+    # a per-chunk key would produce an UploadPart that S3 rejects outright.
+    assert presigned.storage_key == storage_key_for(session_id, None)
     client.generate_presigned_url.assert_called_once_with(
         "upload_part",
         Params={
             "Bucket": "wildframe-uploads",
-            "Key": storage_key_for(session_id, 4),
-            "UploadId": "upload-explicit",
+            "Key": storage_key_for(session_id, None),
+            "UploadId": "upload-persisted",
             "PartNumber": 5,
         },
         ExpiresIn=port.ttl_seconds,
@@ -506,40 +507,21 @@ async def test_create_upload_presigns_a_part_when_the_upload_id_is_known(s3_clie
     client.create_multipart_upload.assert_not_called()
 
 
-async def test_create_upload_starts_a_multipart_upload_when_none_is_known(s3_client):
+async def test_create_upload_refuses_to_sign_a_part_without_an_upload_id(s3_client):
     client, _ = s3_client
-    client.generate_presigned_url.return_value = "https://s3/part"
-    client.create_multipart_upload.return_value = {"UploadId": "upload-lazy"}
     port = _s3_port()
-    session_id = str(uuid4())
 
-    await port.create_upload(
-        session_id=session_id, filename="clip.mp4", mime="video/mp4", chunk_index=0
-    )
-
-    # The multipart upload is created against the FINAL key, not the part key.
-    client.create_multipart_upload.assert_called_once_with(
-        Bucket="wildframe-uploads",
-        Key=storage_key_for(session_id, None),
-        ContentType="video/mp4",
-    )
-    assert port._upload_ids == {session_id: "upload-lazy"}
-    assert client.generate_presigned_url.call_args.args == ("upload_part",)
-    assert client.generate_presigned_url.call_args.kwargs["Params"]["UploadId"] == ("upload-lazy")
-
-
-async def test_create_upload_raises_when_the_lazy_multipart_upload_has_no_id(s3_client):
-    client, _ = s3_client
-    client.create_multipart_upload.return_value = {"UploadId": None}
-    port = _s3_port()
-    with pytest.raises(StorageError, match="returned no UploadId"):
+    with pytest.raises(StorageError, match="without an UploadId"):
         await port.create_upload(
             session_id=str(uuid4()),
             filename="clip.mp4",
             mime="video/mp4",
             chunk_index=0,
         )
-    assert port._upload_ids == {}
+
+    # No URL is handed out, and no multipart upload is silently created and lost.
+    client.generate_presigned_url.assert_not_called()
+    client.create_multipart_upload.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -562,8 +544,25 @@ async def test_get_object_metadata_computes_sha256_under_the_verification_budget
         checksum_sha256=_sha("hello"),
         mime="video/mp4",
     )
-    client.head_object.assert_called_once_with(Bucket="wildframe-uploads", Key="uploads/s/final")
+    client.head_object.assert_called_once_with(
+        Bucket="wildframe-uploads", Key="uploads/s/final", ChecksumMode="ENABLED"
+    )
     client.get_object.assert_called_once_with(Bucket="wildframe-uploads", Key="uploads/s/final")
+
+
+async def test_get_object_metadata_prefers_the_provider_checksum_over_re_reading(s3_client):
+    """``ChecksumSHA256`` is authoritative: bytes we were handed are not re-read."""
+    client, _ = s3_client
+    client.head_object.return_value = {
+        "ContentLength": 5,
+        "ContentType": "video/mp4",
+        "ChecksumSHA256": _sha("hello"),
+    }
+
+    meta = await _s3_port(checksum_verify_max_bytes=1024).get_object_metadata(storage_key="k")
+
+    assert meta.checksum_sha256 == _sha("hello")
+    client.get_object.assert_not_called()
 
 
 async def test_get_object_metadata_skips_the_download_for_huge_objects(s3_client):
@@ -640,8 +639,8 @@ async def test_get_chunk_metadata_reads_the_part_listing_for_multipart_parts(s3_
         Bucket="wildframe-uploads",
         Key=storage_key_for(session_id, None),
         UploadId="upload-1",
+        MaxParts=1000,
     )
-    client.head_object.assert_not_called()
 
 
 async def test_get_chunk_metadata_returns_none_for_an_uploaded_part_gap(s3_client):
@@ -700,7 +699,7 @@ def _listed_parts(count: int) -> dict:
 
 async def test_complete_upload_completes_the_multipart_upload_in_part_order(s3_client):
     client, _ = s3_client
-    # S3 lists parts out of order; the adapter must sort before completing.
+    # A listing that does not come back ascending must not strand the upload.
     client.list_parts.return_value = {
         "Parts": [
             {"PartNumber": 2, "Size": 4, "ETag": '"etag-2"'},
@@ -712,7 +711,6 @@ async def test_complete_upload_completes_the_multipart_upload_in_part_order(s3_c
     port = _s3_port()
     session_id = uuid4()
     final = storage_key_for(session_id, None)
-    port._upload_ids[session_id] = "upload-1"
 
     meta = await port.complete_upload(
         session_id=session_id,
@@ -720,16 +718,17 @@ async def test_complete_upload_completes_the_multipart_upload_in_part_order(s3_c
         final_key=final,
         size_bytes=8,
         mime="video/mp4",
+        upload_id="upload-persisted",
     )
 
     assert meta.size_bytes == 8 and meta.checksum_sha256 == _sha("AAAABBBB")
     client.list_parts.assert_called_once_with(
-        Bucket="wildframe-uploads", Key=final, UploadId="upload-1"
+        Bucket="wildframe-uploads", Key=final, UploadId="upload-persisted", MaxParts=1000
     )
     client.complete_multipart_upload.assert_called_once_with(
         Bucket="wildframe-uploads",
         Key=final,
-        UploadId="upload-1",
+        UploadId="upload-persisted",
         MultipartUpload={
             "Parts": [
                 {"PartNumber": 1, "ETag": '"etag-1"'},
@@ -737,8 +736,36 @@ async def test_complete_upload_completes_the_multipart_upload_in_part_order(s3_c
             ]
         },
     )
-    # The upload id is consumed so a later cleanup cannot abort a finished upload.
-    assert port._upload_ids == {}
+
+
+async def test_complete_upload_follows_part_listing_pagination(s3_client):
+    """``ListParts`` returns 1,000 parts a page; a 10,000-part plan needs 10."""
+    client, _ = s3_client
+    first, second = _listed_parts(1000), _listed_parts(1)
+    second["Parts"][0]["PartNumber"] = 1001
+    client.list_parts.side_effect = [
+        {**first, "IsTruncated": True, "NextPartNumberMarker": 1000},
+        second,
+    ]
+    client.head_object.return_value = {"ContentLength": 4, "ContentType": "video/mp4"}
+    client.get_object.return_value = {"Body": MagicMock(read=lambda: b"AAAA")}
+    port = _s3_port()
+    session_id = str(uuid4())
+
+    await port.complete_upload(
+        session_id=session_id,
+        chunk_keys=["a"] * 1001,
+        final_key=storage_key_for(session_id, None),
+        size_bytes=4,
+        mime="video/mp4",
+        upload_id="upload-persisted",
+    )
+
+    assert client.list_parts.call_count == 2
+    assert client.list_parts.call_args_list[1].kwargs["PartNumberMarker"] == 1000
+    # Every part reaches the provider, so a long upload is completable.
+    completed = client.complete_multipart_upload.call_args.kwargs["MultipartUpload"]["Parts"]
+    assert [p["PartNumber"] for p in completed] == list(range(1, 1002))
 
 
 async def test_complete_upload_rejects_a_gapped_or_malformed_part_list(s3_client):
@@ -809,25 +836,6 @@ async def test_complete_upload_without_an_upload_id_skips_multipart_entirely(s3_
     assert meta.size_bytes == 4
     client.list_parts.assert_not_called()
     client.complete_multipart_upload.assert_not_called()
-
-
-async def test_complete_upload_uses_the_memoized_upload_id_when_none_is_passed(s3_client):
-    client, _ = s3_client
-    client.list_parts.return_value = _listed_parts(1)
-    client.head_object.return_value = {"ContentLength": 4, "ContentType": "video/mp4"}
-    client.get_object.return_value = {"Body": MagicMock(read=lambda: b"AAAA")}
-    port = _s3_port()
-    session_id = str(uuid4())
-    port._upload_ids[session_id] = "upload-memo"
-
-    await port.complete_upload(
-        session_id=session_id,
-        chunk_keys=["a"],
-        final_key=storage_key_for(session_id, None),
-        size_bytes=4,
-        mime="video/mp4",
-    )
-    assert client.list_parts.call_args.kwargs["UploadId"] == "upload-memo"
 
 
 async def test_complete_upload_rejects_a_final_object_that_is_missing(s3_client):
@@ -913,30 +921,17 @@ async def test_cleanup_upload_tolerates_a_missing_object(s3_client):
     await port.cleanup_upload(session_id=str(uuid4()), chunk_keys=["gone"], final_key="f")
 
 
-async def test_cleanup_upload_aborts_the_multipart_upload_it_memoized(s3_client):
+async def test_cleanup_upload_aborts_the_multipart_upload_the_session_row_names(s3_client):
     client, _ = s3_client
     port = _s3_port()
-    session_id = str(uuid4())
-    port._upload_ids[session_id] = "upload-1"
-
-    await port.cleanup_upload(session_id=session_id, chunk_keys=["p"], final_key="final")
-
-    client.abort_multipart_upload.assert_called_once_with(
-        Bucket="wildframe-uploads", Key="final", UploadId="upload-1"
-    )
-    assert port._upload_ids == {}, "the memoized upload id is released"
-
-
-async def test_cleanup_upload_prefers_an_explicit_upload_id(s3_client):
-    client, _ = s3_client
-    port = _s3_port()
-    session_id = str(uuid4())
-    port._upload_ids[session_id] = "memoized"
 
     await port.cleanup_upload(
-        session_id=session_id, chunk_keys=[], final_key="final", upload_id="explicit"
+        session_id=str(uuid4()), chunk_keys=["p"], final_key="final", upload_id="upload-persisted"
     )
-    assert client.abort_multipart_upload.call_args.kwargs["UploadId"] == "explicit"
+
+    client.abort_multipart_upload.assert_called_once_with(
+        Bucket="wildframe-uploads", Key="final", UploadId="upload-persisted"
+    )
 
 
 async def test_cleanup_upload_tolerates_a_failing_abort(s3_client):
@@ -952,6 +947,128 @@ async def test_cleanup_upload_with_nothing_to_abort(s3_client):
     client, _ = s3_client
     await _s3_port().cleanup_upload(session_id=str(uuid4()), chunk_keys=[], final_key="f")
     client.abort_multipart_upload.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# The persisted-UploadId design, driven through the real service.
+# ---------------------------------------------------------------------------
+
+
+async def test_a_multipart_upload_completes_from_the_persisted_id_alone(s3_client):
+    """A worker that never created the upload can still finish it.
+
+    Session creation runs on one adapter instance; registration and completion
+    run on another that knows the upload only through the id the caller stored
+    on the session row. An in-process UploadId cache strands the upload here:
+    the client can PUT every part and still never be able to complete it.
+    """
+    client, _ = s3_client
+    client.create_multipart_upload.return_value = {"UploadId": "upload-persisted"}
+    client.generate_presigned_url.return_value = "https://s3/signed"
+    repo = FakeRepo()
+    creator = UploadService(repo=repo, storage=_s3_port(), publisher=InMemoryEventPublisher())
+
+    with patch.object(settings, "STORAGE_BACKEND", "s3"):
+        session, uploads = await creator.create_session(
+            creator_id=uuid4(),
+            filename="clip.mp4",
+            mime="video/mp4",
+            size_bytes=2 * 5 * 1024 * 1024,
+            chunk_size=5 * 1024 * 1024,
+        )
+
+    # The id lives on the session row, not in the creating process.
+    final_key = storage_key_for(str(session.id), None)
+    assert session.total_chunks == 2
+    assert session.multipart_upload_id == "upload-persisted"
+    assert all(upload.storage_key == final_key for upload in uploads)
+    presigns = client.generate_presigned_url.call_args_list
+    assert [call.kwargs["Params"]["PartNumber"] for call in presigns] == [1, 2]
+
+    # A second worker, a second port instance, only the session row in common.
+    worker = UploadService(repo=repo, storage=_s3_port(), publisher=InMemoryEventPublisher())
+    chunk_bytes = 5 * 1024 * 1024
+    client.list_parts.return_value = {
+        "Parts": [
+            {"PartNumber": 1, "Size": chunk_bytes, "ETag": '"etag-1"'},
+            {"PartNumber": 2, "Size": chunk_bytes, "ETag": '"etag-2"'},
+        ]
+    }
+    # The assembled object carries a provider digest, so completion verifies
+    # it without downloading the whole object.
+    client.head_object.return_value = {
+        "ContentLength": 2 * chunk_bytes,
+        "ContentType": "video/mp4",
+        "ChecksumSHA256": _sha("whole-object"),
+    }
+    for index in range(2):
+        await worker.register_chunk(session_id=session.id, index=index)
+
+    completed = await worker.complete_session(session.id)
+
+    assert completed.status == UploadSessionStatus.COMPLETE
+    assert completed.storage_key == final_key
+    assert completed.checksum_sha256 == _sha("whole-object")
+    client.complete_multipart_upload.assert_called_once_with(
+        Bucket="wildframe-uploads",
+        Key=final_key,
+        UploadId="upload-persisted",
+        MultipartUpload={
+            "Parts": [
+                {"PartNumber": 1, "ETag": '"etag-1"'},
+                {"PartNumber": 2, "ETag": '"etag-2"'},
+            ]
+        },
+    )
+    client.get_object.assert_not_called()
+    # A finished upload is consumed: nothing left for a later cleanup to abort.
+    assert completed.multipart_upload_id is None
+
+
+async def test_a_single_chunk_upload_is_one_signed_put_with_no_multipart(s3_client):
+    """The small-object path must not touch multipart at all, end to end."""
+    client, _ = s3_client
+    client.generate_presigned_url.return_value = "https://s3/signed"
+    port = _s3_port()
+    service = UploadService(repo=FakeRepo(), storage=port, publisher=InMemoryEventPublisher())
+
+    with patch.object(settings, "STORAGE_BACKEND", "s3"):
+        session, uploads = await service.create_session(
+            creator_id=uuid4(),
+            filename="clip.mp4",
+            mime="video/mp4",
+            size_bytes=1024,
+            chunk_size=5 * 1024 * 1024,
+        )
+
+    assert session.total_chunks == 1
+    assert session.multipart_upload_id is None
+    assert len(uploads) == 1
+    assert uploads[0].storage_key == storage_key_for(str(session.id), None)
+    client.generate_presigned_url.assert_called_once_with(
+        "put_object",
+        Params={
+            "Bucket": "wildframe-uploads",
+            "Key": storage_key_for(str(session.id), None),
+            "ContentType": "video/mp4",
+        },
+        ExpiresIn=port.ttl_seconds,
+    )
+
+    # The client PUT the whole object; registration and completion read it back.
+    client.head_object.return_value = {
+        "ContentLength": 1024,
+        "ContentType": "video/mp4",
+        "ChecksumSHA256": _sha("whole-object"),
+    }
+    await service.register_chunk(session_id=session.id, index=0)
+    completed = await service.complete_session(session.id)
+
+    assert completed.status == UploadSessionStatus.COMPLETE
+    assert completed.storage_key == storage_key_for(str(session.id), None)
+    client.create_multipart_upload.assert_not_called()
+    client.list_parts.assert_not_called()
+    client.complete_multipart_upload.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

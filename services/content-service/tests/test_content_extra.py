@@ -20,14 +20,18 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
+from sqlalchemy import select
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.engine import make_url
 
+from app.api.routes import get_admin_identity, get_content_service, router
 from app.core import events as core_events
 from app.core.settings import settings
-from app.models import AnimationStyle, ContentStatus, ContentType
+from app.models import AnimationStyle, Content, ContentStatus, ContentType
 from app.repositories import (
     CastMemberRepository,
     ContentRatingRepository,
@@ -416,16 +420,30 @@ class TestSeasonService:
 
 class TestEpisodeService:
     async def test_create_episode_rolls_back_and_reraises(self, service):
+        content_id, season_id = uuid4(), uuid4()
+        service.season_repo.get_by_id.return_value = _season(content_id)
         service.episode_repo.create.side_effect = RuntimeError("db down")
 
         with pytest.raises(RuntimeError):
             await service.create_episode(
-                uuid4(),
-                uuid4(),
+                content_id,
+                season_id,
                 EpisodeCreateRequest(episode_number=1, title="Pilot", duration_minutes=45),
             )
 
         service.content_repo.rollback.assert_awaited_once()
+
+    async def test_create_episode_refuses_a_season_from_another_content(self, service):
+        service.season_repo.get_by_id.return_value = _season()
+
+        result = await service.create_episode(
+            uuid4(),
+            uuid4(),
+            EpisodeCreateRequest(episode_number=1, title="Pilot", duration_minutes=45),
+        )
+
+        assert result is None
+        service.episode_repo.create.assert_not_awaited()
 
     async def test_create_episode_updates_the_season_episode_count(self, service):
         content_id, season_id = uuid4(), uuid4()
@@ -709,6 +727,15 @@ class TestContentLifecycleAgainstPostgres:
         assert await service.get_content(content_id) is not None
         assert all(c.id != content_id for c in await service.list_content(page=1, page_size=50))
 
+    async def test_tvod_price_survives_the_round_trip(self, db_session):
+        """Regression: ``ContentRepository.create`` used to drop ``price_usd``."""
+        service = ContentService(db_session)
+        slug = f"priced-{uuid4().hex[:8]}"
+        await service.create_content(_content_request(slug=slug, price_usd=9.99))
+
+        stored = await db_session.scalar(select(Content.price_usd).where(Content.slug == slug))
+        assert stored == 9.99
+
     async def test_list_content_filters_by_status_and_genre(self, db_session):
         service = ContentService(db_session)
         genre = await service.create_genre(
@@ -843,6 +870,61 @@ class TestContentLifecycleAgainstPostgres:
 
         assert (await service.get_cast_member(member.id)).name == "Someone"
         assert [m.id for m in await service.search_cast_members("Some")] == [member.id]
+
+
+class TestEpisodeParentScopeOverHttp:
+    """The season-in-the-path guard as an HTTP client observes it.
+
+    ``create_episode`` returns ``None`` when the season belongs to a different
+    content item and the route turns that into 404, so an episode can never be
+    written under another title's season. Driven through the production router
+    and the real service over one PostgreSQL session — only the session
+    acquisition and the admin dependency are overridden.
+    """
+
+    @pytest.fixture
+    async def http_client(self, db_session):
+        application = FastAPI()
+        application.include_router(router)
+
+        async def _override_service():
+            return ContentService(db_session)
+
+        application.dependency_overrides[get_content_service] = _override_service
+        application.dependency_overrides[get_admin_identity] = lambda: "admin-user-id"
+        async with AsyncClient(
+            transport=ASGITransport(app=application), base_url="http://test"
+        ) as ac:
+            yield ac
+
+    async def test_episode_cannot_be_created_under_another_contents_season(
+        self, http_client, db_session
+    ):
+        service = ContentService(db_session)
+        owner = await service.create_content(_content_request(slug=f"owner-{uuid4().hex[:8]}"))
+        other = await service.create_content(_content_request(slug=f"other-{uuid4().hex[:8]}"))
+        season = await service.create_season(
+            owner.id, SeasonCreateRequest(season_number=1, title="Season 1")
+        )
+
+        response = await http_client.post(
+            f"/api/v1/content/{other.id}/seasons/{season.id}/episodes",
+            json={"episode_number": 1, "title": "Pilot", "duration_minutes": 45},
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Season not found"
+        assert await service.list_season_episodes(season.id) == []
+
+        # Control: the same request under the owning content succeeds, so the
+        # 404 above is the parent check and not a blanket refusal.
+        allowed = await http_client.post(
+            f"/api/v1/content/{owner.id}/seasons/{season.id}/episodes",
+            json={"episode_number": 1, "title": "Pilot", "duration_minutes": 45},
+        )
+
+        assert allowed.status_code == 201
+        assert [e.title for e in await service.list_season_episodes(season.id)] == ["Pilot"]
 
 
 class TestRepositoryQueries:
