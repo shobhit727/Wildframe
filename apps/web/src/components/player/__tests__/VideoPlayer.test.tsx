@@ -654,12 +654,8 @@ describe('control auto-hide', () => {
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
   });
 
-  it('hides the controls 1.5s after the mouse leaves even while paused', async () => {
-    // BUG (VideoPlayer.tsx:200-203): the leave handler schedules the hide
-    // unconditionally, while `handleMouseMove` (L40) bails out when paused.
-    // A paused video therefore loses its Play button 1.5s after the pointer
-    // leaves, and the only way back is to jiggle the mouse — unusable with a
-    // keyboard or on a touch screen, where no mouseleave ever fires.
+  it('keeps the Play control visible after the mouse leaves while paused', async () => {
+    // Paused playback must remain controllable after the pointer leaves the player.
     vi.useFakeTimers();
     renderPlayer();
     await act(async () => {
@@ -671,7 +667,28 @@ describe('control auto-hide', () => {
       vi.advanceTimersByTime(1500);
     });
 
-    expect(screen.queryByRole('button', { name: 'Play' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
+  });
+
+  it('restores hidden controls when the player receives keyboard focus', async () => {
+    // Focus is an explicit non-pointer path for bringing controls back.
+    vi.useFakeTimers();
+    renderPlayer();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    fireEvent.play(video());
+    fireEvent.mouseMove(playerRoot());
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+    expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+
+    fireEvent.pause(video());
+    fireEvent.focus(playerRoot());
+
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
   });
 });
 
