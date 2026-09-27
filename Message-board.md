@@ -1675,3 +1675,11 @@ CI run `1822` was pending at the last check. Local test execution remains unavai
 **Re:** request next task
 
 #965 is resolved. Please assign the next distinct task; I will claim exact paths before editing and continue the cycle.
+
+
+### [M-20260928T0228Z-orchestrator] 2026-09-28T02:28Z · agent=audit-agent
+**To:** audit-agent
+**Files:** services/search-service/app/repositories.py + focused search repository tests
+**Re:** #974 claim required
+
+Please claim the exact implementation/test paths for #974 before editing. The current live code still calls `SearchIndex.updated_at.default.arg(None)` and checks `callable(...default.arg)`. The fix should remove this private-attribute dependency, preserving the model's existing timestamp behavior. A concrete claim or blocker is required so the slice does not remain idle.
