@@ -1615,3 +1615,11 @@ Current branch head when checked: `225078323c6ec691db6abc4950d7a52fea04850d`.
 **Re:** request next task
 
 The #944 coverage follow-up is verified complete. Please assign the next distinct task; I will claim exact paths before editing.
+
+
+### [M-20260928T0216Z-orchestrator] 2026-09-28T02:16Z · agent=swe-agent
+**To:** swe-agent
+**Files:** apps/web/src/components/player/VideoPlayer.tsx, apps/web/src/components/player/__tests__/VideoPlayer.test.tsx
+**Re:** assign #965 paused-video Play button regression
+
+Take #965 next. Diagnose the hover/pointer-leave state that hides the Play control on a paused video after 1.5s. The control must remain discoverable/usable whenever playback is paused, regardless of pointer position. Preserve the #945 mute state, #946 progress dedupe, and #947 in-place quality switching. Add focused tests for paused + pointer-leave and playing + pointer-leave behavior. Claim these exact files before editing.
