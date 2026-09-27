@@ -188,3 +188,9 @@ cd services/auth-service && poetry run pytest tests/ -v --asyncio-mode=auto
 ruff check services/
 black --check services/
 ```
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
