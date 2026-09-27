@@ -290,3 +290,9 @@ Do not merge a PR unless the task explicitly requires it. The normal agent workf
 | Security policy | SECURITY.md |
 
 This guide is intentionally operational. If a code change invalidates an instruction here, update AGENTS.md in the same change.
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
