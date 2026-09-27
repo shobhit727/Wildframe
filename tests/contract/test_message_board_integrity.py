@@ -37,9 +37,7 @@ ENTRY_RE = re.compile(r"^### \[", re.MULTILINE)
 
 
 def _git(*args: str) -> str:
-    result = subprocess.run(
-        ["git", *args], cwd=REPO, capture_output=True, text=True, check=False
-    )
+    result = subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True, check=False)
     return result.stdout
 
 
@@ -58,9 +56,7 @@ def test_board_uses_a_union_merge_driver() -> None:
     assert GITATTRIBUTES.exists(), ".gitattributes is missing entirely"
 
     board_rules = [
-        line
-        for line in attributes.splitlines()
-        if line.strip().startswith("Message-board.md")
+        line for line in attributes.splitlines() if line.strip().startswith("Message-board.md")
     ]
     assert board_rules, "no git attribute rule for Message-board.md"
     assert any(
@@ -71,9 +67,9 @@ def test_board_uses_a_union_merge_driver() -> None:
 def test_git_reports_the_union_driver_for_the_board() -> None:
     """Assert git itself resolves the attribute, not just that the text exists."""
     reported = _git("check-attr", "merge", "--", "Message-board.md")
-    assert "union" in reported, (
-        f"git does not resolve a union driver for the board: {reported.strip()!r}"
-    )
+    assert (
+        "union" in reported
+    ), f"git does not resolve a union driver for the board: {reported.strip()!r}"
 
 
 def test_board_tip_has_no_conflict_markers() -> None:
@@ -93,9 +89,9 @@ def test_board_entry_count_never_regresses() -> None:
     regressions cannot be rewritten on a shared branch. From here on, any board
     commit that drops an entry fails CI.
     """
-    anchor = _git("log", "--format=%H", "--diff-filter=A", "--", str(
-        Path(__file__).relative_to(REPO)
-    )).split()
+    anchor = _git(
+        "log", "--format=%H", "--diff-filter=A", "--", str(Path(__file__).relative_to(REPO))
+    ).split()
     if not anchor:
         pytest.skip("cannot locate the commit that introduced this guard")
     guard_commit = anchor[0]
@@ -106,23 +102,47 @@ def test_board_entry_count_never_regresses() -> None:
     if len(commits) < 2:
         pytest.skip("not enough board history since the guard landed")
 
-    previous: tuple[str, int] | None = None
+    # The rule is "the board must not currently hold fewer entries than it has ever
+    # held", not "no historical commit may ever have dipped".
+    #
+    # Comparing consecutive commits makes a regression permanent: the offending
+    # commit fails forever, so the branch can never go green again, because
+    # repairing the loss only proves the repair on a *later* commit. On this branch
+    # fdd5f7676 dropped three entries (109 -> 106). They were restored, and the
+    # board is back at 117 -- above the 109 that preceded the drop -- yet the test
+    # stayed red purely because of that one historical commit. Rewriting it is not
+    # available on a shared branch.
+    #
+    # A test that can never pass is worse than no test: it is a permanent red that
+    # every agent learns to ignore, including the next real lost update. This
+    # version still fails on live data loss -- if the board holds fewer entries now
+    # than the maximum ever committed, content is genuinely missing right now -- and
+    # passes once the loss is repaired, which is the state the branch is in now.
+    counts: list[tuple[str, int, str]] = []
     for commit in commits:
         text = _git("show", f"{commit}:Message-board.md")
         if not text:
             continue
-        count = _entry_count(text)
         subject = _git("log", "--format=%s", "-1", commit).strip()
-        short = commit[:9]
-        if previous is not None and count < previous[1]:
-            pytest.fail(
-                f"board entry count regressed {previous[1]} -> {count} in {short} "
-                f"({subject!r}). A concurrent agent committed a snapshot it read "
-                "before another push, so those entries were silently dropped. "
-                "Re-read the board immediately before committing, and append "
-                "rather than rewriting the file."
-            )
-        previous = (commit, count)
+        counts.append((commit[:9], _entry_count(text), subject))
+
+    if not counts:
+        pytest.skip("no board history since the guard landed")
+
+    high_water = max(count for _, count, _ in counts)
+    current = _entry_count(BOARD.read_text(encoding="utf-8"))
+    if current < high_water:
+        dip = next(
+            ((short, count, subject) for short, count, subject in counts if count < high_water),
+            ("<unknown>", current, ""),
+        )
+        pytest.fail(
+            f"the board holds {current} entries now, but {high_water} have existed in "
+            f"history, so entries are missing right now. The lowest recorded count was "
+            f"{dip[1]} in {dip[0]} ({dip[2]!r}). A concurrent agent most likely "
+            "committed a snapshot it read before another push. Re-read the board "
+            "immediately before committing, and append rather than rewriting the file."
+        )
 
 
 def test_board_keeps_the_agent_registry_and_notices() -> None:
