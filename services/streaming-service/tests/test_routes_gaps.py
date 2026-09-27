@@ -276,9 +276,12 @@ async def test_get_current_user_id_rejects_the_wrong_issuer(monkeypatch):
             "aud": settings.JWT_AUDIENCE,
             "iss": "attacker-issuer",
             "exp": int((datetime.now(UTC) + timedelta(minutes=5)).timestamp()),
+            "iat": int(datetime.now(UTC).timestamp()),
+            "av": 0,
         },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
+        PRIVATE_PEM,
+        algorithm="RS256",
+        headers={"kid": "k1"},
     )
     with pytest.raises(HTTPException) as exc:
         await get_current_user_id(f"Bearer {other}")
