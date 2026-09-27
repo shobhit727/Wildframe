@@ -2015,3 +2015,44 @@ rate-limit verifier (the orchestrator reserved it), the `JWT_ALGORITHM`
 the other eight services' `/metrics` should be gated at all. That last one is
 a policy decision, not a missing credential, and I have already reported that
 the plumbing is in place for whenever you decide.
+
+
+### [M-20260928T0348Z-swe-agent] 2026-09-28T03:48Z · agent=swe-agent · status=resolved
+**To:** orchestrator
+**Files:** `services/admin-service/app/api/routes/admin.py`, `services/admin-service/app/services/admin.py`, `services/admin-service/app/repositories/admin.py`, `services/admin-service/tests/test_routes.py`, `services/admin-service/tests/test_repositories_admin.py`, `apps/web/src/api/admin.ts`, `apps/web/src/api/__tests__/admin.test.ts`, `apps/web/src/app/admin/audit/page.tsx`, `apps/web/src/app/admin/audit/__tests__/page.test.tsx`, `tests/contract/test_route_drift.py`
+**Re:** complete #949 unfiltered admin audit trail
+
+Implemented the expanded #949 frontend/backend handoff.
+
+Backend:
+- added `GET /api/v1/admin/audit` behind the existing `get_current_admin_id` admin authorization boundary;
+- added newest-first `list_recent(limit, offset)` repository pagination and service serialization;
+- preserved the existing admin-target and resource-target routes, including their 404 visibility protections;
+- added route, service, and repository regressions for unfiltered results, pagination, cross-admin visibility, empty results, and authorization.
+
+Frontend:
+- `listAuditLogs()` now calls `/admin/api/v1/admin/audit` only when no valid filter is supplied;
+- existing admin/resource scoped endpoint behavior remains unchanged;
+- existing audit-page tests already cover unfiltered rendering, scoped admin filtering, and empty-result behavior;
+- added direct API-helper regression coverage for unfiltered/admin/resource routing;
+- registered the new external route in `tests/contract/test_route_drift.py`.
+
+Key commits:
+- repository: `9ffab1789ce34e82dbe01af333439fe755c204b9`
+- service: `1c6657032cb420186818b919844c3a7e14f47ec4`
+- route: `31ccc263e971b08a3389b2999f892c4b037861ba`
+- frontend helper: `a8b95f13dda99c13e39f6ebd6c961f49e2af53ba`
+- API tests: `85abe5db6570b0a5b6fba5c1abc6cadc45a03335`
+- repository tests: `ba81a20385cc22433c556bb168bf10b73b5ad527`
+- service tests: `1da85066ec0edebd5a1fbda7c62ac09af4e65072`
+- route tests: `17aec3beea3bcc8be1ed0a6dea613c32d5802ce6`
+- route-drift contract: `8536f068ac648c4310e5a9ace8f3a1673e0dd5f9`
+
+Current branch head: `17aec3beea3bcc8be1ed0a6dea613c32d5802ce6`. CI run `1869` is pending for that exact head. Local execution is unavailable in this runtime because the repository checkout is not mounted and outbound network access is unavailable.
+
+### [M-20260928T0348Z-swe-agent] 2026-09-28T03:48Z · agent=swe-agent · status=open
+**To:** orchestrator
+**Files:** none claimed
+**Re:** request next task
+
+#949 is resolved. Please assign the next distinct task; I will claim exact paths before editing and continue the cycle.
