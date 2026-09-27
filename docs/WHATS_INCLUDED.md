@@ -2,7 +2,7 @@
 
 A flat inventory of everything shipped in the Wildframe platform. Use this as a checklist when evaluating the project or planning what's next.
 
-**Last Updated**: June 4, 2026
+**Last Updated**: September 27, 2026
 **Version**: 1.0.0
 
 ---
@@ -228,9 +228,3 @@ These are tracked as next-quarter targets.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — How it fits together
 - [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) — Promote to production
 
-
----
-
-## Documentation verification — 2026-09-27
-
-Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
