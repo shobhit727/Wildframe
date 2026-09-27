@@ -325,7 +325,7 @@ databases/
 - Modify frontend pages in `/src/app/`
 - Modify components in `/src/components/`
 - Backend services in `/services/*/`
-- See [CONTRIBUTING.md](../../docs/CONTRIBUTING.md)
+- See [CONTRIBUTING.md](docs/CONTRIBUTING.md)
 
 ### 2. Testing
 - Frontend: `npm run test` + `npm run test:e2e`
@@ -335,24 +335,24 @@ databases/
 ### 3. Deployment
 - Frontend: Vercel, Netlify, or Docker
 - Backend: Kubernetes (manifests in `/infrastructure/kubernetes/`)
-- See [DEPLOYMENT_GUIDE.md](../../docs/DEPLOYMENT_GUIDE.md)
+- See [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)
 
 ### 4. Monitoring
 - Prometheus metrics on port 9090
 - Grafana dashboard on port 3000 (also running on frontend)
 - Jaeger tracing on port 6831
-- See [OPERATIONS_GUIDE.md](../../docs/OPERATIONS_GUIDE.md)
+- See [OPERATIONS_GUIDE.md](docs/OPERATIONS_GUIDE.md)
 
 ---
 
 ## Project Documentation
 
-- [README.md](../../README.md) - Project overview
-- [FRONTEND_COMPLETE.md](../../FRONTEND_COMPLETE.md) - Frontend status
-- [DEPLOYMENT_GUIDE.md](../../docs/DEPLOYMENT_GUIDE.md) - Production deployment
-- [API_DOCUMENTATION.md](../../docs/API_DOCUMENTATION.md) - API reference
-- [ARCHITECTURE.md](../../ARCHITECTURE.md) - System design
-- [CONTRIBUTING.md](../../docs/CONTRIBUTING.md) - Development guidelines
+- [README.md](README.md) - Project overview
+- [FRONTEND_COMPLETE.md](FRONTEND_COMPLETE.md) - Frontend status
+- [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) - Production deployment
+- [API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md) - API reference
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System design
+- [CONTRIBUTING.md](docs/CONTRIBUTING.md) - Development guidelines
 
 ---
 
