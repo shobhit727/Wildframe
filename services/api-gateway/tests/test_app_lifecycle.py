@@ -171,6 +171,18 @@ def test_create_app_exposes_docs_outside_production():
     assert app.openapi_url == "/openapi.json"
 
 
+def test_security_headers_are_emitted_on_a_real_response():
+    app = create_app()
+    with _client(app) as client:
+        resp = client.get("/health")
+
+    assert resp.status_code == 200
+    assert resp.headers["Strict-Transport-Security"].startswith("max-age=31536000")
+    assert resp.headers["Content-Security-Policy"] == "default-src 'self'"
+    assert resp.headers["X-Frame-Options"] == "DENY"
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+
+
 def test_create_app_disables_docs_when_environment_is_production(monkeypatch):
     from app.core.settings import settings
 

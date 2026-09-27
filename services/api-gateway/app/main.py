@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse, Response
 from app.api.gateway_routes import router as gateway_router
 
 # from app.core.privacy_proxy import resolve_jurisdiction
+from app.core.security_headers import SECURITY_HEADERS
 from app.core.settings import settings
 from app.middleware import (
     AuthenticationMiddleware,
@@ -118,6 +119,13 @@ def create_app() -> FastAPI:
 
     app.add_middleware(BodyLimitMiddleware)
     app.add_middleware(HeaderSanitizerMiddleware)
+
+    @app.middleware("http")
+    async def add_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        for key, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(key, value)
+        return response
 
     # CORS middleware — credentials require explicit origins, never "*".
     app.add_middleware(
