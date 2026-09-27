@@ -46,10 +46,11 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
 
-    jwt_secret = settings.JWT_SECRET_KEY
-    if not jwt_secret:
-        raise RuntimeError("JWT_SECRET_KEY is not configured")
-    auth_middleware = AuthenticationMiddleware(jwt_secret)
+    auth_middleware = AuthenticationMiddleware(
+        jwks_url=settings.JWT_JWKS_URL,
+        audience=settings.JWT_AUDIENCE,
+        issuer=settings.JWT_ISSUER,
+    )
     redis_url = settings.REDIS_URL
     if not redis_url:
         raise RuntimeError("REDIS_URL is not configured")
