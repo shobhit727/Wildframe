@@ -431,6 +431,9 @@ services:
       dockerfile: services/auth-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/auth_db
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EVENT_PUBLISHER: kafka

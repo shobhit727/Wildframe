@@ -106,6 +106,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     MFA_BACKUP_CODE_LENGTH: int = 8
     MFA_ENCRYPTION_KEY: str = ""
     MFA_ENCRYPTION_KEY_PREVIOUS: list[str] = []
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod
