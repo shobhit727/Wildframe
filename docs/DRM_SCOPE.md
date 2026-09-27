@@ -1,7 +1,7 @@
 # DRM Scope: Widevine + FairPlay + PlayReady
 
 **Status**: ⚠️ Known gap — no content protection today.
-**Last Updated**: August 7, 2026
+**Last Updated**: September 27, 2026
 
 ## Current State
 
@@ -83,9 +83,3 @@ Estimate: certificate/procurement + agreement. **The legal/procurement step in p
 ## Conclusion
 
 Not **implemented** is the DB (all 3 pieces + certs); it is a coherent, well-scoped multi-part project. The non-code bottleneck — Google/Apple/Microsoft certificate + agreements — starts *now*, then packaging/EME together ~4–6 weeks (Widevine L3 + FairPlay + Play/Ready). Add to the roadmap as its own EPIC, with clear Key OKRs.
-
----
-
-## Documentation verification — 2026-09-27
-
-Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
