@@ -3,15 +3,22 @@
 Two dependencies gate every analytics endpoint and had no coverage of their own
 (the existing suite overrides them):
 
-* ``get_current_user_claims`` (analytics_routes.py:28-71) -- the bearer-token
-  boundary. Produces ``{"user_id": UUID, "role": str}``.
-* ``require_content_access`` (analytics_routes.py:118-156) -- server-side
-  ownership resolution for content performance, and the only place a
-  non-privileged caller's ``creator_id`` claim is trusted.
+* ``get_current_user_claims`` -- the bearer-token boundary. Produces
+  ``{"user_id": UUID, "role": str}``. Its signature check now delegates to
+  ``_decode_token``; see ``test_analytics_jwks_verification.py`` for the
+  JWKS/RS256 migration itself and for the 503/401 status-code split.
+* ``require_content_access`` -- server-side ownership resolution for content
+  performance, and the only place a non-privileged caller's ``creator_id``
+  claim is trusted.
 
 The DENY cases are the point of this module, so each is asserted precisely on
 both status code and detail. The documented contract is fail-closed: when
 ownership cannot be resolved the request is denied, never allowed.
+
+Tokens here are genuine RS256 signatures over the in-memory RSA-2048 keypair in
+``tests/_test_jwks.py``; the service is unchanged in everything but *how* the
+signature is verified, so the authorization expectations below are the same
+ones that held under the old decode.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -19,6 +26,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
+import wildframe_auth
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException, Request
 from jose import jwt
 
@@ -26,15 +36,16 @@ from app.api import analytics_routes as routes_module
 from app.api.analytics_routes import get_current_user_claims, require_content_access
 from app.core.content_client import ContentServiceUnavailableError
 from app.core.settings import settings
+from tests._test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
 
 # ------------------------------------------------------------- JWT minting --
 
-GOOD_JWT = "K7bQx2Zf9pLw4mNc8vRt3yHs6dJg1aEe5uIoP0zXcVb"
 DROP = object()
 
 
 def mint(**overrides) -> str:
-    """Mint an access token the way auth-service would."""
+    """Mint an access token the way auth-service would (RS256, real key)."""
     now = datetime.now(UTC)
     claims = {
         "sub": str(uuid4()),
@@ -42,6 +53,8 @@ def mint(**overrides) -> str:
         "aud": settings.JWT_AUDIENCE,
         "iss": settings.JWT_ISSUER,
         "role": "user",
+        "av": 0,
+        "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=15)).timestamp()),
     }
     for key, value in overrides.items():
@@ -49,11 +62,39 @@ def mint(**overrides) -> str:
             claims.pop(key, None)
         else:
             claims[key] = value
-    return jwt.encode(claims, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(claims, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
+
+
+def attacker_pem() -> str:
+    """A second, unpublished RSA key: valid JWT, untrusted signer."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
 
 
 def bearer(token: str) -> str:
     return f"Bearer {token}"
+
+
+@pytest.fixture(autouse=True)
+def _published_jwks(monkeypatch):
+    """Serve the in-memory JWKS instead of reaching for auth-service over HTTP.
+
+    Patching only the outbound fetch leaves the real SDK verifier in the path,
+    so these tests still exercise genuine signature verification. Without it
+    every token here would spend the 5s fetch timeout and then be answered 503.
+    """
+
+    async def fetch(url):
+        return JWKS
+
+    monkeypatch.setattr(wildframe_auth.verifier, "fetch_jwks", fetch)
+    clear_jwks_cache()
+    yield
+    clear_jwks_cache()
 
 
 # ========================== get_current_user_claims =========================
@@ -64,7 +105,7 @@ def bearer(token: str) -> str:
     "header", [None, "", "Basic abc", "bearer lowercase", "Token xyz", "Bearer"]
 )
 async def test_claims_reject_a_non_bearer_header(header):
-    """analytics_routes.py:37-41 -- anything but 'Bearer ' is a 401."""
+    """analytics_routes.py:77-81 -- anything but 'Bearer ' is a 401."""
     with pytest.raises(HTTPException) as exc:
         await get_current_user_claims(header)
     assert exc.value.status_code == 401
@@ -90,16 +131,26 @@ async def test_claims_default_the_role_to_user():
 
 
 @pytest.mark.unit
-async def test_claims_accept_the_user_id_claim_fallback():
-    """``sub`` absent but ``user_id`` present -> the fallback is used."""
+async def test_claims_refuse_a_user_id_only_token_at_the_signature_boundary():
+    """The ``user_id`` fallback is now unreachable, and that is deliberate.
+
+    ``sub`` is a required claim of the shared verifier, so a payload carrying
+    only ``user_id`` is refused before ``get_current_user_claims`` ever looks
+    at the claims. The fallback line below is therefore dead code, kept because
+    removing it is a separate cleanup. Pinned so nobody reads the fallback as a
+    working compatibility path -- the detail assertions under #941 depend on
+    ``user_id`` alone no longer being enough.
+    """
     subject = uuid4()
-    claims = await get_current_user_claims(bearer(mint(sub=DROP, user_id=str(subject))))
-    assert claims["user_id"] == subject
+    with pytest.raises(HTTPException) as exc:
+        await get_current_user_claims(bearer(mint(sub=DROP, user_id=str(subject))))
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Invalid token"
 
 
 @pytest.mark.unit
 async def test_claims_reject_a_garbage_token():
-    """analytics_routes.py:58-59 -- a JWTError becomes a 401, never a 500."""
+    """A JWTError becomes a 401, never a 500."""
     with pytest.raises(HTTPException) as exc:
         await get_current_user_claims(bearer("not-a-jwt"))
     assert exc.value.status_code == 401
@@ -115,10 +166,14 @@ async def test_claims_reject_a_token_signed_with_another_key():
             "type": "access",
             "aud": settings.JWT_AUDIENCE,
             "iss": settings.JWT_ISSUER,
+            "role": "admin",
+            "av": 0,
+            "iat": int(datetime.now(UTC).timestamp()),
             "exp": int((datetime.now(UTC) + timedelta(minutes=5)).timestamp()),
         },
-        "attacker-controlled-key-000000000000000",
-        algorithm=settings.JWT_ALGORITHM,
+        attacker_pem(),
+        algorithm="RS256",
+        headers={"kid": "k1"},
     )
     with pytest.raises(HTTPException) as exc:
         await get_current_user_claims(bearer(forged))
@@ -128,20 +183,9 @@ async def test_claims_reject_a_token_signed_with_another_key():
 
 @pytest.mark.unit
 async def test_claims_reject_the_wrong_audience():
-    """The decode pins ``audience``; another API's token must be refused."""
-    other = jwt.encode(
-        {
-            "sub": str(uuid4()),
-            "type": "access",
-            "aud": "some-other-api",
-            "iss": settings.JWT_ISSUER,
-            "exp": int((datetime.now(UTC) + timedelta(minutes=5)).timestamp()),
-        },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-    )
+    """The verifier pins ``audience``; another API's token must be refused."""
     with pytest.raises(HTTPException) as exc:
-        await get_current_user_claims(bearer(other))
+        await get_current_user_claims(bearer(mint(aud="some-other-api")))
     assert exc.value.status_code == 401
     assert exc.value.detail == "Invalid token"
 
@@ -149,19 +193,8 @@ async def test_claims_reject_the_wrong_audience():
 @pytest.mark.unit
 async def test_claims_reject_the_wrong_issuer():
     """A correctly-signed token from another issuer must be refused."""
-    other = jwt.encode(
-        {
-            "sub": str(uuid4()),
-            "type": "access",
-            "aud": settings.JWT_AUDIENCE,
-            "iss": "attacker-issuer",
-            "exp": int((datetime.now(UTC) + timedelta(minutes=5)).timestamp()),
-        },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-    )
     with pytest.raises(HTTPException) as exc:
-        await get_current_user_claims(bearer(other))
+        await get_current_user_claims(bearer(mint(iss="attacker-issuer")))
     assert exc.value.status_code == 401
 
 
@@ -183,12 +216,17 @@ async def test_claims_reject_any_non_access_token_type(token_type):
 
     This is the important one for authorization: a *refresh* token for the
     same user would otherwise carry a stale ``role`` claim into the gate.
+
+    The detail is now the generic ``"Invalid token"`` rather than the old
+    ``"Invalid token type"``: the check moved into the shared verifier, so this
+    service no longer learns *why* a token was rejected. Pinned so the message
+    change is a decision rather than an accident.
     """
     token = mint(type=token_type)
     with pytest.raises(HTTPException) as exc:
         await get_current_user_claims(bearer(token))
     assert exc.value.status_code == 401
-    assert exc.value.detail == "Invalid token type"
+    assert exc.value.detail == "Invalid token"
 
 
 @pytest.mark.unit
@@ -198,22 +236,31 @@ async def test_claims_reject_a_refresh_token_even_when_it_claims_admin():
     with pytest.raises(HTTPException) as exc:
         await get_current_user_claims(bearer(token))
     assert exc.value.status_code == 401
-    assert exc.value.detail == "Invalid token type"
+    assert exc.value.detail == "Invalid token"
 
 
 @pytest.mark.unit
-async def test_claims_reject_a_missing_subject():
-    """analytics_routes.py:60-64 -- no sub and no user_id is a 401."""
-    token = mint(sub=DROP, user_id=DROP)
+async def test_claims_reject_a_token_without_an_auth_version():
+    """``av`` is required for auth-versioned token types.
+
+    The shared verifier refuses a payload with no integer ``av`` before the
+    role is read, so a token that predates the claim cannot reach the gate.
+    """
+    token = mint(av=DROP)
     with pytest.raises(HTTPException) as exc:
         await get_current_user_claims(bearer(token))
     assert exc.value.status_code == 401
-    assert exc.value.detail == "Invalid token subject"
+    assert exc.value.detail == "Invalid token"
 
 
 @pytest.mark.unit
 async def test_claims_reject_a_non_uuid_subject():
-    """analytics_routes.py:65-70 -- an unparseable sub is a 401, not a 500."""
+    """An unparseable sub is a 401 with a specific detail, not a 500.
+
+    This is the one claim the verifier hands back unparsed: it only requires
+    ``sub`` to be present and a string, so the UUID check is still this
+    module's job.
+    """
     token = mint(sub="not-a-uuid")
     with pytest.raises(HTTPException) as exc:
         await get_current_user_claims(bearer(token))
@@ -249,7 +296,7 @@ def make_request(path_params: dict) -> Request:
 
 @pytest.mark.unit
 async def test_content_access_requires_a_content_id_path_param():
-    """analytics_routes.py:130-132 -- a missing path param is a 422."""
+    """analytics_routes.py:153-155 -- a missing path param is a 422."""
     with pytest.raises(HTTPException) as exc:
         await require_content_access({"user_id": uuid4(), "role": "user"}, make_request({}))
     assert exc.value.status_code == 422
@@ -257,7 +304,7 @@ async def test_content_access_requires_a_content_id_path_param():
 
 @pytest.mark.unit
 async def test_content_access_rejects_a_malformed_content_id():
-    """analytics_routes.py:133-139 -- an unparseable id is a 422 with a detail."""
+    """analytics_routes.py:156-163 -- an unparseable id is a 422 with a detail."""
     with pytest.raises(HTTPException) as exc:
         await require_content_access(
             {"user_id": uuid4(), "role": "user"},
@@ -269,7 +316,7 @@ async def test_content_access_rejects_a_malformed_content_id():
 
 @pytest.mark.unit
 async def test_privileged_role_bypasses_ownership_resolution():
-    """analytics_routes.py:140-141 -- admins may read any content, no lookup.
+    """analytics_routes.py:163-164 -- admins may read any content, no lookup.
 
     The short-circuit is asserted by making ``resolve_content_owner`` explode:
     a privileged read must never reach content-service.
@@ -302,7 +349,7 @@ async def test_privileged_role_ignores_a_malformed_content_id():
 
 @pytest.mark.unit
 async def test_owning_creator_is_allowed():
-    """analytics_routes.py:151-156 -- the owning creator reads their own data."""
+    """analytics_routes.py:176-180 -- the owning creator reads their own data."""
     content_id = uuid4()
     owner = uuid4()
     with patch.object(routes_module, "resolve_content_owner", AsyncMock(return_value=owner)):
@@ -314,7 +361,7 @@ async def test_owning_creator_is_allowed():
 
 @pytest.mark.unit
 async def test_a_different_creator_is_denied_with_404():
-    """analytics_routes.py:151-155 -- someone else's content is a bare 404.
+    """analytics_routes.py:176-180 -- someone else's content is a bare 404.
 
     The detail is deliberately generic ("Not found") so the endpoint does not
     confirm that the content exists.
@@ -333,7 +380,7 @@ async def test_a_different_creator_is_denied_with_404():
 
 @pytest.mark.unit
 async def test_unknown_content_is_denied_with_404():
-    """analytics_routes.py:149-150 -- content-service 404 -> local 404."""
+    """analytics_routes.py:173-175 -- content-service 404 -> local 404."""
     content_id = uuid4()
     with patch.object(routes_module, "resolve_content_owner", AsyncMock(return_value=None)):
         with pytest.raises(HTTPException) as exc:
@@ -347,7 +394,7 @@ async def test_unknown_content_is_denied_with_404():
 
 @pytest.mark.unit
 async def test_unresolvable_ownership_denies_with_503():
-    """analytics_routes.py:142-148 -- fail-closed when content-service is down.
+    """analytics_routes.py:165-173 -- fail-closed when content-service is down.
 
     The critical case: an *unverifiable* owner must never be treated as
     "allowed". The client-supplied ``creator_id`` is never consulted, so there
@@ -474,7 +521,7 @@ async def test_content_access_does_not_mutate_state_before_authorizing():
 
 @pytest.mark.unit
 async def test_get_current_user_id_unwraps_the_claims():
-    """analytics_routes.py:77-80 -- the user id is taken from the claims."""
+    """analytics_routes.py:97-102 -- the user id is taken from the claims."""
     from app.api.analytics_routes import get_current_user_id
 
     user_id = uuid4()
@@ -503,7 +550,7 @@ async def test_get_current_user_id_propagates_a_missing_claim():
 
 @pytest.mark.unit
 async def test_require_self_allows_a_matching_path_user():
-    """analytics_routes.py:88-90 -- own data is served."""
+    """analytics_routes.py:108-110 -- own data is served."""
     from app.api.analytics_routes import require_self
 
     user_id = uuid4()
@@ -523,7 +570,7 @@ async def test_require_self_allows_when_no_path_user_is_present():
 
 @pytest.mark.unit
 async def test_require_self_rejects_a_mismatch_with_404():
-    """analytics_routes.py:91-94 -- someone else's data is a bare 404."""
+    """analytics_routes.py:111-115 -- someone else's data is a bare 404."""
     from app.api.analytics_routes import require_self
 
     with pytest.raises(HTTPException) as exc:
@@ -534,7 +581,7 @@ async def test_require_self_rejects_a_mismatch_with_404():
 
 @pytest.mark.unit
 async def test_require_creator_access_requires_a_creator_id_path_param():
-    """analytics_routes.py:107-109 -- a missing creator_id is a 422."""
+    """analytics_routes.py:130-132 -- a missing creator_id is a 422."""
     from app.api.analytics_routes import require_creator_access
 
     with pytest.raises(HTTPException) as exc:
@@ -583,7 +630,7 @@ async def test_require_creator_access_denies_an_ordinary_user_with_404():
 
 @pytest.mark.unit
 async def test_get_analytics_service_wires_all_four_repositories():
-    """analytics_routes.py:161-167 -- the service gets every repository."""
+    """analytics_routes.py:182-195 -- the service gets every repository."""
     from app.api.analytics_routes import get_analytics_service
     from app.repositories import (
         ContentPerformanceMetricsRepository,
@@ -608,7 +655,7 @@ async def test_get_analytics_service_wires_all_four_repositories():
 
 @pytest.mark.unit
 async def test_log_event_converts_a_service_valueerror_into_422():
-    """analytics_routes.py:187-190 -- a domain error becomes a 422, not a 500."""
+    """analytics_routes.py:214-218 -- a domain error becomes a 422, not a 500."""
     from fastapi.testclient import TestClient
 
     from app.api.analytics_routes import get_analytics_service
@@ -639,7 +686,7 @@ async def test_log_event_converts_a_service_valueerror_into_422():
 
 @pytest.mark.unit
 async def test_record_view_event_404s_for_a_mismatched_viewer():
-    """analytics_routes.py:212-213 -- no view is recorded for another user."""
+    """analytics_routes.py:240-242 -- no view is recorded for another user."""
     from fastapi.testclient import TestClient
 
     from app.api.analytics_routes import get_analytics_service

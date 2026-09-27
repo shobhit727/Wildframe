@@ -3,9 +3,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from jose import JWTError, jwt
+from jose import JWTError
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from wildframe_auth import JWKSUnavailableError, verify_token_with_jwks
 
 from app.core.content_client import (
     ContentServiceUnavailableError,
@@ -25,6 +26,45 @@ from app.services import MAX_EVENT_LIMIT, AnalyticsService
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 
 
+async def _decode_token(token: str) -> dict:
+    """Verify an access token against auth-service's published JWKS.
+
+    This boundary used to hand-roll its own symmetric HMAC decode, making
+    analytics-service a shared-secret verifier (#941): ``JWT_SECRET_KEY`` is a
+    committed development value and ``DEV_ENVIRONMENTS`` exempts it from the
+    production validator, so a forged HS256 token carrying any ``sub`` and
+    ``role: "admin"`` authenticated. The HS256 path is deleted rather than
+    rotated -- rotating would keep the service on one symmetric key and reject
+    genuine RS256 tokens.
+
+    Token-type separation (#221) is delegated to the shared verifier via
+    ``expected_type="access"``: a refresh token shares the audience but is not
+    accepted here.
+    """
+    # JWKSUnavailableError must be caught *before* JWTError: it is a JWTError
+    # subclass, and it is the branch that keeps a JWKS outage (fetch failure,
+    # or a body that is not a JWKS) a 503 instead of a 401. Everything else the
+    # verifier rejects -- bad signature, expired, wrong audience, unknown kid --
+    # stays a 401.
+    try:
+        return await verify_token_with_jwks(
+            token,
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            url=settings.JWT_JWKS_URL,
+            expected_type="access",
+        )
+    except JWKSUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Token verification is unavailable",
+        ) from exc
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from exc
+
+
 async def get_current_user_claims(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> dict:
@@ -39,30 +79,7 @@ async def get_current_user_claims(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid authorization header",
         )
-    token = authorization.removeprefix("Bearer ")
-    jwt_secret = settings.JWT_SECRET_KEY
-    if not jwt_secret:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Server misconfiguration: JWT signing key is not set",
-        )
-    try:
-        payload = jwt.decode(
-            token,
-            jwt_secret,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
-        # Token-type separation (#221): refresh tokens share the audience but
-        # must never be accepted as access tokens.
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-            )
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    payload = await _decode_token(authorization.removeprefix("Bearer "))
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
         raise HTTPException(

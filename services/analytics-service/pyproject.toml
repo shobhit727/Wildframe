@@ -18,6 +18,11 @@ packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.16"
+# Imported by app/api/analytics_routes.py for JWKS/RS256 verification. It was
+# previously undeclared, so a clean `poetry install` produced an importable
+# app that raised ModuleNotFoundError at import time and failed every test at
+# collection.
+wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 fastapi = "^0.141.0"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}
 pydantic = "^2.4.0"
