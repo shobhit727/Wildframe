@@ -29,7 +29,7 @@ cd /path/to/Wildframe
 docker-compose -f deployments/docker-compose.dev.yml up -d
 ```
 
-Wait 10-15 seconds for all services to initialize...
+Wait for the compose health checks to report the required dependencies healthy; startup time varies by machine.
 
 ### 2. Start Frontend
 ```bash
@@ -74,7 +74,7 @@ docker-compose -f deployments/docker-compose.dev.yml logs -f api-gateway
 - Analytics Service (8009)
 - Notification Service (8010)
 - Media Pipeline Service (8011)
-- PostgreSQL (5432) - 12 databases
+- PostgreSQL (5432) - per-service databases initialized by the development SQL script
 - Redis (6379)
 - Elasticsearch (9200)
 - Kafka (9092)
