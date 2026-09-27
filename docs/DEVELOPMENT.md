@@ -237,7 +237,7 @@ done
 
 ### Integration Tests
 ```bash
-# Live-stack integration suite (needs compose stack up; ~12 min, 87 tests)
+# Live-stack integration suite (needs compose stack up; ~12 min, 76 tests)
 poetry run pytest tests/integration -q
 ```
 
