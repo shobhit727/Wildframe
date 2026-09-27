@@ -6,6 +6,30 @@ This document describes the current GitHub Actions → GHCR → AWS EKS deployme
 
 Wildframe is **not production-ready by default**. The workflow assumes that the AWS infrastructure, EKS clusters, PostgreSQL, Redis, Kafka, Elasticsearch, DNS/TLS, and required GitHub environments already exist and are correctly configured.
 
+### Dev TLS and Kafka trust material
+
+Production TLS is terminated by your ingress/load balancer and is not managed
+by this repository. **Development** TLS is a separate, self-contained path:
+`scripts/generate-dev-certs.sh` mints a self-signed cert/key under
+`apps/web/certificates/` (never committed) and also emits everything the local
+Kafka brokers need to come up with TLS:
+
+- `kafka-keystore.pem` — Kafka PEM keystore (private key and certificate
+  concatenated into one file, which is what Kafka's PEM keystore format
+  requires)
+- `kafka-truststore.pem` — Kafka PEM truststore (the certificate alone)
+- `kafka_keystore_password` and `kafka_key_password` — the two broker password
+  files. `cp-kafka` reads these from **files**, not environment variables, which
+  is why the password files are generated rather than only exported.
+
+The script is idempotent and self-repairing: it skips regeneration when the web
+certs already exist but still ensures the Kafka PEM bundle and the password
+files are present, so it converges from any of the three partially-generated
+states (nothing, web certs only, web certs + Kafka PEMs but no passwords).
+
+The `Security Scan` job runs it before Trivy, and the Playwright config runs it
+before the E2E suite, so both work from a clean checkout with no manual step.
+
 ## Pipeline
 
 ```text
@@ -32,19 +56,26 @@ push main
     +--> in-cluster /health checks
 ```
 
-## CI Pipeline Details (54 Jobs)
+## CI Pipeline Details (15 jobs, several matrixed)
+
+`.github/workflows/ci-cd.yml` defines 15 jobs. `Backend Test`,
+`Docker Build Smoke`, and `Build & Push` fan out over a 15-service matrix, and
+`Backend Lint` runs mypy per service.
 
 | Stage | Jobs | Tools |
 |---|---|---|
+| Supply chain | 1 | `verify-supply-chain.py` (action pinning, scanner suppressions) + 4 unit tests |
 | Lint | 1 (Backend) + 1 (Frontend) | ruff, black, mypy, ESLint, Prettier |
 | Unit Tests | 16 (15 services + SDK) | pytest, Vitest |
-| Integration | 1 | pytest + httpx (87 tests, ~12 min) |
-| Contract | 1 | pytest (16 route drift tests) |
-| Frontend E2E | 1 | Playwright (9 tests: auth, content, subscription) |
-| Build | 17 (16 services + frontend) | Docker |
-| Security | 1 | Trivy |
-| Helm | 1 | helm lint |
-| Deploy | 2 | skipped (no AWS creds) |
+| Contract | 1 | pytest (`tests/contract`, 24 route drift tests) |
+| Frontend E2E | 1 | Playwright — 119 tests across 9 files, 15 routes (blocking) |
+| Build | 17 (15 services + frontend + web) | Docker |
+| Security | 1 | Trivy, Semgrep, CodeQL |
+| Helm | 1 | helm lint (+ default/staging/production rendering) |
+| Deploy | 2 | requires AWS OIDC + environment secrets |
+
+Per-service coverage is enforced at a **95% floor** (`--cov-fail-under`); the
+services currently sit at 97–99%.
 
 **Total time**: ~15-20 minutes
 
@@ -120,8 +151,15 @@ apps/web/Dockerfile
 Images are published to:
 
 ```text
-ghcr.io/shobhit727/wildframe/<service>
+ghcr.io/<owner>/<repo>/<service>
 ```
+
+where `<owner>/<repo>` is `${{ github.repository }}` — CI builds the image path
+as `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/<service>` rather than hardcoding
+an account name. For this repository that currently resolves to
+`ghcr.io/shobhit727/Wildframe/<service>`, which is also the `repository` value
+in `infrastructure/helm/wildframe/values.yaml`. The frontend image is published
+as `ghcr.io/<owner>/<repo>/web-app`.
 
 The deployment uses the immutable tag:
 

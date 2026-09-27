@@ -266,7 +266,7 @@ jobs:
           TEST_DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/test_db
         run: |
           set -euo pipefail
-          PYTHONPATH="$PWD:${PYTHONPATH:-}" poetry run pytest tests --asyncio-mode=auto -q --cov=app --cov-report=term-missing:skip-covered
+          PYTHONPATH="$PWD:${PYTHONPATH:-}" poetry run pytest tests --asyncio-mode=auto -q --cov=app --cov-report=term-missing:skip-covered --cov-fail-under="${COVERAGE_FLOOR:-85}"
 
       - name: Print slowest tests
         if: always()
@@ -296,7 +296,7 @@ jobs:
 
       - name: Run SDK tests
         run: |
-          pip install -e packages/sdk/wildframe_auth -e packages/sdk/wildframe_events -e packages/sdk/wildframe_observability -e packages/sdk/wildframe_compliance aiokafka
+          pip install -e packages/sdk/wildframe_auth -e packages/sdk/wildframe_events -e packages/sdk/wildframe_observability -e packages/sdk/wildframe_compliance aiokafka redis
           PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest -c pyproject.toml packages/sdk/wildframe_compliance/tests/ packages/sdk/wildframe_events/tests/ packages/sdk/wildframe_observability/tests/ --asyncio-mode=auto -q --cov=packages/sdk --cov-report=term-missing:skip-covered
 
       - name: Print slowest tests
@@ -318,7 +318,15 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install pytest
-        run: python -m pip install --quiet "pytest<8" "pytest-cov<5"
+        # test_no_shared_secret_jwt_verification shells out to a probe that
+        # generates an RSA key and signs with python-jose, so those two must
+        # be present. Without them the probe dies at import and the test
+        # reports "probe produced no output", which reads like a product
+        # failure rather than a missing dependency.
+        run: >-
+          python -m pip install --quiet
+          "pytest<8" "pytest-cov<5"
+          "cryptography" "python-jose[cryptography]"
 
       - name: Detect frontend/backend route drift
         run: python -m pytest tests/contract -q

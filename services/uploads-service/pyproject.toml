@@ -22,7 +22,7 @@ fastapi = "^0.141.0"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}
 pydantic = "^2.4.0"
 pydantic-settings = "^2.0.0"
-sqlalchemy = "^2.0.0"
+sqlalchemy = { version = "^2.0.0", extras = ["asyncio"] }
 asyncpg = "^0.30.0"
 redis = "^5.0.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}

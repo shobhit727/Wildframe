@@ -8,6 +8,7 @@ from jose import jwt
 from app.api.routes.admin import verify_admin_reauth, _stepup_jti_seen
 from app.core.settings import settings
 from tests._test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
 
 
 def _mint_step_up(
@@ -65,12 +66,17 @@ def _mint_access(sub, exp_offset=300):
 
 @pytest.fixture(autouse=True)
 def _stub_jwks(monkeypatch):
-    async def get_jwks(_url):
+    # Replace only the outbound JWKS fetch; the verifier (cache, single-flight,
+    # real RS256 signature check) still runs.
+    async def fetch(_url):
         return JWKS
 
-    monkeypatch.setattr("app.api.routes.admin.get_cached_jwks", get_jwks)
+    monkeypatch.setattr("wildframe_auth.verifier.fetch_jwks", fetch)
+    clear_jwks_cache()
     monkeypatch.setattr(settings, "REDIS_URL", None)
     monkeypatch.setattr(settings, "ENVIRONMENT", "development")
+    yield
+    clear_jwks_cache()
 
 
 @pytest.mark.asyncio

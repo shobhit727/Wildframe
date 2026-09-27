@@ -14,7 +14,7 @@ docker-compose --version
 
 ```bash
 # Start all services, databases, and observability stack
-cd /home/phoenix/Desktop/wildframe
+cd "$(git rev-parse --show-toplevel)"
 docker-compose -f deployments/docker-compose.dev.yml up -d
 
 # Wait for services to be healthy (60-90 seconds)
@@ -398,7 +398,7 @@ act -j test -l
 ### View Workflow Logs
 ```bash
 # GitHub Actions logs available at:
-# https://github.com/yourusername/wildframe/actions
+# https://github.com/shobhit727/Wildframe/actions
 ```
 
 ---

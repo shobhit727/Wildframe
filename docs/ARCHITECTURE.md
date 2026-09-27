@@ -14,7 +14,7 @@ Wildframe is a production-grade OTT (Over-The-Top) streaming platform built on a
 
 **Key Stats**:
 - 15 microservices
-- 16 databases (database-per-service pattern)
+- 14 service databases (database-per-service) + 2 generic, in `infrastructure/database/init-databases.sql`
 - 5 infrastructure services (caching, messaging, search)
 - 4 observability services (metrics, logs, tracing, profiling)
 
@@ -52,7 +52,7 @@ Wildframe is a production-grade OTT (Over-The-Top) streaming platform built on a
          │              │             │
     ┌────▼──────────────▼─────────────▼────┐
     │    Shared Infrastructure              │
-    │  ├─ PostgreSQL (16 databases)        │
+    │  ├─ PostgreSQL (14 service + 2 generic) │
     │  ├─ Redis (caching & sessions)       │
     │  ├─ Kafka (event streaming)          │
     │  ├─ Elasticsearch (full-text search) │
@@ -564,6 +564,41 @@ enforces auth at its own boundary.
 - Refresh Token: 7 days, HttpOnly cookie, rotated on use
 - `python-jose` library, RS256 signing
 
+### Token Verification Schemes — ⚠️ currently split, migration incomplete
+
+**Issuing and verification are not the same thing, and they are not yet
+consistent with each other.** auth-service *signs* RS256 and publishes JWKS at
+`/.well-known/jwks.json`. Not every service *verifies* that way.
+
+| Verification scheme | Mechanism | Services |
+|---|---|---|
+| **A — JWKS/RS256** | `wildframe_auth.verifier` against auth-service's JWKS | `admin-service`, `streaming-service` |
+| **B — legacy HS256** | inline `jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])` | `analytics`, `creators`, `media-pipeline`, `notification`, `recommendation`, `search`, `uploads`, `content` (8) |
+
+Scheme B is **not merely legacy** — it is currently exploitable, because the
+shared secret is committed (`deployments/docker-compose.dev.yml` sets
+`JWT_SECRET_KEY: dev-secret-key` with `ENVIRONMENT: development`, and
+`DEV_ENVIRONMENTS` skips the production secret validator for exactly that
+value). Anyone holding the repo can mint an HS256 token with any `sub` and
+`role: "admin"`, and those 8 services accept it. Those same 8 services also
+**reject genuine RS256 tokens** (`The specified alg value is not allowed`), so
+the split breaks legitimate authentication as well.
+
+Tracked as **#941**. `content-service` is only accidentally protected, by
+`_enforce_auth_version`; that control is absent from the other 7.
+
+**Do not treat scheme B as an acceptable steady state.** The target is a single
+scheme: all services verify via `wildframe_auth` + JWKS, and `JWT_ALGORITHM`
+defaults to `RS256` so a missing env var fails closed. Each migration must
+preserve the error contract — a JWKS fetch failure is `503`, a bad token is
+`401`; see `JWKSUnavailableError` in `wildframe_auth`.
+
+`admin-service` and `streaming-service` cache JWKS per-URL with single-flight
+fetching and a negative-cache window, so an unknown-`kid` token cannot force
+unbounded egress at auth-service. Any new verifier must use
+`verify_token_with_jwks` rather than hand-wiring `get_cached_jwks` + `verify_token`
+— see **#935**.
+
 ### Rate Limiting (Gateway)
 - Key: authenticated user `sub` or client IP
 - Limits: auth 5/min, search 100/min, default 1000/min
@@ -575,7 +610,13 @@ Unique identifier tracking a request through all services and logs.
 ### HTTPS/TLS
 - Caddy reverse proxy terminates TLS (self-signed dev certs)
 - Internal service-to-service HTTP on docker network
-- Only host-facing ports are TLS
+- Only host-facing ports are TLS — **with one known exception**: the dev
+  convenience listener `http://:8080` in `infrastructure/caddy/Caddyfile`
+  serves the full API (auth, uploads, admin) in **cleartext on every network
+  interface**, not just loopback. HSTS is ignored over plain HTTP, so anything
+  on the same LAN can intercept tokens. It is commented "dev only" but is bound
+  more widely than that comment implies — tracked as **#975**. It must not
+  survive into any shared or production topology.
 
 ---
 
@@ -586,51 +627,63 @@ Unique identifier tracking a request through all services and logs.
 | Layer | Tool | Where |
 |---|---|---|
 | Backend unit/route | pytest + pytest-asyncio | `services/*/tests/` |
+| Shared SDK | pytest | `packages/sdk/tests/` and each package's `tests/` |
 | HTTP client | httpx (ASGITransport) | In-process app testing |
 | Mocking | unittest.mock, pytest-mock | Stub external dependencies |
-| Coverage | pytest-cov | Line + branch coverage |
-| Frontend unit | Vitest | `apps/web/tests/` |
-| Frontend component | Vitest + Testing Library | `apps/web/tests/components/` |
+| Coverage | pytest-cov | Line + branch coverage, 95% CI floor |
+| Frontend unit | Vitest | `apps/web/src/**/__tests__/` (colocated) |
+| Frontend component | Vitest + Testing Library | `apps/web/src/components/**/__tests__/` |
 | Frontend E2E | Playwright | `apps/web/e2e/` |
 | Integration | pytest + httpx | `tests/integration/` |
 | Contract | pytest + static analysis | `tests/contract/` |
 
-### CI Pipeline (54 jobs)
+### CI Pipeline
+
+`.github/workflows/ci-cd.yml` defines 15 jobs (several fan out over a service
+matrix):
 
 ```yaml
 # Backend
-- Lint (ruff, black, mypy)
-- Unit tests per service (15 services + SDK)
-- Integration tests (87 tests, ~12 min)
-- Contract tests (16 route drift tests)
-- Docker build smoke (15 services + frontend)
+- Supply Chain Guard
+- Lint (ruff, black, mypy per service)
+- Unit tests per service (15 services + SDK), 95% coverage floor
+- Contract tests (24 route drift tests)
 
 # Frontend
-- Lint (ESLint, Prettier)
-- Type-check (TypeScript)
-- Unit tests (Vitest)
-- E2E tests (Playwright: auth, content, subscription)
+- Frontend CI: lint, type-check, vitest, production build
+- Frontend E2E Tests: Playwright (119 tests, blocking)
 
 # Infrastructure
-- Helm lint
-- Docker build & push (16 images)
-- Security scan (Trivy)
+- Helm lint (+ staging/production value rendering)
+- Docker build smoke (15 services + frontend)
+- Security scan (Trivy, Semgrep, CodeQL)
 
-# Deploy (skipped - requires AWS creds)
-- Staging
-- Production
+# Deploy
+- Build & Push (push to main/develop)
+- Deploy to staging / production (requires AWS OIDC + environment secrets)
 ```
+
+Per-service coverage currently sits at 97–99%.
 
 ### Running Tests Locally
 
 ```bash
-# Backend unit tests (per service)
+# Backend unit tests (per service — a combined `pytest services/` sweep from
+# the repo root breaks on shadowed `app.*` imports)
 for svc in services/*/; do
   (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
 done
 
 # Single service
 cd services/auth-service && pytest tests --asyncio-mode=auto
+
+# Shared SDK
+PYTHONPATH="$PWD/packages/sdk" python -m pytest -c pyproject.toml \
+  packages/sdk/tests/ \
+  packages/sdk/wildframe_compliance/tests/ \
+  packages/sdk/wildframe_events/tests/ \
+  packages/sdk/wildframe_observability/tests/ \
+  --asyncio-mode=auto
 
 # Integration tests (needs compose stack)
 poetry run pytest tests/integration -q
@@ -640,8 +693,8 @@ pytest tests/contract -q
 
 # Frontend
 cd apps/web
-npm run test              # vitest
-npm run test:e2e          # playwright test
+npm run test              # vitest — 805 tests across 44 files
+npx playwright test       # 119 tests across 9 files
 ```
 
 ### Test Structure
@@ -709,6 +762,12 @@ with that audience (`settings.JWT_AUDIENCE`) or python-jose raises
 `JWTClaimsError: Invalid audience`. The api-gateway is a transparent proxy —
 it rate-limits proxied requests (keyed by user `sub` or IP) but does not
 reject them itself; each backend service enforces auth at its own boundary.
+
+Note that a correct audience check is necessary but not sufficient: 8 services
+still verify against a shared HS256 secret rather than the JWKS, so an attacker
+can supply a correctly-audienced token they minted themselves. See
+[Token Verification Schemes](#token-verification-schemes--currently-split-migration-incomplete)
+and **#941**.
 
 ### Rate Limiting
 Sliding window algorithm preventing abuse (enforced in the gateway's

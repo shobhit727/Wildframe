@@ -261,10 +261,14 @@ npm run test:e2e        # playwright test
 
 ### Playwright E2E Tests
 
-**Test Suites:** 3 test files (9 tests total)
-- `e2e/auth.spec.ts` — Authentication flow (login, signup, protected route redirects)
-- `e2e/content.spec.ts` — Content library, content detail, search pages
-- `e2e/subscription.spec.ts` — Subscription page access
+**Test Suites:** 9 spec files (`apps/web/e2e/`)
+- `auth.spec.ts` — login, signup, protected-route redirects
+- `home.spec.ts`, `browse.spec.ts` — landing and catalogue
+- `watch.spec.ts` — playback: movie, series, seasons/episodes
+- `account.spec.ts`, `my-list.spec.ts` — account and My List
+- `billing.spec.ts` — subscription page
+- `creator.spec.ts` — creator pages
+- `admin.spec.ts` — admin console and its sub-routes
 
 **Run locally:**
 ```bash
@@ -272,6 +276,7 @@ npm run test:e2e        # playwright test
 npm run dev
 
 # Terminal 2: Run Playwright tests
+npx playwright install --with-deps chromium   # first run only
 npx playwright test
 ```
 
@@ -284,15 +289,18 @@ npx playwright test --reporter=github
 - Base URL: `https://localhost:3000` (HTTPS with self-signed certs)
 - Single browser: Chromium (CI), multi-browser locally
 - Web server: Starts `npm run dev` automatically
+- Dev TLS material is produced by `scripts/generate-dev-certs.sh`, which the
+  config invokes automatically
 - HTTPS errors ignored (self-signed certs)
 - Timeout: 300s for web server startup
 
-**Test count:** 9 tests total (3 test files × 3 tests each)
+**Test count:** **119 tests across 9 spec files**, covering **15 routes**. The
+`frontend-e2e` CI job is **blocking**.
 
 ### Vitest Unit/Component Tests
 
 ```bash
-npm run test            # vitest
+npm run test            # vitest — 805 tests across 44 files
 npm run test:coverage   # vitest --coverage
 ```
 

@@ -17,6 +17,21 @@ packages = [{include = "wildframe_observability", from = ".."}]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.16"
+# The package imports these lazily but unconditionally on its instrumentation
+# paths, so they belong here rather than being left to each consumer to
+# discover. They were previously undeclared, which meant `pip install -e`
+# produced an importable package whose primary feature raised
+# ModuleNotFoundError at call time.
+opentelemetry-api = "^1.27.0"
+opentelemetry-sdk = "^1.27.0"
+opentelemetry-instrumentation = "^0.48b0"
+opentelemetry-instrumentation-fastapi = "^0.48b0"
+opentelemetry-instrumentation-asgi = "^0.48b0"
+opentelemetry-exporter-otlp = "^1.27.0"
+# Discontinued upstream at 1.21; wire.py imports it lazily and the
+# import already carries a type: ignore, so pin to the last release
+# rather than leaving an undeclared optional import.
+opentelemetry-exporter-jaeger-thrift = "^1.21.0"
 prometheus-client = "^0.18.0"
 starlette = ">=0.27.0"
 fastapi = "^0.141.0"

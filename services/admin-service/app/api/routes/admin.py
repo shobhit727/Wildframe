@@ -8,7 +8,6 @@ import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
-from wildframe_auth.verifier import get_cached_jwks, verify_token as verify_jwt_token
 
 from app.core.database import get_db
 from app.core.settings import DEV_ENVIRONMENTS, settings
@@ -25,26 +24,30 @@ from app.schemas.admin import (
     UserModerationResponse,
 )
 from app.services.admin import AdminService
+from wildframe_auth import JWKSUnavailableError, verify_token_with_jwks
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 
 async def _decode_token(token: str, expected_type: str = "access") -> dict:
+    # JWKSUnavailableError must be caught *before* JWTError: it is a JWTError
+    # subclass, and it is the branch that keeps a JWKS outage (fetch failure,
+    # or a body that is not a JWKS) a 503 instead of a 401. Everything else the
+    # verifier rejects — bad signature, expired, wrong audience, unknown kid —
+    # stays a 401.
     try:
-        jwks = await get_cached_jwks(settings.JWT_JWKS_URL)
-    except Exception as exc:
+        return await verify_token_with_jwks(
+            token,
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            url=settings.JWT_JWKS_URL,
+            expected_type=expected_type,
+        )
+    except JWKSUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Token verification is unavailable",
         ) from exc
-    try:
-        return verify_jwt_token(
-            token,
-            jwks,
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-            expected_type=expected_type,
-        )
     except JWTError as exc:
         raise HTTPException(status_code=401, detail="Invalid token") from exc
 
