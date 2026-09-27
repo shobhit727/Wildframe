@@ -139,7 +139,7 @@ These are documented in closing comments with explicit justification (e.g. DRM, 
 ## Re-run
 
 ```bash
-cd /home/phoenix/Desktop/wildframe
+cd "$(git rev-parse --show-toplevel)"
 
 # 1. Pull closed issues
 gh api "repos/shobhit727/Wildframe/issues?state=closed&per_page=100&page=N" \

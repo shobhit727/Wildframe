@@ -1,6 +1,6 @@
 # How to Run Tests
 
-**Current State**: Unit/route tests for all 15 microservices + the shared SDK + the frontend (vitest) + a live-stack integration suite (`tests/integration/`, 110 tests). Backend suites green (895 unit/route tests, Aug 18, 2026). The integration suite needs the dockerized stack running and skips itself otherwise.
+**Current State**: Unit/route tests for all 15 microservices (**6,217** tests), the shared SDK (**694**), the frontend (**805** vitest across 44 files), Playwright E2E (**119** across 9 files / 15 routes), a contract suite (`tests/contract`, **24** tests), and a live-stack integration suite (`tests/integration/`, 110 tests). The 15 service suites, the SDK, and the frontend suite are green. The contract suite has **one known failure** — see §2a. The integration suite needs the dockerized stack running and skips itself otherwise.
 
 ---
 
@@ -23,11 +23,10 @@ per-service** — a combined `pytest services/` run from the repo root breaks on
 shadowed `app.*` imports.
 
 ```bash
-# All 15 services + SDK
+# All 15 services
 for svc in services/*/; do
   (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
 done
-(cd packages/sdk && PYTHONPATH="$PWD" pytest tests --asyncio-mode=auto)
 
 # One service
 cd services/auth-service && pytest tests --asyncio-mode=auto
@@ -36,6 +35,47 @@ cd services/auth-service && pytest tests --asyncio-mode=auto
 cd services/streaming-service
 pytest tests/test_routes.py -k "end_playback_session" -v
 ```
+
+### SDK
+
+The SDK tests span four directories and need the repo root's `pyproject.toml`,
+so run them from the repo root with `packages/sdk` on `PYTHONPATH`. The
+`wildframe_compliance` package resolves to `packages/sdk/wildframe_compliance`
+— the 12-line repo-root stub that used to shadow it was deleted, so there is
+no repo-root `wildframe_compliance/` package to import from.
+
+```bash
+PYTHONPATH="$PWD/packages/sdk" python -m pytest -c pyproject.toml \
+  packages/sdk/tests/ \
+  packages/sdk/wildframe_compliance/tests/ \
+  packages/sdk/wildframe_events/tests/ \
+  packages/sdk/wildframe_observability/tests/ \
+  --asyncio-mode=auto
+```
+
+## 2a️⃣ Contract and Supply-Chain Tests
+
+Both run from the repo root and both are **blocking CI jobs** (`backend-route-contract`
+and `supply-chain-guard` respectively).
+
+```bash
+# Frontend/backend route drift (24 tests)
+pytest tests/contract -q
+
+# Supply-chain guard (action pinning + scanner suppressions) (4 tests)
+pytest tests/test_supply_chain_guard.py -q
+```
+
+> ⚠️ **Known failure.** `test_frontend_paths_resolve_to_backend_routes` fails
+> with ~26 unresolved paths. The cause is not route drift: every unresolved
+> literal comes from mock URL strings inside
+> `apps/web/src/api/__tests__/admin.test.ts` and
+> `apps/web/src/api/__tests__/client.data.test.ts`, and
+> `tests/contract/test_route_drift.py:152` globs **all** of `apps/web/src`
+> without excluding `__tests__`. The same scan over production frontend source
+> (excluding `__tests__`) reports **0** unresolved paths, so there is no real
+> frontend↔backend drift. The fix belongs in the contract test's file filter,
+> not in the frontend.
 
 ## 2b️⃣ Run the Live-Stack Integration Suite
 
@@ -57,31 +97,61 @@ poetry run pytest tests/integration -q    # ~16 min, 110 tests
 
 ## 3️⃣ With Coverage
 
-```bash
-cd services/auth-service
-pytest tests --cov=app --cov-report=term-missing --asyncio-mode=auto
-```
+Coverage details, the 95% CI floor, and the coverage command are in §6.
 
 ## 4️⃣ Frontend Tests
 
 ```bash
 cd apps/web
-npx vitest run          # run once (CI uses `npm test -- --run`)
+npx vitest run          # run once — 805 tests / 44 files (CI uses `npm test -- --run`)
 npx vitest              # watch mode
 npm run type-check      # tsc --noEmit
 npm run lint            # eslint . (Next 16 removed `next lint`)
 npm run build           # production build
 ```
 
+## 5️⃣ E2E Tests
+
+Playwright covers **119** tests across **9** spec files and **15** routes
+(`/`, `/login`, `/signup`, `/browse`, `/watch/[id]`, `/account`, `/my-list`,
+`/billing`, `/creator`, `/admin`, `/admin/users`, `/admin/alerts`,
+`/admin/audit`, `/admin/config`, `/admin/flags`). The `frontend-e2e` CI job is
+**blocking**.
+
+```bash
+cd apps/web
+npx playwright install --with-deps chromium   # first run only
+npx playwright test
+```
+
+The Playwright config invokes `scripts/generate-dev-certs.sh` itself, so dev
+TLS material is produced automatically. To generate it up front instead:
+
+```bash
+bash scripts/generate-dev-certs.sh
+```
+
+## 6️⃣ Coverage
+
+Per-service coverage is 97–99%. CI enforces a **95% floor** and fails the build
+below it:
+
+```bash
+cd services/auth-service
+pytest tests --cov=app --cov-report=term-missing:skip-covered \
+  --cov-fail-under=95 --asyncio-mode=auto
+```
+
 ## ⚠️ Not Available (yet)
 
 | Test Type | Status |
 |-----------|--------|
-| Unit/route tests | ✅ 15 services + SDK + frontend |
+| Unit/route tests | ✅ 15 services (6,217) + SDK (694) + frontend (805) |
 | Integration (live dockerized stack) | ✅ `tests/integration/` — 110 tests, run explicitly (see §2b) |
-| E2E (browser) | ❌ Playwright scripts exist but not run in CI |
-| Contract tests | ❌ Pact not wired |
-| Load tests | ❌ k6/Locust not written |
+| Contract / route drift | 🟡 `tests/contract` — 24 tests, blocking in the `backend-route-contract` job. 23 pass; 1 known failure from the scanner reading `__tests__` fixtures (see §2a) |
+| Supply-chain guard | ✅ `tests/test_supply_chain_guard.py` — 4 tests, blocking in the `supply-chain-guard` job |
+| E2E (browser) | ✅ Playwright — 119 tests / 9 files / 15 routes, blocking in the `frontend-e2e` job (see §5) |
+| Load tests | ❌ Locust harness exists at `load-tests/`, not yet run in CI |
 
 ## 🚨 Troubleshooting
 
@@ -90,30 +160,35 @@ npm run build           # production build
 - **`app.main` / `app.models` resolves to the wrong service** — running a combined sweep from the repo root; use the per-service loop above.
 - **Tests pass locally, fail in CI** — CI installs into a fresh service venv (`poetry install --with dev`); mirror with `poetry install` inside the service dir.
 
-## 📊 Test Stats (Aug 18, 2026)
+## 📊 Test Stats
 
 | Suite | Tests |
 |-------|-------|
-| auth-service | 161 |
-| content-service | 92 |
-| streaming-service | 80 |
-| analytics-service | 67 |
-| billing-service | 62 |
-| media-pipeline | 62 |
-| admin-service | 73 |
-| search-service | 56 |
-| user-service | 51 |
-| api-gateway | 39 |
-| moderation-service | 36 |
-| recommendation-service | 43 |
-| uploads-service | 26 |
-| creators-service | 23 |
-| notification-service | 24 |
-| packages/sdk | 98 |
-| **Backend unit total** | **895** |
-| **tests/integration (live stack)** | **110** |
-| apps/web (vitest) | 43 |
+| auth-service | 766 |
+| billing-service | 845 |
+| admin-service | 483 |
+| media-pipeline | 440 |
+| content-service | 390 |
+| user-service | 375 |
+| uploads-service | 376 |
+| streaming-service | 359 |
+| analytics-service | 346 |
+| moderation-service | 318 |
+| search-service | 303 |
+| notification-service | 289 |
+| creators-service | 297 |
+| recommendation-service | 275 |
+| api-gateway | 354 |
+| **Backend services total (15)** | **6,217** |
+| packages/sdk (incl. compliance, events, observability) | 694 |
+| tests/contract (route drift) | 24 |
+| tests/test_supply_chain_guard.py | 4 |
+| **tests/integration (live stack, not in CI)** | **110** |
+| apps/web — vitest (44 files) | 805 |
+| apps/web — Playwright (9 files, 15 routes) | 119 |
+
+Per-service coverage: **97–99%**, with a **95% floor** enforced in CI.
 
 ---
 
-**Last updated**: August 18, 2026
+**Last updated**: September 27, 2026 — all counts re-measured against `audit/fix-open-github-issues`

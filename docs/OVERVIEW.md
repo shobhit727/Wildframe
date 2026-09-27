@@ -73,7 +73,7 @@ We've consolidated 10 separate documentation files into 4 main guides for easier
 
 ```bash
 # Clone and setup
-git clone https://github.com/wildframe/platform.git
+git clone https://github.com/shobhit727/Wildframe.git
 cd platform
 
 # Backend setup
@@ -104,7 +104,7 @@ python -m uvicorn services/auth-service/app/main:app --reload --port 8001
 
 ## 📊 Architecture at a Glance
 
-### 13 Microservices
+### 15 Microservices
 ```
 API Gateway → Auth Service → User Service → Content Service
            ↓
@@ -206,7 +206,7 @@ wildframe/
 │   ├── OPERATIONS.md             # Deployment & ops
 │   └── DOCUMENTATION_GUIDE.md    # Writing docs for humans & AI
 ├── apps/web/                     # Next.js frontend
-├── services/                     # 13 microservices
+├── services/                     # 15 microservices
 │   ├── auth-service/            # ✅ Core complete
 │   ├── user-service/
 │   ├── content-service/
@@ -225,8 +225,8 @@ wildframe/
 ## 🚀 Getting Help
 
 ### Quick Links
-- **Issues**: [GitHub Issues](https://github.com/wildframe/platform/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/wildframe/platform/discussions)
+- **Issues**: [GitHub Issues](https://github.com/shobhit727/Wildframe/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/shobhit727/Wildframe/discussions)
 - **Slack**: #engineering channel
 
 ### Documentation Search

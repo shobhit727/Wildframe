@@ -21,7 +21,7 @@ redis 7+
 ## 2️⃣ Start Core Platform (6 Services + Infra)
 
 ```bash
-cd /home/phoenix/Desktop/wildframe
+cd "$(git rev-parse --show-toplevel)"
 
 # Start infrastructure + 6 core services
 docker-compose -f deployments/docker-compose.dev.yml up -d
