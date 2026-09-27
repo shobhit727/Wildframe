@@ -319,21 +319,26 @@ class AdminService:
         return [self._serialize_config(c, is_sensitive_config_key(c.key)) for c in configs]
 
     # Audit Logs
+    @staticmethod
+    def _serialize_audit_log(log) -> dict:
+        return {
+            "id": log.id,
+            "admin_id": log.admin_id,
+            "action": log.action,
+            "resource_type": log.resource_type,
+            "resource_id": log.resource_id,
+            "changes": log.changes,
+            "ip_address": log.ip_address,
+            "created_at": log.created_at,
+        }
+
+    async def get_audit_logs(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        logs = await self.audit_repo.list_recent(_clamp_limit(limit), max(0, offset))
+        return [self._serialize_audit_log(log) for log in logs]
+
     async def get_audit_logs_by_admin(self, admin_id: str, limit: int = 50) -> list[dict]:
         logs = await self.audit_repo.list_by_admin(admin_id, _clamp_limit(limit))
-        return [
-            {
-                "id": log.id,
-                "admin_id": log.admin_id,
-                "action": log.action,
-                "resource_type": log.resource_type,
-                "resource_id": log.resource_id,
-                "changes": log.changes,
-                "ip_address": log.ip_address,
-                "created_at": log.created_at,
-            }
-            for log in logs
-        ]
+        return [self._serialize_audit_log(log) for log in logs]
 
     async def get_audit_logs_by_resource(
         self, resource_type: str, resource_id: str, limit: int = 50
@@ -341,19 +346,7 @@ class AdminService:
         logs = await self.audit_repo.list_by_resource(
             resource_type, resource_id, _clamp_limit(limit)
         )
-        return [
-            {
-                "id": log.id,
-                "admin_id": log.admin_id,
-                "action": log.action,
-                "resource_type": log.resource_type,
-                "resource_id": log.resource_id,
-                "changes": log.changes,
-                "ip_address": log.ip_address,
-                "created_at": log.created_at,
-            }
-            for log in logs
-        ]
+        return [self._serialize_audit_log(log) for log in logs]
 
     # System Stats
     async def get_system_stats(self) -> dict:
