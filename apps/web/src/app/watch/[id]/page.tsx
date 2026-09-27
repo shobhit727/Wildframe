@@ -149,6 +149,25 @@ function WatchContent({ contentId }: { contentId: string }) {
     }
   };
 
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#141414] text-white flex items-center justify-center px-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-2xl font-bold mb-3">Sign in to watch</h1>
+          <p className="text-gray-400 mb-6">
+            Sign in to start playback and access this title.
+          </p>
+          <Link
+            href="/login"
+            className="inline-flex items-center justify-center rounded-md bg-[#E50914] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#f40612] transition-colors"
+          >
+            Sign in
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (isStarting) {
     return (
       <div className="min-h-screen bg-[#141414] flex items-center justify-center">
