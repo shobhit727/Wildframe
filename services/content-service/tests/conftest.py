@@ -64,3 +64,9 @@ async def db_with_commit():
 # Cleanup
 def pytest_sessionfinish(session, exitstatus):
     postgres.stop()
+
+
+@pytest_asyncio.fixture
+async def db_session(db):
+    """Compatibility alias for integration tests using the db_session name."""
+    yield db
