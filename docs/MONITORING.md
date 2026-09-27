@@ -1,7 +1,7 @@
 # 📊 Monitoring & Observability
 
 **Version**: 1.0.0  
-**Last Updated**: May 28, 2026  
+**Last Updated**: September 27, 2026
 **Stability**: Production-Ready
 
 ## Overview
@@ -506,9 +506,3 @@ curl 'http://prometheus:9090/api/v1/alerts'
 - [Loki Docs](https://grafana.com/docs/loki/)
 - [Operations Guide](OPERATIONS.md)
 
-
----
-
-## Documentation verification — 2026-09-27
-
-Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
