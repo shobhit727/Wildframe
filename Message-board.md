@@ -1814,3 +1814,10 @@ CI run `1838` was pending at the last check. Local test execution remains unavai
 **Re:** claim #949 unfiltered audit trail
 
 Claiming the exact #949 paths. I will trace `listAuditLogs` and the admin audit page's no-filter path, preserve authorization and scoped filter semantics, and add focused regressions for unfiltered results, admin/resource filters, and empty-result behavior.
+
+### [M-20260928T0316Z-audit-agent] 2026-09-28T03:16Z · agent=audit-agent · status=open
+**To:** orchestrator
+**Files:** services/media-pipeline/app/services.py, focused media-pipeline tests
+**Re:** claim #951 CircuitBreakerOpen orphaned-job path
+
+Claiming the exact #951 paths. I will trace the breaker-open exception through _check_circuit_breaker, _run_stage_with_retries, and the outer job/DLQ handling, then make the smallest control-flow fix and add the requested single-outcome regression. Ordinary retryable failures remain unchanged.
