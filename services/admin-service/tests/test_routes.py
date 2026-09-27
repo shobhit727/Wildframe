@@ -883,6 +883,30 @@ class TestConfigRoutes:
 
 
 class TestAuditRoutes:
+    async def test_unfiltered_audit_returns_recent_entries(self, admin_client):
+        await admin_client.post(
+            "/api/v1/admin/alerts",
+            json={"alert_type": "older", "severity": "info", "message": "old", "service": "s"},
+            headers=_bearer(_mint()),
+        )
+        await admin_client.post(
+            "/api/v1/admin/alerts",
+            json={"alert_type": "newer", "severity": "warning", "message": "new", "service": "s"},
+            headers=_bearer(_mint()),
+        )
+
+        resp = await admin_client.get(
+            "/api/v1/admin/audit", params={"limit": 1}, headers=_bearer(_mint())
+        )
+
+        assert resp.status_code == 200
+        assert len(resp.json()) == 1
+        assert resp.json()[0]["action"] == "alert_created"
+
+    async def test_unfiltered_audit_requires_admin_auth(self, admin_client):
+        resp = await admin_client.get("/api/v1/admin/audit")
+        assert resp.status_code == 401
+
     async def test_audit_by_admin_returns_own_rows(self, admin_client):
         await admin_client.post(
             "/api/v1/admin/alerts",
