@@ -395,6 +395,13 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
+      # Generate the ignored HTTPS dev cert before Next.js build/instrumentation
+      # touches the certificate path; the Playwright webServer repeats this
+      # idempotently at runtime.
+      - name: Generate dev TLS certificates
+        working-directory: .
+        run: bash scripts/generate-dev-certs.sh
+
       - name: Build
         run: npm run build
 
