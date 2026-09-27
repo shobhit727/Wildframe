@@ -601,7 +601,7 @@ Unique identifier tracking a request through all services and logs.
 # Backend
 - Lint (ruff, black, mypy)
 - Unit tests per service (15 services + SDK)
-- Integration tests (87 tests, ~12 min)
+- Integration tests (76 tests, ~12 min)
 - Contract tests (16 route drift tests)
 - Docker build smoke (15 services + frontend)
 
