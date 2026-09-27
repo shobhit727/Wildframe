@@ -129,10 +129,6 @@ def check_suppressions():
                 is_sensitive = True
         elif "localhost-key" in low or "localhost.pem" in low:
             is_sensitive = True
-        # Exempt the git‑ignored certificates directory – it never contains real keys.
-        elif "apps/web/certificates" in low:
-            is_sensitive = False
-            is_sensitive = True
         elif low in (".pem", ".key"):
             is_sensitive = True
         if is_sensitive:
