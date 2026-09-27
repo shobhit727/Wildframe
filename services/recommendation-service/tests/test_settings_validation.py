@@ -209,7 +209,7 @@ class TestDefaults:
         _clear_dev_env(monkeypatch)
         settings = Settings()
 
-        assert settings.JWT_ALGORITHM == "HS256"
+        assert settings.JWT_ALGORITHM == "RS256"
         assert settings.JWT_AUDIENCE == "wildframe-api"
         assert settings.JWT_ISSUER == "wildframe-auth"
         assert settings.JWT_EXPIRATION_MINUTES == 15
