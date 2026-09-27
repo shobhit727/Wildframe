@@ -183,6 +183,6 @@ Head to [Getting Started](./GETTING_STARTED.md) and begin!
 ---
 
 **Documentation Version:** 1.0  
-**Last Updated:** 2024  
+**Last Updated:** September 27, 2026  
 **Template Version:** Netlify-style
 
