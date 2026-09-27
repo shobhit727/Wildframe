@@ -19,6 +19,7 @@ from uuid import uuid4
 import bcrypt
 import httpx
 import pytest
+import wildframe_auth
 from fastapi import HTTPException
 from jose import jwt
 
@@ -30,6 +31,25 @@ from app.security.manager import (
     TokenManager,
     _encode_password,
 )
+from tests._test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
+
+
+class _Endpoint:
+    """The auth service's JWKS endpoint, as the service sees it."""
+
+    async def fetch(self, url: str):
+        return JWKS
+
+
+@pytest.fixture(autouse=True)
+def _stub_jwks_endpoint(monkeypatch):
+    """Serve the test JWKS and clear the SDK cache around every test."""
+    monkeypatch.setattr(wildframe_auth.verifier, "fetch_jwks", _Endpoint().fetch)
+    clear_jwks_cache()
+    yield
+    clear_jwks_cache()
+
 
 # bcrypt is intentionally slow; keep the suite fast without changing behaviour.
 FAST_ROUNDS = 4
@@ -121,120 +141,168 @@ def test_two_hashes_of_the_same_password_differ_by_salt():
 
 
 # ---------------------------------------------------------------------------
-# TokenManager.create_access_token / verify_token
+# TokenManager.verify_token
 # ---------------------------------------------------------------------------
 
 
-def test_create_access_token_round_trips_the_subject():
+def _mint(
+    *,
+    kid: str = "k1",
+    typ: str = "access",
+    role: str = "user",
+    exp_offset: int = 300,
+    aud: str | None = None,
+    iss: str | None = None,
+    sub: str | None = None,
+    private_pem: str = PRIVATE_PEM,
+    algorithm: str = "RS256",
+    **extra: object,
+) -> str:
+    """A real RS256 token over the test key, or an HS256 forgery if asked.
+
+    ``private_pem`` defaults to the in-memory test key because the service no
+    longer accepts a shared-secret HS256 token at all.
+    """
+    now = datetime.now(UTC)
+    claims = {
+        "sub": sub or str(uuid4()),
+        "type": typ,
+        "aud": aud or settings.JWT_AUDIENCE,
+        "iss": iss or settings.JWT_ISSUER,
+        "role": role,
+        "av": 0,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=15)).timestamp()) + exp_offset,
+    }
+    claims.update(extra)
+    return jwt.encode(claims, private_pem, algorithm=algorithm, headers={"kid": kid})
+
+
+async def test_verify_token_round_trips_the_subject():
     subject = str(uuid4())
 
-    token = TokenManager.create_access_token(subject)
-    payload = TokenManager.verify_token(token)
+    payload = await TokenManager.verify_token(_mint(sub=subject))
 
     assert payload is not None
     assert payload["sub"] == subject
     assert payload["type"] == "access"
 
 
-def test_known_defect_self_minted_tokens_carry_no_aud_claim():
-    """Characterisation test for a reported gap (NOT an assertion of intent).
-
-    `app/security/manager.py:65` builds the payload without `aud`, yet
-    `verify_token` (line 77) decodes *with* `audience=settings.JWT_AUDIENCE`.
-    python-jose skips the audience check when the claim is absent, so the
-    round trip works - but tokens minted here are not spec-conformant
-    (auth-service tokens do carry `aud`) and would be indistinguishable from
-    a token that bypassed the audience policy.
-    """
-    payload = TokenManager.verify_token(TokenManager.create_access_token(str(uuid4())))
-
-    assert payload is not None
-    assert "aud" not in payload
-
-
-def test_create_access_token_honours_an_explicit_expiry():
-    token = TokenManager.create_access_token(
-        str(uuid4()), expires_delta=timedelta(minutes=1, seconds=30)
-    )
-    payload = TokenManager.verify_token(token)
+async def test_verify_token_honours_an_explicit_expiry():
+    payload = await TokenManager.verify_token(_mint(exp_offset=-90))
 
     assert payload is not None
     expires = datetime.fromtimestamp(payload["exp"], tz=UTC)
-    assert timedelta(minutes=1) < expires - datetime.now(UTC) <= timedelta(minutes=1, seconds=30)
+    assert timedelta(minutes=13) < expires - datetime.now(UTC) <= timedelta(minutes=15)
 
 
-def test_verify_token_rejects_an_expired_token():
-    token = jwt.encode(
-        {
-            "sub": str(uuid4()),
-            "type": "access",
-            "aud": settings.JWT_AUDIENCE,
-            "exp": datetime.now(UTC) - timedelta(minutes=1),
-        },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-    )
-
-    assert TokenManager.verify_token(token) is None
+async def test_verify_token_rejects_an_expired_token():
+    # 1h, not 1m: the shared verifier allows ~60s of clock skew, so a token that
+    # expired "just now" is *meant* to pass.
+    assert await TokenManager.verify_token(_mint(exp_offset=-3600)) is None
 
 
-def test_verify_token_rejects_a_tampered_token():
-    token = TokenManager.create_access_token(str(uuid4()))
+async def test_verify_token_rejects_a_tampered_token():
+    token = _mint()
     head, payload_b64, sig = token.split(".")
     tampered = f"{head}.{payload_b64}.{'A' * len(sig)}"
 
-    assert TokenManager.verify_token(tampered) is None
+    assert await TokenManager.verify_token(tampered) is None
 
 
-def test_verify_token_rejects_a_token_signed_with_another_key():
+async def test_verify_token_rejects_a_token_signed_with_another_key():
+    """An RS256 token from an RSA key that is not in the JWKS is refused."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    intruder = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = intruder.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+
+    assert await TokenManager.verify_token(_mint(private_pem=pem)) is None
+
+
+async def test_verify_token_rejects_a_foreign_audience():
+    assert await TokenManager.verify_token(_mint(aud="some-other-api")) is None
+
+
+async def test_verify_token_rejects_a_foreign_issuer():
+    assert await TokenManager.verify_token(_mint(iss="https://evil.test")) is None
+
+
+async def test_verify_token_rejects_an_unknown_kid():
+    """The rotation refresh must not turn "unknown" into "accepted"."""
+    assert await TokenManager.verify_token(_mint(kid="k-never-published")) is None
+
+
+async def test_verify_token_rejects_a_refresh_token_when_access_is_required():
+    """Token-type separation (#221), now enforced by the shared verifier.
+
+    The message is no longer this module's own -- the rejection happens inside
+    the verifier, which raises ``JWTError`` and this method turns into ``None``.
+    """
+    token = _mint(typ="refresh")
+
+    assert await TokenManager.verify_token(token) is None
+    assert await TokenManager.verify_token(token, token_type="refresh") is not None
+
+
+async def test_verify_token_rejects_a_token_without_a_sub():
+    """``sub`` is a required claim for the shared verifier."""
+    now = datetime.now(UTC)
     token = jwt.encode(
         {
-            "sub": str(uuid4()),
             "type": "access",
             "aud": settings.JWT_AUDIENCE,
-            "exp": datetime.now(UTC) + timedelta(minutes=5),
+            "iss": settings.JWT_ISSUER,
+            "av": 0,
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=15)).timestamp()),
         },
-        "a-completely-different-signing-key-of-32-chars",
-        algorithm=settings.JWT_ALGORITHM,
+        PRIVATE_PEM,
+        algorithm="RS256",
+        headers={"kid": "k1"},
     )
 
-    assert TokenManager.verify_token(token) is None
+    assert await TokenManager.verify_token(token) is None
 
 
-def test_verify_token_rejects_a_foreign_audience():
-    token = jwt.encode(
-        {
-            "sub": str(uuid4()),
-            "type": "access",
-            "aud": "some-other-api",
-            "exp": datetime.now(UTC) + timedelta(minutes=5),
-        },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-    )
-
-    assert TokenManager.verify_token(token) is None
+async def test_verify_token_returns_none_for_garbage_instead_of_raising():
+    assert await TokenManager.verify_token("not-a-jwt") is None
+    assert await TokenManager.verify_token("") is None
 
 
-def test_verify_token_rejects_a_refresh_token_when_access_is_required():
-    token = jwt.encode(
-        {
-            "sub": str(uuid4()),
-            "type": "refresh",
-            "aud": settings.JWT_AUDIENCE,
-            "exp": datetime.now(UTC) + timedelta(minutes=5),
-        },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-    )
+@pytest.mark.parametrize(
+    "secret", ["dev-secret-key", "dev-secret-key-change-in-production-min-32-bytes"]
+)
+async def test_verify_token_rejects_the_committed_dev_secret(secret):
+    """The #941 bypass, at the level it was reported.
 
-    assert TokenManager.verify_token(token) is None
-    assert TokenManager.verify_token(token, token_type="refresh") is not None
+    Both committed development secrets are covered: the one
+    ``docker-compose.dev.yml`` injects, and the pydantic default in
+    ``app/core/settings.py`` that a service sees when the variable is unset.
+    Neither is a valid key now, whatever the environment happens to hold.
+    """
+    forged = _mint(role="admin", private_pem=secret, algorithm="HS256")
+
+    assert await TokenManager.verify_token(forged) is None
 
 
-def test_verify_token_returns_none_for_garbage_instead_of_raising():
-    assert TokenManager.verify_token("not-a-jwt") is None
-    assert TokenManager.verify_token("") is None
+def test_create_access_token_no_longer_exists():
+    """The shared-secret *minter* is gone, not just the verifier.
+
+    It signed with the committed development secret, so it was a forge-token
+    factory in the same module as the verifier. After the move to the JWKS no
+    service would accept its output, which made it dead code as well as
+    dangerous, and nothing in ``app/`` called it -- auth-service is the only
+    issuer in this platform. Asserted by name so its return cannot creep back
+    in unnoticed.
+    """
+    assert not hasattr(TokenManager, "create_access_token")
+    assert "create_access_token" not in dir(TokenManager)
 
 
 # ---------------------------------------------------------------------------

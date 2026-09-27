@@ -875,7 +875,7 @@ description = "Python @deprecated decorator to deprecate old python classes, fun
 optional = false
 python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,>=2.7"
 groups = ["main", "dev"]
-markers = "python_version < \"3.13\""
+markers = "python_version < \"3.15\""
 files = [
     {file = "deprecated-1.3.1-py2.py3-none-any.whl", hash = "sha256:597bfef186b6f60181535a29fbe44865ce137a5079f295b479886c82729d5f3f"},
     {file = "deprecated-1.3.1.tar.gz", hash = "sha256:b1b50e0ff0c1fddaa5708a2c6b0a6588bb09b892825ab2b214ac9ea9d92a5223"},
@@ -894,7 +894,7 @@ description = "Python @deprecated decorator to deprecate old python classes, fun
 optional = false
 python-versions = ">=3.12"
 groups = ["main", "dev"]
-markers = "python_version >= \"3.13\""
+markers = "python_version == \"3.15\""
 files = [
     {file = "deprecated-3.0.0-py3-none-any.whl", hash = "sha256:58204cf4a7f6270d547af5c278ee7a6bb56045a4b3d8441a1cd11660f41b7939"},
     {file = "deprecated-3.0.0.tar.gz", hash = "sha256:16850204d3a1e6bb0acd06bff48d96e8b0a0d25d1c52f71705405a0f4894192d"},
@@ -3329,6 +3329,25 @@ files = [
 ]
 
 [[package]]
+name = "wildframe-auth"
+version = "1.0.0"
+description = "Shared JWT verification via JWKS for Wildframe"
+optional = false
+python-versions = ">=3.11,<3.16"
+groups = ["main"]
+files = []
+develop = true
+
+[package.dependencies]
+cryptography = ">=49.0.0,<51.0.0"
+httpx = "^0.25.0"
+python-jose = {version = "^3.3.0", extras = ["cryptography"]}
+
+[package.source]
+type = "directory"
+url = "../../packages/sdk/wildframe_auth"
+
+[[package]]
 name = "wildframe-compliance"
 version = "1.0.0"
 description = "Jurisdiction-aware compliance and policy configuration for Wildframe"
@@ -3490,4 +3509,4 @@ type = ["pytest-mypy (>=1.0.1) ; platform_python_implementation != \"PyPy\""]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.16"
-content-hash = "fa5833f07f1966e60c04c11f1903d760da1da8ecdd0849f41f33d382840ef8fe"
+content-hash = "fd5539a8490ee094b9ef1293fc6c45d5c0db9f845e0fee6ee5f6b17c33e69779"

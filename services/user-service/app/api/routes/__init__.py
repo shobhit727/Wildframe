@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from wildframe_auth import JWKSUnavailableError
 
 import httpx
 
@@ -96,7 +97,18 @@ async def get_current_user_id(
             headers={"WWW-Authenticate": "Bearer"},
         )
     token = authorization.removeprefix("Bearer ")
-    payload = TokenManager.verify_token(token)
+    try:
+        payload = await TokenManager.verify_token(token)
+    except JWKSUnavailableError as exc:
+        # The signature could not be *checked*, as opposed to being wrong.
+        # Answering 401 here would tell the caller their token is bad when
+        # auth-service is simply unreachable, and would send an operator
+        # looking at credentials instead of at the dependency.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Token verification is unavailable",
+            headers={"Retry-After": "5"},
+        ) from exc
     if not payload or "sub" not in payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

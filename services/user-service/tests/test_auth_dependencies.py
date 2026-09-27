@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
+import wildframe_auth
 from fastapi import HTTPException
 from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -27,20 +28,58 @@ from app.repositories import (
     UserSubscriptionProfileRepository,
 )
 from app.services import UserService
+from tests._test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
 
 # The autouse conftest fixture already stubs httpx.AsyncClient with a 200/{} reply.
 BEARER = {"Authorization": "Bearer placeholder"}
 
 
+class _Endpoint:
+    """The auth service's JWKS endpoint, as the service sees it."""
+
+    def __init__(self) -> None:
+        self.jwks = JWKS
+        self.raises: Exception | None = None
+
+    async def fetch(self, url: str):
+        if self.raises is not None:
+            raise self.raises
+        return self.jwks
+
+
+@pytest.fixture(autouse=True)
+def _stub_jwks_endpoint(monkeypatch):
+    """Serve the test JWKS and clear the SDK cache around every test."""
+    ep = _Endpoint()
+    monkeypatch.setattr(wildframe_auth.verifier, "fetch_jwks", ep.fetch)
+    clear_jwks_cache()
+    yield ep
+    clear_jwks_cache()
+
+
 def _token(**claims) -> str:
+    """Mint a real RS256 access token signed by the test JWKS key.
+
+    Signed with RS256 over the in-memory RSA key from ``tests/_test_jwks.py``,
+    because the service no longer accepts a shared-secret HS256 token at all.
+    """
     payload = {
+        "sub": str(uuid4()),
         "type": "access",
         "aud": settings.JWT_AUDIENCE,
+        "iss": settings.JWT_ISSUER,
+        "av": 0,
         "exp": datetime.now(UTC) + timedelta(minutes=5),
         "iat": datetime.now(UTC),
         **claims,
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(
+        {k: v for k, v in payload.items() if v is not None},
+        PRIVATE_PEM,
+        algorithm="RS256",
+        headers={"kid": "k1"},
+    )
 
 
 def _request(path_params: dict | None):
@@ -89,10 +128,28 @@ async def test_get_current_user_id_rejects_a_missing_or_malformed_header(header)
 
 
 async def test_get_current_user_id_rejects_an_invalid_signature():
+    """An RS256 token from an RSA key that is not in the JWKS is refused."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    intruder = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     forged = jwt.encode(
-        {"sub": str(uuid4()), "type": "access", "aud": settings.JWT_AUDIENCE},
-        "not-the-right-signing-key-at-all-32-chars",
-        algorithm=settings.JWT_ALGORITHM,
+        {
+            "sub": str(uuid4()),
+            "type": "access",
+            "aud": settings.JWT_AUDIENCE,
+            "iss": settings.JWT_ISSUER,
+            "av": 0,
+            "iat": datetime.now(UTC),
+            "exp": datetime.now(UTC) + timedelta(minutes=5),
+        },
+        intruder.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode(),
+        algorithm="RS256",
+        headers={"kid": "k1"},
     )
 
     with pytest.raises(HTTPException) as excinfo:
@@ -103,16 +160,9 @@ async def test_get_current_user_id_rejects_an_invalid_signature():
 
 
 async def test_get_current_user_id_rejects_an_expired_token():
-    expired = jwt.encode(
-        {
-            "sub": str(uuid4()),
-            "type": "access",
-            "aud": settings.JWT_AUDIENCE,
-            "exp": datetime.now(UTC) - timedelta(minutes=1),
-        },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-    )
+    # 1h, not 1m: the shared verifier allows ~60s of clock skew, so a token that
+    # expired "just now" is *meant* to pass.
+    expired = _token(exp=datetime.now(UTC) - timedelta(hours=1))
 
     with pytest.raises(HTTPException) as excinfo:
         await get_current_user_id(authorization=f"Bearer {expired}")
@@ -121,8 +171,9 @@ async def test_get_current_user_id_rejects_an_expired_token():
 
 
 async def test_get_current_user_id_rejects_a_token_without_a_sub_claim():
+    """``sub`` is a required claim, so this is refused during verification."""
     with pytest.raises(HTTPException) as excinfo:
-        await get_current_user_id(authorization=f"Bearer {_token()}")
+        await get_current_user_id(authorization=f"Bearer {_token(sub=None)}")
 
     assert excinfo.value.status_code == 401
     assert excinfo.value.detail == "Invalid or expired token"
@@ -148,12 +199,38 @@ async def test_get_current_user_id_rejects_a_non_uuid_sub():
 
 
 async def test_get_current_user_id_rejects_a_none_sub():
-    """python-jose refuses a non-string `sub` at decode, so this is a 401 too."""
+    """A ``sub`` of ``None`` never reaches the subject guard, so it is a 401.
+
+    Under the deleted HS256 path python-jose refused a non-string ``sub`` at
+    decode time, producing a 401. The shared verifier is stricter still: ``sub``
+    is a *required claim*, so a token without one is rejected during
+    verification and the detail is the generic "Invalid or expired token".
+    """
     with pytest.raises(HTTPException) as excinfo:
         await get_current_user_id(authorization=f"Bearer {_token(sub=None)}")
 
     assert excinfo.value.status_code == 401
     assert excinfo.value.detail == "Invalid or expired token"
+
+
+async def test_a_non_string_sub_is_refused_by_the_verifier_not_the_route():
+    """A non-string ``sub`` never reaches the route's subject guard.
+
+    Worth pinning because it closes off a latent 500: the route guards
+    ``UUID(payload["sub"])`` with ``except (ValueError, TypeError)``, but a
+    non-string ``sub`` makes ``UUID()`` raise ``AttributeError``, which would
+    escape as a 500 rather than a 401. That gap is unreachable -- the shared
+    verifier refuses a non-string ``sub`` while decoding, so the route sees
+    ``None`` and answers 401. Same subject as
+    ``test_known_defect_require_self_only_catches_value_and_type_errors``, which
+    is reachable because ``require_self`` parses the *path* parameter instead.
+    """
+    for bad_sub in (12345, 3.5, [1]):
+        with pytest.raises(HTTPException) as excinfo:
+            await get_current_user_id(authorization=f"Bearer {_token(sub=bad_sub)}")
+
+        assert excinfo.value.status_code == 401
+        assert excinfo.value.detail == "Invalid or expired token"
 
 
 # ---------------------------------------------------------------------------
