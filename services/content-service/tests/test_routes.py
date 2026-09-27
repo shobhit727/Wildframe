@@ -332,7 +332,9 @@ CONTENT_BODY = {
 
 class TestContentEndpoints:
 
-    async def test_create_content_normalizes_aware_release_date_to_naive_utc(self, client, service):
+    async def test_create_content_normalizes_aware_release_date_to_naive_utc(
+        self, client, service
+    ):
         response = await client.post(
             "/api/v1/content",
             json={**CONTENT_BODY, "release_date": "2026-01-02T03:04:05+05:30"},
@@ -344,7 +346,9 @@ class TestContentEndpoints:
         assert request.release_date == datetime(2026, 1, 1, 21, 34, 5)
         assert request.release_date.tzinfo is None
 
-    async def test_update_content_normalizes_aware_release_date_to_naive_utc(self, client, service):
+    async def test_update_content_normalizes_aware_release_date_to_naive_utc(
+        self, client, service
+    ):
         content_id = uuid4()
 
         response = await client.put(
@@ -360,6 +364,7 @@ class TestContentEndpoints:
 
     def test_release_date_model_uses_naive_database_contract(self):
         assert Content.__table__.c.release_date.type.timezone is False
+
     async def test_create_content(self, client, service):
         response = await client.post("/api/v1/content", json=CONTENT_BODY)
 
