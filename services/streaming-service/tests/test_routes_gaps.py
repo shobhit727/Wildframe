@@ -212,6 +212,18 @@ async def test_get_current_user_id_rejects_a_garbage_token():
     assert exc.value.detail == "Invalid token"
 
 
+def _wrong_rsa_private_pem() -> str:
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption(),
+    ).decode()
+
+
 @pytest.mark.unit
 async def test_get_current_user_id_rejects_a_token_signed_with_another_key():
     """A valid JWT under the wrong key must not authenticate."""
@@ -223,8 +235,9 @@ async def test_get_current_user_id_rejects_a_token_signed_with_another_key():
             "iss": settings.JWT_ISSUER,
             "exp": int((datetime.now(UTC) + timedelta(minutes=5)).timestamp()),
         },
-        "attacker-controlled-key-000000000000000",
-        algorithm=settings.JWT_ALGORITHM,
+        _wrong_rsa_private_pem(),
+        algorithm="RS256",
+        headers={"kid": "k1"},
     )
     with pytest.raises(HTTPException) as exc:
         await get_current_user_id(f"Bearer {forged}")
@@ -243,8 +256,9 @@ async def test_get_current_user_id_rejects_the_wrong_audience(monkeypatch):
             "iss": settings.JWT_ISSUER,
             "exp": int((datetime.now(UTC) + timedelta(minutes=5)).timestamp()),
         },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
+        PRIVATE_PEM,
+        algorithm="RS256",
+        headers={"kid": "k1"},
     )
     with pytest.raises(HTTPException) as exc:
         await get_current_user_id(f"Bearer {other}")
