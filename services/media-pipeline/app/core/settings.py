@@ -11,6 +11,7 @@ DEV_ENVIRONMENTS = {"", "development", "test"}
 DEV_DEFAULTS = {
     "DATABASE_URL": "postgresql+asyncpg://wildframe:wildframe_dev_password@localhost:5432/media_db",
     "REDIS_URL": "redis://localhost:6379",
+    "JWT_SECRET_KEY": "dev-secret-key-change-in-production-min-32-bytes",
     "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
 }
 
@@ -29,7 +30,9 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     DATABASE_URL: str | None = None
+    # Legacy HS256 is test-only; production validation below requires RS256.
     JWT_ALGORITHM: str = "RS256"
+    JWT_SECRET_KEY: str | None = None
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_JWKS_URL: str = "http://auth-service:8001/.well-known/jwks.json"
     JWT_ISSUER: str = "wildframe-auth"
@@ -86,6 +89,8 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
         if environment in DEV_ENVIRONMENTS:
             for key, value in DEV_DEFAULTS.items():
                 values.setdefault(key, value)
+            if environment == "test":
+                values.setdefault("JWT_ALGORITHM", "HS256")
         return values
 
     @model_validator(mode="after")
