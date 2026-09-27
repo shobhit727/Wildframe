@@ -28,6 +28,7 @@ and the rest silently resolve to the wrong service.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import subprocess
@@ -40,7 +41,14 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 SERVICES_DIR = REPO / "services"
 
-SERVICE_NAMES = sorted(p.name for p in SERVICES_DIR.iterdir() if (p / "app").is_dir())
+#: Require ``app/main.py``, not merely an ``app/`` directory. A stray
+#: ``services/app/`` left behind by someone running Python from the repo root --
+#: the exact ``app.*`` import-shadowing hazard AGENTS.md §19 warns about -- passes
+#: a bare ``app/`` check and is then probed as if it were a service, landing in
+#: ``unprobeable`` and failing the run for a reason unrelated to the bypass.
+SERVICE_NAMES = sorted(
+    p.name for p in SERVICES_DIR.iterdir() if (p / "app" / "main.py").is_file()
+)
 
 #: ``jwt.decode(<token>, <key>, ...)``. The key is the second argument, so the
 #: scan below inspects what actually lands there.
@@ -156,6 +164,44 @@ print(json.dumps({
 """
 
 
+def _static_jwt_algorithm(service: str) -> str | None:
+    """Read ``JWT_ALGORITHM``'s declared default without importing the service.
+
+    Importing ``app.core.settings`` needs that service's whole dependency tree
+    (fastapi, pydantic-settings, the compliance SDK, ...). The contract job
+    installs only pytest, cryptography and python-jose, so the dynamic probe
+    cannot import any service there and every one of them lands in
+    ``unprobeable`` -- which fails the test for a reason that has nothing to do
+    with the bypass.
+
+    The declaration is a plain string literal in all 15 services
+    (``JWT_ALGORITHM: str = "RS256"``), so reading it from the AST answers the
+    same question without executing untrusted module-level code. We still prefer
+    the dynamic probe when the dependencies happen to be present, because only
+    it sees an environment override; this is the fallback, not a replacement.
+    """
+    settings_py = SERVICES_DIR / service / "app" / "core" / "settings.py"
+    if not settings_py.is_file():
+        return None
+    try:
+        tree = ast.parse(settings_py.read_text(encoding="utf-8"))
+    except SyntaxError:
+        return None
+    for node in ast.walk(tree):
+        targets: list[ast.expr] = []
+        value: ast.expr | None = None
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            targets, value = [node.target], node.value
+        elif isinstance(node, ast.Assign):
+            targets, value = list(node.targets), node.value
+        if value is None or not isinstance(value, ast.Constant):
+            continue
+        if any(isinstance(t, ast.Name) and t.id == "JWT_ALGORITHM" for t in targets):
+            if isinstance(value.value, str):
+                return value.value
+    return None
+
+
 def _probe_service_settings(service: str) -> dict:
     result = subprocess.run(
         [sys.executable, "-c", textwrap.dedent(_SettingsProbe)],
@@ -165,9 +211,13 @@ def _probe_service_settings(service: str) -> dict:
         timeout=180,
     )
     line = next((ln for ln in result.stdout.splitlines() if ln.startswith("{")), None)
-    if line is None:
-        return {"error": f"no probe output; stderr={result.stderr.strip()[:300]}"}
-    return json.loads(line)
+    if line is not None:
+        return json.loads(line)
+    import_error = f"no probe output; stderr={result.stderr.strip()[:300]}"
+    static = _static_jwt_algorithm(service)
+    if static is not None:
+        return {"algorithm": static, "jwks_url": None, "has_secret": None, "via": "ast"}
+    return {"error": import_error}
 
 
 def test_no_service_declares_hs256_as_its_algorithm() -> None:

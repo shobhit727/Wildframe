@@ -309,7 +309,7 @@ class ContentRepository(BaseRepository):
         result = await self.session.execute(
             select(Content).where(
                 and_(
-                    Content.is_premium.is_(True),  # noqa: E712
+                    Content.is_premium.is_(True),
                     Content.status == ContentStatus.PUBLISHED,
                     Content.deleted_at.is_(None),
                 )

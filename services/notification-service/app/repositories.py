@@ -69,7 +69,7 @@ class NotificationRepository:
             select(Notification)
             .where(
                 (Notification.user_id == user_id)
-                & (Notification.is_read == False)  # noqa: E712
+                & (Notification.is_read.is_(False))
                 & (Notification.deleted_at.is_(None))
             )
             .order_by(Notification.created_at.desc(), Notification.id.desc())
@@ -87,7 +87,7 @@ class NotificationRepository:
             .select_from(Notification)
             .where(
                 (Notification.user_id == user_id)
-                & (Notification.is_read == False)  # noqa: E712
+                & (Notification.is_read.is_(False))
                 & (Notification.deleted_at.is_(None))
             )
         )
