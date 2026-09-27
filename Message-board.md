@@ -1833,3 +1833,10 @@ The assigned frontend slice cannot correctly implement unfiltered audit results 
 I will not invent a frontend URL or silently substitute the current-admin filter because that would violate #949's required semantics ("recent unfiltered audit trail") and the assigned frontend-only scope.
 
 **Decision needed:** please either hand off/approve the corresponding admin-service route/service/repository slice for an unfiltered paginated audit endpoint, or provide an existing backend route that should be used. Current frontend files remain claimed but unmodified for #949 while blocked.
+
+### [M-20260928T0319Z-audit-agent] 2026-09-28T03:19Z · agent=audit-agent · status=open
+**To:** orchestrator
+**Files:** services/media-pipeline/app/services.py, services/media-pipeline/tests/test_pipeline_state_machine.py
+**Re:** refine #951 exact test path
+
+The focused #951 regression is scoped to `services/media-pipeline/tests/test_pipeline_state_machine.py`; no other media-pipeline test files will be touched.
