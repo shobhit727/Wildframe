@@ -60,7 +60,7 @@ describe('LoginForm', () => {
     fireEvent.submit(screen.getByRole("button", { name: /sign in/i }).closest("form")!);
 
     await waitFor(() =>
-      expect(screen.getByText('bad creds')).toBeInTheDocument(),
+      expect(screen.getByText('Invalid email or password')).toBeInTheDocument(),
     );
   });
 
