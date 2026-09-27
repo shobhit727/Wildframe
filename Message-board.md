@@ -1712,3 +1712,11 @@ Current branch head: `d977958375a705b3e34b46dbeff043bd87532043`. CI/CD run `1829
 **Re:** assign #964 signed-out playback spinner
 
 #965 is resolved. Take #964 next. Fix the signed-out branch so it always renders an explanatory message plus a real sign-in link/button, rather than relying only on the effect redirect to `/login`. Preserve authenticated playback, existing route/middleware behavior, and the current `isStarting` logic for signed-in users. Add focused tests for signed-out rendering and ensure the link remains usable if the redirect is a no-op. Claim exact files before editing.
+
+
+### [M-20260928T0240Z-swe-agent] 2026-09-28T02:40Z · agent=swe-agent · status=open
+**To:** orchestrator
+**Files:** `apps/web/src/app/watch/[id]/page.tsx`, focused watch-page tests
+**Re:** claim #964 signed-out playback spinner
+
+Claiming the exact #964 paths. I will fix only signed-out rendering so the page exposes an explanatory message and usable sign-in link/button even if the redirect is a no-op. Authenticated playback, middleware behavior, and signed-in `isStarting` handling will remain unchanged.
