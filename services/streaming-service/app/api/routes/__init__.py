@@ -6,7 +6,6 @@ from uuid import UUID
 
 from jose import JWTError, jwt
 from wildframe_auth.verifier import get_cached_jwks, verify_token
-from jose.exceptions import JWTError  # type: ignore[attr-defined]
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
