@@ -102,13 +102,7 @@ async def verify_admin_reauth(
             detail="Step-up authentication required: X-Admin-Reauth header missing",
         )
     try:
-        payload = jwt.decode(
-            x_admin_reauth,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
+        header = jwt.get_unverified_header(x_admin_reauth)\n        kid = header.get("kid")\n        if not kid:\n            raise JWTError("missing kid")\n        jwks = await get_cached_jwks(settings.JWT_JWKS_URL, required_kid=kid)\n        payload = verify_token(\n            x_admin_reauth,\n            jwks,\n            audience=settings.JWT_AUDIENCE,\n            issuer=settings.JWT_ISSUER,\n            expected_type="admin_step_up",\n        )
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid reauth token")
     if payload.get("type") != "admin_step_up":
