@@ -215,7 +215,9 @@ class TestSearchEndpoints:
         monkeypatch.setattr(settings, "ADMIN_ROLE_VERSION", 1)
         app.dependency_overrides[get_search_service] = override_get_search_service(service)
 
-        stale_identity = Identity(user_id=uuid4(), role="admin", arv=0)\n        app.dependency_overrides[search_routes.get_admin_identity] = lambda: stale_identity\n        response = client.post("/api/v1/search/reindex")
+        stale_identity = Identity(user_id=uuid4(), role="admin", arv=0)
+        app.dependency_overrides[search_routes.get_admin_identity] = lambda: stale_identity
+        response = client.post("/api/v1/search/reindex")
 
         assert response.status_code == 403
         service.reindex_catalog.assert_not_awaited()
