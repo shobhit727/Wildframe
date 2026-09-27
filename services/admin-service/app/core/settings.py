@@ -40,7 +40,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     DATABASE_URL: str | None = None
     REDIS_URL: str | None = None
     JWT_SECRET_KEY: str | None = None
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
     JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
     AUTH_SERVICE_URL: str = "http://auth-service:8000"
     JWT_AUDIENCE: str = "wildframe-api"
