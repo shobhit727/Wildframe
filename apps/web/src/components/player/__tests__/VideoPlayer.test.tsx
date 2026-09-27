@@ -29,6 +29,8 @@ const hls = vi.hoisted(() => ({
     attachMedia: ReturnType<typeof vi.fn>;
     destroy: ReturnType<typeof vi.fn>;
     on: ReturnType<typeof vi.fn>;
+    currentLevel: number;
+    levels: Array<{ height: number }>;
   }>,
 }));
 
@@ -49,6 +51,8 @@ vi.mock('hls.js', () => {
     attachMedia = vi.fn();
     destroy = vi.fn();
     on = vi.fn();
+    currentLevel = -1;
+    levels = [{ height: 480 }, { height: 720 }, { height: 1080 }];
     constructor(config: unknown) {
       this.config = config;
       hls.instances.push(this);
@@ -452,19 +456,35 @@ describe('playback controls', () => {
 });
 
 describe('quality selection', () => {
-  it('rebuilds the streaming engine without applying the chosen quality', async () => {
-    // BUG (VideoPlayer.tsx:120): `quality` is a dependency of the init effect
-    // but is never handed to hls.js (no currentLevel / levels switch), so
-    // picking a quality only destroys the engine and re-buffers from zero.
+  it('changes the active hls.js level without rebuilding the stream', async () => {
     renderPlayer({ src: HLS_MANIFEST, srcType: 'hls' });
     await waitFor(() => expect(hls.instances).toHaveLength(1));
 
+    const el = video();
+    el.currentTime = 42;
+    fireEvent.play(el);
+
     fireEvent.change(screen.getByRole('combobox', { name: 'Video quality' }), { target: { value: '720p' } });
 
-    await waitFor(() => expect(hls.instances).toHaveLength(2));
-    expect(hls.instances[0].destroy).toHaveBeenCalled();
-    expect(hls.instances[1].config).toEqual({ enableWorker: true, lowLatencyMode: false });
+    expect(hls.instances).toHaveLength(1);
+    expect(hls.instances[0].currentLevel).toBe(1);
+    expect(hls.instances[0].destroy).not.toHaveBeenCalled();
+    expect(el.currentTime).toBe(42);
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
     expect((screen.getByRole('combobox', { name: 'Video quality' }) as HTMLSelectElement).value).toBe('720p');
+  });
+
+  it('returns hls.js to automatic level selection', async () => {
+    renderPlayer({ src: HLS_MANIFEST, srcType: 'hls' });
+    await waitFor(() => expect(hls.instances).toHaveLength(1));
+
+    const select = screen.getByRole('combobox', { name: 'Video quality' });
+    fireEvent.change(select, { target: { value: '1080p' } });
+    fireEvent.change(select, { target: { value: 'auto' } });
+
+    expect(hls.instances).toHaveLength(1);
+    expect(hls.instances[0].currentLevel).toBe(-1);
+    expect(hls.instances[0].destroy).not.toHaveBeenCalled();
   });
 });
 
