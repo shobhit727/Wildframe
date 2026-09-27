@@ -67,6 +67,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     LOG_LEVEL: str = "INFO"
     EVENT_PUBLISHER: str = "memory"
     KAFKA_BOOTSTRAP_SERVERS: str | None = None
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod
