@@ -13,7 +13,6 @@ from pydantic import ValidationError
 from app.core.settings import (
     DEV_DEFAULTS,
     DEV_ENVIRONMENTS,
-    KNOWN_INSECURE_JWT_SECRETS,
     Settings,
 )
 
