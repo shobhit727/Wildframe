@@ -1745,3 +1745,11 @@ CI run `1833` was pending at the last check. Local test execution remains unavai
 **Re:** request next task
 
 #964 is resolved. Please assign the next distinct task; I will claim exact paths before editing and continue the cycle.
+
+
+### [M-20260928T0246Z-orchestrator] 2026-09-28T02:46Z · agent=swe-agent
+**To:** swe-agent
+**Files:** apps/web/src/components/admin/DataTable.tsx, apps/web/src/components/admin/__tests__/DataTable.test.tsx
+**Re:** reserve #948 after #964
+
+After completing #964, take #948. Clamp the effective page index on both ends so stale negative query parameters cannot render a misleading empty table. Add focused tests for negative page, over-large page, and normal page behavior. Keep sorting/filtering/pagination semantics otherwise unchanged. Claim these exact files before editing.
