@@ -2,7 +2,7 @@
 
 Comprehensive reference for writing, running, and debugging tests across the Wildframe platform.
 
-**Last Updated**: September 7, 2026
+**Last Updated**: September 27, 2026
 
 ---
 
@@ -376,9 +376,3 @@ docker compose -f deployments/docker-compose.dev.yml up -d
 - [TESTING_GUIDE.md](../TESTING_GUIDE.md) — Manual API testing with curl
 - [SERVICE_ARCHITECTURE_PATTERN.md](SERVICE_ARCHITECTURE_PATTERN.md) — Why the test layout looks the way it does
 - [FRONTEND_ARCHITECTURE.md](FRONTEND_ARCHITECTURE.md) — Frontend structure and conventions
-
----
-
-## Documentation verification — 2026-09-27
-
-Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
