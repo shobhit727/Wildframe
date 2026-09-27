@@ -29,21 +29,51 @@ ensure_kafka_passwords() {
   chmod 644 "$KAFKA_KEYSTORE_PW" "$KAFKA_KEY_PW"
 }
 
+# Kafka's PEM keystore support (SslEngineFactory$PemStore) has two requirements
+# that the base pair above does not satisfy:
+#
+#   1. The private key and the certificate must be in ONE file, concatenated.
+#   2. The key must be an *encrypted* PKCS#8 blob. cp-kafka's configure step
+#      always sets ssl.key.password from $KAFKA_SSL_KEY_CREDENTIALS, and
+#      Kafka then parses the key as a javax.crypto.EncryptedPrivateKeyInfo.
+#      The unencrypted "BEGIN PRIVATE KEY" produced by `req -nodes` makes the
+#      broker exit at startup with:
+#        InvalidConfigurationException: Failed to load PEM SSL keystore
+#        ... Caused by: java.io.IOException: overrun
+#      PKCS#1 ("BEGIN RSA PRIVATE KEY") would fail the same way, so this uses
+#      `openssl pkcs8 -topk8` rather than `openssl rsa`.
+#
+#   3. The encryption must be traditional PKCS#12 PBE (-v1 PBE-SHA1-3DES), not
+#      PBES2 (-v2 aes-256-cbc). Kafka decrypts with
+#      SecretKeyFactory.getInstance(EncryptedPrivateKeyInfo.getAlgName()), and
+#      the JDK has no name for the PBES2 OID, so a PBES2 key fails with
+#        NoSuchAlgorithmException: 1.2.840.113549.1.5.13 SecretKeyFactory not
+#        available
+#      while PBE-SHA1-3DES resolves to PBEWithSHAAnd3-KeyTripleDES-CBC, which
+#      SunJCE provides. Kafka only needs to read this key once, at startup.
+#
+# The Caddy/Grafana pair (localhost-key.pem, localhost.pem) stays unencrypted
+# and untouched; only the Kafka-specific bundle is encrypted.
+build_kafka_keystore() {
+  local password
+  password="$(cat "$KAFKA_KEY_PW")"
+  local tmp="$KAFKA_KEYSTORE.tmp"
+  openssl pkcs8 -topk8 -in "$KEY_FILE" -out "$tmp" \
+    -passout "pass:$password" -v1 PBE-SHA1-3DES
+  cat "$tmp" "$CRT_FILE" > "$KAFKA_KEYSTORE"
+  rm -f "$tmp"
+  cp "$CRT_FILE" "$KAFKA_TRUSTSTORE"
+  chmod 644 "$KAFKA_KEYSTORE" "$KAFKA_TRUSTSTORE"
+}
 
 if [[ -f "$KEY_FILE" && -f "$CRT_FILE" ]]; then
   echo "Dev certificates already exist at $CERT_DIR — skipping generation."
-  # Still ensure the Kafka PEM bundle exists: it was added after the original
-  # pair, so an older checkout can have the base files but not the bundle.
-  if [[ ! -f "$CERT_DIR/kafka-keystore.pem" || ! -f "$CERT_DIR/kafka-truststore.pem" ]]; then
-    cat "$KEY_FILE" "$CRT_FILE" > "$CERT_DIR/kafka-keystore.pem"
-    cp "$CRT_FILE" "$CERT_DIR/kafka-truststore.pem"
-    chmod 644 "$CERT_DIR/kafka-keystore.pem" "$CERT_DIR/kafka-truststore.pem"
-    echo "Generated Kafka PEM keystore/truststore from the existing pair."
-  fi
-  if [[ ! -f "$KAFKA_KEYSTORE_PW" || ! -f "$KAFKA_KEY_PW" ]]; then
-    ensure_kafka_passwords
-    echo "Generated Kafka keystore/key password files."
-  fi
+  # The Kafka bundle is derived from the base pair, so it is always rebuilt:
+  # that repairs an older checkout whose bundle predates the encrypted-PKCS#8
+  # requirement, instead of leaving the broker unable to load its keystore.
+  ensure_kafka_passwords
+  build_kafka_keystore
+  echo "Refreshed the Kafka PEM keystore/truststore from the existing pair."
   echo "  $KEY_FILE"
   echo "  $CRT_FILE"
   echo "Delete them to regenerate."
@@ -85,10 +115,8 @@ chmod 644 "$KEY_FILE" "$CRT_FILE"
 # Kafka's PEM keystore format requires the private key and certificate
 # concatenated in ONE file; the truststore is the certificate alone. Caddy and
 # Grafana consume the two base files separately, so neither can be reused as-is.
-cat "$KEY_FILE" "$CRT_FILE" > "$KAFKA_KEYSTORE"
-cp "$CRT_FILE" "$KAFKA_TRUSTSTORE"
-chmod 644 "$KAFKA_KEYSTORE" "$KAFKA_TRUSTSTORE"
 ensure_kafka_passwords
+build_kafka_keystore
 
 echo "Generated:"
 echo "  $KEY_FILE"
