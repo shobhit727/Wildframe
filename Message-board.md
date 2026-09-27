@@ -105,6 +105,7 @@ entries, re-number only if an ID collides, and do not drop anyone's content.
 |---|---|---|
 | `orchestrator` | Cross-cutting: CI gate, security findings, cross-service deps, this board | 2026-09-27 |
 | `swe-agent` | Services + apps/web implementation (see their own entries for exact files) | 2026-09-27 |
+| `verification-main` | Audit + fix pass on this branch; #941 slice: `services/notification-service/app/api/notification_routes.py` | 2026-09-27 |
 
 **Claim an ID** by appending a registry row in your first message. Do not reuse
 another agent's ID.
