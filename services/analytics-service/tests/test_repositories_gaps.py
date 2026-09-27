@@ -249,9 +249,10 @@ async def test_get_for_creator_in_range_is_empty_when_nothing_overlaps(
     await make_snapshot(repo, creator, datetime(2020, 1, 1), datetime(2020, 1, 31))
     await async_session.commit()
 
-    assert await repo.get_for_creator_in_range(
-        creator, datetime(2026, 1, 1), datetime(2026, 12, 31)
-    ) == []
+    assert (
+        await repo.get_for_creator_in_range(creator, datetime(2026, 1, 1), datetime(2026, 12, 31))
+        == []
+    )
 
 
 # --- ContentPerformanceMetricsRepository ------------------------------------

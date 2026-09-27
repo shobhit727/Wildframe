@@ -1,9 +1,23 @@
-"""Integration tests for Streaming Service."""
+# ruff: noqa: F811 -- test parameters intentionally share the imported fixture names
+
+"""Integration tests for Streaming Service.
+
+These run against real PostgreSQL (see ``_pg_fixtures``) rather than mocks, so
+the playback-session, manifest, transcoding, quality-profile, CDN and download
+SQL is actually exercised.
+"""
 
 from uuid import uuid4
 
 import pytest_asyncio
 
+from _pg_fixtures import (  # noqa: F401  - registers the shared PG fixtures
+    db_session,
+    engine,
+    event_loop,
+    postgres_url,
+    schema,
+)
 from app.services import StreamingService
 
 
@@ -259,20 +273,48 @@ class TestDownloadIntegration:
         assert download.status == "queued"
 
     async def test_update_download_progress(self, streaming_service, db_session):
-        """Test updating download progress."""
+        """Test updating download progress.
+
+        ``total_bytes`` is not a field of ``DownloadSessionCreateRequest`` — the
+        total is not known until the client reports it — so it is seeded on the
+        row directly. Without it the service's own ``total_bytes > 0`` guard
+        yields ``progress_percent == 0``.
+        """
+        from app.repositories import DownloadSessionRepository
         from app.schemas import DownloadSessionCreateRequest
 
-        request = DownloadSessionCreateRequest(  # type: ignore[call-arg]
+        request = DownloadSessionCreateRequest(
             user_id=uuid4(),
             episode_id=uuid4(),
             device_id="device-progress",
             resolution="1080p",
-            total_bytes=1000000000,
         )
-
         download = await streaming_service.create_download_session(request)
+
+        seed = DownloadSessionRepository(db_session)
+        await seed.update(download.id, total_bytes=1_000_000_000)
+        await seed.commit()
 
         updated = await streaming_service.update_download_progress(download.id, 500000000)
 
         assert updated.bytes_downloaded == 500000000
         assert updated.progress_percent == 50
+
+    async def test_update_download_progress_with_unknown_total_is_zero(
+        self, streaming_service, db_session
+    ):
+        """An unreported total must not divide by zero."""
+        from app.schemas import DownloadSessionCreateRequest
+
+        request = DownloadSessionCreateRequest(
+            user_id=uuid4(),
+            episode_id=uuid4(),
+            device_id="device-no-total",
+            resolution="1080p",
+        )
+        download = await streaming_service.create_download_session(request)
+
+        updated = await streaming_service.update_download_progress(download.id, 4096)
+
+        assert updated.bytes_downloaded == 4096
+        assert updated.progress_percent == 0

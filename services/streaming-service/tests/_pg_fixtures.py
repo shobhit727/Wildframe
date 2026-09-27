@@ -74,9 +74,7 @@ def schema(postgres_url: str) -> Iterator[str]:
     from app.models import Base
 
     async def _create() -> None:
-        tmp = create_async_engine(
-            make_url(postgres_url).set(drivername="postgresql+asyncpg")
-        )
+        tmp = create_async_engine(make_url(postgres_url).set(drivername="postgresql+asyncpg"))
         try:
             async with tmp.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
@@ -84,9 +82,7 @@ def schema(postgres_url: str) -> Iterator[str]:
             await tmp.dispose()
 
     async def _drop() -> None:
-        tmp = create_async_engine(
-            make_url(postgres_url).set(drivername="postgresql+asyncpg")
-        )
+        tmp = create_async_engine(make_url(postgres_url).set(drivername="postgresql+asyncpg"))
         try:
             async with tmp.begin() as conn:
                 await conn.run_sync(Base.metadata.drop_all)

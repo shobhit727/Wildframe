@@ -103,9 +103,7 @@ async def test_log_event_rejects_depth_reached_through_nested_lists(
     user = uuid4()
 
     with pytest.raises(ValueError, match=f"nesting depth exceeds {MAX_EVENT_DATA_DEPTH}"):
-        await service.log_event(
-            user, "deep-list", {"seq": nested_list(MAX_EVENT_DATA_DEPTH + 1)}
-        )
+        await service.log_event(user, "deep-list", {"seq": nested_list(MAX_EVENT_DATA_DEPTH + 1)})
 
     assert await EventRepository(async_session).get_by_user(user) == []
 
@@ -238,7 +236,12 @@ async def test_get_content_performance_returns_the_stored_metrics(
     await service.content_repo.create(content_id=content)
     await async_session.commit()
     await service.update_content_performance(
-        content, views_7d=7, views_30d=70, avg_completion_pct=55.5, revenue_7d=1.25, revenue_30d=12.5
+        content,
+        views_7d=7,
+        views_30d=70,
+        avg_completion_pct=55.5,
+        revenue_7d=1.25,
+        revenue_30d=12.5,
     )
     await async_session.commit()
 

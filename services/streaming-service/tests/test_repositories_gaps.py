@@ -206,7 +206,9 @@ async def test_mark_completed_returns_none_for_an_unknown_session(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("terminal", [PlaybackSessionStatus.COMPLETED, PlaybackSessionStatus.INTERRUPTED])
+@pytest.mark.parametrize(
+    "terminal", [PlaybackSessionStatus.COMPLETED, PlaybackSessionStatus.INTERRUPTED]
+)
 async def test_mark_completed_does_not_rewrite_an_already_terminal_session(
     db_session: AsyncSession, terminal: PlaybackSessionStatus
 ):
@@ -390,7 +392,10 @@ async def test_transcoding_update_writes_the_supplied_columns(db_session: AsyncS
     await repo.commit()
 
     updated = await repo.update(
-        job.id, progress_percent=42, error_message="decoder timeout", status=TranscodingStatus.FAILED
+        job.id,
+        progress_percent=42,
+        error_message="decoder timeout",
+        status=TranscodingStatus.FAILED,
     )
     await repo.commit()
 
@@ -409,9 +414,7 @@ async def test_transcoding_update_skips_none_and_unknown_attributes(
     job = await make_job(repo, priority=7)
     await repo.commit()
 
-    updated = await repo.update(
-        job.id, priority=None, not_a_column="boom", progress_percent=5
-    )
+    updated = await repo.update(job.id, priority=None, not_a_column="boom", progress_percent=5)
     await repo.commit()
 
     assert updated is not None

@@ -220,9 +220,7 @@ async def test_playback_check_rejects_a_different_episode(service: StreamingServ
     session = await start_session(service, episode_id=episode)
 
     assert await service.check_session_valid_for_playback(session.id, session.user_id, episode)
-    assert not await service.check_session_valid_for_playback(
-        session.id, session.user_id, uuid4()
-    )
+    assert not await service.check_session_valid_for_playback(session.id, session.user_id, uuid4())
 
 
 async def test_require_manifest_session_grants_access_to_the_session_owner(
