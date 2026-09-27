@@ -45,12 +45,17 @@ async def get_current_user_id(
         )
     token = authorization.removeprefix("Bearer ")
     try:
-        payload = jwt.decode(
+        header = jwt.get_unverified_header(token)
+        kid = header.get("kid")
+        if not kid:
+            raise JWTError("missing kid")
+        jwks = await get_cached_jwks(settings.JWT_JWKS_URL, required_kid=kid)
+        payload = verify_token(
             token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
+            jwks,
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
+            expected_type="access",
         )
         # Token-type separation (#221): refresh tokens share the audience but
         # must never be accepted as access tokens.
