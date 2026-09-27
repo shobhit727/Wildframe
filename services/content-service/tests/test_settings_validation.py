@@ -180,7 +180,7 @@ class TestNonSecretSettings:
 
         assert cfg.JWT_AUDIENCE == "wildframe-api"
         assert cfg.JWT_ISSUER == "wildframe-auth"
-        assert cfg.JWT_ALGORITHM == "HS256"
+        assert cfg.JWT_ALGORITHM == "RS256"
 
     def test_content_service_port_and_cors_defaults(self):
         cfg = Settings(ENVIRONMENT="development")
