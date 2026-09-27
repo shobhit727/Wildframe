@@ -31,6 +31,9 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     ENVIRONMENT: str = "development"
     JWT_SECRET_KEY: str | None = None
     JWT_ALGORITHM: str = "RS256"
+    JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
+    JWT_ISSUER: str = "wildframe-auth"
+    JWT_AUDIENCE: str = "wildframe-api"
     JWT_EXPIRATION_MINUTES: int = 15
     REDIS_URL: str | None = None
     LOG_LEVEL: str = "INFO"
@@ -144,26 +147,12 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
             )
-        if self.JWT_SECRET_KEY is None or not self.JWT_SECRET_KEY.strip():
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if self.JWT_SECRET_KEY != self.JWT_SECRET_KEY.strip():
-            raise ValueError("JWT_SECRET_KEY must not contain leading or trailing whitespace.")
-        if self.JWT_SECRET_KEY.strip() in KNOWN_INSECURE_JWT_SECRETS:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if len(self.JWT_SECRET_KEY.strip()) < 32:
-            raise ValueError(
-                "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
-            )
         unsafe_cors = self.CORS_ALLOW_CREDENTIALS and (
             "*" in self.CORS_ALLOWED_ORIGINS or not self.CORS_ALLOWED_ORIGINS
         )
         if unsafe_cors:
             raise ValueError(
-                "JWT_SECRET_KEY must be a strong secret and CORS_ALLOWED_ORIGINS must "
+                "CORS_ALLOWED_ORIGINS must be an explicit origin list in production; "
                 "be an explicit origin list in production (wildcard origins with "
                 "credentials are rejected). "
             )
