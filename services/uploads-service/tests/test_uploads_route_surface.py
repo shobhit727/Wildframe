@@ -25,6 +25,7 @@ import datetime
 from uuid import uuid4
 
 import pytest
+import wildframe_auth
 from fastapi.testclient import TestClient
 from jose import jwt as jose_jwt
 
@@ -33,8 +34,23 @@ from app.core.settings import settings
 from app.main import app
 from app.models import UploadSession, UploadSessionStatus
 from app.services import UploadError
+from tests._test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
 
 pytestmark = pytest.mark.asyncio
+
+
+class _Endpoint:
+    """The auth service's JWKS endpoint, as the routes see it."""
+
+    def __init__(self) -> None:
+        self.jwks = JWKS
+        self.raises: Exception | None = None
+
+    async def fetch(self, url: str):
+        if self.raises is not None:
+            raise self.raises
+        return self.jwks
 
 
 # ---------------------------------------------------------------------------
@@ -43,14 +59,37 @@ pytestmark = pytest.mark.asyncio
 
 
 def mint_token(**claims) -> str:
-    """Sign a token valid on every axis except the claim under test."""
+    """Sign a token valid on every axis except the claim under test.
+
+    RS256 over the in-memory RSA key from ``tests/_test_jwks.py``, because the
+    service no longer accepts a shared-secret HS256 token at all.
+    """
     payload = {
+        "sub": str(uuid4()),
+        "type": "access",
         "aud": settings.JWT_AUDIENCE,
         "iss": settings.JWT_ISSUER,
+        "av": 0,
+        "iat": int(datetime.datetime.now(datetime.UTC).timestamp()),
         "exp": datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5),
     }
     payload.update(claims)
-    return jose_jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jose_jwt.encode(
+        {k: v for k, v in payload.items() if v is not None},
+        PRIVATE_PEM,
+        algorithm="RS256",
+        headers={"kid": "k1"},
+    )
+
+
+@pytest.fixture(autouse=True)
+def _stub_jwks_endpoint(monkeypatch):
+    """Serve the test JWKS and clear the SDK cache around every test."""
+    ep = _Endpoint()
+    monkeypatch.setattr(wildframe_auth.verifier, "fetch_jwks", ep.fetch)
+    clear_jwks_cache()
+    yield ep
+    clear_jwks_cache()
 
 
 def make_session(creator_id, **overrides) -> UploadSession:
@@ -108,24 +147,29 @@ class TestTokenResolution:
         assert await get_current_user_id(f"Bearer {token}") == subject
 
     async def test_a_refresh_token_is_refused(self):
-        """Token-type separation (#221) — a refresh token must not authorise writes."""
+        """Token-type separation (#221) — a refresh token must not authorise writes.
+
+        The message is now the generic one rather than the old "Invalid token
+        type": the rejection happens inside the shared verifier, so there is no
+        longer a hand-written ``type`` check reporting its own detail.
+        """
         token = mint_token(sub=str(uuid4()), type="refresh")
         with pytest.raises(Exception) as excinfo:
             await get_current_user_id(f"Bearer {token}")
         assert getattr(excinfo.value, "status_code", None) == 401
-        assert getattr(excinfo.value, "detail", None) == "Invalid token type"
+        assert getattr(excinfo.value, "detail", None) == "Invalid token"
 
     async def test_the_refresh_token_is_otherwise_perfectly_valid(self):
         """Pin *why* it is refused: the signature/audience/issuer/expiry all pass.
 
         Without this, a broken decode could masquerade as working type
-        separation, and deleting the type check would go unnoticed.
+        separation, and dropping the type check would go unnoticed.
         """
         token = mint_token(sub=str(uuid4()), type="refresh")
         claims = jose_jwt.decode(
             token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
+            JWKS["keys"][0],
+            algorithms=["RS256"],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
         )
@@ -133,7 +177,7 @@ class TestTokenResolution:
         assert claims["aud"] == settings.JWT_AUDIENCE
         with pytest.raises(Exception) as excinfo:
             await get_current_user_id(f"Bearer {token}")
-        assert getattr(excinfo.value, "detail", None) == "Invalid token type"
+        assert getattr(excinfo.value, "detail", None) == "Invalid token"
 
     async def test_a_garbage_token_is_refused(self):
         with pytest.raises(Exception) as excinfo:
@@ -142,53 +186,101 @@ class TestTokenResolution:
         assert getattr(excinfo.value, "detail", None) == "Invalid token"
 
     async def test_an_expired_token_is_refused(self):
-        token = jose_jwt.encode(
-            {
-                "sub": str(uuid4()),
-                "aud": settings.JWT_AUDIENCE,
-                "iss": settings.JWT_ISSUER,
-                "type": "access",
-                "exp": datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1),
-            },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
-        )
+        # -1h, not -1m: the shared verifier allows ~60s of clock skew, so a
+        # token that expired "just now" is *meant* to pass.
+        token = mint_token(exp=datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1))
         with pytest.raises(Exception) as excinfo:
             await get_current_user_id(f"Bearer {token}")
         assert getattr(excinfo.value, "status_code", None) == 401
 
     async def test_a_token_signed_with_the_wrong_key_is_refused(self):
+        """An RS256 token from an RSA key that is not in the JWKS is refused."""
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        intruder = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = intruder.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode()
         token = jose_jwt.encode(
             {
                 "sub": str(uuid4()),
                 "aud": settings.JWT_AUDIENCE,
                 "iss": settings.JWT_ISSUER,
                 "type": "access",
+                "av": 0,
+                "iat": int(datetime.datetime.now(datetime.UTC).timestamp()),
                 "exp": datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5),
             },
-            "a-different-secret-key-that-is-long-enough!!",
-            algorithm=settings.JWT_ALGORITHM,
+            pem,
+            algorithm="RS256",
+            headers={"kid": "k1"},
         )
         with pytest.raises(Exception) as excinfo:
             await get_current_user_id(f"Bearer {token}")
         assert getattr(excinfo.value, "status_code", None) == 401
 
-    async def test_the_user_id_claim_is_accepted_in_place_of_sub(self):
+    async def test_the_user_id_claim_is_no_longer_accepted_in_place_of_sub(self):
+        """``sub`` is a required claim, so the old ``user_id`` fallback is unreachable.
+
+        Under the deleted HS256 path a token carrying only ``user_id`` was
+        accepted and ``sub or user_id`` supplied the identity. The SDK verifier
+        requires ``sub`` as a claim, so such a token is now rejected outright
+        rather than silently reinterpreting a different claim as the identity.
+        """
         subject = uuid4()
-        token = mint_token(user_id=str(subject), type="access")
-        assert await get_current_user_id(f"Bearer {token}") == subject
+        token = mint_token(sub=None, user_id=str(subject), type="access")
+        with pytest.raises(Exception) as excinfo:
+            await get_current_user_id(f"Bearer {token}")
+        assert getattr(excinfo.value, "status_code", None) == 401
+        assert getattr(excinfo.value, "detail", None) == "Invalid token"
+
+    async def test_the_user_id_fallback_still_resolves_when_the_verifier_allows_it(
+        self, monkeypatch
+    ):
+        """The ``sub or user_id`` branch is retained, so it stays covered.
+
+        Unreachable through the real verifier, so the decode is stubbed. Deleting
+        the branch instead would be a second, unrelated change; keeping it
+        covered means a future refactor cannot silently drop the fallback.
+        """
+        import app.api.uploads_routes as routes
+
+        subject = uuid4()
+
+        async def _stub(token: str) -> dict:
+            return {"user_id": str(subject)}
+
+        monkeypatch.setattr(routes, "_decode_token", _stub)
+
+        assert await get_current_user_id("Bearer anything") == subject
 
     async def test_sub_takes_precedence_over_user_id(self):
         sub, other = uuid4(), uuid4()
         token = mint_token(sub=str(sub), user_id=str(other), type="access")
         assert await get_current_user_id(f"Bearer {token}") == sub
 
-    @pytest.mark.parametrize("sub", [None, "", "not-a-uuid", "12345"])
-    async def test_an_unusable_subject_is_refused(self, sub):
-        claims = {"type": "access"}
-        if sub is not None:
-            claims["sub"] = sub
-        token = mint_token(**claims)
+    async def test_a_token_with_no_sub_claim_at_all_is_refused(self):
+        """An absent ``sub`` is refused during verification, not as a bad subject.
+
+        ``sub`` is a required claim for the shared verifier, so the token never
+        reaches the subject-parsing branch. The status is still 401; only the
+        detail changed, and it is the generic token message because at this
+        point the honest answer is "this token is not valid", not "this
+        subject is malformed".
+        """
+        token = mint_token(sub=None, type="access")
+        with pytest.raises(Exception) as excinfo:
+            await get_current_user_id(f"Bearer {token}")
+        assert getattr(excinfo.value, "status_code", None) == 401
+        assert getattr(excinfo.value, "detail", None) == "Invalid token"
+
+    @pytest.mark.parametrize("sub", ["", "not-a-uuid", "12345"])
+    async def test_a_present_but_unusable_subject_is_refused(self, sub):
+        """A ``sub`` that is present but cannot be a UUID is still a subject error."""
+        token = mint_token(sub=sub, type="access")
         with pytest.raises(Exception) as excinfo:
             await get_current_user_id(f"Bearer {token}")
         assert getattr(excinfo.value, "status_code", None) == 401
