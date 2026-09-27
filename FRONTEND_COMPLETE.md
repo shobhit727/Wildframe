@@ -95,3 +95,9 @@ apps/web/
 The old document claimed "PRODUCTION READY ✅" with 15,000+ lines. Actual: ~2,000 lines of scaffolds. The backend services don't have their endpoints fully implemented either (email/MFA 501, no integration tests).
 
 **Last updated**: August 1, 2026
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
