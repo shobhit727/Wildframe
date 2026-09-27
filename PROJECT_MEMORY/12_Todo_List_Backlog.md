@@ -80,12 +80,18 @@
 - [x] Fix rate limiting implementation across services — gateway limiter wired (Aug 9), auth-service login limiting
 
 ## Placeholder Memory Structure
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/features/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/bugs/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/performance/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/security/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/api/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/database/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/history/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/planning/
-- /home/phoenix/Desktop/wildframe/PROJECT_MEMORY/decisions/
+- ./PROJECT_MEMORY/features/
+- ./PROJECT_MEMORY/bugs/
+- ./PROJECT_MEMORY/performance/
+- ./PROJECT_MEMORY/security/
+- ./PROJECT_MEMORY/api/
+- ./PROJECT_MEMORY/database/
+- ./PROJECT_MEMORY/history/
+- ./PROJECT_MEMORY/planning/
+- ./PROJECT_MEMORY/decisions/
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
