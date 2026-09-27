@@ -240,6 +240,7 @@ describe('AccountPage (/account)', () => {
 
       renderWithQuery(<AccountPage />);
       await screen.findByRole('heading', { name: 'Account' });
+      await waitFor(() => expect(screen.getByText('GB')).toBeInTheDocument());
 
       fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
       fireEvent.click(screen.getByRole('button', { name: 'Save' }));
