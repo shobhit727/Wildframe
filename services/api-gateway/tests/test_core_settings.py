@@ -81,36 +81,10 @@ def test_production_requires_an_explicit_redis_url():
         _prod(REDIS_URL=None)
 
 
-def test_production_requires_a_jwt_secret():
-    with pytest.raises(ValidationError, match="JWT_SECRET_KEY must be set to a strong"):
-        _prod(JWT_SECRET_KEY=None)
-
-
-@pytest.mark.parametrize("insecure", KNOWN_INSECURE_JWT_SECRETS)
-def test_production_rejects_every_known_insecure_jwt_secret(insecure):
-    """The denylist exists so the dev secret cannot leak into production.
-
-    The denylist is consulted *before* the length floor, so a short denylisted
-    value must still raise the denylist error rather than the length error.
-    """
-    with pytest.raises(ValidationError, match="must be set to a strong random value"):
-        _prod(JWT_SECRET_KEY=insecure)
-
-
-def test_production_rejects_a_short_jwt_secret():
-    with pytest.raises(ValidationError, match="at least 32 characters"):
-        _prod(JWT_SECRET_KEY="s" * 31)
-
-
-@pytest.mark.parametrize("secret", [" " * 40, f"{'s' * 32} ", " {0} ".format("s" * 32)])
-def test_production_rejects_whitespace_jwt_secrets(secret):
-    with pytest.raises(ValidationError):
-        _prod(JWT_SECRET_KEY=secret)
-
-
-def test_production_accepts_a_secret_exactly_at_the_length_floor():
-    s = _prod(JWT_SECRET_KEY="s" * 32)
-    assert len(s.JWT_SECRET_KEY) == 32
+def test_legacy_jwt_secret_is_optional_under_rs256_jwks():
+    settings = _prod(JWT_SECRET_KEY=None)
+    assert settings.JWT_ALGORITHM == "RS256"
+    assert settings.JWT_SECRET_KEY is None
 
 
 def test_production_rejects_wildcard_cors_origins_with_credentials():
@@ -155,7 +129,7 @@ def test_module_level_settings_carries_the_gateway_defaults():
 
     assert settings.SERVICE_NAME == "Api Gateway"
     assert settings.SERVER_PORT == 8000
-    assert settings.JWT_ALGORITHM == "HS256"
+    assert settings.JWT_ALGORITHM == "RS256"
     assert settings.JWT_EXPIRATION_MINUTES == 15
     assert settings.MAX_DECOMPRESSION_RATIO == 10
     assert settings.TRUST_PROXY is False
