@@ -221,6 +221,8 @@ class ContentService:
         """Update content."""
         try:
             update_data = request.model_dump(exclude_unset=True, exclude={"genre_ids"})
+            if "release_date" in update_data:
+                update_data["release_date"] = _db_datetime(update_data["release_date"])
             content = await self.content_repo.update(content_id, **update_data)
             if content is None:
                 await self.content_repo.rollback()
@@ -249,11 +251,9 @@ class ContentService:
         waiting for a reindex (#227).
         """
         try:
-            from datetime import datetime
-
             update_data = {"status": ContentStatus(request.status)}
             if request.status == "published":
-                update_data["published_at"] = datetime.utcnow()  # type: ignore[assignment]
+                update_data["published_at"] = datetime.now(UTC).replace(tzinfo=None)
 
             content = await self.content_repo.update(content_id, **update_data)
             await self.content_repo.commit()
