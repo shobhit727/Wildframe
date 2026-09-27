@@ -24,6 +24,8 @@ export function VideoPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<unknown>(null);
   const cancelledRef = useRef(false);
+  // Prevent repeated timeupdate events in the same 30-second target second from issuing duplicate PATCHes.
+  const lastPersistedSecondRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -124,7 +126,10 @@ export function VideoPlayer({
     const t = videoRef.current.currentTime;
     setCurrentTime(t);
 
-    if (Math.floor(t) % 30 === 0 && Math.floor(t) > 0) {
+    const second = Math.floor(t);
+    if (second > 0 && second % 30 === 0 && lastPersistedSecondRef.current !== second) {
+      // Record the target before awaiting the request so buffering/scrubbing cannot amplify writes.
+      lastPersistedSecondRef.current = second;
       apiClient.updatePlaybackPosition(sessionId, t).catch(() => {});
     }
   };
