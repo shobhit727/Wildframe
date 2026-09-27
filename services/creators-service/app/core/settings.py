@@ -65,6 +65,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     POOL_RATE: float = 0.15
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod
