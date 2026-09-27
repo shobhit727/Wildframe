@@ -129,6 +129,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     RATE_LIMIT_CONCURRENCY_DEFAULT: int = 20
     TRUST_PROXY: bool = False
     TRUSTED_PROXIES: str = ""
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod

@@ -182,11 +182,47 @@ def create_app() -> FastAPI:
             )
         return payload
 
+    # Gate /metrics behind admin token (#469)
+    #
+    # This route is registered *before* include_router() below on purpose. The
+    # gateway router ends in a catch-all "/{service:path}" proxy route, and
+    # Starlette matches in registration order, so a /metrics route added after
+    # the router is unreachable: the catch-all claims it and returns
+    # 404 "Service not found". That is also why the SDK's public /metrics route
+    # never worked here, and why the guard has to be declared up here rather
+    # than copied from the domain services where the router has no catch-all.
+    from fastapi import Depends, Header
+
+    async def require_metrics_token(
+        authorization: str | None = Header(default=None, alias="Authorization"),
+    ) -> None:
+        if settings.ENVIRONMENT == "production":
+            expected = (
+                f"Bearer {settings.METRICS_TOKEN}"
+                if hasattr(settings, "METRICS_TOKEN") and settings.METRICS_TOKEN
+                else None
+            )
+            if expected is None or authorization != expected:
+                raise HTTPException(status_code=401, detail="Unauthorized")
+
+    @app.get("/metrics", dependencies=[Depends(require_metrics_token)])
+    async def gated_metrics():
+        from prometheus_client import generate_latest
+
+        return Response(content=generate_latest(), media_type="text/plain")
+
     # Include gateway routes
     app.include_router(gateway_router)
 
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).
-    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
+    # register_metrics=False: the token-gated /metrics route above owns the
+    # path, and the SDK's public route would shadow it.
+    wire_observability(
+        app,
+        service_name=settings.SERVICE_NAME,
+        log_level=settings.LOG_LEVEL,
+        register_metrics=False,
+    )
 
     # Middleware to track in-flight requests for graceful shutdown (#426)
     @app.middleware("http")
