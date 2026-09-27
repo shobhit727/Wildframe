@@ -158,7 +158,10 @@ build/
 Thumbs.db
 
 # Docker
-.dockerignore
+# NOTE: .dockerignore is deliberately NOT ignored here. It was, which left
+# the file untracked, so every CI runner and fresh clone built from a 2.7 GB
+# context (460 MB venv, 1.7 GB mypy cache, 837 MB node_modules, 816 MB
+# terraform providers) and hit "failed to extract layer".
 
 # Test coverage
 htmlcov/
