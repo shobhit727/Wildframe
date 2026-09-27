@@ -14,8 +14,10 @@ KAFKA_KEYSTORE="$CERT_DIR/kafka-keystore.pem"
 KAFKA_TRUSTSTORE="$CERT_DIR/kafka-truststore.pem"
 KAFKA_KEYSTORE_PW="$CERT_DIR/kafka_keystore_password"
 KAFKA_KEY_PW="$CERT_DIR/kafka_key_password"
+METRICS_TOKEN_FILE="$REPO_ROOT/infrastructure/prometheus/metrics_bearer_token"
 
 mkdir -p "$CERT_DIR"
+mkdir -p "$(dirname "$METRICS_TOKEN_FILE")"
 
 # cp-kafka reads the keystore and key passwords from FILES named by
 # KAFKA_SSL_KEYSTORE_CREDENTIALS / KAFKA_SSL_KEY_CREDENTIALS, bind-mounted from
@@ -66,6 +68,22 @@ build_kafka_keystore() {
   chmod 644 "$KAFKA_KEYSTORE" "$KAFKA_TRUSTSTORE"
 }
 
+# Prometheus reads the /metrics bearer token from a FILE (bearer_token_file),
+# while the seven services that gate /metrics read the same value from
+# METRICS_TOKEN in their environment. Compose interpolates both from one
+# variable, so this file and settings.METRICS_TOKEN cannot drift.
+#
+# It is written on every run, not derived from the certificate pair, so the
+# "already exists" path must call it too -- otherwise a checkout that already
+# has certs never gets a token and Prometheus silently 401s once
+# ENVIRONMENT=production. Dev-only default, matching the Kafka passwords
+# above; the file is gitignored and never committed.
+ensure_metrics_token() {
+  local token="${METRICS_TOKEN:-wildframe-metrics-dev}"
+  printf '%s' "$token" > "$METRICS_TOKEN_FILE"
+  chmod 644 "$METRICS_TOKEN_FILE"
+}
+
 if [[ -f "$KEY_FILE" && -f "$CRT_FILE" ]]; then
   echo "Dev certificates already exist at $CERT_DIR — skipping generation."
   # The Kafka bundle is derived from the base pair, so it is always rebuilt:
@@ -73,6 +91,7 @@ if [[ -f "$KEY_FILE" && -f "$CRT_FILE" ]]; then
   # requirement, instead of leaving the broker unable to load its keystore.
   ensure_kafka_passwords
   build_kafka_keystore
+  ensure_metrics_token
   echo "Refreshed the Kafka PEM keystore/truststore from the existing pair."
   echo "  $KEY_FILE"
   echo "  $CRT_FILE"
@@ -117,6 +136,7 @@ chmod 644 "$KEY_FILE" "$CRT_FILE"
 # Grafana consume the two base files separately, so neither can be reused as-is.
 ensure_kafka_passwords
 build_kafka_keystore
+ensure_metrics_token
 
 echo "Generated:"
 echo "  $KEY_FILE"

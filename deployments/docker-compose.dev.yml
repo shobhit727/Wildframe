@@ -286,6 +286,9 @@ services:
     image: prom/prometheus:latest
     volumes:
     - ../infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    # bearer_token_file for the /metrics guard. Generated + gitignored; the
+    # same value reaches the services as METRICS_TOKEN below.
+    - ../infrastructure/prometheus/metrics_bearer_token:/etc/prometheus/metrics_bearer_token:ro
     - prometheus_data:/prometheus
     command:
     - --config.file=/etc/prometheus/prometheus.yml
@@ -520,6 +523,9 @@ services:
       dockerfile: services/admin-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/admin_db
       EVENT_PUBLISHER: kafka
       DLQ_RETENTION_MS: '604800000'
@@ -750,6 +756,9 @@ services:
       dockerfile: services/recommendation-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/recommendation_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       CONTENT_SERVICE_URL: http://content-service:8000
@@ -788,6 +797,9 @@ services:
       dockerfile: services/billing-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/billing_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/7
@@ -855,6 +867,9 @@ services:
       dockerfile: services/analytics-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/analytics_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/8
@@ -891,6 +906,9 @@ services:
       dockerfile: services/notification-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/notification_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/9
@@ -1000,6 +1018,9 @@ services:
       dockerfile: services/uploads-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/uploads_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/13
@@ -1037,6 +1058,9 @@ services:
       dockerfile: services/media-pipeline/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/media_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/10
