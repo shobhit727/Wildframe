@@ -601,9 +601,6 @@ class MediaPipelineService:
                 if stage_name in done:
                     continue
 
-                # Circuit breaker check.
-                self._check_circuit_breaker(stage_name)
-
                 stage = self.registry.get(stage_name)
                 job.current_stage = stage_name  # type: ignore[assignment]
                 # Persist the (port-stripped) ctx so resume works mid-stage.
@@ -614,6 +611,10 @@ class MediaPipelineService:
                 await self._heartbeat_lease(job)
 
                 try:
+                    # Keep the breaker decision inside the stage error boundary.
+                    # An open breaker must fail + DLQ the job rather than escape
+                    # while the job is still RUNNING.
+                    self._check_circuit_breaker(stage_name)
                     ctx, stage_retry_time = await self._run_stage_with_retries(
                         job, stage, ctx, total_retry_time
                     )
