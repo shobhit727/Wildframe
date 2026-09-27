@@ -199,7 +199,7 @@ class EpisodeCreateRequest(BaseModel):
     description: str | None = None
     duration_minutes: int = Field(..., ge=1)
     thumbnail_url: str | None = None
-    release_date: datetime | None = None
+    release_date: NaiveUTCReleaseDate = None
     is_available: bool = True
 
 
@@ -210,7 +210,7 @@ class EpisodeUpdateRequest(BaseModel):
     description: str | None = None
     duration_minutes: int | None = Field(None, ge=1)
     thumbnail_url: str | None = None
-    release_date: datetime | None = None
+    release_date: NaiveUTCReleaseDate = None
     is_available: bool | None = None
 
 
@@ -221,7 +221,7 @@ class SeasonCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
     poster_url: str | None = None
-    release_date: datetime | None = None
+    release_date: NaiveUTCReleaseDate = None
 
 
 class SeasonUpdateRequest(BaseModel):
@@ -230,7 +230,7 @@ class SeasonUpdateRequest(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
     poster_url: str | None = None
-    release_date: datetime | None = None
+    release_date: NaiveUTCReleaseDate = None
 
 
 class ContentCreateRequest(BaseModel):
@@ -241,7 +241,7 @@ class ContentCreateRequest(BaseModel):
     # Bounded so one row cannot bloat catalog list responses (#629 family).
     description: str = Field(..., min_length=1, max_length=5000)
     content_type: str = Field(..., pattern="^(movie|series|documentary)$")
-    release_date: datetime | None = None
+    release_date: NaiveUTCReleaseDate = None
     duration_minutes: int | None = Field(None, ge=1)
     original_language: str = Field(default="en", max_length=10)
     country: str | None = None
@@ -269,7 +269,7 @@ class ContentUpdateRequest(BaseModel):
 
     title: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
-    release_date: datetime | None = None
+    release_date: NaiveUTCReleaseDate = None
     duration_minutes: int | None = Field(None, ge=1)
     country: str | None = None
     poster_url: str | None = None
