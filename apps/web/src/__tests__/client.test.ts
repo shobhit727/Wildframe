@@ -64,6 +64,12 @@ describe('normalizeContent', () => {
     expect(c.genres).toEqual(['sci-fi', 'action']);
   });
 
+  it('keeps audience score scales separate for stars and Match', () => {
+    const normalized = normalizeContent(movie);
+    expect(normalized.rating).toBe(8.7);
+    expect(normalized.matchPercentage).toBe(87);
+  });
+
   it('maps series content_type to show type', () => {
     const show = normalizeContent({ ...movie, content_type: 'show' });
     expect(show.type).toBe('show');
