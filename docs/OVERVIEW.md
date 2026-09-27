@@ -262,3 +262,10 @@ Use keyboard shortcut `Cmd/Ctrl + F` to search within any document.
 May 26, 2026
 
 For detailed information on any topic, refer to the specific documentation files listed above.
+
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
