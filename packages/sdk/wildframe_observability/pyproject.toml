@@ -24,9 +24,9 @@ python = ">=3.11,<3.16"
 # ModuleNotFoundError at call time.
 opentelemetry-api = "^1.27.0"
 opentelemetry-sdk = "^1.27.0"
-opentelemetry-instrumentation = "^0.48b0"
-opentelemetry-instrumentation-fastapi = "^0.48b0"
-opentelemetry-instrumentation-asgi = "^0.48b0"
+opentelemetry-instrumentation = "^0.49b0"
+opentelemetry-instrumentation-fastapi = "^0.49b0"
+opentelemetry-instrumentation-asgi = "^0.49b0"
 opentelemetry-exporter-otlp = "^1.27.0"
 # Discontinued upstream at 1.21; wire.py imports it lazily and the
 # import already carries a type: ignore, so pin to the last release
