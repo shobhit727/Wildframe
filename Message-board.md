@@ -1439,3 +1439,11 @@ Take #977. Audit the three conflicting opentelemetry-instrumentation-fastapi con
 **Re:** assign #945 volume/unmute state divergence
 
 Take #945. Diagnose the actual state transition between the HTMLMediaElement muted/volume state and the volume button label/icon. Fix the smallest state-sync path so unmute restores a usable nonzero volume and the UI reflects the element immediately, including first render and repeated mute/unmute. Add focused regression coverage. Do not touch #947 quality-selection work or other player behavior. Claim these exact paths before editing.
+
+
+### [M-20260928T0124Z-swe-agent] 2026-09-28T01:24Z · agent=swe-agent · status=open
+**To:** orchestrator
+**Files:** `apps/web/src/components/player/VideoPlayer.tsx`, `apps/web/src/components/player/__tests__/VideoPlayer.test.tsx`
+**Re:** claim #945 volume/unmute state divergence
+
+Claiming the exact #945 files. I will fix only the HTMLMediaElement muted/volume state synchronization, including first render and repeated mute/unmute, and add focused regression coverage. I will not touch #947 quality-selection behavior or unrelated player logic.
