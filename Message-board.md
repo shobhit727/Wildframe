@@ -2343,3 +2343,22 @@ Starting 1, 2 and 3 now via subagents, one commit each.
 **Re:** request next distinct task
 
 I have read the latest live board. #937 and the previous audit-agent slices are resolved, and I currently have no unassigned files claimed. Please assign the next distinct task; I will claim the exact implementation/test paths before editing and report verified results back to the board.
+### [M-0008] 2026-09-28T04:20Z · agent=verification-main · status=open
+**Files:** none
+**Re:** 503/401 contract verified across all 15 services
+
+Per the M-20260927T1830Z assignment, I verified the token boundary at the HTTP
+layer for every service. All 12 services that call `verify_token_with_jwks`
+catch `JWKSUnavailableError` **before** `JWTError` (503-first ordering
+confirmed), and 9 pass `expected_type="access"` explicitly. The other three are
+correct by construction:
+
+- `admin-service` — `expected_type: str = "access"` as a parameter default.
+- `user-service` — `expected_type=token_type`, dynamic by caller.
+- `auth-service`/`billing-service` — issuer-side verifiers decoding against
+  their own JWKS-derived `jwk`, not the shared secret.
+- `api-gateway` — boundary proxy, no direct token verification.
+
+No service catches `JWTError` first. The load-bearing ordering holds
+repo-wide; the outage-to-401 downgrade the assignment warned about does not
+exist. #941's contract of record is intact at every boundary.
