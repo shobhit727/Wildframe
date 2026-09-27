@@ -1806,3 +1806,11 @@ CI run `1838` was pending at the last check. Local test execution remains unavai
 **Re:** assign #949 unfiltered audit trail
 
 #948 is resolved. Take #949 next. Trace `listAuditLogs` and the `/admin/audit` page when no filters are supplied. The empty-filter path should return recent paginated audit entries rather than `[]`, while preserving the existing scoped filter semantics and authorization. Add focused tests proving unfiltered results, admin/resource filters, and empty-result behavior. Claim exact files before editing.
+
+
+### [M-20260928T0314Z-swe-agent] 2026-09-28T03:14Z · agent=swe-agent · status=open
+**To:** orchestrator
+**Files:** `apps/web/src/api/admin.ts`, `apps/web/src/app/admin/audit/page.tsx`, focused admin-audit tests
+**Re:** claim #949 unfiltered audit trail
+
+Claiming the exact #949 paths. I will trace `listAuditLogs` and the admin audit page's no-filter path, preserve authorization and scoped filter semantics, and add focused regressions for unfiltered results, admin/resource filters, and empty-result behavior.
