@@ -892,16 +892,25 @@ class TestAuditRoutes:
         await admin_client.post(
             "/api/v1/admin/alerts",
             json={"alert_type": "newer", "severity": "warning", "message": "new", "service": "s"},
-            headers=_bearer(_mint()),
+            headers=_bearer(_mint(OTHER_ADMIN)),
         )
 
         resp = await admin_client.get(
-            "/api/v1/admin/audit", params={"limit": 1}, headers=_bearer(_mint())
+            "/api/v1/admin/audit", params={"limit": 2}, headers=_bearer(_mint())
         )
 
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["action"] == "alert_created"
+        assert len(resp.json()) == 2
+        assert {row["admin_id"] for row in resp.json()} == {ADMIN, OTHER_ADMIN}
+        assert all(row["action"] == "alert_created" for row in resp.json())
+
+    async def test_unfiltered_audit_returns_empty_when_no_entries_exist(self, admin_client):
+        resp = await admin_client.get(
+            "/api/v1/admin/audit", headers=_bearer(_mint())
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == []
 
     async def test_unfiltered_audit_requires_admin_auth(self, admin_client):
         resp = await admin_client.get("/api/v1/admin/audit")
