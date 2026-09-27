@@ -35,3 +35,40 @@ Please include:
 ### Sensitive data
 
 Never include passwords, API keys, access tokens, private user data, production database contents, or other secrets in a report. Redact sensitive values from logs and proof-of-concept material before submitting them.
+
+---
+
+## Known issues (public, tracked)
+
+These are disclosed here because they are already public in the repository's own
+issue tracker. They are listed so an operator can assess exposure without
+reading 900+ issues.
+
+### Authentication bypass via legacy HS256 verification — #941
+
+**Status: open. Treat as a release blocker for any shared or production
+deployment.**
+
+auth-service signs **RS256** and publishes JWKS. Eight services still verify
+with the legacy path — inline `jwt.decode(token, settings.JWT_SECRET_KEY,
+algorithms=["HS256"])` — and the shared secret is committed to the repository.
+An attacker who has read the repo can mint an HS256 token carrying any `sub` and
+`role: "admin"`, and those services accept it. The same services also reject
+genuine RS256 tokens, so the split breaks legitimate authentication too.
+
+Affected: `analytics`, `creators`, `media-pipeline`, `notification`,
+`recommendation`, `search`, `uploads`, `content`. Using scheme A:
+`admin-service`, `streaming-service`.
+
+**Operator guidance until it is fixed:** do not expose this stack on an
+untrusted network, and prefer an environment that fails closed — an unset
+`JWT_SECRET_KEY` yields `503` (no authentication possible) rather than accepting
+the committed default. Do not rely on this as a mitigation; it is a stop-gap
+only. See `docs/ARCHITECTURE.md` → *Token Verification Schemes*.
+
+### Cleartext full-API listener in the dev stack — #975
+
+`infrastructure/caddy/Caddyfile` binds `http://:8080`, which serves the entire
+API without TLS on **every** interface. HSTS does not apply over plain HTTP.
+Dev-stack only, but it is the same network developers use real credentials on.
+
