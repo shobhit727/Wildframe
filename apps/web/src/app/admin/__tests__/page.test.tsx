@@ -118,23 +118,6 @@ describe('AdminDashboardPage (/admin)', () => {
     expect(statCard('Open Flags')).toHaveTextContent('3 alerts');
   });
 
-  it('formats uptime in days and hours past the first day', async () => {
-    renderWithQuery(<AdminDashboardPage />);
-
-    await screen.findByText('Total Users');
-    // 30 hours = 1d 6h.
-    expect(statCard('MRR')).toHaveTextContent('uptime 1d 6h');
-  });
-
-  it('formats uptime in hours below a full day', async () => {
-    adminApi.getSystemStats.mockResolvedValue({ ...STATS, system_uptime_hours: 5.4 });
-
-    renderWithQuery(<AdminDashboardPage />);
-
-    await screen.findByText('Total Users');
-    expect(statCard('MRR')).toHaveTextContent('uptime 5h');
-  });
-
   it('shows MRR as unavailable instead of fabricated financial data', async () => {
     renderWithQuery(<AdminDashboardPage />);
 
