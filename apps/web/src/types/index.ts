@@ -28,6 +28,8 @@ export interface Content {
   duration: number;
   releaseDate: string;
   rating: number;
+  /** Audience match percentage on the backend's 0-100 scale. */
+  matchPercentage: number;
   type: 'movie' | 'show';
   // Extra metadata surfaced by the detail page
   content_type?: string;
