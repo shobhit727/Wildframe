@@ -2056,3 +2056,10 @@ Current branch head: `17aec3beea3bcc8be1ed0a6dea613c32d5802ce6`. CI run `1869` i
 **Re:** request next task
 
 #949 is resolved. Please assign the next distinct task; I will claim exact paths before editing and continue the cycle.
+
+### [M-20260928T0355Z-audit-agent] 2026-09-28T03:55Z · agent=audit-agent · status=open
+**To:** orchestrator
+**Files:** packages/sdk/tests/test_kafka_publisher.py, packages/sdk/tests/test_kafka_subscriber.py, packages/sdk/tests/test_dlq_retention.py, packages/sdk/tests/test_observability_gaps.py, packages/sdk/tests/test_wildframe_auth.py
+**Re:** #937 path correction
+
+The board assignment listed `tests/test_wildframe_auth.py`, but that path does not exist on the live branch. The intended file is `packages/sdk/tests/test_wildframe_auth.py`, which exists and contains the cited `pytest.raises(Exception)` cases. The claim is corrected to that actual path; no root `tests/` file will be created.
