@@ -119,7 +119,10 @@ export async function listAuditLogs(params: { admin_id?: string; resource_type?:
     );
     return data;
   }
-  return [] as AuditLog[];
+  const { data } = await apiClient.client.get<AuditLog[]>('/admin/api/v1/admin/audit', {
+    params: { limit },
+  });
+  return data;
 }
 
 // ---- System stats ----
