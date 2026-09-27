@@ -101,3 +101,10 @@ PY
 - 481 / 482 cited SHAs resolve in git history (the 1 outlier is a PR-branch force-push artifact, not a missed closure).
 - CI green on the last run before this audit (`1239b51` → run `32574835607`, 54 / 54 jobs success).
 - Repository open-issue count: **0**.
+
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
