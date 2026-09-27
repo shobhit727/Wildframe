@@ -113,6 +113,15 @@ export function clearTokens(): void {
 
 export function normalizeContent(item: BackendContent): Content {
   const type = item.content_type === 'series' || item.content_type === 'show' ? 'show' : 'movie';
+
+  // The API's audience_score is 0-100; keep the UI's existing rating field at 0-10
+  // for star displays, and expose the original scale separately for Match labels.
+  const audienceScore = Math.min(100, Math.max(0, Number(item.audience_score) || 0));
+  const imdbRating = Math.min(10, Math.max(0, Number(item.imdb_rating) || 0));
+  const hasAudienceScore = audienceScore > 0;
+  const rating = hasAudienceScore ? audienceScore / 10 : imdbRating;
+  const matchPercentage = hasAudienceScore ? audienceScore : imdbRating * 10;
+
   return {
     id: item.id,
     title: item.title,
@@ -123,7 +132,8 @@ export function normalizeContent(item: BackendContent): Content {
     backdrop: item.backdrop_url || item.poster_url || '',
     duration: item.duration_minutes || 0,
     releaseDate: item.release_date || '',
-    rating: item.audience_score || item.imdb_rating || 0,
+    rating,
+    matchPercentage,
     type: type as Content['type'],
     content_type: item.content_type,
     maturityRating: item.content_rating || undefined,
