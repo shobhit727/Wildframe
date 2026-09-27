@@ -544,14 +544,19 @@ class TestFetchJwks:
 class TestGetCachedJwks:
     @pytest.fixture
     def counted(self, monkeypatch):
-        """Patch fetch_jwks with a call counter; returns the counter dict."""
+        """Patch fetch_jwks with a call counter; returns the counter list.
+
+        The stubbed documents carry ``kty`` because ``get_cached_jwks`` validates
+        the shape before caching (a malformed body must never become the cached
+        value -- see ``TestJwksValidation``).
+        """
         import wildframe_auth.verifier as mod
 
         calls: list[str] = []
 
         async def _fake(url: str) -> dict:
             calls.append(url)
-            return {"keys": [{"kid": f"k{len(calls)}"}]}
+            return {"keys": [{"kty": "RSA", "kid": f"k{len(calls)}"}]}
 
         monkeypatch.setattr(mod, "fetch_jwks", _fake)
         return calls
@@ -559,7 +564,7 @@ class TestGetCachedJwks:
     @pytest.mark.asyncio
     async def test_first_call_misses_and_fetches(self, counted):
         out = await get_cached_jwks("https://auth.test/jwks.json")
-        assert out == {"keys": [{"kid": "k1"}]}
+        assert out == {"keys": [{"kty": "RSA", "kid": "k1"}]}
         assert counted == ["https://auth.test/jwks.json"]
 
     @pytest.mark.asyncio
@@ -583,9 +588,9 @@ class TestGetCachedJwks:
 
     @pytest.mark.asyncio
     async def test_shorter_ttl_does_not_shorten_an_existing_entry(self, counted):
-        """FINDING (verifier.py:89-98): ``ttl`` is only read when *storing*
-        the expiry, never when checking it, so passing a shorter/zero ttl for
-        an already-cached URL is ignored. Pinned as-is.
+        """``ttl`` is only read when *storing* the expiry, never when checking
+        it, so passing a shorter/zero ttl for an already-cached URL is ignored.
+        Pinned as-is.
         """
         await get_cached_jwks("https://auth.test/jwks.json", ttl=300)
         await get_cached_jwks("https://auth.test/jwks.json", ttl=0)
@@ -618,7 +623,7 @@ class TestGetCachedJwks:
             attempts["n"] += 1
             if attempts["n"] == 1:
                 raise OSError("jwks endpoint unreachable")
-            return {"keys": [{"kid": "recovered"}]}
+            return {"keys": [{"kty": "RSA", "kid": "recovered"}]}
 
         monkeypatch.setattr(mod, "fetch_jwks", _flaky)
 
@@ -627,7 +632,7 @@ class TestGetCachedJwks:
 
         # Nothing was cached, so the next attempt really hits the network again.
         assert await get_cached_jwks("https://auth.test/jwks.json") == {
-            "keys": [{"kid": "recovered"}]
+            "keys": [{"kty": "RSA", "kid": "recovered"}]
         }
         assert attempts["n"] == 2
 
@@ -641,7 +646,7 @@ class TestGetCachedJwks:
         monkeypatch.setattr(mod, "fetch_jwks", _down)
         with pytest.raises(OSError, match="unreachable"):
             await get_cached_jwks("https://auth.test/jwks.json")
-        assert mod._jwks_cache is None
+        assert mod._jwks_cache == {}
 
     @pytest.mark.asyncio
     async def test_end_to_end_cached_jwks_verifies_a_token(self, monkeypatch, kp):
@@ -682,7 +687,7 @@ class TestClearJwksCache:
 
         async def _fetch(url: str) -> dict:
             calls["n"] += 1
-            return {"keys": [{"kid": f"k{calls['n']}"}]}
+            return {"keys": [{"kty": "RSA", "kid": f"k{calls['n']}"}]}
 
         monkeypatch.setattr(mod, "fetch_jwks", _fetch)
 
@@ -697,27 +702,37 @@ class TestClearJwksCache:
         assert calls["n"] == 2
 
     @pytest.mark.asyncio
-    async def test_clear_resets_all_three_cache_slots(self, monkeypatch):
+    async def test_clear_empties_every_cache_slot(self, monkeypatch):
+        """The cache is keyed by URL, so ``clear_jwks_cache`` must empty the
+        document map, the expiries, the generations, the per-URL locks, the
+        forced-refetch stamps and the unknown-kid bookkeeping together."""
         import wildframe_auth.verifier as mod
 
         async def _fetch(url: str) -> dict:
-            return {"keys": []}
+            return {"keys": [{"kty": "RSA"}]}
 
         monkeypatch.setattr(mod, "fetch_jwks", _fetch)
-        await get_cached_jwks("https://auth.test/jwks.json", ttl=10_000)
-        assert mod._jwks_cache is not None
-        assert mod._jwks_cache_expiry > 0
-        assert mod._jwks_cache_url == "https://auth.test/jwks.json"
+        await get_cached_jwks("https://auth.test/a.json", ttl=10_000)
+        await get_cached_jwks("https://auth.test/b.json", ttl=10_000)
+        mod._jwks_forced_at["https://auth.test/a.json"] = 1.0
+        mod._unknown_kids["https://auth.test/a.json"] = {"kid-x": time.time() + 60}
+
+        assert mod._jwks_cache and mod._jwks_cache_expiry and mod._jwks_cache_generation
+        assert mod._jwks_cache_locks
+        assert all(expiry > 0 for expiry in mod._jwks_cache_expiry.values())
 
         clear_jwks_cache()
 
-        assert mod._jwks_cache is None
-        assert mod._jwks_cache_expiry == 0
-        assert mod._jwks_cache_url is None
+        assert mod._jwks_cache == {}
+        assert mod._jwks_cache_expiry == {}
+        assert mod._jwks_cache_generation == {}
+        assert mod._jwks_cache_locks == {}
+        assert mod._jwks_forced_at == {}
+        assert mod._unknown_kids == {}
 
     def test_clear_is_idempotent(self):
         clear_jwks_cache()
         clear_jwks_cache()
         import wildframe_auth.verifier as mod
 
-        assert mod._jwks_cache is None
+        assert mod._jwks_cache == {}

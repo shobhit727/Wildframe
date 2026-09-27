@@ -18,6 +18,7 @@ mismatch cannot be silently forgotten.
 
 from __future__ import annotations
 
+import logging
 import ssl
 from typing import Any
 
@@ -26,6 +27,7 @@ import pytest
 from wildframe_events.dlq_retention import (
     DLQ_RETENTION_MS,
     DLQ_SEGMENT_MS,
+    _alter_configs_refusal,
     apply_dlq_retention,
 )
 from wildframe_events.topics import all_dlq_topics
@@ -35,11 +37,22 @@ from wildframe_events.topics import all_dlq_topics
 import aiokafka.admin as _real_admin  # noqa: E402
 import aiokafka.admin.config_resource as _real_config_resource_module  # noqa: E402
 import aiokafka as _real_aiokafka  # noqa: E402
+from aiokafka.protocol.admin import AlterConfigsResponse_v0  # noqa: E402
+
+# The real, unpatched enum. Production builds real ``ConfigResource`` objects, so
+# the resource scope must be asserted against aiokafka's own enum, not a local
+# stand-in that reifies an API which no longer exists.
+ConfigResourceType = _real_config_resource_module.ConfigResourceType
 
 _REAL_ADMIN_CLIENT = _real_admin.AIOKafkaAdminClient
 _REAL_NEW_TOPIC = _real_admin.NewTopic
 _REAL_CONFIG_RESOURCE = _real_config_resource_module.ConfigResource
 _REAL_PRODUCER = _real_aiokafka.AIOKafkaProducer
+
+#: Kafka's ``TOPIC_AUTHORIZATION_FAILED`` — an ACL denial, not a timeout.
+TOPIC_AUTHORIZATION_FAILED = 29
+#: ``ConfigResourceType.TOPIC``, as the wire protocol encodes it.
+_RESOURCE_TYPE_TOPIC = 2
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +76,9 @@ class FakeAdmin:
     list_topics_result: Any = None
     #: ``alter_configs(resource)`` raises this, per topic name, when set.
     alter_fail_for: set[str] = set()
+    #: ``alter_configs(resource)`` answers with a non-zero per-resource error
+    #: code for these topics, as the broker does on an ACL denial.
+    alter_error_for: dict[str, tuple[int, str | None]] = {}
     #: ``start()`` raises this.
     start_error: Exception | None = None
     #: ``list_topics()`` raises this.
@@ -90,17 +106,37 @@ class FakeAdmin:
         if type(self).list_error is not None:
             raise type(self).list_error
         result = type(self).list_topics_result
-        return _TopicsResult(list(result)) if result is not None else _TopicsResult([])
+        # aiokafka 0.14.0 returns a plain list[str]; it has no ``.topics``.
+        return list(result) if result is not None else []
 
     async def create_topics(self, new_topics: list[Any]) -> None:
         if type(self).create_error is not None:
             raise type(self).create_error
         self.created.extend(new_topics)
 
-    async def alter_configs(self, resource: Any) -> None:
-        if getattr(resource, "name", None) in type(self).alter_fail_for:
-            raise RuntimeError(f"alter_configs refused for {resource.name}")
+    async def alter_configs(self, config_resources: list[Any]) -> Any:
+        """Return the real ``AlterConfigsResponse`` aiokafka would return.
+
+        aiokafka 0.14.0 iterates its argument, so this takes a *list* of
+        resources. The body carries the outcome per resource, and a broker
+        error code in it does **not** raise -- which is precisely why the caller
+        has to read the response to know whether the topic was configured.
+        """
+        resources = list(config_resources)
+        if len(resources) != 1:
+            raise AssertionError(
+                f"alter_configs takes a list; got {len(resources)} resources"
+            )
+        resource = resources[0]
+        name = getattr(resource, "name", None)
+        if name in type(self).alter_fail_for:
+            raise RuntimeError(f"alter_configs refused for {name}")
         self.altered.append(resource)
+        error_code, error_message = type(self).alter_error_for.get(name, (0, None))
+        return AlterConfigsResponse_v0(
+            throttle_time_ms=0,
+            resources=[(error_code, error_message, _RESOURCE_TYPE_TOPIC, name)],
+        )
 
     async def close(self) -> None:
         self.closed += 1
@@ -146,29 +182,24 @@ class LegacyNewTopic:
 
 
 class FakeConfigResource:
-    """Stand-in exposing the ``Type.TOPIC`` / ``set_config`` surface the code uses."""
+    """Removed.
 
-    class Type:
-        TOPIC = 2
-        GROUP = 3
-
-    def __init__(self, resource_type: int, name: str) -> None:
-        self.resource_type = resource_type
-        self.name = name
-        self.configs: dict[str, str] = {}
-
-    def set_config(self, key: str, value: str) -> None:
-        self.configs[key] = value
+    This stand-in used to reimplement ``Type.TOPIC`` and ``set_config`` — an API
+    that does not exist in aiokafka 0.14.0. Because it was patched over the real
+    ``ConfigResource``, every test passed while production raised
+    ``AttributeError`` on the first call. The real class is now used unmocked;
+    ``test_production_builds_a_real_topic_scoped_config_resource`` pins that.
+    """
 
 
 @pytest.fixture(autouse=True)
 def _reset(monkeypatch):
     import aiokafka.admin
-    import aiokafka.admin.config_resource
 
     FakeAdmin.instances = []
     FakeAdmin.list_topics_result = None
     FakeAdmin.alter_fail_for = set()
+    FakeAdmin.alter_error_for = {}
     FakeAdmin.start_error = None
     FakeAdmin.list_error = None
     FakeAdmin.create_error = None
@@ -176,7 +207,9 @@ def _reset(monkeypatch):
 
     monkeypatch.setattr(aiokafka.admin, "AIOKafkaAdminClient", FakeAdmin)
     monkeypatch.setattr(aiokafka.admin, "NewTopic", FakeNewTopic)
-    monkeypatch.setattr(aiokafka.admin.config_resource, "ConfigResource", FakeConfigResource)
+    # NOTE: aiokafka.admin.config_resource.ConfigResource is deliberately NOT
+    # patched. Production constructs the real class, so the real class's
+    # constructor signature is what the tests exercise.
 
     for var in (
         "KAFKA_SECURITY_PROTOCOL",
@@ -256,7 +289,7 @@ class TestRetentionAppliedToExistingTopics:
                 "retention.ms": str(DLQ_RETENTION_MS),
                 "segment.ms": str(DLQ_SEGMENT_MS),
             }
-            assert resource.resource_type == FakeConfigResource.Type.TOPIC
+            assert resource.resource_type == ConfigResourceType.TOPIC
 
     @pytest.mark.asyncio
     async def test_created_topics_are_not_also_altered(self):
@@ -387,6 +420,25 @@ class TestFailureHandling:
         assert any("could not set retention on" in r.getMessage() for r in caplog.records)
 
     @pytest.mark.asyncio
+    async def test_a_per_topic_failure_carries_its_traceback(self, caplog):
+        """An ACL denial and a network timeout both log "could not set
+        retention"; without ``exc_info`` the two are indistinguishable, which
+        is the failure-with-no-diagnostic this file has a history of."""
+        dlqs = sorted(all_dlq_topics())
+        configure_existing(*dlqs)
+        FakeAdmin.alter_fail_for = {dlqs[0]}
+        with caplog.at_level(logging.WARNING, logger="wildframe_events.dlq_retention"):
+            count = await apply_dlq_retention("kafka:9092", "billing")
+
+        assert count == len(dlqs) - 1
+        warnings = [r for r in caplog.records if "could not set retention" in r.getMessage()]
+        assert len(warnings) == 1
+        assert warnings[0].exc_info is not None
+        assert warnings[0].exc_info[0] is RuntimeError
+        # The reason itself is recoverable from the log, not just the type.
+        assert "alter_configs refused" in caplog.text
+
+    @pytest.mark.asyncio
     async def test_start_failure_is_swallowed_and_still_closes(self, caplog):
         import logging
 
@@ -429,6 +481,136 @@ class TestFailureHandling:
         FakeAdmin.close_error = RuntimeError("close timed out")
         count = await apply_dlq_retention("kafka:9092", "billing")
         assert count == len(all_dlq_topics())
+
+
+# ---------------------------------------------------------------------------
+# alter_configs' return value: a non-raising call is not a successful one
+# ---------------------------------------------------------------------------
+
+
+class TestAlterConfigsResponseIsInspected:
+    @pytest.mark.asyncio
+    async def test_a_broker_error_code_is_not_counted_as_configured(self, caplog):
+        """aiokafka 0.14.0 does not raise on a broker error code in the body,
+        so the pre-fix ``configured += 1`` reported a topic as configured when
+        the broker had actually refused it."""
+        dlqs = sorted(all_dlq_topics())
+        configure_existing(*dlqs)
+        FakeAdmin.alter_error_for = {
+            dlqs[0]: (TOPIC_AUTHORIZATION_FAILED, "TOPIC_AUTHORIZATION_FAILED")
+        }
+        with caplog.at_level(logging.WARNING, logger="wildframe_events.dlq_retention"):
+            count = await apply_dlq_retention("kafka:9092", "billing")
+
+        assert count == len(dlqs) - 1, "a refused topic must not be counted"
+        refusals = [r for r in caplog.records if "broker refused retention" in r.getMessage()]
+        assert len(refusals) == 1
+        assert dlqs[0] in refusals[0].getMessage()
+        assert f"error_code={TOPIC_AUTHORIZATION_FAILED}" in refusals[0].getMessage()
+        assert "TOPIC_AUTHORIZATION_FAILED" in refusals[0].getMessage()
+
+    @pytest.mark.asyncio
+    async def test_every_refused_topic_is_reported_and_uncounted(self, caplog):
+        dlqs = sorted(all_dlq_topics())
+        configure_existing(*dlqs)
+        FakeAdmin.alter_error_for = {
+            topic: (TOPIC_AUTHORIZATION_FAILED, "TOPIC_AUTHORIZATION_FAILED")
+            for topic in dlqs[:3]
+        }
+        with caplog.at_level(logging.WARNING, logger="wildframe_events.dlq_retention"):
+            count = await apply_dlq_retention("kafka:9092", "billing")
+
+        assert count == len(dlqs) - 3
+        # Every topic was still attempted: retention enforcement is best-effort
+        # per topic, and one ACL denial must not stop the rest.
+        assert [r.name for r in FakeAdmin.instances[0].altered] == dlqs
+        assert len(
+            [r for r in caplog.records if "broker refused retention" in r.getMessage()]
+        ) == 3
+
+    @pytest.mark.asyncio
+    async def test_a_successful_response_is_counted_and_silent(self, caplog):
+        dlqs = sorted(all_dlq_topics())
+        configure_existing(*dlqs)
+        with caplog.at_level(logging.WARNING, logger="wildframe_events.dlq_retention"):
+            count = await apply_dlq_retention("kafka:9092", "billing")
+
+        assert count == len(dlqs)
+        assert not [r for r in caplog.records if "refused" in r.getMessage()]
+        assert not [r for r in caplog.records if "could not set retention" in r.getMessage()]
+
+    @pytest.mark.asyncio
+    async def test_a_refusal_is_not_reported_as_an_exception(self, caplog):
+        """The broker refused; nothing raised, so there is no traceback to log.
+        The diagnostic is the code and message the broker sent."""
+        dlqs = sorted(all_dlq_topics())
+        configure_existing(*dlqs)
+        FakeAdmin.alter_error_for = {dlqs[0]: (TOPIC_AUTHORIZATION_FAILED, None)}
+        with caplog.at_level(logging.WARNING, logger="wildframe_events.dlq_retention"):
+            await apply_dlq_retention("kafka:9092", "billing")
+
+        refusals = [r for r in caplog.records if "broker refused retention" in r.getMessage()]
+        assert len(refusals) == 1
+        assert refusals[0].exc_info is None
+        assert "error_message=None" in refusals[0].getMessage()
+
+
+class TestAlterConfigsRefusalParsing:
+    """``_alter_configs_refusal`` against the real aiokafka response object."""
+
+    def test_no_error_code_means_no_refusal(self):
+        ok = AlterConfigsResponse_v0(
+            throttle_time_ms=0,
+            resources=[(0, None, _RESOURCE_TYPE_TOPIC, "billing.dlq")],
+        )
+        assert _alter_configs_refusal(ok) is None
+        assert _alter_configs_refusal([ok]) is None  # real aiokafka returns a list
+
+    def test_a_non_zero_code_is_reported_with_its_message(self):
+        denied = AlterConfigsResponse_v0(
+            throttle_time_ms=0,
+            resources=[
+                (TOPIC_AUTHORIZATION_FAILED, "TOPIC_AUTHORIZATION_FAILED", 2, "billing.dlq")
+            ],
+        )
+        refusal = _alter_configs_refusal([denied])
+        assert refusal is not None
+        assert f"error_code={TOPIC_AUTHORIZATION_FAILED}" in refusal
+        assert "TOPIC_AUTHORIZATION_FAILED" in refusal
+
+    def test_the_first_refusal_wins(self):
+        reply = AlterConfigsResponse_v0(
+            throttle_time_ms=0,
+            resources=[(0, None, 2, "ok.dlq"), (42, "InvalidRequest", 2, "bad.dlq")],
+        )
+        assert "error_code=42" in _alter_configs_refusal([reply])
+
+    def test_an_error_code_without_a_message_is_still_caught(self):
+        short = AlterConfigsResponse_v0(
+            throttle_time_ms=0, resources=[(29, None, 2, "billing.dlq")]
+        )
+        assert "error_code=29" in _alter_configs_refusal(short)
+
+    def test_a_missing_reply_is_not_a_refusal(self):
+        assert _alter_configs_refusal(None) is None
+
+    def test_a_reply_without_resources_is_not_a_refusal(self):
+        class Bare:
+            pass
+
+        assert _alter_configs_refusal([Bare()]) is None
+
+    def test_an_unexpected_resource_shape_is_ignored(self):
+        class Odd:
+            resources = [None, (), "not-a-tuple"]
+
+        assert _alter_configs_refusal(Odd()) is None
+
+    def test_a_bare_error_code_tuple_is_understood(self):
+        class Odd:
+            resources = [(29, "denied")]
+
+        assert "error_code=29" in _alter_configs_refusal(Odd())
 
 
 # ---------------------------------------------------------------------------
