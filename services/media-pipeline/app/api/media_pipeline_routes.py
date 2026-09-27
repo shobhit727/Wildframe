@@ -13,7 +13,8 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
-from jose import jwt
+from jose import JWTError, jwt
+from wildframe_auth.verifier import get_cached_jwks, verify_token
 from jose.exceptions import JWTError
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
