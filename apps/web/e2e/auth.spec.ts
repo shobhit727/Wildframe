@@ -24,6 +24,7 @@ const PROTECTED_ROUTES = [
   { path: '/my-list', name: 'my list' },
   { path: '/account', name: 'account' },
   { path: '/billing', name: 'billing' },
+  { path: '/creator', name: 'creator' },
 ];
 
 test.describe('Sign in — /login', () => {

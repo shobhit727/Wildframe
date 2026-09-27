@@ -1,15 +1,16 @@
 /**
  * Creator workspace — `/creator`.
  *
- * Note on access control: `/creator` is absent from the `protectedRoutes`
- * array in `src/proxy.ts`, so unlike `/browse` it renders for an anonymous
- * visitor and exposes the full catalog. See the bug report.
+ * The creator catalogue is protected at the same request boundary as the
+ * viewer catalogue, so anonymous navigation must redirect before page content
+ * is rendered.
  */
 import {
   test,
   expect,
+  anonymous,
   signedIn,
-  mockGateway,
+  expectRedirectedToLogin,
   MOVIE_ID,
   MOVIES,
   SHOWS,
@@ -17,9 +18,17 @@ import {
 
 const CATALOG_TOTAL = MOVIES.length + SHOWS.length;
 
-test.describe('/creator', () => {
+test.describe('/creator — gate', () => {
+  test('sends an anonymous visitor to the sign-in form', async ({ page }) => {
+    await anonymous(page);
+    await page.goto('/creator');
+    await expectRedirectedToLogin(page);
+  });
+});
+
+test.describe('/creator — workspace', () => {
   test('renders the studio header and roadmap sections', async ({ page }) => {
-    await mockGateway(page, {});
+    await signedIn(page);
     await page.goto('/creator');
 
     await expect(page.getByText('Creator Studio')).toBeVisible();
@@ -32,20 +41,18 @@ test.describe('/creator', () => {
     await expect(page.getByText('Read-only preview')).toBeVisible();
   });
 
-  test('is reachable without a session — unlike the gated catalog', async ({ page }) => {
-    await mockGateway(page, {});
+  test('does not render creator content before the session is established', async ({ page }) => {
+    await anonymous(page);
     await page.goto('/creator');
 
-    // No redirect, and the catalog is disclosed to an anonymous visitor.
-    await expect(page).toHaveURL(/\/creator$/);
-    await expect(
-      page.getByRole('heading', { level: 1, name: 'Your work, in one place.' })
-    ).toBeVisible();
-    await expect(page.locator(`a[href="/watch/${MOVIE_ID}"]`)).toHaveCount(1);
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Sign In' })).toBeVisible();
+    // A protected route must redirect before its catalogue can reach the browser.
+    await expect(page.getByText('Creator Studio')).toHaveCount(0);
   });
 
   test('counts the catalog by type', async ({ page }) => {
-    await mockGateway(page, {});
+    await signedIn(page);
     await page.goto('/creator');
 
     await expect(page.getByText('Published slate', { exact: true })).toBeVisible();
@@ -59,7 +66,7 @@ test.describe('/creator', () => {
   });
 
   test('links every slate card to its watch route', async ({ page }) => {
-    await mockGateway(page, {});
+    await signedIn(page);
     await page.goto('/creator');
 
     for (const movie of MOVIES) {
@@ -79,7 +86,7 @@ test.describe('/creator', () => {
   test('offers navigation to the platform and marks publishing as unavailable', async ({
     page,
   }) => {
-    await mockGateway(page, {});
+    await signedIn(page);
     await page.goto('/creator');
 
     await expect(page.getByRole('link', { name: 'View platform' })).toHaveAttribute(
@@ -91,7 +98,7 @@ test.describe('/creator', () => {
   });
 
   test('reports a catalog outage instead of rendering an empty grid', async ({ page }) => {
-    await mockGateway(page, { failAll: true });
+    await signedIn(page, { failAll: true });
     await page.goto('/creator');
 
     await expect(
@@ -111,7 +118,7 @@ test.describe('/creator', () => {
   });
 
   test('describes the three roadmap areas', async ({ page }) => {
-    await mockGateway(page, {});
+    await signedIn(page);
     await page.goto('/creator');
 
     await expect(page.getByRole('heading', { level: 3, name: 'Content' })).toBeVisible();
