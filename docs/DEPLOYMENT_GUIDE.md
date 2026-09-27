@@ -38,7 +38,7 @@ push main
 |---|---|---|
 | Lint | 1 (Backend) + 1 (Frontend) | ruff, black, mypy, ESLint, Prettier |
 | Unit Tests | 16 (15 services + SDK) | pytest, Vitest |
-| Integration | 1 | pytest + httpx (87 tests, ~12 min) |
+| Integration | 1 | pytest + httpx (current integration test suite, ~12 min) |
 | Contract | 1 | pytest (16 route drift tests) |
 | Frontend E2E | 1 | Playwright (9 tests: auth, content, subscription) |
 | Build | 17 (16 services + frontend) | Docker |
@@ -243,3 +243,9 @@ Before enabling automatic production deployment, verify:
 ## What this guide does not claim
 
 A green CI run proves that the repository's automated checks passed. It does **not** prove that AWS infrastructure, credentials, databases, external integrations, DNS, TLS, CDN, payments, DRM, or disaster recovery are production-ready.
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
