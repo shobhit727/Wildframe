@@ -83,18 +83,22 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     def validate_production_secrets(self) -> "Settings":
         if self.ENVIRONMENT in DEV_ENVIRONMENTS:
             return self
-        if self.DATABASE_URL is None:
+        if self.DATABASE_URL is None or not self.DATABASE_URL.strip():
             raise ValueError(
                 "DATABASE_URL must be set explicitly when ENVIRONMENT is not development."
             )
         if any(credential in self.DATABASE_URL for credential in KNOWN_INSECURE_DB_CREDENTIALS):
             raise ValueError("DATABASE_URL must not use known default credentials.")
-        if self.REDIS_URL is None:
+        if self.REDIS_URL is None or not self.REDIS_URL.strip():
             raise ValueError(
                 "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
             )
+        if not self.STRIPE_API_KEY.strip():
+            raise ValueError("STRIPE_API_KEY must be set explicitly in production")
         if self.STRIPE_API_KEY.startswith("sk_test_"):
             raise ValueError("STRIPE_API_KEY must be a live key in production")
+        if not self.STRIPE_WEBHOOK_SECRET.strip():
+            raise ValueError("STRIPE_WEBHOOK_SECRET must be set explicitly in production")
         if self.STRIPE_WEBHOOK_SECRET.startswith("whsec_default"):
             raise ValueError("STRIPE_WEBHOOK_SECRET must be set in production")
         return self
