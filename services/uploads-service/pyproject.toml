@@ -32,6 +32,7 @@ aiokafka = "^0.10.0"
 wildframe-compliance = {path = "../../packages/sdk/wildframe_compliance", develop = true}
 boto3 = "^1.29.0"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
+wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 
 [tool.poetry.group.dev.dependencies]
 boto3-stubs = {extras = ["s3"], version = ">=1.29,<2"}
