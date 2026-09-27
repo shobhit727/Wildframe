@@ -46,9 +46,7 @@ SERVICES_DIR = REPO / "services"
 #: the exact ``app.*`` import-shadowing hazard AGENTS.md §19 warns about -- passes
 #: a bare ``app/`` check and is then probed as if it were a service, landing in
 #: ``unprobeable`` and failing the run for a reason unrelated to the bypass.
-SERVICE_NAMES = sorted(
-    p.name for p in SERVICES_DIR.iterdir() if (p / "app" / "main.py").is_file()
-)
+SERVICE_NAMES = sorted(p.name for p in SERVICES_DIR.iterdir() if (p / "app" / "main.py").is_file())
 
 #: ``jwt.decode(<token>, <key>, ...)``. The key is the second argument, so the
 #: scan below inspects what actually lands there.
@@ -211,13 +209,18 @@ def _probe_service_settings(service: str) -> dict:
         timeout=180,
     )
     line = next((ln for ln in result.stdout.splitlines() if ln.startswith("{")), None)
-    if line is not None:
-        return json.loads(line)
-    import_error = f"no probe output; stderr={result.stderr.strip()[:300]}"
+    probed = json.loads(line) if line is not None else {"error": "probe produced no output"}
+    # The probe catches its own ImportError and still prints JSON, so an
+    # unimportable service arrives as {"error": ...} rather than as absent
+    # output. Falling back only when there is no line at all therefore never
+    # fired -- I made that mistake first and the gate stayed red for a reason
+    # that had nothing to do with the bypass.
+    if "error" not in probed:
+        return probed
     static = _static_jwt_algorithm(service)
     if static is not None:
         return {"algorithm": static, "jwks_url": None, "has_secret": None, "via": "ast"}
-    return {"error": import_error}
+    return {"error": probed["error"]}
 
 
 def test_no_service_declares_hs256_as_its_algorithm() -> None:
