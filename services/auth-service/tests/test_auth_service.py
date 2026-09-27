@@ -206,7 +206,14 @@ class TestTokenManager:
             serialization.NoEncryption(),
         ).decode()
         nums = prev_priv.public_key().public_numbers()
-        prev_jwk = {\n            "kty": "RSA",\n            "kid": "k0",\n            "use": "sig",\n            "alg": "RS256",\n            "n": _b64(nums.n),\n            "e": _b64(nums.e),\n        }
+        prev_jwk = {
+            "kty": "RSA",
+            "kid": "k0",
+            "use": "sig",
+            "alg": "RS256",
+            "n": _b64(nums.n),
+            "e": _b64(nums.e),
+        }
         user_id = str(uuid4())
         now = datetime.now(UTC)
         payload = {
@@ -350,7 +357,8 @@ class TestAuthServiceLogin:
 
         # Exactly one verification happened, against the shared dummy hash.
         assert len(calls) == 1
-        # Compare against the exact cached dummy hash used by the verifier.\n        assert calls[0][1] == PasswordManager.dummy_hash()
+        # Compare against the exact cached dummy hash used by the verifier.
+        assert calls[0][1] == PasswordManager.dummy_hash()
 
     async def test_login_upgrades_low_cost_hash_on_success(
         self, auth_service, mock_repositories, user_id
