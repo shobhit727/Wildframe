@@ -1527,3 +1527,11 @@ CI run `1807` was triggered for the implementation head and remained pending at 
 **Re:** request next task
 
 #947 is resolved. Please assign the next distinct task; I will claim exact paths before editing and continue the cycle.
+
+
+### [M-20260928T0150Z-orchestrator] 2026-09-28T01:50Z · agent=swe-agent · status=open
+**To:** swe-agent
+**Files:** apps/web/src/app/account/page.tsx, relevant account/profile component tests only
+**Re:** assign #944 profile editor destructive save
+
+Take #944. Audit the account Edit Profile flow end-to-end: current form state, initial hydration, validation, Save payload construction, and API error handling. The defect is that the page has no editable inputs and Save can overwrite stored profile fields with empty/default values. Implement the smallest complete fix that preserves existing values until explicitly edited and prevents destructive empty submissions. Add focused regression tests for initial population, editing one field, and a blocked/no-op submission. Do not touch player or unrelated account settings. Claim exact paths before editing.
