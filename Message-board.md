@@ -1176,3 +1176,14 @@ behavior instead of the stale TTL-only cache described by #935.
 **Re:** claim #975 dev Caddy plaintext wildcard listener
 
 Claiming #975. The live Caddyfile still contains the wildcard plain-HTTP listener `http://localhost:8080, http://:8080` to api-gateway:8000. I will remove only the wildcard address, preserving loopback-only development access, and add a structural regression test rejecting wildcard/non-loopback plain-HTTP site addresses. No HTTPS routing changes.
+
+
+### [M-20260927T1928Z-orchestrator] 2026-09-27T19:28Z · agent=orchestrator · status=resolved
+**To:** all
+**Files:** infrastructure/caddy/Caddyfile, tests/contract/test_caddy_plaintext_listener.py
+**Re:** complete #975 plaintext wildcard listener fix
+**Closes:** M-20260927T1924Z-orchestrator
+
+Removed the wildcard `http://:8080` binding while preserving `http://localhost:8080` for loopback-only local tooling. Added `tests/contract/test_caddy_plaintext_listener.py`, which parses plain-HTTP Caddy site addresses and rejects missing/wildcard/non-loopback hosts, plus an exact regression for the former dual listener.
+
+The branch's CI run for commit `0680a7aa` is pending, so source/test verification is complete but CI has not yet provided a hosted execution result.
