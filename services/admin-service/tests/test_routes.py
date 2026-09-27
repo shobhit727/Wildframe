@@ -933,40 +933,27 @@ class TestStatsRoute:
             await admin_client.get("/api/v1/admin/stats", headers=_bearer(_mint(role="user")))
         ).status_code == 403
 
-    async def test_stats_route_is_broken_upstream(self, admin_client):
-        """KNOWN BUG (reported, not fixed here).
+    async def test_stats_route_reports_the_counts_it_can_verify(self, admin_client):
+        """The endpoint answers 200 and nulls only the counts it cannot know.
 
-        ``get_system_stats`` returns ``total_users`` / ``active_users`` /
-        ``suspended_users`` as ``None`` because the route calls it with no
-        arguments, but ``SystemStatsResponse`` declares all three as ``int``.
-        FastAPI's response validation therefore fails and the endpoint answers
-        500 on every call. This test pins the *observed* behaviour so the bug
-        cannot silently change shape; it should be inverted when fixed.
+        It used to 500 on every call: the service returned null user totals
+        while ``SystemStatsResponse`` declared them ``int``, and FastAPI's
+        response validation rejected the payload. Both halves are fixed — the
+        schema allows null and the service counts its own tables.
         """
-        from fastapi.exceptions import ResponseValidationError
-        from pydantic import ValidationError
-
-        from app.schemas.admin import SystemStatsResponse
-
-        with pytest.raises(ValidationError):
-            SystemStatsResponse(
-                total_users=None,
-                active_users=None,
-                suspended_users=None,
-                flagged_content=0,
-                active_alerts=0,
-                system_uptime_hours=0.0,
-            )
-
-        # Driving the endpoint surfaces exactly that error; nothing coerces the
-        # three None counts into the int fields the response model demands.
-        with pytest.raises(ResponseValidationError) as exc:
-            await admin_client.get("/api/v1/admin/stats", headers=_bearer(_mint()))
-        fields = {str(e["loc"][-1]) for e in exc.value.errors()}
-        assert fields == {"total_users", "active_users", "suspended_users"}
+        resp = await admin_client.get("/api/v1/admin/stats", headers=_bearer(_mint()))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total_users"] is None
+        assert body["active_users"] is None
+        assert body["suspended_users"] == 0
+        assert body["flagged_content"] == 0
+        assert body["active_alerts"] == 0
+        assert body["system_uptime_hours"] >= 0
 
     async def test_stats_service_reports_none_for_the_unpopulated_counts(self, admin_client):
-        # The service half of the same bug: the counts are never supplied.
+        # The service half: only the two counts admin-service cannot know are
+        # null. Everything else is a real aggregate over admin_db.
         from app.services.admin import AdminService
 
         factory = DatabaseManager.session_factory
@@ -974,17 +961,26 @@ class TestStatsRoute:
             stats = await AdminService(session).get_system_stats()
         assert stats["total_users"] is None
         assert stats["active_users"] is None
-        assert stats["suspended_users"] is None
+        assert stats["suspended_users"] == 0
         assert stats["flagged_content"] == 0
         assert stats["active_alerts"] == 0
         assert stats["system_uptime_hours"] >= 0
 
-    async def test_stats_service_counts_supplied_totals(self, admin_client):
+    async def test_stats_service_counts_the_rows_it_actually_stored(self, admin_client):
+        # Counts come from the database, never from caller-supplied numbers:
+        # the route passes no arguments, so an injectable total would only ever
+        # be a number nobody counted.
         from app.services.admin import AdminService
 
         factory = DatabaseManager.session_factory
         async with factory() as session:
-            stats = await AdminService(session).get_system_stats(total_users=10, suspended_users=4)
-        assert stats["total_users"] == 10
-        assert stats["suspended_users"] == 4
-        assert stats["active_users"] == 6
+            service = AdminService(session)
+            for index in range(4):
+                status = "suspended" if index < 3 else "active"
+                await service.moderate_user(f"user-{index}", status, None, ADMIN, "127.0.0.1")
+                await service.flag_content(
+                    f"content-{index}", "movie", "policy", ADMIN, "127.0.0.1"
+                )
+            stats = await service.get_system_stats()
+        assert stats["suspended_users"] == 3
+        assert stats["flagged_content"] == 4

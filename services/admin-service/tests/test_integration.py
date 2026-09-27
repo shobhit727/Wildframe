@@ -324,12 +324,22 @@ class TestSystemStatsIntegration:
     """Integration tests for system statistics."""
 
     async def test_get_system_stats(self, admin_service, db_session):
-        """Test getting system statistics."""
-        stats = await admin_service.get_system_stats(total_users=1000, suspended_users=50)
+        """Test getting system statistics.
 
-        assert stats["total_users"] == 1000
-        assert stats["suspended_users"] == 50
-        assert stats["active_users"] == 950
-        assert "flagged_content" in stats
-        assert "active_alerts" in stats
-        assert "system_uptime_hours" in stats
+        The counts are SQL aggregates over admin_db. ``total_users`` /
+        ``active_users`` stay null because user-service owns the directory and
+        exposes no count endpoint — an invented zero would be worse.
+        """
+        await admin_service.moderate_user("user-1", "suspended", None, "admin-1", "127.0.0.1")
+        await admin_service.moderate_user("user-2", "active", None, "admin-1", "127.0.0.1")
+        await admin_service.flag_content("content-1", "movie", "policy", "mod-1", "127.0.0.1")
+        await admin_service.create_alert("high_cpu", "critical", "CPU 99%", "streaming-service")
+
+        stats = await admin_service.get_system_stats()
+
+        assert stats["suspended_users"] == 1
+        assert stats["flagged_content"] == 1
+        assert stats["active_alerts"] == 1
+        assert stats["total_users"] is None
+        assert stats["active_users"] is None
+        assert stats["system_uptime_hours"] >= 0
