@@ -1,3 +1,5 @@
+> **Historical document.** This file describes an earlier 12-service repository state and is retained for history. For the current repository, use `README.md`, `STATUS.md`, and `docs/INDEX.md`.
+
 # ✨ WORK COMPLETED - Ready to Test
 
 ## 🎯 Summary of What Was Done
