@@ -11,7 +11,7 @@
 
 ### 1. Navigate to Project
 ```bash
-cd /home/phoenix/Desktop/wildframe/apps/web
+cd ./apps/web
 ```
 
 ### 2. Install Dependencies
@@ -160,3 +160,10 @@ npm run test:e2e
 - Read [TEMPLATE_GUIDE.md](../TEMPLATE_GUIDE.md) in root
 - Check [QUICK_REFERENCE.md](../QUICK_REFERENCE.md) for quick lookup
 - See [Next.js Docs](https://nextjs.org/docs)
+
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408a` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
