@@ -272,7 +272,6 @@ async def test_complete_is_idempotent_guard():
     # No new event emitted.
 
 
-
 @pytest.mark.asyncio
 async def test_naive_db_expiry_is_treated_as_utc_for_register_and_complete():
     """A legacy naive DB timestamp must not trigger a naive/aware TypeError."""
