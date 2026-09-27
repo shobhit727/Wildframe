@@ -544,9 +544,10 @@ describe('playback progress reporting', () => {
     expect(apiMocks.updatePlaybackPosition).toHaveBeenCalledWith('s1', 30);
   });
 
-  it('does not re-persist a target second after scrubbing back into it', async () => {
-    // The deduplication must survive backward seeks so a boundary cannot be
-    // replayed by repeated scrub/timeupdate events.
+  it('re-persist a target second after scrubbing back into it', async () => {
+    // The deduplication is for repeated timeupdate events in the same second.
+    // After seeking to a different target second, returning to an earlier
+    // boundary is a new playback position that should be persisted again.
     renderPlayer();
 
     emitTimeUpdate(30.8);
@@ -554,9 +555,10 @@ describe('playback progress reporting', () => {
     emitTimeUpdate(30.2);
     emitTimeUpdate(30.7);
 
-    expect(apiMocks.updatePlaybackPosition).toHaveBeenCalledTimes(2);
+    expect(apiMocks.updatePlaybackPosition).toHaveBeenCalledTimes(3);
     expect(apiMocks.updatePlaybackPosition).toHaveBeenNthCalledWith(1, 's1', 30.8);
     expect(apiMocks.updatePlaybackPosition).toHaveBeenNthCalledWith(2, 's1', 60);
+    expect(apiMocks.updatePlaybackPosition).toHaveBeenNthCalledWith(3, 's1', 30.2);
   });
 });
 
