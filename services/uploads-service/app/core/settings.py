@@ -12,6 +12,7 @@ DEV_DEFAULTS = {
     "DATABASE_URL": "postgresql+asyncpg://postgres:password@localhost:5432/uploads_db",
     "REDIS_URL": "redis://localhost:6379",
     "KAFKA_BOOTSTRAP_SERVERS": "kafka:29092",
+    "JWT_SECRET_KEY": "dev-secret-key-change-in-production-min-32-bytes",
 }
 
 KNOWN_INSECURE_DB_CREDENTIALS = (
@@ -31,6 +32,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     DATABASE_URL: str | None = None
+    JWT_SECRET_KEY: str | None = None
     JWT_ALGORITHM: str = "RS256"
     JWT_EXPIRATION_MINUTES: int = 15
     JWT_ISSUER: str = "wildframe-auth"
@@ -104,6 +106,8 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
         if environment in DEV_ENVIRONMENTS:
             for key, value in DEV_DEFAULTS.items():
                 values.setdefault(key, value)
+            if environment == "test":
+                values.setdefault("JWT_ALGORITHM", "HS256")
         return values
 
     @model_validator(mode="after")
