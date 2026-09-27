@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.core.events import InMemoryEventPublisher, set_event_publisher
+from app.core.settings import settings
 from app.core.stages import Stage, StageRegistry, install_default_stages
 from app.models import (
     OutboxEventStatus,
@@ -266,6 +267,46 @@ async def test_retry_then_fail_emits_pipeline_failed_dlq():
     # A failure was logged for each attempt.
     logs = await service.log_repo.list_for_job(job.id)
     assert len([log for log in logs if log.status == PipelineStageStatus.FAILED]) == 3
+
+
+@pytest.mark.asyncio
+async def test_open_circuit_breaker_fails_job_once_and_emits_one_dlq():
+    reg = _fresh_registry()
+    reg.register(CountingStage("blocked", success_event="x"))
+    service = make_service(reg, max_attempts=3, backoff_base=0.0)
+
+    # Pre-open this stage's breaker so the guard itself raises before stage.run().
+    service._circuit_breaker["blocked"] = settings.PIPELINE_CIRCUIT_BREAKER_THRESHOLD
+    try:
+        job = await service.start_job(
+            content_id=uuid4(),
+            upload_session_id=uuid4(),
+            storage_key="uploads/x/clip.mp4",
+        )
+        job = await service.advance(job.id)
+
+        assert job.status == PipelineJobStatus.FAILED
+        assert job.current_stage == "blocked"
+        assert reg.get("blocked").calls == 0
+
+        logs = await service.log_repo.list_for_job(job.id)
+        failed_logs = [
+            log
+            for log in logs
+            if log.stage == "blocked" and log.status == PipelineStageStatus.FAILED
+        ]
+        assert len(failed_logs) == 1
+
+        await service.drain_outbox()
+        dlq = [
+            event
+            for event in service.publisher.sent
+            if event.topic == "content.pipeline.failed"
+        ]
+        assert len(dlq) == 1
+        assert dlq[0].payload["stage"] == "blocked"
+    finally:
+        service._circuit_breaker.pop("blocked", None)
 
 
 @pytest.mark.asyncio
