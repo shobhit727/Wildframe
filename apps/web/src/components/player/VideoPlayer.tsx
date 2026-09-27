@@ -31,6 +31,7 @@ export function VideoPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const lastNonZeroVolumeRef = useRef(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [quality, setQuality] = useState('auto');
   const [showControls, setShowControls] = useState(true);
@@ -153,7 +154,17 @@ export function VideoPlayer({
   const toggleMute = () => {
     if (!videoRef.current) return;
     const element = videoRef.current;
-    element.muted = !element.muted;
+    if (element.muted) {
+      // Restore a usable level before enabling audio when the slider is at zero.
+      if (element.volume === 0) {
+        const restoredVolume = lastNonZeroVolumeRef.current || 1;
+        element.volume = restoredVolume;
+        setVolume(restoredVolume);
+      }
+      element.muted = false;
+    } else {
+      element.muted = true;
+    }
     setIsMuted(element.muted);
   };
 
@@ -162,8 +173,11 @@ export function VideoPlayer({
     const element = videoRef.current;
     const v = Number(e.target.value);
     element.volume = v;
-    // Moving the slider above zero is an explicit request for audible playback,
-    // so keep the media element and button state synchronized.
+    if (v > 0) {
+      // Keep the last nonzero level for button-based restore.
+      lastNonZeroVolumeRef.current = v;
+    }
+    // Keep element and React state synchronized with the slider.
     element.muted = v === 0;
     setVolume(v);
     setIsMuted(element.muted);
