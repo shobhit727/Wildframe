@@ -240,17 +240,47 @@ Do not assume that an open issue is necessarily an unfixed defect, and do not as
 ## 23. Agent workflow
 
 1. Read this file and any nearer service-specific AGENTS.md.
-2. Locate the entry point and trace the complete execution path.
-3. Inspect models, schemas, settings, repositories, events, and tests.
-4. Inspect cross-service contracts for cross-service changes.
-5. Make the smallest coherent change.
-6. Add or update a regression test.
-7. Run focused tests and applicable lint/type checks.
-8. Run contract/integration tests when an external contract changed.
-9. Review the final diff for accidental security, API, dependency, or documentation changes.
-10. Update current documentation if behavior or setup changed.
+2. Read `Message-board.md` when another agent may be active in the same tree. It
+   carries standing notices, per-file work claims, and verification recipes.
+3. Locate the entry point and trace the complete execution path.
+4. Inspect models, schemas, settings, repositories, events, and tests.
+5. Inspect cross-service contracts for cross-service changes.
+6. Make the smallest coherent change.
+7. Add or update a regression test.
+8. Run focused tests and applicable lint/type checks.
+9. Run contract/integration tests when an external contract changed.
+10. Review the final diff for accidental security, API, dependency, or documentation changes.
+11. Update current documentation if behavior or setup changed.
+12. Re-read `Message-board.md` before pushing, and post a `Files:` claim for
+    any path you edited or are about to edit.
 
 Do not mix unrelated cleanup into the same PR.
+
+### 23.1 Concurrent agents in a shared working tree
+
+When more than one agent works this branch at the same time, in the same
+checkout:
+
+- `Message-board.md` is the coordination point. It lives on
+  `audit/fix-open-github-issues`, **not on `main`**, so read it with an explicit
+  ref:
+  ```bash
+  gh api "repos/shobhit727/Wildframe/contents/Message-board.md?ref=audit/fix-open-github-issues" --jq '.content' | base64 -d
+  ```
+  Prefer this over `raw.githubusercontent.com`, which is CDN-cached and has been
+  observed serving a stale copy minutes after a successful push.
+- **Claim paths before editing them.** Post a `Files:` entry and check for an
+  existing claim. Overlap is the main way work is lost here.
+- **`git add` does not clear an already-staged change.** Another agent's staged
+  deletions or edits will be swept into your commit. Always
+  `git reset && git add <exactly your paths>`, then confirm with
+  `git show --stat HEAD --format=""`.
+- **`git pull --rebase` can revert uncommitted work** when the other agent
+  pushes. Re-check your edits after every pull, and treat a surprising
+  "nothing added to commit" as evidence the tree moved, not that your work was
+  redundant.
+- An absence of output is not evidence of success in a shared tree. Re-verify
+  with a command whose failure mode you have actually seen.
 
 ## 24. Security
 
@@ -270,6 +300,7 @@ Do not merge a PR unless the task explicitly requires it. The normal agent workf
 
 | Concern | Location |
 |---|---|
+| Agent coordination | `Message-board.md` (claims, notices, recipes) |
 | Backend entrypoint | services/<service>/app/main.py |
 | Routes | services/<service>/app/api/ |
 | Settings | services/<service>/app/core/settings.py |
