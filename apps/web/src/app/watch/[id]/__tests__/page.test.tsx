@@ -107,16 +107,29 @@ describe('WatchPage (/watch/[id])', () => {
       expect(apiClient.startPlaybackSession).not.toHaveBeenCalled();
     });
 
-    it('keeps the visitor on a loading state rather than a sign-in prompt', async () => {
+    it('renders an explanatory sign-in prompt when signed out', async () => {
       useAuthStore.setState({ user: null, token: null, isAuthenticated: false });
 
       renderWithQuery(<WatchPage />);
 
-      // Reported as a bug: a signed-out visitor whose router push is a no-op
-      // (or who is bounced straight back) sits on this spinner indefinitely —
-      // there is no sign-in link or message anywhere in the view.
-      expect(await screen.findByText('Starting playback...')).toBeInTheDocument();
-      expect(screen.queryByText('Starting playback...')).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: 'Sign in to watch' })).toBeInTheDocument();
+      expect(screen.getByText('Sign in to start playback and access this title.')).toBeInTheDocument();
+
+      const signIn = screen.getByRole('link', { name: 'Sign in' });
+      expect(signIn).toHaveAttribute('href', '/login');
+      expect(screen.queryByText('Starting playback...')).toBeNull();
+    });
+
+    it('keeps the sign-in link usable when the redirect is a no-op', async () => {
+      useAuthStore.setState({ user: null, token: null, isAuthenticated: false });
+      push.mockImplementation(() => {});
+
+      renderWithQuery(<WatchPage />);
+
+      const signIn = await screen.findByRole('link', { name: 'Sign in' });
+      expect(signIn).toHaveAttribute('href', '/login');
+      expect(push).toHaveBeenCalledWith('/login');
+      expect(apiClient.startPlaybackSession).not.toHaveBeenCalled();
     });
   });
 
