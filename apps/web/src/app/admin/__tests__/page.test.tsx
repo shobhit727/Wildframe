@@ -135,6 +135,18 @@ describe('AdminDashboardPage (/admin)', () => {
     expect(statCard('MRR')).toHaveTextContent('uptime 5h');
   });
 
+  it('shows MRR as unavailable instead of fabricated financial data', async () => {
+    renderWithQuery(<AdminDashboardPage />);
+
+    await screen.findByText('Total Users');
+    const mrr = statCard('MRR');
+
+    expect(mrr).toHaveTextContent('Not available');
+    expect(mrr).toHaveTextContent('Not reported by admin stats');
+    expect(mrr).not.toHaveTextContent('$48,250');
+    expect(mrr).not.toHaveTextContent('6.8%');
+  });
+
   it('describes the traffic chart for screen readers', async () => {
     renderWithQuery(<AdminDashboardPage />);
 
