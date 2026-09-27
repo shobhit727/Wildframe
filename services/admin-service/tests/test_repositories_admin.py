@@ -540,6 +540,16 @@ class TestAdminAuditLogRepository:
             await session.delete(row)
             await session.flush()
 
+    async def test_list_recent_is_newest_first_and_offset(self, session):
+        repo = AdminAuditLogRepository(session)
+        for i in range(4):
+            await repo.create("admin-1", f"a{i}", "user", f"u-{i}", None, "10.0.0.1")
+        await session.commit()
+
+        rows = await repo.list_recent(limit=2, offset=1)
+
+        assert [r.action for r in rows] == ["a2", "a1"]
+
     async def test_list_by_admin_newest_first(self, session):
         repo = AdminAuditLogRepository(session)
         await repo.create("admin-1", "first", "user", "u-1", None, "10.0.0.1")
