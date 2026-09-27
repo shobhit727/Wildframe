@@ -26,9 +26,13 @@ async def get_redis_client() -> redis_async.Redis | None:
     """Lazily create the shared redis.asyncio client; fail-open if unavailable."""
     global _redis_client
     if _redis_client is None:
+        redis_url = settings.REDIS_URL
+        if redis_url is None:
+            logger.warning("Redis unavailable; recommendation cache disabled")
+            return _redis_client
         try:
             _redis_client = await redis_async.from_url(
-                settings.REDIS_URL,
+                redis_url,
                 encoding="utf-8",
                 decode_responses=True,
             )

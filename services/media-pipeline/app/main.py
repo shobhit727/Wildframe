@@ -184,15 +184,21 @@ def create_app() -> FastAPI:
         if not db_ok:
             overall = "not_ready"
 
-        try:
-            redis_client = await redis.from_url(settings.REDIS_URL)
-            await asyncio.wait_for(redis_client.ping(), timeout=2.0)
-            await redis_client.close()
-            checks["redis"] = "ok"
-        except Exception as e:  # noqa: BLE001
-            logger.error("Redis readiness check failed: %s", e)
+        redis_url = settings.REDIS_URL
+        if redis_url is None:
+            logger.error("Redis readiness check failed: REDIS_URL is not configured")
             checks["redis"] = "down"
             overall = "not_ready"
+        else:
+            try:
+                redis_client = await redis.from_url(redis_url)
+                await asyncio.wait_for(redis_client.ping(), timeout=2.0)
+                await redis_client.close()
+                checks["redis"] = "ok"
+            except Exception as e:  # noqa: BLE001
+                logger.error("Redis readiness check failed: %s", e)
+                checks["redis"] = "down"
+                overall = "not_ready"
 
         payload = {
             "status": overall,

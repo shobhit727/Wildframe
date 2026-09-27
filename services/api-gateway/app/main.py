@@ -49,7 +49,10 @@ async def lifespan(app: FastAPI):
     if not jwt_secret:
         raise RuntimeError("JWT_SECRET_KEY is not configured")
     auth_middleware = AuthenticationMiddleware(jwt_secret)
-    redis_client = await redis.from_url(settings.REDIS_URL)
+    redis_url = settings.REDIS_URL
+    if not redis_url:
+        raise RuntimeError("REDIS_URL is not configured")
+    redis_client = await redis.from_url(redis_url)
     app.state.redis_client = redis_client
     rate_limiter = RateLimiter(redis_client)
 
