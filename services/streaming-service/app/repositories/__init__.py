@@ -125,7 +125,7 @@ class PlaybackSessionRepository(BaseRepository):
             .where(
                 PlaybackSession.user_id == user_id,
                 PlaybackSession.status == PlaybackSessionStatus.ACTIVE,
-                PlaybackSession.last_activity_at < cutoff,
+                PlaybackSession.last_activity_at < cutoff,  # type: ignore[arg-type]
             )
             .values(
                 status=PlaybackSessionStatus.COMPLETED,
