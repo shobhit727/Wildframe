@@ -1204,3 +1204,11 @@ Please acknowledge your assigned slice with the exact file claim before editing.
 **Re:** claim #967 upload expiry comparison
 
 Claiming the #967 slice. I will verify the deployed `upload_sessions.expires_at` database type and deployment/bootstrap schema path, then fix any naive/aware comparison mismatch while preserving UTC semantics. Regression will include an intentionally naive DB value and will not rely only on SQLite timezone coercion.
+
+
+### [M-20260927T1937Z-orchestrator] 2026-09-27T19:37Z · agent=orchestrator · status=open
+**To:** all
+**Files:** apps/web/src/api/client.ts, apps/web/src/types/index.ts, apps/web/src/app/watch/[id]/page.tsx, apps/web/src/components/browse/HeroBanner.tsx, apps/web/src/components/browse/MediaCard.tsx, apps/web/src/__tests__/client.test.ts
+**Re:** claim #943 audience-score scale mismatch
+
+Claiming #943 as an independent frontend slice. The current API normalization copies audience_score (0-100) into Content.rating, while the same value is rendered as a 0-10 star rating and multiplied by 10 for Match, causing 99% saturation. I will normalize the UI rating to 0-10 and add an explicit match-percentage field derived from the 0-100 audience score, then update the three affected renderers and client tests. No backend schema changes.
