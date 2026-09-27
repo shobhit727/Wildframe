@@ -217,11 +217,9 @@ describe('WatchPage (/watch/[id])', () => {
       expect(screen.getByText('HD')).toBeInTheDocument();
     });
 
-    it('pins the match badge at 99% for a 0-100 audience score', async () => {
-      // BUG (reported): normalizeContent() copies `audience_score` (0-100) into
-      // `rating`, but this badge computes `rating * 10` as if it were a 0-10
-      // scale. Any audience score of 10 or more saturates the clamp at 99, so
-      // the entire catalogue advertises a 99% match.
+    it('renders the 0-100 audience score as the match percentage', async () => {
+      // The content API supplies audience_score on a 0-100 scale, and the
+      // watch page now displays that value as the percentage match.
       expect(MOVIE.audience_score).toBe(87);
       renderWithQuery(<WatchPage />);
       await waitForPlayer();
@@ -229,16 +227,15 @@ describe('WatchPage (/watch/[id])', () => {
       // The detail badge lives in the row that also holds the title.
       const heading = await screen.findByRole('heading', { level: 1, name: 'Neon Drift' });
       const detailRow = heading.parentElement?.parentElement as HTMLElement;
-      expect(within(detailRow).getByText('99% Match')).toBeInTheDocument();
+      expect(within(detailRow).getByText('87% Match')).toBeInTheDocument();
 
       // The same arithmetic in MediaCard.tsx saturates the suggestion cards too.
       await screen.findByRole('heading', { level: 2, name: 'More Like This' });
-      expect(screen.getAllByText('99% Match')).toHaveLength(2);
+      expect(screen.getAllByText('87% Match')).toHaveLength(2);
     });
 
-    it('never reports a match below 75% even for a poorly rated title', async () => {
-      // Same bug, other end of the clamp: the `Math.max(75, ...)` floor means a
-      // 1/10 title still claims 75% confidence.
+    it('renders a low audience score as a low match percentage', async () => {
+      // A low audience score must remain low; the old 75% floor was removed.
       apiClient.getContentById.mockResolvedValue(
         makeBackendContent({ id: 'c-1', title: 'Neon Drift', audience_score: 1 }),
       );
@@ -246,7 +243,7 @@ describe('WatchPage (/watch/[id])', () => {
       renderWithQuery(<WatchPage />);
       await waitForPlayer();
 
-      expect(await screen.findByText('75% Match')).toBeInTheDocument();
+      expect(await screen.findByText('1% Match')).toBeInTheDocument();
     });
 
     it('omits the episode list for a movie', async () => {
