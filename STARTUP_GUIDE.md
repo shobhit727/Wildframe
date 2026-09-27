@@ -341,7 +341,7 @@ databases/
 - Prometheus metrics on port 9090
 - Grafana dashboard on port 3000 (also running on frontend)
 - Jaeger tracing on port 6831
-- See [OPERATIONS_GUIDE.md](docs/OPERATIONS_GUIDE.md)
+- See [OPERATIONS_GUIDE.md](docs/OPERATIONS.md)
 
 ---
 
@@ -351,7 +351,7 @@ databases/
 - [FRONTEND_COMPLETE.md](FRONTEND_COMPLETE.md) - Frontend status
 - [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) - Production deployment
 - [API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md) - API reference
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System design
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - System design
 - [CONTRIBUTING.md](docs/CONTRIBUTING.md) - Development guidelines
 
 ---
