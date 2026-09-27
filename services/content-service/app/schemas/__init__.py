@@ -4,14 +4,11 @@ import re
 Pydantic v2 schemas for Content Service API requests/responses.
 """
 
-from typing import Annotated
-
 from datetime import UTC, datetime
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import AfterValidator, BaseModel, Field, field_validator
-
-
 
 
 def _normalize_release_date(value: datetime | None) -> datetime | None:
@@ -22,6 +19,7 @@ def _normalize_release_date(value: datetime | None) -> datetime | None:
 
 
 NaiveUTCReleaseDate = Annotated[datetime | None, AfterValidator(_normalize_release_date)]
+
 
 class GenreResponse(BaseModel):
     """Genre response schema."""
