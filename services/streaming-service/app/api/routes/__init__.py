@@ -34,7 +34,7 @@ from app.services import StreamingService
 router = APIRouter(prefix="/api/v1", tags=["streaming"])
 
 
-async async def _verify_bearer_token(authorization: str) -> dict:
+async def _verify_bearer_token(authorization: str) -> dict:
     token = authorization.removeprefix("Bearer ")
     if settings.ENVIRONMENT in {"", "development", "test"} and settings.JWT_ALGORITHM == "HS256":
         if not settings.JWT_SECRET_KEY:
