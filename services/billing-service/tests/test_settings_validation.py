@@ -152,29 +152,31 @@ class TestProductionSecrets:
         ("field", "value"),
         [
             ("STRIPE_WEBHOOK_SECRET", ""),
+            ("STRIPE_WEBHOOK_SECRET", "   \t"),
             ("DATABASE_URL", ""),
+            ("DATABASE_URL", "   \t"),
             ("REDIS_URL", ""),
+            ("REDIS_URL", "   \t"),
             ("STRIPE_API_KEY", ""),
+            ("STRIPE_API_KEY", "   \t"),
         ],
     )
-    def test_empty_string_secret_is_accepted_by_the_production_guard(self, field, value, clean_env):
-        """Characterisation test — documents a real gap, see the report.
+    def test_blank_or_whitespace_production_secrets_are_rejected(self, field, value, clean_env):
+        with pytest.raises(ValidationError, match=field):
+            _settings(**{field: value})
 
-        Every production guard is a *prefix* or ``is None`` test, so an empty
-        string slips through all of them. Consequences, in order of severity:
-
-        * ``STRIPE_WEBHOOK_SECRET=""`` passes validation, but
-          ``StripeClient.handle_webhook`` then fails closed on every delivery
-          (400 for every event) while ``/health`` still reports healthy.
-        * ``DATABASE_URL=""`` passes validation and only explodes later inside
-          ``create_async_engine``.
-        * ``REDIS_URL=""`` passes validation; ``/ready`` degrades to 503.
-
-        The empty string is only a *deployed* problem when the operator sets
-        the variable to blank; a wholly absent variable is still caught.
-        """
-        s = _settings(**{field: value})
-        assert getattr(s, field) == value
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "STRIPE_WEBHOOK_SECRET",
+            "STRIPE_API_KEY",
+            "DATABASE_URL",
+            "REDIS_URL",
+        ],
+    )
+    def test_none_production_secrets_are_rejected(self, field, clean_env):
+        with pytest.raises(ValidationError, match=field):
+            _settings(**{field: None})
 
     def test_absent_secret_is_still_rejected_when_the_variable_is_unset(self, clean_env):
         # The guard is not vacuous: omitting the variable entirely still fails,
