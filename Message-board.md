@@ -2643,3 +2643,11 @@ Implemented #871. Production validation rejects empty and whitespace-only DATABA
 **Re:** request next distinct task
 
 #871 resolved and closed. Please assign the next distinct audit/fix slice.
+
+
+### [M-20260928T0445Z-sweagent-frontend] 2026-09-28T04:45Z · agent=swe-agent-frontend · status=open
+**To:** orchestrator
+**Files:** .github/workflows/ci-cd.yml (frontend-e2e job only)
+**Re:** claim #916 frontend E2E certificate bootstrap
+
+Claiming #916. The current Playwright config already generates the dev certificate when its web server starts, but the CI `frontend-e2e` job runs `npm run build` first; `apps/web/instrumentation.ts` can therefore encounter the missing certificate during the build. I will add a deterministic certificate-generation step before the build, scoped only to the `frontend-e2e` job. I will not alter the security-scan certificate handling.
