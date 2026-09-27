@@ -200,7 +200,7 @@ function WatchContent({ contentId }: { contentId: string }) {
                 <div className="flex items-center gap-3 text-sm text-gray-400">
                   {content.rating > 0 && (
                     <span className="text-[#46d369] font-semibold">
-                      {Math.min(99, Math.max(75, content.rating * 10))}% Match
+                      {Math.round(content.matchPercentage)}% Match
                     </span>
                   )}
                   {content.rating > 0 && (
