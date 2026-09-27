@@ -37,6 +37,7 @@ from app.core.database import DatabaseManager, get_db
 from app.core.settings import settings
 from app.models.admin import AdminAuditLog
 from tests._test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
 
 ADMIN = "admin-1"
 OTHER_ADMIN = "admin-2"
@@ -97,10 +98,15 @@ def _clear_jti_store():
 
 @pytest.fixture(autouse=True)
 def _stub_jwks(monkeypatch):
-    async def get_jwks(_url):
+    # Patch the *fetch* seam rather than the verifier, so the route keeps doing
+    # real RS256 verification through wildframe_auth: the JWKS cache, the
+    # single-flight and the unknown-kid backoff all run exactly as in
+    # production, and only the outbound HTTP call is replaced.
+    async def fetch(_url):
         return JWKS
 
-    monkeypatch.setattr("app.api.routes.admin.get_cached_jwks", get_jwks)
+    monkeypatch.setattr("wildframe_auth.verifier.fetch_jwks", fetch)
+    clear_jwks_cache()
     from app.api.routes import admin as admin_routes
 
     class AuthResponse:
@@ -125,6 +131,7 @@ def _stub_jwks(monkeypatch):
 
     monkeypatch.setattr(admin_routes.httpx, "AsyncClient", AuthClient)
     yield
+    clear_jwks_cache()
     _stepup_jti_seen.clear()
 
 

@@ -35,6 +35,7 @@ from app.api.routes import (
 )
 from app.core.settings import settings
 from _test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
 
 # ------------------------------------------------------------- JWT minting --
 
@@ -68,7 +69,9 @@ def mint(**overrides) -> str:
 
 @pytest.fixture(autouse=True)
 def _stub_auth_verification(monkeypatch):
-    async def get_jwks(_url):
+    # Replace only the outbound JWKS fetch, not the verifier: the cache, the
+    # single-flight and the real RS256 signature check all keep running.
+    async def fetch(_url):
         return JWKS
 
     class AuthResponse:
@@ -91,8 +94,11 @@ def _stub_auth_verification(monkeypatch):
         async def get(self, *_args, **_kwargs):
             return AuthResponse()
 
-    monkeypatch.setattr(routes, "get_cached_jwks", get_jwks)
+    monkeypatch.setattr("wildframe_auth.verifier.fetch_jwks", fetch)
     monkeypatch.setattr(routes.httpx, "AsyncClient", AuthClient)
+    clear_jwks_cache()
+    yield
+    clear_jwks_cache()
 
 
 def auth(token: str) -> dict:
