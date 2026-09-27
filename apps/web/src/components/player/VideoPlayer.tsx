@@ -253,8 +253,12 @@ export function VideoPlayer({
   return (
     <div
       className="relative w-full aspect-video bg-black"
+      tabIndex={0}
+      onFocus={() => setShowControls(true)}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => {
+        // Paused playback must keep its controls discoverable and usable.
+        if (!isPlaying) return;
         if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
         controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 1500);
       }}
