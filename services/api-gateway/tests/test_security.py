@@ -54,6 +54,7 @@ def _token(sub="user-1", **claims):
         "iss": ISSUER,
         "aud": AUDIENCE,
         "type": "access",
+        "av": 0,
     }
     payload.update(claims)
     # Sign with the test RSA key; the fixture installs its matching public JWK.
@@ -153,7 +154,9 @@ async def test_verify_token_rejects_an_hs256_token(auth):
 
 
 async def test_verify_token_rejects_an_expired_token(auth):
-    expired = _token(exp=int(time.time()) - 60, iat=int(time.time()) - 600)
+    # The SDK grants 60 seconds of leeway, so the expiry must be older than
+    # that for the rejection to be deterministic.
+    expired = _token(exp=int(time.time()) - 600, iat=int(time.time()) - 1200)
     assert await auth.verify_token(_request(headers={"authorization": f"Bearer {expired}"})) is None
 
 
