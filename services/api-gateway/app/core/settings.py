@@ -30,7 +30,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     JWT_SECRET_KEY: str | None = None
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
     JWT_EXPIRATION_MINUTES: int = 15
     REDIS_URL: str | None = None
     LOG_LEVEL: str = "INFO"
