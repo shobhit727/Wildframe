@@ -1,6 +1,6 @@
-import os
+# ruff: noqa: F811 -- test parameters intentionally share the imported fixture names
+
 from collections.abc import AsyncIterator
-from contextlib import ExitStack
 from uuid import uuid4
 
 import pytest
@@ -8,6 +8,7 @@ import pytest_asyncio
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from _pg_fixtures import postgres_url  # noqa: F401  - session-scoped container
 from app.models import Base, PlaybackSessionStatus
 from app.models.drm import DRMConfig
 from app.models.maturity import ContentMaturity
@@ -15,27 +16,24 @@ from app.repositories import PlaybackSessionRepository
 
 
 @pytest_asyncio.fixture
-async def session() -> AsyncIterator[AsyncSession]:
-    """Use disposable PostgreSQL: the repository issues pg_advisory_xact_lock."""
-    with ExitStack() as stack:
-        from testcontainers.postgres import (
-            PostgresContainer,
-        )  # lazy: keeps collection safe when the dep is absent
+async def session(postgres_url: str) -> AsyncIterator[AsyncSession]:
+    """Use disposable PostgreSQL: the repository issues pg_advisory_xact_lock.
 
-        url = os.environ.get("TEST_DATABASE_URL")
-        if not url:
-            postgres = stack.enter_context(PostgresContainer("postgres:15"))
-            url = postgres.get_connection_url()
-        engine = create_async_engine(make_url(url).set(drivername="postgresql+asyncpg"), echo=False)
-        try:
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-            async with factory() as s:
-                yield s
-                await s.rollback()
-        finally:
-            await engine.dispose()
+    The container itself is session-scoped (see _pg_fixtures.postgres_url) so the
+    whole suite pays the ~25s startup once.
+    """
+    engine = create_async_engine(
+        make_url(postgres_url).set(drivername="postgresql+asyncpg"), echo=False
+    )
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with factory() as s:
+            yield s
+            await s.rollback()
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
