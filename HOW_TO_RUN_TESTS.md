@@ -1,6 +1,6 @@
 # How to Run Tests
 
-**Current State**: Unit/route tests for all 15 microservices + the shared SDK + the frontend (vitest) + a live-stack integration suite (`tests/integration/`, 110 tests). Backend suites green (895 unit/route tests, Aug 18, 2026). The integration suite needs the dockerized stack running and skips itself otherwise.
+**Current State**: Unit/route tests for all 15 microservices + the shared SDK + the frontend (vitest) + a live-stack integration suite (`tests/integration/`, 76 tests). Backend suites green (895 unit/route tests, Aug 18, 2026). The integration suite needs the dockerized stack running and skips itself otherwise.
 
 ---
 
