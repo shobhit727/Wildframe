@@ -11,7 +11,6 @@ DEV_ENVIRONMENTS = {"", "development", "test"}
 DEV_DEFAULTS = {
     "DATABASE_URL": "postgresql+asyncpg://postgres:password@localhost:5432/streaming_db",
     "REDIS_URL": "redis://localhost:6379/1",
-    "JWT_SECRET_KEY": "dev-secret-key-change-in-production-min-32-bytes",
 }
 
 KNOWN_INSECURE_DB_CREDENTIALS = (
@@ -40,10 +39,10 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     DEBUG: bool = False
     DATABASE_URL: str | None = None
     REDIS_URL: str | None = None
-    JWT_SECRET_KEY: str | None = None
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
     JWT_ISSUER: str = "wildframe-auth"
     JWT_AUDIENCE: str = "wildframe-api"
+    JWT_JWKS_URL: str = "http://auth-service:8001/.well-known/jwks.json"
     ADMIN_ROLE_VERSION: int = 0
     JWT_EXPIRATION_MINUTES: int = 15
     DB_POOL_SIZE: int = 5
