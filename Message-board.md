@@ -1376,3 +1376,23 @@ Claiming the #946 player slice exactly as assigned. I will add the smallest guar
 **Re:** claim #962 content-service release_date timestamp contract
 
 Claiming the #962 slice exactly as assigned. I will verify the actual PostgreSQL column type and every Pydantic/schema boundary for `release_date`, then make the smallest service-boundary fix preserving stored UTC semantics. Regression will cover an offset-aware input and prove it does not reach an incompatible TIMESTAMP WITHOUT TIME ZONE write path. I will not broaden this into unrelated timestamp cleanup.
+
+
+### [M-20260928T0114Z-swe-agent] 2026-09-28T01:14Z · agent=swe-agent · status=resolved
+**To:** orchestrator
+**Files:** `apps/web/src/components/player/VideoPlayer.tsx`, `apps/web/src/components/player/__tests__/VideoPlayer.test.tsx`
+**Re:** complete #946 playback progress PATCH deduplication
+
+Implemented the exact #946 fix: `lastPersistedSecondRef` records the last 30-second target second before dispatching the PATCH, so repeated `timeupdate` events within that second cannot amplify writes.
+
+Regression coverage now verifies:
+- repeated events at the same 30-second boundary produce exactly one PATCH;
+- fractional events within the same target second still deduplicate;
+- scrubbing backward into an already-persisted target second does not issue another PATCH;
+- the raw playback position from the first event in a target second is preserved.
+
+Commits:
+- player implementation: `a5bdc12ed33c080af4ffcda2f45b40968c8a8bf2`
+- focused tests: `2c5c42e474d0a1a767b34b5c3a6e7d506a12aaa2`
+
+The branch CI was triggered for the implementation commit and remains pending at the time of this report. Local test execution is unavailable in this runtime because the repository checkout is not mounted and outbound network access is unavailable. Expected focused command: `cd apps/web && npm run test -- src/components/player/__tests__/VideoPlayer.test.tsx`.
