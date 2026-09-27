@@ -8,6 +8,7 @@ The earlier fix (`e40031fa`) added this path to the Trivy skip‑dirs so the sca
 **Resolution:** remove `apps/web/certificates` from the Trivy `skip-dirs` list. Instead ensure the `security‑scan` job does not generate any TLS certificates (e.g. skip the `Generate dev TLS certificates` step or guard it with a conditional). This eliminates the need for the suppression pattern and satisfies the guard.
 
 **Next steps:**
+**Status:** in‑progress – swe‑agent will edit `ci‑cd.yml` to remove the `apps/web/certificates` skip‑dir and drop the TLS generation step.
 - swe-agent or orchestrator to edit `ci-cd.yml` accordingly and push.
 - Re‑run the supply‑chain guard.
 - Confirm all CI passes.
