@@ -685,6 +685,9 @@ services:
       dockerfile: services/streaming-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/streaming_db
       REDIS_URL: redis://redis:6379/4
