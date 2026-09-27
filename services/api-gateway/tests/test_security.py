@@ -27,6 +27,7 @@ ISSUER = "wildframe-auth"
 JWKS_URL = "http://auth-service:8000/.well-known/jwks.json"
 _SIGNING_KEY_PEM: str | None = None
 
+
 def _request(path="/content/api/v1/titles", headers=None, method="GET"):
     raw = [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()]
     scope = {
@@ -73,10 +74,14 @@ def auth(monkeypatch):
         serialization.PrivateFormat.TraditionalOpenSSL,
         serialization.NoEncryption(),
     ).decode()
-    public_pem = private_key.public_key().public_bytes(
-        serialization.Encoding.PEM,
-        serialization.PublicFormat.SubjectPublicKeyInfo,
-    ).decode()
+    public_pem = (
+        private_key.public_key()
+        .public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
+    )
 
     test_jwk = jwk.construct(public_pem, algorithm="RS256").to_dict()
     test_jwk.update({"kid": "test-k1", "use": "sig", "alg": "RS256"})
@@ -150,9 +155,7 @@ async def test_verify_token_rejects_an_hs256_token(auth):
 
 async def test_verify_token_rejects_an_expired_token(auth):
     expired = _token(exp=int(time.time()) - 60, iat=int(time.time()) - 600)
-    assert await auth.verify_token(
-        _request(headers={"authorization": f"Bearer {expired}"})
-    ) is None
+    assert await auth.verify_token(_request(headers={"authorization": f"Bearer {expired}"})) is None
 
 
 async def test_verify_token_requires_an_expiry_claim(auth):
@@ -172,17 +175,13 @@ async def test_verify_token_requires_an_expiry_claim(auth):
         algorithm="RS256",
         headers={"kid": "test-k1"},
     )
-    assert await auth.verify_token(
-        _request(headers={"authorization": f"Bearer {no_exp}"})
-    ) is None
+    assert await auth.verify_token(_request(headers={"authorization": f"Bearer {no_exp}"})) is None
 
 
 async def test_verify_token_rejects_audience_mismatch(auth):
     """The shared verifier enforces the gateway's configured audience."""
     token = _token(aud="some-other-service")
-    assert await auth.verify_token(
-        _request(headers={"authorization": f"Bearer {token}"})
-    ) is None
+    assert await auth.verify_token(_request(headers={"authorization": f"Bearer {token}"})) is None
 
 
 # ---------------------------------------------------------------------------

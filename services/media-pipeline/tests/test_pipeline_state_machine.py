@@ -299,9 +299,7 @@ async def test_open_circuit_breaker_fails_job_once_and_emits_one_dlq():
 
         await service.drain_outbox()
         dlq = [
-            event
-            for event in service.publisher.sent
-            if event.topic == "content.pipeline.failed"
+            event for event in service.publisher.sent if event.topic == "content.pipeline.failed"
         ]
         assert len(dlq) == 1
         assert dlq[0].payload["stage"] == "blocked"

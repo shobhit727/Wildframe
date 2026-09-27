@@ -54,4 +54,6 @@ class SearchIndex(Base):
     dub_languages = Column(JSON, nullable=True)
     subtitle_languages = Column(JSON, nullable=True)
     indexed_at = Column(DateTime, default=_naive_now)
-    updated_at = Column(DateTime, default=SEARCH_INDEX_UPDATED_AT_DEFAULT, onupdate=SEARCH_INDEX_UPDATED_AT_DEFAULT)
+    updated_at = Column(
+        DateTime, default=SEARCH_INDEX_UPDATED_AT_DEFAULT, onupdate=SEARCH_INDEX_UPDATED_AT_DEFAULT
+    )
