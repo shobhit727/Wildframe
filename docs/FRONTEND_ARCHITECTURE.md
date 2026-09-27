@@ -328,3 +328,9 @@ Coverage target: 70%+ on `src/components/` and `src/hooks/`.
 - [SERVICE_ARCHITECTURE_PATTERN.md](SERVICE_ARCHITECTURE_PATTERN.md) — Backend layout this UI talks to
 - [API_DOCUMENTATION.md](API_DOCUMENTATION.md) — Endpoints consumed by `src/api/`
 - [DEVELOPMENT.md](DEVELOPMENT.md) — Day-to-day dev workflow
+
+---
+
+## Documentation verification — 2026-09-27
+
+Rechecked against the Wildframe source tree at commit `70e04e6417e83a15fe2ca91d993a2c9408adf0a8` (the `main` baseline used for this documentation refresh). Repository paths and referenced project structure are maintained against source; when this document conflicts with code, the code is authoritative.
