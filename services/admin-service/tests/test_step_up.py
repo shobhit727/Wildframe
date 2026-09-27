@@ -6,7 +6,17 @@ from fastapi import HTTPException
 from jose import jwt
 
 from app.api.routes.admin import verify_admin_reauth, _stepup_jti_seen
-from app.core.settings import settings\n\n\n@pytest.fixture(autouse=True)\ndef _mock_jwks_verifier(monkeypatch):\n    """Unit-test authorization claims without depending on key material."""\n    monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")\n    monkeypatch.setattr(\n        "app.api.routes.admin.verify_token",\n        lambda token, *args, **kwargs: jwt.get_unverified_claims(token),\n    )
+from app.core.settings import settings
+
+
+@pytest.fixture(autouse=True)
+def _mock_jwks_verifier(monkeypatch):
+    """Unit-test authorization claims without depending on key material."""
+    monkeypatch.setattr(settings, "JWT_ALGORITHM", "HS256")
+    monkeypatch.setattr(
+        "app.api.routes.admin.verify_token",
+        lambda token, *args, **kwargs: jwt.get_unverified_claims(token),
+    )
 
 
 def _mint_step_up(
