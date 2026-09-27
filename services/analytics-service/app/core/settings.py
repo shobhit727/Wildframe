@@ -64,7 +64,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
         if environment in DEV_ENVIRONMENTS:
             for key, value in DEV_DEFAULTS.items():
                 values.setdefault(key, value)
-            if environment == "test":
+            if environment in {"", "development", "test"}:
                 values.setdefault("JWT_ALGORITHM", "HS256")
         return values
 
