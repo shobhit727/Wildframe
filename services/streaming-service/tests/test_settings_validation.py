@@ -1,8 +1,8 @@
 """Tests for ``streaming-service/app/core/settings.py``.
 
 ``validate_production_secrets`` is the service's fail-fast production guard:
-outside a development environment it rejects missing values, known-insecure
-credentials and short JWT keys -- and, since #489, the
+outside a development environment it rejects missing values and insecure
+credentials for the settings it actually consumes -- including, since #489, the
 ``PLAYBACK_URL_SIGNING_SECRET`` that signs playback URLs.
 
 Every case here constructs ``Settings(**kwargs)`` directly with
@@ -120,41 +120,11 @@ def test_production_requires_explicit_redis_url():
 
 
 @pytest.mark.unit
-def test_production_requires_jwt_secret_key():
-    """settings.py:104-107."""
-    kwargs = prod_settings()
-    del kwargs["JWT_SECRET_KEY"]
-    with pytest.raises(ValidationError, match="JWT_SECRET_KEY must be set to a strong"):
-        Settings(_env_file=None, **kwargs)
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("blank", ["", "   ", "\t\n "])
-def test_production_rejects_blank_jwt_secret_key(blank):
-    """settings.py:109-112 -- whitespace-only is as bad as missing."""
-    with pytest.raises(ValidationError, match="JWT_SECRET_KEY must be set to a strong"):
-        Settings(_env_file=None, **prod_settings(JWT_SECRET_KEY=blank))
-
-
-@pytest.mark.parametrize("insecure", KNOWN_INSECURE_JWT_SECRETS)
-def test_production_rejects_known_insecure_jwt_secrets(insecure):
-    """settings.py:113-116 -- the dev default and its documented aliases."""
-    with pytest.raises(ValidationError, match="JWT_SECRET_KEY must be set to a strong"):
-        Settings(_env_file=None, **prod_settings(JWT_SECRET_KEY=insecure))
-
-
-@pytest.mark.unit
-def test_production_rejects_short_jwt_secret_key():
-    """settings.py:117-120 -- 31 chars is one short of the floor."""
-    with pytest.raises(ValidationError, match="at least 32 characters"):
-        Settings(_env_file=None, **prod_settings(JWT_SECRET_KEY="a" * 31))
-
-
-@pytest.mark.unit
-def test_production_accepts_exactly_32_character_jwt_secret_key():
-    """The length check is inclusive of the documented 32-char floor."""
-    s = Settings(_env_file=None, **prod_settings(JWT_SECRET_KEY="b" * 32))
-    assert len(s.JWT_SECRET_KEY) == 32
+def test_legacy_jwt_secret_is_optional_under_rs256_jwks():
+    """JWT verification uses the auth service JWKS, not this legacy secret."""
+    s = Settings(_env_file=None, **prod_settings(JWT_SECRET_KEY=None))
+    assert s.JWT_ALGORITHM == "RS256"
+    assert s.JWT_SECRET_KEY is None
 
 
 # ------------------------------------------- PLAYBACK_URL_SIGNING_SECRET ----
