@@ -7,7 +7,8 @@ from typing import Annotated
 from uuid import UUID
 
 import httpx
-from jose import jwt
+from jose import JWTError, jwt
+from wildframe_auth.verifier import get_cached_jwks, verify_token
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from jose.exceptions import JWTError
 from sqlalchemy.exc import IntegrityError
