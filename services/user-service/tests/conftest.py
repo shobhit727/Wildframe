@@ -23,6 +23,7 @@ import asyncio
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from app.models import Base
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from testcontainers.postgres import PostgresContainer  # type: ignore[import-untyped]
 
@@ -47,10 +48,16 @@ def event_loop():
 
 @pytest_asyncio.fixture
 async def db():
-    """Database session fixture with transaction rollback."""
-    async with async_session() as session:
-        yield session
-        await session.rollback()
+    """Create a clean database schema and session for each integration test."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with async_session() as session:
+            yield session
+            await session.rollback()
+    finally:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
 
 
 @pytest_asyncio.fixture
