@@ -1,6 +1,6 @@
 # 🎨 YourApp Frontend Template - Netlify Style
 
-A modern, production-ready Next.js 15 template with clean design inspired by Netlify.
+A modern, production-ready Next.js 16.3.6 template with clean design inspired by Netlify.
 
 ## 🚀 Quick Start
 
