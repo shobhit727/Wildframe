@@ -366,6 +366,11 @@ describe('playback controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Unmute' }));
     expect(el.muted).toBe(false);
     expect(screen.getByRole('button', { name: 'Mute' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mute' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unmute' }));
+    expect(el.muted).toBe(false);
+    expect(screen.getByRole('button', { name: 'Mute' })).toBeInTheDocument();
   });
 
   it('applies the dragged volume to the element', async () => {
@@ -386,11 +391,8 @@ describe('playback controls', () => {
     expect((screen.getByRole('slider', { name: 'Volume' }) as HTMLInputElement).value).toBe('0');
   });
 
-  it('does not unmute the element when the volume slider is dragged up while muted', async () => {
-    // BUG (VideoPlayer.tsx:154-160): handleVolumeChange updates `video.volume`
-    // and React's `isMuted`, but never writes `video.muted`. Dragging the
-    // slider after pressing Mute therefore leaves the element muted while the
-    // button flips back to "Mute" — audio stays silent and the UI lies.
+  it('unmutes the element when the volume slider is raised while muted', async () => {
+    // Moving the slider above zero is an explicit request for audible playback.
     renderPlayer();
 
     fireEvent.click(screen.getByRole('button', { name: 'Mute' }));
@@ -399,8 +401,27 @@ describe('playback controls', () => {
     fireEvent.change(screen.getByRole('slider', { name: 'Volume' }), { target: { value: '0.8' } });
 
     expect(video().volume).toBeCloseTo(0.8);
-    expect(video().muted).toBe(true); // still silent
-    expect(screen.getByRole('button', { name: 'Mute' })).toBeInTheDocument(); // claims unmuted
+    expect(video().muted).toBe(false);
+    expect(screen.getByRole('button', { name: 'Mute' })).toBeInTheDocument();
+  });
+
+  it('restores the last nonzero volume when unmuting from zero', async () => {
+    // A zero-volume slider state is still silent after unmuting unless a usable
+    // level is restored from the last nonzero volume.
+    renderPlayer();
+
+    fireEvent.change(screen.getByRole('slider', { name: 'Volume' }), { target: { value: '0.6' } });
+    fireEvent.change(screen.getByRole('slider', { name: 'Volume' }), { target: { value: '0' } });
+
+    expect(video().volume).toBe(0);
+    expect(video().muted).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Unmute' }));
+
+    expect(video().volume).toBeCloseTo(0.6);
+    expect(video().muted).toBe(false);
+    expect((screen.getByRole('slider', { name: 'Volume' }) as HTMLInputElement).value).toBe('0.6');
+    expect(screen.getByRole('button', { name: 'Mute' })).toBeInTheDocument();
   });
 
   it('requests fullscreen and flips the label, then exits on the second press', async () => {
