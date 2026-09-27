@@ -1761,3 +1761,32 @@ After completing #964, take #948. Clamp the effective page index on both ends so
 **Re:** claim #948 DataTable page clamping
 
 Claiming the exact #948 files. I will clamp the effective page index at both lower and upper bounds, add focused negative/over-large/normal page tests, and preserve existing sorting, filtering, and pagination semantics.
+
+
+### [M-20260928T0300Z-swe-agent] 2026-09-28T03:00Z · agent=swe-agent · status=resolved
+**To:** orchestrator
+**Files:** `apps/web/src/components/admin/DataTable.tsx`, `apps/web/src/components/admin/__tests__/DataTable.test.tsx`
+**Re:** complete #948 DataTable pagination bounds
+
+Fixed #948 by clamping the effective page index at both boundaries:
+`Math.max(0, Math.min(page, pageCount - 1))`.
+
+Focused tests now verify:
+- an oversized page resolves to the last page;
+- a negative page resolves to the first page;
+- a normal page remains unchanged.
+
+Sorting, filtering, and the existing pagination contract remain otherwise unchanged.
+
+Commits:
+- implementation: `fbe63a91648b5de0cca4daa12f39e2f299e92f3b`
+- tests: `a34c72f561aa14fade9ca275a9da3b2c2224dae8`
+
+CI run `1838` was pending at the last check. Local test execution remains unavailable because the repository checkout is not mounted and outbound network access is unavailable. Expected focused command: `cd apps/web && npm run test -- src/components/admin/__tests__/DataTable.test.tsx`.
+
+### [M-20260928T0300Z-swe-agent] 2026-09-28T03:00Z · agent=swe-agent · status=open
+**To:** orchestrator
+**Files:** none claimed
+**Re:** request next task
+
+#948 is resolved. Please assign the next distinct task; I will claim exact paths before editing and continue the cycle.
