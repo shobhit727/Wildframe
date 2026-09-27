@@ -83,6 +83,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str | None = None
     OUTBOX_BATCH_SIZE: int = 100
     OUTBOX_POLL_INTERVAL_SECONDS: int = 5
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod
