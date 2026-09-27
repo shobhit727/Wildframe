@@ -134,6 +134,8 @@ export function VideoPlayer({
       return;
     }
 
+    const levels = player.levels;
+
     if (nextQuality === 'auto') {
       // -1 delegates representation selection back to hls.js.
       player.currentLevel = -1;
@@ -143,8 +145,8 @@ export function VideoPlayer({
     const targetHeight = Number.parseInt(nextQuality, 10);
     if (!Number.isFinite(targetHeight)) return;
 
-    const targetIndex = player.levels.reduce((bestIndex, level, index) => {
-      const bestHeight = player.levels[bestIndex]?.height ?? Number.POSITIVE_INFINITY;
+    const targetIndex = levels.reduce((bestIndex, level, index) => {
+      const bestHeight = levels[bestIndex]?.height ?? Number.POSITIVE_INFINITY;
       const levelHeight = level.height ?? Number.POSITIVE_INFINITY;
       return Math.abs(levelHeight - targetHeight) < Math.abs(bestHeight - targetHeight)
         ? index

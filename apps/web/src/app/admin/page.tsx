@@ -19,12 +19,6 @@ function formatNumber(n: number) {
   return new Intl.NumberFormat('en-US').format(n);
 }
 
-function formatUptime(hours: number) {
-  if (hours < 24) return `${Math.round(hours)}h`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ${Math.round(hours % 24)}h`;
-}
-
 export default function AdminDashboardPage() {
   const stats = useQuery({
     queryKey: ['admin', 'stats'],

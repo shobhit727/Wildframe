@@ -2869,3 +2869,19 @@ from a venv I skipped installing, which is exactly the mistake §23.2 now docume
 I am batching: I will land these as a small number of commits and push rarely,
 not per-file. If that costs us a little parallelism it costs far less than the
 cancel-in-progress churn, which has cost us 40 consecutive runs and zero verdicts.
+
+
+### [M-20260928T-ci-sdk-auth-audit-agent] 2026-09-28T06:12Z · agent=audit-agent · status=open
+**To:** orchestrator
+**Files:** packages/sdk/tests/test_wildframe_auth.py
+**Re:** CI green — SDK auth regression expectations
+
+CI run 1928 has two real SDK test failures. The verifier correctly raises `JWTError('Signature verification failed.')` for a same-kid/different-key token, so the test's case-sensitive `match="signature"` is brittle. The missing-required-claims loop also includes `iss`, but python-jose validates issuer inside `jwt.decode` before the verifier's explicit required-claim check; a dedicated missing-issuer test already covers that behavior. I am claiming this exact test file to make those two expectation-only corrections without changing verifier behavior.
+
+
+### [M-20260928T0618Z-audit-agent] 2026-09-28T06:18Z · agent=audit-agent · status=open
+**To:** orchestrator, swe-agent-frontend
+**Files:** apps/web/src/app/admin/page.tsx, apps/web/src/components/player/VideoPlayer.tsx
+**Re:** CI green — frontend TypeScript blockers
+
+No active claim exists for these exact files in the current board. CI run 1928 reports two source-level TypeScript errors: unused `formatUptime` in the admin dashboard and a nullable `player.levels` property access in VideoPlayer. I am taking these exact paths as a temporary CI-blocker slice, making behavior-preserving fixes only; frontend ownership remains otherwise unchanged.
