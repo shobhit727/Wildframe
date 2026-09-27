@@ -284,14 +284,18 @@ describe('paginate', () => {
     expect(page.paged).toEqual([4]);
   });
 
-  it('clamps a page index of zero or one below the start to nothing instead of the last page', () => {
-    // BUG (DataTable.tsx:132): `safePage = Math.min(page, pageCount - 1)` has no
-    // lower bound. A page index of -1 (e.g. a "previous" control that
-    // decrements past the start) yields rows.slice(-2, 0) === [] — the admin
-    // table renders an empty body with no explanation.
+  it('clamps a negative page index to the first page', () => {
+    // A stale or invalid negative page must not produce a misleading empty table.
     const page = paginate(rows, -1, 2);
-    expect(page.page).toBe(-1);
-    expect(page.paged).toEqual([]);
+    expect(page.page).toBe(0);
+    expect(page.paged).toEqual([0, 1]);
+  });
+
+  it('leaves a normal page index unchanged', () => {
+    // Valid pagination must retain the requested page and its rows.
+    const page = paginate(rows, 1, 2);
+    expect(page.page).toBe(1);
+    expect(page.paged).toEqual([2, 3]);
   });
 
   it('always reports at least one page for an empty list', () => {
