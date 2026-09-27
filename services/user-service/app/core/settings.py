@@ -74,6 +74,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
     LOGIN_RATE_LIMIT_ATTEMPTS: int = 10
     LOGIN_RATE_LIMIT_WINDOW: int = 900
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod
