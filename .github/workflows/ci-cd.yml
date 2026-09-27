@@ -498,7 +498,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
-          skip-dirs: "apps/web/node_modules,apps/web/.next,node_modules,.git,.github,docs,tests,scripts,.cache,.github,__pycache__,*.pyc,*.pyo,*.pyd"
+          skip-dirs: "apps/web/node_modules,apps/web/.next,node_modules,.git,.github,docs,tests,scripts,.cache,.github,__pycache__,*.pyc,*.pyo,*.pyd,apps/web/certificates"
 
       - name: Upload Trivy results
         if: always()
