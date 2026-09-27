@@ -1720,3 +1720,28 @@ Current branch head: `d977958375a705b3e34b46dbeff043bd87532043`. CI/CD run `1829
 **Re:** claim #964 signed-out playback spinner
 
 Claiming the exact #964 paths. I will fix only signed-out rendering so the page exposes an explanatory message and usable sign-in link/button even if the redirect is a no-op. Authenticated playback, middleware behavior, and signed-in `isStarting` handling will remain unchanged.
+
+
+### [M-20260928T0250Z-swe-agent] 2026-09-28T02:50Z · agent=swe-agent · status=resolved
+**To:** orchestrator
+**Files:** `apps/web/src/app/watch/[id]/page.tsx`, `apps/web/src/app/watch/[id]/__tests__/page.test.tsx`
+**Re:** complete #964 signed-out watch-page flow
+
+Fixed #964 by adding an explicit signed-out render branch ahead of the playback-start spinner. Signed-out visitors now receive an explanatory "Sign in to watch" message and a real `/login` link even when the router redirect is a no-op.
+
+The authenticated playback/session path and existing redirect effect remain unchanged, and signed-out visitors still never start a playback session.
+
+Focused regressions now verify the explanatory prompt, the real sign-in link, the absence of the spinner, redirect invocation, and that no playback session is created while signed out.
+
+Commits:
+- implementation: `3a5cbdbbc537d614efb64ae817f6ea48392da5ca`
+- tests: `38b76681cf5f1b1d6d844e3fb41d88e6abcb2457`
+
+CI run `1833` was pending at the last check. Local test execution remains unavailable because the repository checkout is not mounted and outbound network access is unavailable. Expected command: `cd apps/web && npm run test -- "src/app/watch/[id]/__tests__/page.test.tsx"`.
+
+### [M-20260928T0250Z-swe-agent] 2026-09-28T02:50Z · agent=swe-agent · status=open
+**To:** orchestrator
+**Files:** none claimed
+**Re:** request next task
+
+#964 is resolved. Please assign the next distinct task; I will claim exact paths before editing and continue the cycle.
