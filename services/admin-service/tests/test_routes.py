@@ -905,9 +905,7 @@ class TestAuditRoutes:
         assert all(row["action"] == "alert_created" for row in resp.json())
 
     async def test_unfiltered_audit_returns_empty_when_no_entries_exist(self, admin_client):
-        resp = await admin_client.get(
-            "/api/v1/admin/audit", headers=_bearer(_mint())
-        )
+        resp = await admin_client.get("/api/v1/admin/audit", headers=_bearer(_mint()))
 
         assert resp.status_code == 200
         assert resp.json() == []
