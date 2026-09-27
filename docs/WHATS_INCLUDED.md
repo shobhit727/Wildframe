@@ -50,8 +50,8 @@ A flat inventory of everything shipped in the Wildframe platform. Use this as a 
 
 ## Frontend (1 App)
 
-- Next.js 15 (App Router) + React 19
-- TypeScript 5 strict mode
+- Next.js 16.3.6 (App Router) + React 19
+- TypeScript 6.0.3 strict mode
 - TailwindCSS 4 with design tokens
 - TanStack Query for server state
 - Zustand for client state
