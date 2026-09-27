@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { getApiErrorMessage } from '@/api/client';
-import { REGEX } from '@/constants';
 
 export function LoginForm() {
   const [email, setEmail] = useState('');
@@ -28,14 +27,6 @@ export function LoginForm() {
       }
       if (!password) {
         setErrors({ password: 'Password is required' });
-        return;
-      }
-      if (!REGEX.EMAIL.test(email)) {
-        setErrors({ email: 'Enter a valid email address' });
-        return;
-      }
-      if (password.length < 6) {
-        setErrors({ password: 'Password must be at least 6 characters' });
         return;
       }
       try {
