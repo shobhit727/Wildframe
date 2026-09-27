@@ -277,7 +277,7 @@ class TestDefaults:
     def test_jwt_contract(self):
         settings = Settings()
 
-        assert settings.JWT_ALGORITHM == "HS256"
+        assert settings.JWT_ALGORITHM == "RS256"
         assert settings.JWT_AUDIENCE == "wildframe-api"
         assert settings.JWT_ISSUER == "wildframe-auth"
 
