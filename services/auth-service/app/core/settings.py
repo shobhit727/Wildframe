@@ -109,6 +109,11 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     MFA_ENCRYPTION_KEY: str = ""
     MFA_ENCRYPTION_KEY_PREVIOUS: list[str] = []
 
+    @property
+    def SECRET_KEY(self) -> str | None:
+        """Compatibility alias; JWT signing remains exclusively RS256/JWKS."""
+        return self.JWT_SECRET_KEY
+
     @model_validator(mode="before")
     @classmethod
     def _apply_development_defaults(cls, values: dict) -> dict:
