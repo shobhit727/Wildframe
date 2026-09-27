@@ -25,7 +25,8 @@ export function HeroBanner({ items }: HeroBannerProps) {
   const active = items[activeIndex];
   if (!active) return null;
 
-  const match = active.rating > 0 ? Math.min(99, Math.max(75, active.rating * 10)) : 97;
+  // Match is already a clamped 0-100 percentage from content normalization.
+  const match = Math.round(active.matchPercentage);
 
   return (
     <section className="relative w-full h-[56vw] max-h-[760px] min-h-[380px] bg-black">
