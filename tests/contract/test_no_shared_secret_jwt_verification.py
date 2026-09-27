@@ -129,13 +129,15 @@ _XFAIL_REASON = (
 )
 
 SERVICE_CASES = [
-    pytest.param(
-        service,
-        marks=pytest.mark.xfail(strict=True, reason=_XFAIL_REASON),
-        id=service,
+    (
+        pytest.param(
+            service,
+            marks=pytest.mark.xfail(strict=True, reason=_XFAIL_REASON),
+            id=service,
+        )
+        if service in UNMIGRATED_SERVICES
+        else pytest.param(service, id=service)
     )
-    if service in UNMIGRATED_SERVICES
-    else pytest.param(service, id=service)
     for service in ALL_SERVICES
 ]
 
