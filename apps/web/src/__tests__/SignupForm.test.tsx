@@ -32,7 +32,7 @@ describe('SignupForm', () => {
     fireEvent.change(screen.getByPlaceholderText('Create a password'), { target: { value: 'secret1' } });
     fireEvent.submit(screen.getByRole("button", { name: "Sign Up" }).closest("form")!);
 
-    await waitFor(() => expect(register).toHaveBeenCalledWith('ada@x.io', 'secret', 'Ada', 'Lovelace'));
+    await waitFor(() => expect(register).toHaveBeenCalledWith('ada@x.io', 'secret1', 'Ada', 'Lovelace'));
     await waitFor(() => expect(push).toHaveBeenCalledWith('/browse'));
   });
 
@@ -45,7 +45,7 @@ describe('SignupForm', () => {
     fireEvent.submit(screen.getByRole("button", { name: "Sign Up" }).closest("form")!);
 
     await waitFor(() =>
-      expect(screen.getByText(/could not create the account|already exists/i)).toBeInTheDocument(),
+      expect(screen.getByText(/duplicate/i)).toBeInTheDocument(),
     );
     expect(push).not.toHaveBeenCalled();
   });
