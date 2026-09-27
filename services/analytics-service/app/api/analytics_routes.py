@@ -42,18 +42,29 @@ async def get_current_user_claims(
         )
     token = authorization.removeprefix("Bearer ")
     try:
-        header = jwt.get_unverified_header(token)
-        kid = header.get("kid")
-        if not kid:
-            raise JWTError("missing kid")
-        jwks = await get_cached_jwks(settings.JWT_JWKS_URL, required_kid=kid)
-        payload = verify_token(
-            token,
-            jwks,
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-            expected_type="access",
-        )
+        if settings.ENVIRONMENT in {"", "development", "test"} and settings.JWT_ALGORITHM == "HS256":
+            if not settings.JWT_SECRET_KEY:
+                raise JWTError("missing development JWT secret")
+            payload = jwt.decode(
+                token,
+                settings.JWT_SECRET_KEY,
+                algorithms=["HS256"],
+                audience=settings.JWT_AUDIENCE,
+                issuer=settings.JWT_ISSUER,
+            )
+        else:
+            header = jwt.get_unverified_header(token)
+            kid = header.get("kid")
+            if not kid:
+                raise JWTError("missing kid")
+            jwks = await get_cached_jwks(settings.JWT_JWKS_URL, required_kid=kid)
+            payload = verify_token(
+                token,
+                jwks,
+                audience=settings.JWT_AUDIENCE,
+                issuer=settings.JWT_ISSUER,
+                expected_type="access",
+            )
         # Token-type separation (#221): refresh tokens share the audience but
         # must never be accepted as access tokens.
         if payload.get("type") != "access":
