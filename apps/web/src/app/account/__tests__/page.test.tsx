@@ -243,6 +243,9 @@ describe('AccountPage (/account)', () => {
       await waitFor(() => expect(screen.getByText('GB')).toBeInTheDocument());
 
       fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+      fireEvent.change(screen.getByRole('textbox', { name: 'Bio' }), {
+        target: { value: 'Rejected update' },
+      });
       fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
       // Losing the edit form on a rejected save would discard the user's work
