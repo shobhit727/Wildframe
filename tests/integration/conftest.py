@@ -16,8 +16,6 @@ running it on a machine without containers is harmless.
 from __future__ import annotations
 
 import base64
-import hashlib
-import hmac
 import json
 import os
 import threading
@@ -30,7 +28,6 @@ import httpx
 import pytest
 
 GATEWAY_URL = os.environ.get("WILDFRAME_GATEWAY_URL", "https://localhost:8000")
-JWT_SECRET = os.environ.get("WILDFRAME_JWT_SECRET", "dev-secret-key")
 STRIPE_WEBHOOK_SECRET = os.environ.get(
     "WILDFRAME_STRIPE_WEBHOOK_SECRET", "whsec_default_change_me"
 )
@@ -132,35 +129,27 @@ def decode_jwt(token: str) -> dict[str, Any]:
     return json.loads(base64.urlsafe_b64decode(payload))
 
 
-def mint_jwt(claims: dict[str, Any], secret: str = JWT_SECRET) -> str:
-    """Sign a JWT with HS256 using the dev secret (for negative tests only)."""
-    header = {"alg": "HS256", "typ": "JWT"}
+def malformed_rs256_token(claims: dict[str, Any], *, kid: str = "k1") -> str:
+    """Build a deliberately invalid RS256-shaped token for negative tests.
+
+    Positive integration tests must use tokens issued by auth-service, whose
+    private key is not available to this host-side test process. This helper
+    never signs with HS256 or any repository secret; the intentionally invalid
+    signature is expected to be rejected by the real gateway/service verifier.
+    """
+    header = {"alg": "RS256", "typ": "JWT", "kid": kid}
 
     def _b64(obj: dict) -> bytes:
         raw = json.dumps(obj, separators=(",", ":")).encode()
         return base64.urlsafe_b64encode(raw).rstrip(b"=")
 
-    message = _b64(header) + b"." + _b64(claims)
-    signature = hmac.new(secret.encode(), message, hashlib.sha256).digest()
-    return (message + b"." + base64.urlsafe_b64encode(signature).rstrip(b"=")).decode()
-
-
-def mint_access_token(user_id: str | uuidlib.UUID, *, exp_delta: int = 900, **extra: Any) -> str:
-    """Mint a realistic access token for the dev secret."""
-    now = int(time.time())
-    claims: dict[str, Any] = {
-        "sub": str(user_id),
-        "user_id": str(user_id),
-        "email": f"it-{user_id}@wildframe-test.example",
-        "role": "user",
-        "type": "access",
-        "iss": "wildframe-auth",
-        "aud": "wildframe-api",
-        "iat": now,
-        "exp": now + exp_delta,
-    }
-    claims.update(extra)
-    return mint_jwt(claims)
+    # Deliberately not a valid RSA signature. This is used only for rejection cases.
+    return (
+        _b64(header).decode()
+        + "."
+        + _b64(claims).decode()
+        + ".invalid-signature"
+    )
 
 
 def auth_headers(token: str) -> dict[str, str]:
