@@ -32,6 +32,7 @@ wildframe-compliance = {path = "../../packages/sdk/wildframe_compliance", develo
 prometheus-client = "^0.18.0"
 
 [tool.poetry.group.dev.dependencies]
+types-python-jose = "^3.3.4"
 aiosqlite = "^0.19.0"
 pytest = ">=7.4,<10.0"
 pytest-asyncio = "^0.21.0"
@@ -44,6 +45,3 @@ module = "jose.*"
 ignore_missing_imports = true
 ignore_errors = true
 
-[[tool.mypy.overrides]]
-module = "services.analytics_service.*"
-ignore_errors = true
