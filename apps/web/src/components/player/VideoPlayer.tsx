@@ -120,7 +120,40 @@ export function VideoPlayer({
         }
       }
     };
-  }, [contentId, quality, src, srcType, loadAttempt]);
+  }, [contentId, src, srcType, loadAttempt]);
+
+  const handleQualityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const nextQuality = e.target.value;
+    setQuality(nextQuality);
+
+    const player = playerRef.current as {
+      currentLevel?: number;
+      levels?: Array<{ height?: number }>;
+    } | null;
+    if (!player || !Array.isArray(player.levels) || typeof player.currentLevel !== 'number') {
+      return;
+    }
+
+    if (nextQuality === 'auto') {
+      // -1 delegates representation selection back to hls.js.
+      player.currentLevel = -1;
+      return;
+    }
+
+    const targetHeight = Number.parseInt(nextQuality, 10);
+    if (!Number.isFinite(targetHeight)) return;
+
+    const targetIndex = player.levels.reduce((bestIndex, level, index) => {
+      const bestHeight = player.levels[bestIndex]?.height ?? Number.POSITIVE_INFINITY;
+      const levelHeight = level.height ?? Number.POSITIVE_INFINITY;
+      return Math.abs(levelHeight - targetHeight) < Math.abs(bestHeight - targetHeight)
+        ? index
+        : bestIndex;
+    }, 0);
+
+    // Select the closest available representation without rebuilding the stream.
+    player.currentLevel = targetIndex;
+  };
 
   const handleTimeUpdate = () => {
     if (!videoRef.current) return;
@@ -325,7 +358,7 @@ export function VideoPlayer({
               <select
                 id="quality"
                 value={quality}
-                onChange={(e) => setQuality(e.target.value)}
+                onChange={handleQualityChange}
                 className="bg-gray-800 text-white px-3 py-1.5 rounded border border-gray-600 text-sm focus:outline-none focus:ring-2 focus:ring-white"
                 aria-label="Video quality"
               >
