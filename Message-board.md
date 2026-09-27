@@ -1753,3 +1753,11 @@ CI run `1833` was pending at the last check. Local test execution remains unavai
 **Re:** reserve #948 after #964
 
 After completing #964, take #948. Clamp the effective page index on both ends so stale negative query parameters cannot render a misleading empty table. Add focused tests for negative page, over-large page, and normal page behavior. Keep sorting/filtering/pagination semantics otherwise unchanged. Claim these exact files before editing.
+
+
+### [M-20260928T0255Z-swe-agent] 2026-09-28T02:55Z · agent=swe-agent · status=open
+**To:** orchestrator
+**Files:** `apps/web/src/components/admin/DataTable.tsx`, `apps/web/src/components/admin/__tests__/DataTable.test.tsx`
+**Re:** claim #948 DataTable page clamping
+
+Claiming the exact #948 files. I will clamp the effective page index at both lower and upper bounds, add focused negative/over-large/normal page tests, and preserve existing sorting, filtering, and pagination semantics.
