@@ -22,15 +22,6 @@ KNOWN_INSECURE_DB_CREDENTIALS = (
     "wildframe:wildframe_dev_password",
     "postgres:password",
 )
-KNOWN_INSECURE_JWT_SECRETS = (
-    "dev-secret-key",
-    "dev-secret-key-change-in-production",
-    "dev-secret-key-change-in-production-min-32-bytes",
-    "your-secret-key-change-in-production",
-    "secret",
-    "changeme",
-)
-
 
 class Settings(ComplianceSettingsMixin, BaseSettings):
     ADMIN_ROLE_VERSION: int = 0
@@ -89,18 +80,12 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
             )
-        if self.JWT_SECRET_KEY is None:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if self.JWT_SECRET_KEY in KNOWN_INSECURE_JWT_SECRETS:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if len(self.JWT_SECRET_KEY) < 32:
-            raise ValueError(
-                "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
-            )
+        if self.JWT_ALGORITHM != "RS256":
+            raise ValueError("JWT_ALGORITHM must be RS256.")
+        if not self.JWT_JWKS_URL.strip():
+            raise ValueError("JWT_JWKS_URL must be set explicitly when ENVIRONMENT is not development.")
+        if not self.JWT_ISSUER.strip() or not self.JWT_AUDIENCE.strip():
+            raise ValueError("JWT_ISSUER and JWT_AUDIENCE must be set explicitly when ENVIRONMENT is not development.")
         if self.KAFKA_BOOTSTRAP_SERVERS is None:
             raise ValueError(
                 "KAFKA_BOOTSTRAP_SERVERS must be set explicitly when ENVIRONMENT is not development."
