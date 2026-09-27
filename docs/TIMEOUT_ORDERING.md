@@ -36,5 +36,7 @@ CI should verify:
 
 ## References
 
-- Issue #423: Proxy timeout ordering needs verification
-- Issue #429/#430: Database statement/lock timeouts enforcement
+The issue states above are GitHub metadata, not implementation evidence. Verify timeout values against Terraform, Helm, and service source.
+
+- Issue #423: Proxy timeout ordering needs verification — closed in GitHub as of September 27, 2026
+- Issue #429/#430: Database statement/lock timeouts enforcement — both closed in GitHub as of September 27, 2026
