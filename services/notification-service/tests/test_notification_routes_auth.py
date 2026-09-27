@@ -5,13 +5,20 @@ separate rules that the existing route tests never reach (they *override* the
 dependency):
 
 1. the header must be a `Bearer` token;
-2. the token must decode with the platform audience/issuer AND be of type
-   `access` (refresh tokens share the audience and must never pass - #221);
+2. the token must verify against auth-service's JWKS with the platform
+   audience/issuer AND be of type `access` (refresh tokens share the audience
+   and must never pass - #221);
 3. the subject must exist and be a UUID.
 
 Every DENY path is asserted; a false accept here is an authentication bypass.
+
+Tokens are RS256, signed with the key pair in `tests/_test_jwks.py`; only the
+outbound JWKS HTTP call is replaced. The SDK verifier itself runs for real, so
+these tests exercise the same code path as production.
 """
 
+import base64
+import json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
@@ -20,22 +27,73 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from jose import JWTError, jwt
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
+import wildframe_auth
 from app.api.notification_routes import get_current_user_id
 from app.core.settings import settings
+from tests._test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
 
 
 def _token(**claims) -> str:
+    """Mint an RS256 access token the way auth-service would.
+
+    `av` is required: the SDK's `AUTH_VERSIONED_TYPES` covers `access`, so a
+    token without a real int auth-version is rejected as 401 regardless of
+    signature.
+    """
+    now = datetime.now(UTC)
     payload = {
         "sub": str(uuid4()),
         "type": "access",
         "aud": settings.JWT_AUDIENCE,
         "iss": settings.JWT_ISSUER,
-        "exp": datetime.now(UTC) + timedelta(minutes=5),
-        "iat": datetime.now(UTC),
+        "role": "user",
+        "av": 0,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=5)).timestamp()),
         **claims,
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
+
+
+def _token_without_sub(**claims) -> str:
+    """Mint a token with no `sub` at all — the shape pre-rename tokens had."""
+    now = datetime.now(UTC)
+    payload = {
+        "type": "access",
+        "aud": settings.JWT_AUDIENCE,
+        "iss": settings.JWT_ISSUER,
+        "role": "user",
+        "av": 0,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=5)).timestamp()),
+        **claims,
+    }
+    return jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
+
+
+def _drop_claim(token: str, claim: str) -> str:
+    """Re-sign ``token`` with ``claim`` removed from the payload."""
+    _head, payload_b64, _sig = token.split(".")
+    claims = json.loads(base64.urlsafe_b64decode(payload_b64 + "=" * (-len(payload_b64) % 4)))
+    claims.pop(claim, None)
+    return jwt.encode(claims, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
+
+
+@pytest.fixture(autouse=True)
+def _jwks_endpoint(monkeypatch):
+    """Replace the outbound JWKS fetch only; the SDK verifier still runs for real."""
+
+    async def fetch(url: str):
+        return JWKS
+
+    monkeypatch.setattr(wildframe_auth.verifier, "fetch_jwks", fetch)
+    clear_jwks_cache()
+    yield
+    clear_jwks_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -52,21 +110,21 @@ async def test_a_well_formed_access_token_resolves_the_user_id():
     assert user_id == subject
 
 
-async def test_the_user_id_claim_is_accepted_as_an_alias_for_sub():
-    """Tokens minted before the `sub` rename still authenticate."""
+async def test_a_token_without_a_sub_claim_is_rejected():
+    """The SDK's REQUIRED_CLAIMS includes `sub`, so a `user_id`-only token fails.
+
+    This used to authenticate via the route's `user_id` alias. It no longer
+    can: the verifier rejects the token before the route reads any claim, so
+    the alias is unreachable for RS256 tokens.
+    """
     subject = uuid4()
-    claims = {
-        "type": "access",
-        "aud": settings.JWT_AUDIENCE,
-        "iss": settings.JWT_ISSUER,
-        "user_id": str(subject),
-        "exp": datetime.now(UTC) + timedelta(minutes=5),
-    }
-    token = jwt.encode(claims, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    # A legacy-shaped token: `user_id` in place of `sub`.
+    legacy = _token_without_sub(user_id=str(subject))
 
-    user_id = await get_current_user_id(authorization=f"Bearer {token}")
+    with pytest.raises(HTTPException) as excinfo:
+        await get_current_user_id(authorization=f"Bearer {legacy}")
 
-    assert user_id == subject
+    assert excinfo.value.status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -92,16 +150,27 @@ async def test_a_missing_or_non_bearer_header_is_rejected(header):
 
 
 async def test_a_token_signed_with_another_key_is_rejected():
+    """A token whose signature does not match the published JWKS is a 401."""
+    other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    other_pem = other.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+    now = datetime.now(UTC)
     forged = jwt.encode(
         {
             "sub": str(uuid4()),
             "type": "access",
             "aud": settings.JWT_AUDIENCE,
             "iss": settings.JWT_ISSUER,
-            "exp": datetime.now(UTC) + timedelta(minutes=5),
+            "av": 0,
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=5)).timestamp()),
         },
-        "a-completely-different-signing-key-32c",
-        algorithm=settings.JWT_ALGORITHM,
+        other_pem,
+        algorithm="RS256",
+        headers={"kid": "k1"},
     )
 
     with pytest.raises(HTTPException) as excinfo:
@@ -112,17 +181,7 @@ async def test_a_token_signed_with_another_key_is_rejected():
 
 
 async def test_an_expired_token_is_rejected():
-    expired = jwt.encode(
-        {
-            "sub": str(uuid4()),
-            "type": "access",
-            "aud": settings.JWT_AUDIENCE,
-            "iss": settings.JWT_ISSUER,
-            "exp": datetime.now(UTC) - timedelta(minutes=1),
-        },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-    )
+    expired = _token(exp=int((datetime.now(UTC) - timedelta(hours=1)).timestamp()))
 
     with pytest.raises(HTTPException) as excinfo:
         await get_current_user_id(authorization=f"Bearer {expired}")
@@ -132,41 +191,23 @@ async def test_an_expired_token_is_rejected():
 
 
 async def test_a_token_with_the_wrong_audience_is_rejected():
-    token = jwt.encode(
-        {
-            "sub": str(uuid4()),
-            "type": "access",
-            "aud": "some-other-api",
-            "iss": settings.JWT_ISSUER,
-            "exp": datetime.now(UTC) + timedelta(minutes=5),
-        },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-    )
+    token = _token(aud="some-other-api")
 
     with pytest.raises(HTTPException) as excinfo:
         await get_current_user_id(authorization=f"Bearer {token}")
 
     assert excinfo.value.status_code == 401
+    assert excinfo.value.detail == "Invalid token"
 
 
 async def test_a_token_with_the_wrong_issuer_is_rejected():
-    token = jwt.encode(
-        {
-            "sub": str(uuid4()),
-            "type": "access",
-            "aud": settings.JWT_AUDIENCE,
-            "iss": "some-other-issuer",
-            "exp": datetime.now(UTC) + timedelta(minutes=5),
-        },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-    )
+    token = _token(iss="some-other-issuer")
 
     with pytest.raises(HTTPException) as excinfo:
         await get_current_user_id(authorization=f"Bearer {token}")
 
     assert excinfo.value.status_code == 401
+    assert excinfo.value.detail == "Invalid token"
 
 
 async def test_a_tampered_token_is_rejected():
@@ -196,31 +237,30 @@ async def test_garbage_tokens_are_rejected_without_raising(garbage):
 
 
 async def test_a_refresh_token_is_rejected():
+    """#221: refresh tokens share the audience but must never act as access tokens.
+
+    The SDK enforces the type via `expected_type="access"` and reports it as a
+    plain JWTError, so this is a 401 "Invalid token" rather than the bespoke
+    "Invalid token type" detail the old HS256 branch produced.
+    """
     refresh = _token(type="refresh")
 
     with pytest.raises(HTTPException) as excinfo:
         await get_current_user_id(authorization=f"Bearer {refresh}")
 
     assert excinfo.value.status_code == 401
-    assert excinfo.value.detail == "Invalid token type"
+    assert excinfo.value.detail == "Invalid token"
 
 
 async def test_a_token_with_no_type_claim_is_rejected():
-    token = jwt.encode(
-        {
-            "sub": str(uuid4()),
-            "aud": settings.JWT_AUDIENCE,
-            "iss": settings.JWT_ISSUER,
-            "exp": datetime.now(UTC) + timedelta(minutes=5),
-        },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-    )
+    token = _token_without_sub(type=None, sub=str(uuid4()))
+    token = _drop_claim(token, "type")
 
     with pytest.raises(HTTPException) as excinfo:
         await get_current_user_id(authorization=f"Bearer {token}")
 
-    assert excinfo.value.detail == "Invalid token type"
+    assert excinfo.value.status_code == 401
+    assert excinfo.value.detail == "Invalid token"
 
 
 # ---------------------------------------------------------------------------
@@ -229,22 +269,13 @@ async def test_a_token_with_no_type_claim_is_rejected():
 
 
 async def test_a_token_without_any_subject_is_rejected():
-    token = jwt.encode(
-        {
-            "type": "access",
-            "aud": settings.JWT_AUDIENCE,
-            "iss": settings.JWT_ISSUER,
-            "exp": datetime.now(UTC) + timedelta(minutes=5),
-        },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
-    )
+    token = _token_without_sub()
 
     with pytest.raises(HTTPException) as excinfo:
         await get_current_user_id(authorization=f"Bearer {token}")
 
     assert excinfo.value.status_code == 401
-    assert excinfo.value.detail == "Invalid token subject"
+    assert excinfo.value.detail == "Invalid token"
 
 
 async def test_a_non_uuid_subject_is_rejected():
@@ -261,11 +292,11 @@ async def test_a_non_uuid_subject_is_rejected():
 # ---------------------------------------------------------------------------
 
 
-def test_the_decoder_validates_audience_issuer_and_algorithm():
+def test_the_verifier_enforces_the_platform_audience_and_issuer():
     """The settings the boundary relies on are the platform contract."""
     assert settings.JWT_AUDIENCE == "wildframe-api"
     assert settings.JWT_ISSUER == "wildframe-auth"
-    assert settings.JWT_ALGORITHM == "HS256"
+    assert settings.JWT_JWKS_URL
 
 
 def test_garbage_raises_a_jose_error_not_a_bare_exception():
@@ -273,11 +304,35 @@ def test_garbage_raises_a_jose_error_not_a_bare_exception():
     with pytest.raises(JWTError):
         jwt.decode(
             "not-a-jwt",
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
+            PRIVATE_PEM,
+            algorithms=["RS256"],
             audience=settings.JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
         )
+
+
+async def test_the_sdk_refuses_hs256_entirely():
+    """#941: the shared secret must not be a way in, even with a valid `kid`."""
+    now = datetime.now(UTC)
+    hs = jwt.encode(
+        {
+            "sub": str(uuid4()),
+            "type": "access",
+            "aud": settings.JWT_AUDIENCE,
+            "iss": settings.JWT_ISSUER,
+            "av": 0,
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=5)).timestamp()),
+        },
+        "dev-secret-key-change-in-production-min-32-bytes",
+        algorithm="HS256",
+        headers={"kid": "k1"},
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await get_current_user_id(authorization=f"Bearer {hs}")
+
+    assert excinfo.value.status_code == 401
 
 
 # ---------------------------------------------------------------------------
