@@ -215,29 +215,7 @@ class TestSearchEndpoints:
         monkeypatch.setattr(settings, "ADMIN_ROLE_VERSION", 1)
         app.dependency_overrides[get_search_service] = override_get_search_service(service)
 
-        import time
-        from uuid import uuid4
-
-        from jose import jwt as pyjwt
-
-        now = int(time.time())
-        token = pyjwt.encode(
-            {
-                "sub": str(uuid4()),
-                "type": "access",
-                "aud": settings.JWT_AUDIENCE,
-                "iss": settings.JWT_ISSUER,
-                "role": "admin",
-                "arv": 0,
-                "iat": now,
-                "exp": now + 900,
-            },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
-        )
-        response = client.post(
-            "/api/v1/search/reindex", headers={"Authorization": f"Bearer {token}"}
-        )
+        stale_identity = Identity(user_id=uuid4(), role="admin", arv=0)\n        app.dependency_overrides[search_routes.get_admin_identity] = lambda: stale_identity\n        response = client.post("/api/v1/search/reindex")
 
         assert response.status_code == 403
         service.reindex_catalog.assert_not_awaited()
