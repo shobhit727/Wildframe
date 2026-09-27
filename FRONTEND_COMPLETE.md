@@ -9,7 +9,7 @@
 
 | Area | Status |
 |------|--------|
-| Next.js 15 setup | ✅ Configured |
+| Next.js 16.3.6 setup | ✅ Configured |
 | Pages (10) | ✅ Created (skeletons) |
 | Components (6) | ✅ Created (skeletons) |
 | API Client | ✅ 28 methods (stubs) |
