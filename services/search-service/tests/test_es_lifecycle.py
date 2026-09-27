@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+import wildframe_auth
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,38 @@ from app.core.security import decode_cursor, encode_cursor
 from app.core.settings import settings
 from app.main import app
 from app.repositories import SearchIndexRepository, SearchQueryRepository
+from tests._test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
+
+
+class _Endpoint:
+    """The auth service's JWKS endpoint, as the routes see it."""
+
+    def __init__(self) -> None:
+        self.jwks = JWKS
+        self.raises: Exception | None = None
+
+    async def fetch(self, url: str):
+        if self.raises is not None:
+            raise self.raises
+        return self.jwks
+
+
+@pytest.fixture(autouse=True)
+def _stub_jwks_endpoint(monkeypatch):
+    """Serve the test JWKS and clear the SDK cache around every test.
+
+    Autouse, because ``verify_token`` is on the path of most of the identity and
+    route tests in this module and a real outbound fetch would otherwise be
+    attempted.
+    """
+    ep = _Endpoint()
+    monkeypatch.setattr(wildframe_auth.verifier, "fetch_jwks", ep.fetch)
+    clear_jwks_cache()
+    yield ep
+    clear_jwks_cache()
+
+
 from app.services import (
     CONTENT_INDEX,
     CONTENT_INDEX_MAPPING,
@@ -242,6 +275,11 @@ def _request(headers: dict[str, str]):
 
 
 def _token(**claims) -> str:
+    """Mint a real RS256 access token signed by the test JWKS key.
+
+    Signed with RS256 over the in-memory RSA key from ``tests/_test_jwks.py``,
+    because the service no longer accepts a shared-secret HS256 token at all.
+    """
     import time
 
     from jose import jwt
@@ -251,6 +289,7 @@ def _token(**claims) -> str:
         "type": "access",
         "aud": settings.JWT_AUDIENCE,
         "iss": settings.JWT_ISSUER,
+        "av": 0,
         "iat": int(time.time()),
         "exp": int(time.time()) + 900,
     }
@@ -259,56 +298,90 @@ def _token(**claims) -> str:
     # python-jose rejects a non-string ``sub`` at decode time.
     return jwt.encode(
         {k: v for k, v in base.items() if v is not None},
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
+        PRIVATE_PEM,
+        algorithm="RS256",
+        headers={"kid": "k1"},
     )
 
 
 class TestTokenIdentity:
-    def test_missing_header_is_anonymous(self):
+    async def test_missing_header_is_anonymous(self):
         from app.core.security import verify_token
 
-        assert verify_token(_request({})) is None
+        assert await verify_token(_request({})) is None
 
     @pytest.mark.parametrize("header", ["Basic abc", "Bearer", "token abc"])
-    def test_non_bearer_schemes_are_anonymous(self, header):
+    async def test_non_bearer_schemes_are_anonymous(self, header):
         from app.core.security import verify_token
 
-        assert verify_token(_request({"Authorization": header})) is None
+        assert await verify_token(_request({"Authorization": header})) is None
 
-    def test_refresh_tokens_are_never_accepted_as_access(self):
-        """Token-type separation (#221): a refresh token is anonymous."""
+    async def test_refresh_tokens_are_never_accepted_as_access(self):
+        """Token-type separation (#221): a refresh token is anonymous.
+
+        Now enforced inside the shared verifier via ``expected_type="access"``
+        rather than by a hand-written ``type`` check here.
+        """
         from app.core.security import verify_token
 
         token = _token(type="refresh")
 
-        assert verify_token(_request({"Authorization": f"Bearer {token}"})) is None
+        assert await verify_token(_request({"Authorization": f"Bearer {token}"})) is None
 
     @pytest.mark.parametrize("claims", [{"sub": None, "user_id": None}])
-    def test_token_without_a_subject_is_anonymous(self, claims):
+    async def test_token_without_a_subject_is_anonymous(self, claims):
+        """``sub`` is a required claim, so this is refused during verification."""
         from app.core.security import verify_token
 
         token = _token(**claims)
 
-        assert verify_token(_request({"Authorization": f"Bearer {token}"})) is None
+        assert await verify_token(_request({"Authorization": f"Bearer {token}"})) is None
 
-    def test_user_id_claim_is_accepted_as_a_fallback(self):
+    async def test_user_id_claim_is_no_longer_accepted_as_a_fallback(self):
+        """The shared verifier requires ``sub``, so the old ``user_id`` fallback is unreachable.
+
+        Under the deleted HS256 path a token carrying only ``user_id`` was
+        accepted and ``user_id or sub`` supplied the identity. The SDK verifier
+        requires ``sub`` as a claim, so such a token is now anonymous outright
+        rather than silently reinterpreting a different claim as the identity.
+        """
         from app.core.security import verify_token
 
         user_id = uuid4()
         token = _token(sub=None, user_id=str(user_id))
 
-        identity = verify_token(_request({"Authorization": f"Bearer {token}"}))
+        assert await verify_token(_request({"Authorization": f"Bearer {token}"})) is None
+
+    async def test_the_user_id_fallback_still_resolves_when_the_verifier_allows_it(
+        self, monkeypatch
+    ):
+        """The ``user_id or sub`` branch is retained, so it stays covered.
+
+        Unreachable through the real verifier, so ``verify_token_with_jwks`` is
+        stubbed. Deleting the branch instead would be a second, unrelated change;
+        keeping it covered means a future refactor cannot silently drop the
+        fallback.
+        """
+        import app.core.security as security
+
+        user_id = uuid4()
+
+        async def _stub(token: str, **kwargs) -> dict:
+            return {"user_id": str(user_id)}
+
+        monkeypatch.setattr(security, "verify_token_with_jwks", _stub)
+
+        identity = await security.verify_token(_request({"Authorization": "Bearer anything"}))
 
         assert identity is not None
         assert identity.user_id == user_id
 
-    def test_valid_token_yields_role_and_arv(self):
+    async def test_valid_token_yields_role_and_arv(self):
         from app.core.security import verify_token
 
         token = _token(role="admin", arv=3)
 
-        identity = verify_token(_request({"Authorization": f"Bearer {token}"}))
+        identity = await verify_token(_request({"Authorization": f"Bearer {token}"}))
 
         assert identity is not None
         assert identity.role == "admin"
@@ -325,12 +398,13 @@ class TestTokenIdentity:
             "Bearer ",
         ],
     )
-    def test_malformed_tokens_are_anonymous(self, header):
+    async def test_malformed_tokens_are_anonymous(self, header):
         from app.core.security import verify_token
 
-        assert verify_token(_request({"Authorization": header})) is None
+        assert await verify_token(_request({"Authorization": header})) is None
 
-    def test_expired_token_is_anonymous(self):
+    async def test_expired_token_is_anonymous(self):
+        """Expired by 1h, not 10s: the shared verifier allows ~60s of clock skew."""
         import time
 
         from jose import jwt
@@ -343,34 +417,50 @@ class TestTokenIdentity:
                 "type": "access",
                 "aud": settings.JWT_AUDIENCE,
                 "iss": settings.JWT_ISSUER,
-                "exp": int(time.time()) - 10,
+                "av": 0,
+                "iat": int(time.time()) - 3600,
+                "exp": int(time.time()) - 3600,
             },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
+            PRIVATE_PEM,
+            algorithm="RS256",
+            headers={"kid": "k1"},
         )
 
-        assert verify_token(_request({"Authorization": f"Bearer {token}"})) is None
+        assert await verify_token(_request({"Authorization": f"Bearer {token}"})) is None
 
-    def test_token_signed_with_another_secret_is_anonymous(self):
+    async def test_token_signed_by_another_key_is_anonymous(self):
+        """An RS256 token from an RSA key that is not in the JWKS is anonymous."""
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
         from jose import jwt
 
         from app.core.security import verify_token
 
+        intruder = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = intruder.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode()
         token = jwt.encode(
             {
                 "sub": str(uuid4()),
                 "type": "access",
                 "aud": settings.JWT_AUDIENCE,
                 "iss": settings.JWT_ISSUER,
+                "av": 0,
+                "iat": 9999999999,
                 "exp": 9999999999,
             },
-            "a-totally-different-signing-secret-value",
-            algorithm=settings.JWT_ALGORITHM,
+            pem,
+            algorithm="RS256",
+            headers={"kid": "k1"},
         )
 
-        assert verify_token(_request({"Authorization": f"Bearer {token}"})) is None
+        assert await verify_token(_request({"Authorization": f"Bearer {token}"})) is None
 
-    def test_token_without_exp_is_rejected(self):
+    async def test_token_without_exp_is_rejected(self):
+        """``exp`` is a required claim, replacing the old ``require_exp`` option."""
         import time
 
         from jose import jwt
@@ -383,13 +473,15 @@ class TestTokenIdentity:
                 "type": "access",
                 "aud": settings.JWT_AUDIENCE,
                 "iss": settings.JWT_ISSUER,
+                "av": 0,
                 "iat": int(time.time()),
             },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
+            PRIVATE_PEM,
+            algorithm="RS256",
+            headers={"kid": "k1"},
         )
 
-        assert verify_token(_request({"Authorization": f"Bearer {token}"})) is None
+        assert await verify_token(_request({"Authorization": f"Bearer {token}"})) is None
 
     @pytest.mark.asyncio
     async def test_optional_identity_mirrors_verify_token(self):

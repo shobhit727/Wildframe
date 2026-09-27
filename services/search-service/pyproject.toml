@@ -18,6 +18,7 @@ packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
 python = ">=3.13,<3.16"
+wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 fastapi = "^0.141.0"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}
 pydantic = "^2.4.0"
@@ -46,6 +47,26 @@ mypy = "^1.7.0"
 
 [tool.mypy]
 python_version = "3.11"
+
+# `deprecated` 3.0.0 (pulled in transitively by the OpenTelemetry tree that
+# `wildframe-auth` brings in, and selected by the resolver for this interpreter)
+# declares its type aliases with PEP 695 `type X = ...`, which is Python 3.12+
+# syntax. With python_version pinned to 3.11 above -- the floor this service
+# actually declares in `requires-python` -- mypy parses that dependency's source
+# with the 3.11 grammar and fails on a file we do not own:
+#
+#   .venv/.../site-packages/deprecated/classic.py:33: error:
+#     Type statement is only supported in Python 3.12 and greater  [syntax]
+#
+# Raising python_version to 3.13 would also silence it, but that gives up
+# checking our own code against the 3.11 floor we advertise, so a 3.12-only
+# construct in app/ would pass. This override keeps the 3.11 check and stops
+# mypy analysing a third-party package's internals, which is the actual defect.
+# Same fix as services/auth-service (70b4d68a).
+[[tool.mypy.overrides]]
+module = ["deprecated.*"]
+follow_imports = "skip"
+ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = "aiokafka.*"
