@@ -55,6 +55,17 @@ line_length = 100
 [tool.mypy]
 python_version = "3.11"
 
+# `deprecated` 3.0.0 is pulled in transitively by the OpenTelemetry exporters and
+# declares its type aliases with PEP 695 `type X = ...`, which is 3.12+ syntax. With
+# python_version pinned to 3.11 above, mypy parses that dependency's source with the
+# 3.11 grammar and fails on a file this service does not own. Raising python_version
+# to 3.13 would also silence it, but that gives up checking against the 3.11 floor
+# we actually declare in requires-python. Skipping the import is the accurate fix.
+[[tool.mypy.overrides]]
+module = ["deprecated.*"]
+follow_imports = "skip"
+ignore_errors = true
+
 [[tool.mypy.overrides]]
 module = "aiokafka"
 ignore_missing_imports = true

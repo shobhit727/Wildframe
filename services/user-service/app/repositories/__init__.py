@@ -124,7 +124,7 @@ class UserDeviceRepository(BaseRepository):
         """Get all devices for a user."""
         stmt = select(UserDevice).where(UserDevice.user_id == user_id)
         if active_only:
-            stmt = stmt.where(UserDevice.is_active == True)
+            stmt = stmt.where(UserDevice.is_active.is_(True))
         stmt = stmt.order_by(UserDevice.last_active_at.desc(), UserDevice.id.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
