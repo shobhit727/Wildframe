@@ -282,6 +282,84 @@ checkout:
 - An absence of output is not evidence of success in a shared tree. Re-verify
   with a command whose failure mode you have actually seen.
 
+### 23.2 Verified failure modes
+
+Each item below cost real work on `audit/fix-open-github-issues`. They are
+recorded here because the symptom is misleading in every case, so the instinct is
+to trust the wrong signal.
+
+**Landing work under churn**
+
+- A quiet `git push` is not success. A push that printed only a fast-forward hint
+  had already lost the commit to a concurrent reset. Confirm with
+  `git log origin/<branch> --oneline | head` and, better, verify your *content*
+  arrived: `git show origin/<branch>:Message-board.md | grep -c '<distinctive string>'`.
+  Verify by content, not by SHA — re-application by another agent moves the SHA
+  while preserving the change.
+- **The board is one shared file, so rebase silently eats appends.** A conflict
+  resolved by taking `origin`'s version discards your appended entry, and
+  `rebase --continue` then commits that reduced file. Your commit lands with the
+  text missing. Re-append *inside* the retry loop, after each rebase, not once
+  before it.
+- `git pull --rebase` refuses outright on a dirty tree. That refusal is
+  protective. For a merge, confirm the incoming commits do not touch the dirty
+  files, fingerprint those files before and after, and compare — then it is safe
+  while their work stays byte-identical.
+- Another agent may leave the checkout **detached mid-rebase** with the board
+  conflicted. Re-attach before concluding anything about your own work:
+  `git rebase --abort; git merge --abort; git checkout -B <branch> origin/<branch>`.
+- `git worktree add --detach <dir> <sha>` is the only reliable way to learn what
+  CI actually sees. The shared dirty tree tells you about *someone's* WIP.
+  Fetch first: a SHA read from the GitHub API is not a local ref, and
+  `git worktree add` fails on it with `invalid reference`.
+
+**`cancel-in-progress` and the push/review deadlock**
+
+`ci-cd.yml` uses a per-ref concurrency group with `cancel-in-progress: true`, so
+every push kills the run in flight. Under multi-agent push rates this yields
+*zero* verdicts — not failures, no signal at all. Worse, posting a board update
+is itself a commit and therefore itself a push, so the coordination mechanism
+causes the CI it is coordinating. The cure is a quiet window or deliberate
+batching (one push per ~10 minutes), not weakening the guard. Do not silence
+`cancel-in-progress` to make the dashboard look greener: that hides real
+regressions behind stale runs.
+
+**Local verification that lied**
+
+- **Install before you type-check or test.** CI runs
+  `poetry install --no-interaction --with dev` in each service directory before
+  mypy and pytest. Running either against a fresh or empty service venv produces
+  confident, entirely fictional errors — an `import-untyped` storm across 13
+  services from a package that was never installed, in this case.
+- Use a clean worktree plus a real `poetry install` to reproduce CI. A venv
+  inherited from the repo root is drifted and will disagree with the pipeline in
+  both directions.
+- A scratch venv you built by hand can invent vulnerabilities. A "redis 5.3.1
+  has 2 HIGH CVEs" claim came from `msgpack` and `setuptools` in that scratch
+  venv, not from redis. Confirm the package name in the finding before reporting
+  it.
+- Trivy over the working tree flags locally generated dev certificates. Those are
+  gitignored (`.gitignore`: `apps/web/certificates/*.pem`) and never committed, so
+  a local non-zero exit is not a CI result. `verify-supply-chain.py` is the check
+  that reflects committed content.
+- Do not hide a tool's error output while debugging. `2>/dev/null` on
+  `git worktree add` hid a failure, and the next command then analysed an empty
+  directory and produced meaningless output.
+- `grep | head -N` truncated away the match that mattered and produced the
+  opposite conclusion. Read the full match list before concluding a file is
+  clean.
+- Bash `seq` is `seq FIRST INCREMENT LAST`. `seq 10 60 10` is "start 10, step 60,
+  stop 10" and yields a single value. A watcher built on it ran one poll and
+  reported nine minutes of quiet. Prove a polling loop iterates: emit a
+  per-iteration heartbeat and check elapsed wall time.
+- Simulate a regression with the *actual* defect. Setting `algorithms=['HS256']`
+  on a call whose key still comes from JWKS is not the vulnerability, and a gate
+  correctly ignoring it looked like a broken gate.
+- Expect fixing one failure to expose the next. `set -euo pipefail` aborts the
+  per-service mypy loop at the first error, so each fix uncovers the following
+  latent one. Budget for a sequence of them rather than assuming one fix ends
+  the job.
+
 ## 24. Security
 
 Never commit real credentials, tokens, private keys, production connection strings, or unnecessary personal data.
