@@ -367,90 +367,22 @@ class TestReceivedIndices:
 
 
 class TestExpiryComparisonNeedsATzAwareTimestamp:
-    """**Pin for an unfixed bug — do not "correct" this test.**
+    """Regression coverage for DB expiry values that round-trip without tzinfo."""
 
-    ``UploadService.register_chunk`` (services.py:256) and
-    ``complete_session`` (services.py:346) both do::
+    def test_a_naive_future_expiry_is_treated_as_utc(self):
+        expiry = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)
+        naive_expiry = expiry.replace(tzinfo=None)
 
-        if datetime.now(UTC) > session.expires_at:
+        assert UploadService._is_expired(naive_expiry, datetime.datetime.now(datetime.UTC)) is False
 
-    where ``session`` was just loaded by ``repo.get_for_update``. ``expires_at``
-    is declared ``DateTime(timezone=True)`` but, per the repo-wide note in
-    AGENTS.md, these service tables use ``TIMESTAMP WITHOUT TIME ZONE`` — and
-    SQLite demonstrably returns a *naive* datetime. Comparing an aware
-    ``datetime.now(UTC)`` with a naive value raises ``TypeError``, which
-    FastAPI surfaces as a 500.
+    def test_a_naive_past_expiry_is_detected_as_utc(self):
+        expiry = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)
+        naive_expiry = expiry.replace(tzinfo=None)
 
-    The sibling orchestrator already defends against exactly this
-    (``media-pipeline/app/services.py:326-327`` does
-    ``if leased_at.tzinfo is None: leased_at = leased_at.replace(tzinfo=UTC)``);
-    uploads-service does not.
+        assert UploadService._is_expired(naive_expiry, datetime.datetime.now(datetime.UTC)) is True
 
-    Consequence if the deployed column is indeed ``timestamp without time
-    zone``: ``POST /api/v1/uploads/sessions/{id}/chunks`` and
-    ``POST .../complete`` raise 500 for every request, so no upload can ever be
-    registered or finalised. The unit tests miss it because
-    ``test_upload_state_machine.py`` uses an in-memory ``FakeRepo`` where the
-    aware datetime never round-trips through a driver.
-
-    The assertions below describe what actually happens. They are expected to
-    start failing the moment someone fixes the comparison.
-    """
-
-    async def test_a_naive_expiry_from_the_database_crashes_the_comparison(self, db, storage):
-        """This is the current, unfixed behaviour."""
-        publisher = FlakyPublisher()
-        service = make_service(db, storage, publisher)
-
-        session = UploadSession(
-            creator_id=uuid4(),
-            filename="clip.mp4",
-            mime="video/mp4",
-            size_bytes=1 * MIB,
-            chunk_size=1 * MIB,
-            total_chunks=1,
-            expires_at=datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1),
-        )
-        await service.repo.create(session)
-        await db.commit()
-
-        # Confirm the round trip really does drop the tzinfo.
-        reloaded = await service.repo.get_for_update(session.id)
-        assert (
-            reloaded.expires_at.tzinfo is None
-        ), "the driver returns a naive datetime for this column"
-
-        with pytest.raises(TypeError, match="offset-naive and offset-aware"):
-            await service.register_chunk(session_id=session.id, index=0)
-
-    async def test_the_same_comparison_breaks_completion(self, db, storage):
-        publisher = FlakyPublisher()
-        service = make_service(db, storage, publisher)
-
-        session = UploadSession(
-            creator_id=uuid4(),
-            filename="clip.mp4",
-            mime="video/mp4",
-            size_bytes=1 * MIB,
-            chunk_size=1 * MIB,
-            total_chunks=1,
-            # Not COMPLETE and not ABORTED, so control reaches the expiry check
-            # at services.py:346 rather than short-circuiting earlier.
-            status=UploadSessionStatus.UPLOADING,
-            expires_at=datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1),
-        )
-        await service.repo.create(session)
-        await db.commit()
-
-        with pytest.raises(TypeError, match="offset-naive and offset-aware"):
-            await service.complete_session(session.id)
-
-    async def test_an_in_memory_repo_hides_the_bug(self, storage):
-        """Why the existing suite is green: FakeRepo never loses the tzinfo.
-
-        This is the contrast that makes the bug a coverage gap rather than a
-        known-broken feature.
-        """
+    async def test_an_in_memory_repo_keeps_its_aware_expiry(self, storage):
+        """The fake repository still exercises the normal aware-datetime path."""
         from tests.test_upload_state_machine import FakeRepo
 
         service = UploadService(repo=FakeRepo(), storage=storage, publisher=FlakyPublisher())
@@ -464,7 +396,6 @@ class TestExpiryComparisonNeedsATzAwareTimestamp:
         assert session.expires_at.tzinfo is not None
         storage.upload_bytes(uploads[0].storage_key, b"x" * (1 * MIB), "video/mp4")
 
-        # Works fine in memory — which is exactly why nobody noticed.
         await service.register_chunk(session_id=session.id, index=0)
         assert session.uploaded_chunks == 1
 
