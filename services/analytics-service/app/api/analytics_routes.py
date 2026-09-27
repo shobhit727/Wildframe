@@ -4,7 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from jose import JWTError, jwt
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.content_client import (
@@ -20,7 +20,7 @@ from app.repositories import (
     EventRepository,
 )
 from app.schemas import LogEventRequest, RecordViewEventRequest
-from app.services import AnalyticsService
+from app.services import MAX_EVENT_LIMIT, AnalyticsService
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 
@@ -163,13 +163,17 @@ async def require_content_access(
 
 
 async def get_analytics_service(
+    request: Request,
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> AnalyticsService:
+    # The lifespan-managed redis client backs client_event_id idempotency;
+    # when it is absent the service logs and proceeds without dedup.
     return AnalyticsService(
         EventRepository(db),
         ContentViewEventRepository(db),
         CreatorAnalyticsSnapshotRepository(db),
         ContentPerformanceMetricsRepository(db),
+        dedup_store=getattr(request.app.state, "redis_client", None),
     )
 
 
@@ -201,7 +205,7 @@ async def log_event(
 async def get_user_events(
     user_id: Annotated[UUID, Depends(require_self)],
     service: AnalyticsService = Depends(get_analytics_service),  # noqa: B008
-    limit: int = 100,
+    limit: int = Query(default=100, ge=1, le=MAX_EVENT_LIMIT),
 ):
     """Get user events."""
     events = await service.get_user_events(user_id, limit)
@@ -217,17 +221,22 @@ async def record_view_event(
     """Record a content view/playback event."""
     if request.viewer_id != current_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    await service.record_view_event(
-        content_id=request.content_id,
-        viewer_id=request.viewer_id,
-        watch_duration_seconds=request.watch_duration_seconds,
-        content_duration_seconds=request.content_duration_seconds,
-        completion_pct=request.completion_pct,
-        playback_quality=request.playback_quality,
-        started_at=request.started_at,
-        completed_at=request.completed_at,
-        client_event_id=request.client_event_id,
-    )
+    try:
+        await service.record_view_event(
+            content_id=request.content_id,
+            viewer_id=request.viewer_id,
+            watch_duration_seconds=request.watch_duration_seconds,
+            content_duration_seconds=request.content_duration_seconds,
+            completion_pct=request.completion_pct,
+            playback_quality=request.playback_quality,
+            started_at=request.started_at,
+            completed_at=request.completed_at,
+            client_event_id=request.client_event_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
     return {"status": "recorded"}
 
 

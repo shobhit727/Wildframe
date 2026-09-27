@@ -1132,29 +1132,33 @@ class TestContentCatalogClient:
             await catalog.fetch_genres()
         await catalog.aclose()
 
-    def test_shared_client_is_created_lazily_and_cached(self):
+    @pytest.mark.asyncio
+    async def test_shared_client_is_created_lazily_and_cached(self):
         services_mod._catalog_client = None
-        services_mod._catalog_client_class = None
 
         first = services_mod.get_catalog_client()
         second = services_mod.get_catalog_client()
 
         assert first is second
+        assert isinstance(first, services_mod.ContentCatalogClient)
         assert first.base_url == settings.CONTENT_SERVICE_URL
-        assert services_mod._catalog_client_class is services_mod.ContentCatalogClient
+        # Relative /api/v1 paths only resolve if base_url actually reaches httpx.
+        assert str(first.client.base_url) == first.base_url
+        await services_mod.close_catalog_client()
 
     @pytest.mark.asyncio
     async def test_close_catalog_client_releases_the_pool(self):
         catalog = MagicMock()
         catalog.aclose = AsyncMock()
         services_mod._catalog_client = catalog
-        services_mod._catalog_client_class = services_mod.ContentCatalogClient
 
         await services_mod.close_catalog_client()
 
         catalog.aclose.assert_awaited_once()
         assert services_mod._catalog_client is None
-        assert services_mod._catalog_client_class is None
+        # A closed client is never handed out again.
+        assert services_mod.get_catalog_client() is not catalog
+        await services_mod.close_catalog_client()
 
     @pytest.mark.asyncio
     async def test_close_catalog_client_is_a_noop_without_a_client(self):

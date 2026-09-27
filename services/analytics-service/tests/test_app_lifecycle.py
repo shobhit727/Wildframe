@@ -556,43 +556,43 @@ def test_metrics_is_open_outside_production(make_client):
 
 
 @pytest.mark.unit
-def test_metrics_gate_is_shadowed_by_the_observability_scrape_route(make_client, monkeypatch):
-    """GENUINE BUG -- analytics-service/app/main.py:173 and :191.
+def test_metrics_is_gated_in_production_and_the_scrape_route_is_not_shadowed(
+    make_client, monkeypatch
+):
+    """#469/#841 -- the service owns /metrics, so the SDK route must not win.
 
-    ``create_app()`` calls ``wire_observability(app, ...)`` at line 173 without
-    ``register_metrics=False``, so an **ungated** ``/metrics`` route is
-    registered there. The gated ``gated_metrics`` route is registered
-    afterwards at line 191. Starlette matches routes in registration order, so
-    the ungated route always wins and the ``#469`` admin-token gate is
-    unreachable dead code.
-
-    Consequence: in production ``/metrics`` returns 200 and the full Prometheus
-    payload to an unauthenticated caller. This test pins that current
-    behaviour so the regression is visible. If ``create_app()`` is fixed to
-    pass ``register_metrics=False``, this test fails and the ``require_metrics_token``
-    tests above become the end-to-end truth.
+    ``create_app()`` passes ``register_metrics=False`` to
+    ``wire_observability``, so the only ``/metrics`` route is the token-gated
+    ``gated_metrics`` one. Starlette matches in registration order, so an
+    SDK-registered public route would shadow it and hand the full Prometheus
+    payload to an anonymous caller in production.
     """
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    app = main_module.create_app()
+    registered = [
+        (r.path, r.name) for r in app.router.routes if getattr(r, "path", None) == "/metrics"
+    ]
+    assert registered == [("/metrics", "gated_metrics")]
+
     c = make_client(env="production", METRICS_TOKEN="supersecret")
     anonymous = c.get("/metrics")
     wrong = c.get("/metrics", headers={"Authorization": "Bearer wrong"})
+    authorised = c.get("/metrics", headers={"Authorization": "Bearer supersecret"})
 
-    # Both the missing and the wrong token are served the scrape payload.
-    assert anonymous.status_code == 200
-    assert wrong.status_code == 200
-    assert "text/plain" in anonymous.headers["content-type"]
+    assert anonymous.status_code == 401
+    assert wrong.status_code == 401
+    assert authorised.status_code == 200
+    assert "text/plain" in authorised.headers["content-type"]
     # The body really is a Prometheus exposition, not an empty stub.
-    assert b"python_info" in anonymous.content
-    assert b"python_info" in wrong.content
+    assert b"python_info" in authorised.content
 
 
 @pytest.mark.unit
 def test_gated_metrics_handler_body_works_when_invoked_directly(monkeypatch):
-    """The gated handler's own body is correct -- it is simply unreachable.
+    """The gated handler's own body is correct, exercised without a request.
 
-    ``app/main.py:191-196`` can never be reached over HTTP because of the
-    shadowing bug above. Invoking the endpoint function directly is the only
-    way to execute it, and it proves the handler itself is fine -- only the
-    route ordering is wrong.
+    Calling the endpoint function directly keeps a regression in the handler
+    body separate from the route-registration assertions above.
     """
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
     monkeypatch.setattr(settings, "METRICS_TOKEN", "tok")

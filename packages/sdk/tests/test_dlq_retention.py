@@ -47,13 +47,6 @@ _REAL_PRODUCER = _real_aiokafka.AIOKafkaProducer
 # ---------------------------------------------------------------------------
 
 
-class _TopicsResult:
-    """What the code *expects* ``admin.list_topics()`` to return."""
-
-    def __init__(self, topics: list[str]) -> None:
-        self.topics = topics
-
-
 class FakeAdmin:
     """Stand-in for ``aiokafka.admin.AIOKafkaAdminClient``."""
 
@@ -71,6 +64,10 @@ class FakeAdmin:
     create_error: Exception | None = None
     #: ``close()`` raises this.
     close_error: Exception | None = None
+    #: topic name -> {config name: value} returned by ``describe_configs``.
+    describe_result: dict[str, dict[str, Any]] | None = None
+    #: topic names whose describe returns a non-zero error code.
+    describe_error_for: set[str] = set()
 
     def __init__(self, **kwargs: Any) -> None:
         self.kwargs = kwargs
@@ -86,21 +83,38 @@ class FakeAdmin:
         if type(self).start_error is not None:
             raise type(self).start_error
 
-    async def list_topics(self) -> Any:
+    async def list_topics(self) -> list[str]:
+        """aiokafka returns a plain list of topic names, not an object."""
         if type(self).list_error is not None:
             raise type(self).list_error
         result = type(self).list_topics_result
-        return _TopicsResult(list(result)) if result is not None else _TopicsResult([])
+        return list(result) if result is not None else []
 
     async def create_topics(self, new_topics: list[Any]) -> None:
         if type(self).create_error is not None:
             raise type(self).create_error
         self.created.extend(new_topics)
 
-    async def alter_configs(self, resource: Any) -> None:
-        if getattr(resource, "name", None) in type(self).alter_fail_for:
-            raise RuntimeError(f"alter_configs refused for {resource.name}")
-        self.altered.append(resource)
+    async def describe_configs(self, resources: list[Any]) -> list[Any]:
+        """Return per-topic config descriptions in ``to_object()`` form."""
+        described = type(self).describe_result or {}
+        responses = []
+        for resource in resources:
+            name = resource.name
+            if name in type(self).describe_error_for:
+                responses.append(_DescribeResponse(name, error_code=29))
+            else:
+                responses.append(
+                    _DescribeResponse(name, configs=described.get(name, {}))
+                )
+        return responses
+
+    async def alter_configs(self, resources: list[Any]) -> None:
+        """aiokafka takes a LIST of resources; each may carry its configs."""
+        for resource in resources:
+            if resource.name in type(self).alter_fail_for:
+                raise RuntimeError(f"alter_configs refused for {resource.name}")
+        self.altered.extend(resources)
 
     async def close(self) -> None:
         self.closed += 1
@@ -145,20 +159,59 @@ class LegacyNewTopic:
         self.topic_config = topic_config or {}
 
 
+class FakeConfigResourceType:
+    """Stand-in for ``aiokafka.admin.config_resource.ConfigResourceType``."""
+
+    TOPIC = 2
+    GROUP = 3
+
+
 class FakeConfigResource:
-    """Stand-in exposing the ``Type.TOPIC`` / ``set_config`` surface the code uses."""
+    """Stand-in for ``ConfigResource``.
 
-    class Type:
-        TOPIC = 2
-        GROUP = 3
+    The real class takes the configs in the constructor; it has no ``Type``
+    inner class and no ``set_config`` method.
+    """
 
-    def __init__(self, resource_type: int, name: str) -> None:
+    def __init__(
+        self, resource_type: int, name: str, configs: dict[str, str] | None = None
+    ) -> None:
         self.resource_type = resource_type
         self.name = name
-        self.configs: dict[str, str] = {}
+        self.configs: dict[str, str] = dict(configs or {})
 
-    def set_config(self, key: str, value: str) -> None:
-        self.configs[key] = value
+
+class _DescribeResponse:
+    """Stand-in for a describe_configs response exposing ``to_object()``."""
+
+    def __init__(
+        self,
+        resource_name: str,
+        configs: dict[str, Any] | None = None,
+        error_code: int = 0,
+    ) -> None:
+        self.resource_name = resource_name
+        self.configs = configs or {}
+        self.error_code = error_code
+
+    def to_object(self) -> dict:
+        return {
+            "resources": [
+                {
+                    "error_code": self.error_code,
+                    "error_message": None,
+                    "resource_name": self.resource_name,
+                    "config_entries": [
+                        {
+                            "config_names": name,
+                            "config_value": value,
+                            "read_only": read_only,
+                        }
+                        for name, value, read_only in self.configs.items()
+                    ],
+                }
+            ]
+        }
 
 
 @pytest.fixture(autouse=True)
@@ -173,10 +226,15 @@ def _reset(monkeypatch):
     FakeAdmin.list_error = None
     FakeAdmin.create_error = None
     FakeAdmin.close_error = None
+    FakeAdmin.describe_result = None
+    FakeAdmin.describe_error_for = set()
 
     monkeypatch.setattr(aiokafka.admin, "AIOKafkaAdminClient", FakeAdmin)
     monkeypatch.setattr(aiokafka.admin, "NewTopic", FakeNewTopic)
     monkeypatch.setattr(aiokafka.admin.config_resource, "ConfigResource", FakeConfigResource)
+    monkeypatch.setattr(
+        aiokafka.admin.config_resource, "ConfigResourceType", FakeConfigResourceType
+    )
 
     for var in (
         "KAFKA_SECURITY_PROTOCOL",
@@ -256,7 +314,7 @@ class TestRetentionAppliedToExistingTopics:
                 "retention.ms": str(DLQ_RETENTION_MS),
                 "segment.ms": str(DLQ_SEGMENT_MS),
             }
-            assert resource.resource_type == FakeConfigResource.Type.TOPIC
+            assert resource.resource_type == FakeConfigResourceType.TOPIC
 
     @pytest.mark.asyncio
     async def test_created_topics_are_not_also_altered(self):
@@ -540,35 +598,32 @@ class TestAdminConnection:
 
 
 # ---------------------------------------------------------------------------
-# Documented aiokafka 0.14.0 API mismatches (NOT fixed — reported, not patched)
+# The installed aiokafka surface the production code relies on
 # ---------------------------------------------------------------------------
 
 
-class TestRealAiokafkaApiMismatch:
-    """These two tests are the reason this file uses fakes at all.
+class TestInstalledAiokafkaApi:
+    """The production code targets the real aiokafka API.
 
-    They run against the REAL installed aiokafka 0.14.0 classes and assert
-    that the production code cannot work as written. If aiokafka ever ships
-    the missing surface, these tests fail and the fakes can be dropped.
+    These assertions are what the fakes above model; if a future aiokafka
+    changes the surface, these fail and the fakes must follow.
     """
 
-    def test_real_config_resource_has_no_type_attribute(self):
+    def test_real_config_resource_takes_configs_in_the_constructor(self):
         # Captured at import time, before the autouse fixture swaps in the fake.
-        assert not hasattr(_REAL_CONFIG_RESOURCE, "Type"), (
-            "aiokafka 0.14.0 ConfigResource has no .Type — "
-            "dlq_retention.py:106 would now fail with AttributeError; "
-            "the FakeConfigResource in this file can be removed"
-        )
+        import inspect
+
+        params = inspect.signature(_REAL_CONFIG_RESOURCE.__init__).parameters
+        assert "configs" in params
+        assert not hasattr(_REAL_CONFIG_RESOURCE, "Type")
+        assert not hasattr(_REAL_CONFIG_RESOURCE, "set_config")
 
     def test_real_list_topics_returns_a_plain_list(self):
         import inspect
 
         source = inspect.getsource(_REAL_ADMIN_CLIENT.list_topics)
-        assert "-> list[str]" in source, (
-            "aiokafka 0.14.0 list_topics() returns list[str], so "
-            "dlq_retention.py:73 `(await admin.list_topics()).topics` fails"
-        )
-        # And the value really has no `.topics` attribute to read.
+        # Returns a list, so the code must not read `.topics` off it.
+        assert "return [" in source
         assert not hasattr(["a", "b"], "topics")
 
     def test_real_new_topic_uses_topic_configs(self):

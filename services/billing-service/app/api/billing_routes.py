@@ -1,11 +1,3 @@
-from http import HTTPStatus as http_status
-
-import httpx
-from jose import JWTError
-
-from app.core.jwt_verifier import verify_token as verify_jwt_token
-from app.core.settings import settings
-
 """Billing service API routes.
 
 Exposes the Sustenance Engine endpoints:
@@ -18,16 +10,22 @@ Exposes the Sustenance Engine endpoints:
 """
 
 from decimal import Decimal
+from http import HTTPStatus as http_status
 from typing import Annotated
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from jose import JWTError
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.jwt_verifier import verify_token as verify_jwt_token
 from app.core.money import CurrencyError, validate_currency
+from app.core.settings import settings
 from app.core.stripe_client import StripeClient, StripeError
+from app.models import RevenueTier
 from app.repositories import (
     CreatorPoolRepository,
     InvoiceRepository,
@@ -130,6 +128,13 @@ async def get_current_user_payload(
 async def require_admin(
     payload: Annotated[dict, Depends(get_current_user_payload)],
 ) -> UUID:
+    """Require an authenticated user carrying the admin role claim.
+
+    Least privilege: milestone commitments, tranche releases and kills move
+    real money, so a plain user token is never sufficient for them. Mirrors
+    the admin-claim check used by admin-service, moderation-service and
+    creators-service.
+    """
     if payload.get("role") != "admin":
         raise HTTPException(status_code=http_status.FORBIDDEN, detail="Admin privileges required")
     sub = str(payload.get("sub") or payload.get("user_id") or "")
@@ -204,7 +209,10 @@ async def get_billing_service(db: Annotated[AsyncSession, Depends(get_db)]) -> B
 
 
 class SubscribeRequest(BaseModel):
-    tier: str = Field(..., description="Revenue tier: avod, svod, or tvod")
+    # Constrained to the real tiers: a free-form string would let an unknown
+    # value (e.g. "platinum") fall through to a real Stripe checkout session
+    # that charges the customer while the webhook refuses to activate it.
+    tier: str = Field(..., pattern="^(avod|svod|tvod)$", description="Revenue tier")
 
 
 class PurchaseRequest(BaseModel):
@@ -257,12 +265,44 @@ async def subscribe(
     request: SubscribeRequest,
     service: Annotated[BillingService, Depends(get_billing_service)],
 ):
-    """Subscribe or upgrade to a revenue tier (AVOD/SVOD/TVOD)."""
+    """Start a subscription checkout for a revenue tier (AVOD/SVOD).
+
+    A paid tier is never granted here: the local record is only written by the
+    verified ``checkout.session.completed`` webhook (#787), so a caller cannot
+    grant themselves SVOD by posting a tier. AVOD is free, so applying it
+    directly is correct.
+    """
+    tier = request.tier.lower()
+    # Only the two real tiers are accepted: TVOD is per-title, and an
+    # unrecognised tier must never reach Stripe (it would charge the customer
+    # for a session the webhook then refuses to activate).
+    if tier == RevenueTier.TVOD.value:
+        raise HTTPException(
+            status_code=400,
+            detail="TVOD titles are purchased per title via POST /api/v1/billing/purchase",
+        )
+    if tier == RevenueTier.AVOD.value:
+        try:
+            sub = await service.subscribe(user_id, tier)
+        except TierInvalidError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "status": "subscribed",
+            "tier": sub.tier.value,
+            "monthly_price": str(sub.monthly_price),
+        }
+
     try:
-        sub = await service.subscribe(user_id, request.tier)
-    except TierInvalidError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "subscribed", "tier": sub.tier.value, "monthly_price": str(sub.monthly_price)}
+        session = StripeClient.create_checkout_session(
+            user_id=user_id,
+            price_id=settings.STRIPE_SVOD_PRICE_ID,
+            tier=tier,
+            success_url=settings.STRIPE_SUCCESS_URL,
+            cancel_url=settings.STRIPE_CANCEL_URL,
+        )
+    except StripeError as exc:
+        raise HTTPException(status_code=502, detail="Payment provider unavailable") from exc
+    return {"status": "checkout_required", "tier": tier, "checkout_url": session.url}
 
 
 @router.post("/cancel/{user_id}")
@@ -288,6 +328,12 @@ async def purchase_title(
     service: Annotated[BillingService, Depends(get_billing_service)],
     current_user: UUID = Depends(get_current_user_id),
 ):
+    """Start a pay-per-view (TVOD) checkout for a title.
+
+    The purchase itself is recorded by the verified ``checkout.session.completed``
+    webhook (#787); this route only creates the payment session. The price comes
+    from content-service, never from the request body.
+    """
     if request.user_id != current_user:
         raise HTTPException(
             status_code=http_status.FORBIDDEN,

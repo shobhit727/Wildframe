@@ -1,5 +1,6 @@
 """Edge-branch coverage for BillingService — errors, idempotency, tranches."""
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
@@ -17,6 +18,19 @@ from app.services import (
 )
 
 pytestmark = pytest.mark.asyncio
+
+
+@asynccontextmanager
+async def _savepoint():
+    """Stand-in for ``session.begin_nested()``'s SAVEPOINT context."""
+    yield
+
+
+def _session() -> AsyncMock:
+    """A session double whose ``begin_nested`` is a real async context manager."""
+    session = AsyncMock()
+    session.begin_nested = MagicMock(side_effect=lambda: _savepoint())
+    return session
 
 
 @pytest.fixture
@@ -283,7 +297,7 @@ class TestAccruePayoutIntegrity:
 
         from app.repositories import PayoutLedgerRepository
 
-        session = AsyncMock()
+        session = _session()
         session.flush.side_effect = IntegrityError("stmt", {}, Exception("dup"))
         repo = PayoutLedgerRepository(session)
         existing = MagicMock()
@@ -297,14 +311,16 @@ class TestAccruePayoutIntegrity:
         result = await repo.accrue(uuid4(), Decimal("5.00"), "USD", "k", now, now)
 
         assert result is existing
-        session.rollback.assert_awaited_once()
+        # The savepoint is rolled back, not the whole session: the caller's
+        # pending tranche update in the outer transaction must survive.
+        session.rollback.assert_not_awaited()
 
     async def test_acrues_when_new(self):
         from datetime import UTC, datetime
 
         from app.repositories import PayoutLedgerRepository
 
-        session = AsyncMock()
+        session = _session()
         repo = PayoutLedgerRepository(session)
         session.execute.return_value = MagicMock(scalar_one_or_none=lambda: None)
         now = datetime.now(UTC)

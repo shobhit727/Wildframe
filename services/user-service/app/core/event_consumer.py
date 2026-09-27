@@ -5,11 +5,16 @@ provisions the default profile (+ preferences + free subscription) the moment
 an account is created, so the account page never 404s for a fresh user.
 
 At-least-once delivery: create_user_profile is effectively idempotent for a
-given user (unique profile row); duplicates log and move on.
+given user (unique profile row). The offset is committed only after the event
+has been applied, so a failed provisioning stops the consumer and is
+redelivered on restart instead of being committed and lost. A payload with no
+usable user_id can never be applied, so it is committed as skipped rather than
+blocking the partition forever.
 """
 
 import logging
 import os
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +24,6 @@ USER_REGISTERED_TOPIC = "user.registered"
 
 async def _provision_profile(session_factory, user_id: str) -> None:
     """Create the default profile row for a freshly registered user."""
-    from uuid import UUID
-
     from app.repositories import (
         UserDeviceRepository,
         UserPreferenceRepository,
@@ -36,10 +39,7 @@ async def _provision_profile(session_factory, user_id: str) -> None:
             UserPreferenceRepository(session),
             UserSubscriptionProfileRepository(session),
         )
-        try:
-            await service.create_user_profile(UUID(user_id))
-        except Exception:  # noqa: BLE001 - at-least-once: log and continue
-            logger.exception("profile provisioning failed for %s", user_id)
+        await service.create_user_profile(UUID(user_id))
 
 
 async def run_user_registered_consumer(session_factory) -> None:
@@ -62,16 +62,24 @@ async def run_user_registered_consumer(session_factory) -> None:
         await consumer.start()
         logger.info("user.registered consumer started (%s)", bootstrap)
         async for msg in consumer:
-            try:
-                import json
+            import json
 
+            try:
                 event = json.loads(msg.value.decode("utf-8"))
-                payload = event.get("payload", event)
-                await _provision_profile(session_factory, payload["user_id"])
-            except Exception:  # noqa: BLE001 - never kill the consumer loop
-                logger.exception("failed to provision profile from user.registered")
-            finally:
+                payload = event.get("payload", event) if isinstance(event, dict) else {}
+                user_id = str(UUID(str(payload["user_id"])))
+            except (ValueError, TypeError, KeyError):
+                # A payload with no usable user_id can never be applied, so it
+                # is committed as skipped instead of blocking the partition.
+                logger.exception("skipping malformed user.registered at offset %s", msg.offset)
                 await consumer.commit()
+                continue
+
+            await _provision_profile(session_factory, user_id)
+            # Commit only after the event landed. Committing from a finally
+            # block (or before the next event) would advance the committed
+            # offset past an unapplied registration and lose it for good.
+            await consumer.commit()
     except Exception:  # noqa: BLE001
         logger.exception("user.registered consumer stopped")
     finally:

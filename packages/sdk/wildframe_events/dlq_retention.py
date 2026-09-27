@@ -70,7 +70,7 @@ async def apply_dlq_retention(
     configured = 0
     try:
         await admin.start()
-        existing = set((await admin.list_topics()).topics)
+        existing = set(await admin.list_topics())
         missing = [t for t in dlq if t not in existing]
         if missing:
             import inspect
@@ -98,19 +98,54 @@ async def apply_dlq_retention(
             )
             configured += len(missing)
 
-        from aiokafka.admin.config_resource import ConfigResource  # type: ignore[import-untyped]
+        # Existing topics: enforce via config resource alterations.
+        from aiokafka.admin.config_resource import (  # type: ignore[import-untyped]
+            ConfigResource,
+            ConfigResourceType,
+        )
 
-        for t in dlq:
-            if t in missing:
-                continue
-            resource = ConfigResource(ConfigResource.Type.TOPIC, t)
-            resource.set_config("retention.ms", str(DLQ_RETENTION_MS))
-            resource.set_config("segment.ms", str(DLQ_SEGMENT_MS))
-            try:
-                await admin.alter_configs(resource)
-                configured += 1
-            except Exception:  # noqa: BLE001 - per-topic best effort
-                logger.warning("could not set retention on %s", t)
+        existing_dlq = [t for t in dlq if t not in missing]
+        if existing_dlq:
+            # AlterConfigs REPLACES a topic's whole config, so describe first
+            # and merge — sending only these two keys would wipe every other
+            # setting. Topics whose describe failed are left untouched.
+            responses = await admin.describe_configs(
+                [ConfigResource(ConfigResourceType.TOPIC, t) for t in existing_dlq]
+            )
+            # ``to_object()`` turns the wire tuples into named dicts.
+            described: set[str] = set()
+            current: dict[str, dict[str, str]] = {}
+            for response in responses:
+                for res in response.to_object()["resources"]:
+                    if res["error_code"] != 0:
+                        logger.warning("could not describe %s", res["resource_name"])
+                        continue
+                    described.add(res["resource_name"])
+                    current[res["resource_name"]] = {
+                        entry["config_names"]: entry["config_value"]
+                        for entry in res["config_entries"]
+                        if not entry["read_only"] and entry["config_value"] is not None
+                    }
+            wanted = {
+                "retention.ms": str(DLQ_RETENTION_MS),
+                "segment.ms": str(DLQ_SEGMENT_MS),
+            }
+            for t in existing_dlq:
+                if t not in described:
+                    continue
+                try:
+                    await admin.alter_configs(
+                        [
+                            ConfigResource(
+                                ConfigResourceType.TOPIC,
+                                t,
+                                {**current[t], **wanted},
+                            )
+                        ]
+                    )
+                    configured += 1
+                except Exception:  # noqa: BLE001 - per-topic best effort
+                    logger.warning("could not set retention on %s", t)
         logger.info(
             "DLQ retention applied: %d topics at %d ms (%s)",
             configured,

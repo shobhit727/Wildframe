@@ -170,6 +170,9 @@ class TestEpisodeManagement:
 
         content_id = uuid4()
         season_id = uuid4()
+        season = MagicMock()
+        season.content_id = content_id
+        mock_repositories["season_repo"].get_by_id.return_value = season
         mock_repositories["episode_repo"].create.return_value = MagicMock()
 
         request = EpisodeCreateRequest(title="Pilot", episode_number=1, duration_minutes=45)

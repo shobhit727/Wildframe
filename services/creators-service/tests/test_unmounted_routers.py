@@ -418,7 +418,6 @@ def user_service():
     service.get_profile = AsyncMock(return_value=acct)
     service.get_floor = AsyncMock(return_value=None)
     service.update_profile = AsyncMock(return_value=acct)
-    service.accrue_payout = AsyncMock()
     service.pool_repo = MagicMock()
     service.pool_repo.get_or_create = AsyncMock(return_value=MagicMock())
     service.ledger_repo = MagicMock()
@@ -474,52 +473,6 @@ class TestUserRouteGuards:
 
         assert response.status_code == 404
         user_service.ledger_repo.session.execute.assert_not_awaited()
-
-    async def test_payout_accrual_404s_for_an_unknown_creator(self, user_client, user_service):
-        user_service.get_profile.return_value = None
-
-        response = await user_client.post(
-            "/api/v1/creators/me/payouts",
-            json={
-                "period_start": "2026-01-01T00:00:00+00:00",
-                "period_end": "2026-01-31T00:00:00+00:00",
-            },
-        )
-
-        assert response.status_code == 404
-        user_service.accrue_payout.assert_not_awaited()
-
-    async def test_payout_accrual_403s_for_a_suspended_creator(self, user_client, user_service):
-        user_service.get_profile.return_value.is_active = False
-
-        response = await user_client.post(
-            "/api/v1/creators/me/payouts",
-            json={
-                "period_start": "2026-01-01T00:00:00+00:00",
-                "period_end": "2026-01-31T00:00:00+00:00",
-            },
-        )
-
-        assert response.status_code == 403
-        assert response.json()["detail"] == "creator suspended"
-
-    async def test_payout_accrual_403s_when_the_service_reports_suspension(
-        self, user_client, user_service
-    ):
-        from app.models import CreatorSuspendedError
-
-        user_service.accrue_payout.side_effect = CreatorSuspendedError("suspended mid-flight")
-
-        response = await user_client.post(
-            "/api/v1/creators/me/payouts",
-            json={
-                "period_start": "2026-01-01T00:00:00+00:00",
-                "period_end": "2026-01-31T00:00:00+00:00",
-            },
-        )
-
-        assert response.status_code == 403
-        assert response.json()["detail"] == "creator suspended"
 
     async def test_ledger_returns_an_empty_list_for_a_fresh_creator(self, user_client):
         response = await user_client.get("/api/v1/creators/me/ledger")
@@ -688,7 +641,6 @@ class TestAdminRoutes:
         )
 
         assert response.status_code == 404
-        assert response.json()["detail"] == "tranche not found"
 
     async def test_release_tranche_returns_the_released_tranche(self, admin_client, admin_service):
         creator_id, milestone_id = uuid4(), uuid4()

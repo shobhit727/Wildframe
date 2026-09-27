@@ -15,7 +15,8 @@ import httpx
 import redis.asyncio as redis
 from fastapi import HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
-from jose import JWTError, jwt
+from jose import jwt
+from jose.exceptions import JWTError
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
@@ -981,10 +982,11 @@ class AuthenticationMiddleware:
             if scheme.lower() != "bearer":
                 return None
 
-            # Optional identity extraction only; upstream services enforce audience.
-            # Expiry remains mandatory even at this transparent proxy boundary
-            # (python-jose spells "exp is required" as require_exp, not a
-            # `require` list).
+            # Optional identity extraction only; upstream services enforce audience
+            # (AGENTS.md: the gateway is the one decode with no audience check).
+            # Expiry remains mandatory even at this transparent proxy boundary —
+            # python-jose spells that ``require_exp``; an unknown ``require`` key
+            # is ignored silently, which would accept exp-less tokens.
             payload = jwt.decode(
                 token,
                 self.jwt_secret,
@@ -992,7 +994,7 @@ class AuthenticationMiddleware:
                 options={"verify_aud": False, "require_exp": True},
             )
             return payload
-        except (JWTError, ValueError):  # ValueError: malformed auth header
+        except (JWTError, ValueError, TypeError):  # ValueError: malformed auth header
             logger.warning("Token verification failed", exc_info=True)
             return None
 

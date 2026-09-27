@@ -348,7 +348,7 @@ class KafkaEventSubscriber(EventSubscriber):
         from aiokafka import AIOKafkaConsumer
 
         if self._consumer is not None:
-            return
+            return  # Already started.
         topics = list(self._handlers.keys())
         if not topics:
             raise ValueError("subscribe() at least one topic before start()")
@@ -381,7 +381,12 @@ class KafkaEventSubscriber(EventSubscriber):
                     delay_s,
                 )
                 await asyncio.sleep(delay_s)
-                await self._reconnect()
+                try:
+                    await self._reconnect()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as reconnect_exc:  # noqa: BLE001 - keep the poll loop alive
+                    logger.exception("consumer reconnect failed: %s", reconnect_exc)
 
     async def _reconnect(self) -> None:
         from aiokafka import AIOKafkaConsumer
@@ -467,7 +472,7 @@ class KafkaEventSubscriber(EventSubscriber):
 
     async def _commit(self, message: Any) -> None:
         if self._consumer is not None:
-            await self._consumer_or_raise.commit()
+            await self._consumer.commit()
 
     async def _dispatch(self, event: DomainEvent) -> None:
         """Dispatch an event to ALL registered handlers with retry + DLQ.
@@ -493,9 +498,7 @@ class KafkaEventSubscriber(EventSubscriber):
                     )
                     await self._send_to_dlq(event, exc, attempt, "permanent_failure")
                     break
-                except (
-                    Exception
-                ) as exc:  # noqa: BLE001 - handler errors are quarantined, never fatal
+                except Exception as exc:  # noqa: BLE001 - handler errors are quarantined, never fatal
                     if attempt >= self.max_retries:
                         await self._send_to_dlq(event, exc, attempt, "retries_exhausted")
                         break

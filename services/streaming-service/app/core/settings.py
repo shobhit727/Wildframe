@@ -67,7 +67,6 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     PLAYBACK_SESSION_IDLE_TIMEOUT_MINUTES: int = 90
     PLAYBACK_URL_SIGNING_SECRET: str = "dev-playback-signing-secret-change-in-production"
     PLAYBACK_URL_TTL_SECONDS: int = 3600
-    ENTITLEMENT_CHECK_ENABLED: bool = True
 
     @model_validator(mode="before")
     @classmethod

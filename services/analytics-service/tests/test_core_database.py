@@ -388,6 +388,15 @@ async def test_get_db_closes_the_session_on_exit():
             self.closed += 1
             self._log.append("closed")
 
+        # get_db owns the transaction: repositories only flush, so the
+        # dependency commits on success and rolls back on error before the
+        # session is released.
+        async def commit(self):
+            self._log.append("commit")
+
+        async def rollback(self):
+            self._log.append("rollback")
+
         async def __aenter__(self):
             return self
 
@@ -413,4 +422,6 @@ async def test_get_db_closes_the_session_on_exit():
         await gen.asend(None)
 
     assert session.closed == 1
-    assert log == ["closed"]
+    # get_db commits the request's work before releasing the session: the
+    # repositories only flush, so without the commit the writes are discarded.
+    assert log == ["commit", "closed"]

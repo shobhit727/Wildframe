@@ -188,12 +188,19 @@ class ClamavScanner(VirusScanner):
 
         cd = clamd.ClamdUnixSocket(self.socket_path)
         result = await asyncio.to_thread(cd.scan, path)
-        if result is None:
-            return True
-        # result == {path: ('FOUND', 'Virus.Name')} when infected.
+        if not result:
+            # clamd returns None when it did not scan the file at all (size /
+            # StreamMaxLength limits). That is indeterminate, not clean: raise
+            # so the orchestrator retries instead of advancing unscanned bytes.
+            raise RuntimeError(f"clamd did not scan {path!r}: result is empty")
+        # result == {path: ('FOUND', 'Virus.Name')} when infected,
+        # {path: ('OK', ...)} only when the file was actually scanned.
         for status in result.values():
-            if status and status[0] == "FOUND":
+            code = status[0] if status else None
+            if code == "FOUND":
                 return False
+            if code != "OK":
+                raise RuntimeError(f"clamd scan of {path!r} returned {status!r}")
         return True
 
 

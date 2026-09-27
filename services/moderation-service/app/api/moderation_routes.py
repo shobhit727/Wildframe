@@ -19,6 +19,10 @@ from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.content_client import (
+    ContentServiceUnavailableError,
+    resolve_content_owner,
+)
 from app.core.settings import settings
 from app.repositories import (
     ContentFlagRepository,
@@ -34,7 +38,7 @@ from app.schemas import (
     StrikeResponse,
     StrikesResponse,
 )
-from app.services import ModerationError, ModerationService
+from app.services import DuplicateFlagError, ModerationError, ModerationService
 
 router = APIRouter(prefix="/api/v1/moderation", tags=["moderation"])
 
@@ -141,13 +145,25 @@ async def flag_content(
     service: Annotated[ModerationService, Depends(get_moderation_service)],
 ):
     """Flag a piece of content for moderator review (any authenticated user)."""
+    # The creator that a strike would target is resolved server-side from
+    # content-service. A body field would let any reporter aim a strike (and
+    # an automatic suspension) at a creator of their choosing, so the request
+    # schema does not even accept one.
+    try:
+        content_creator_id = await resolve_content_owner(request.content_id)
+    except ContentServiceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if content_creator_id is None:
+        raise HTTPException(status_code=404, detail="Content not found")
     try:
         flag = await service.flag_content(
             content_id=request.content_id,
-            content_creator_id=request.content_creator_id,
+            content_creator_id=content_creator_id,
             flag_reason=request.flag_reason,
             reporter_id=UUID(reporter_id),
         )
+    except DuplicateFlagError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ModerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _flag_to_response(flag)

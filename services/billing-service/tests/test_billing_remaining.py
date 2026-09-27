@@ -217,26 +217,62 @@ async def test_get_subscription_requires_authentication():
 
 
 @pytest.mark.asyncio
-async def test_subscribe_activates_the_requested_tier():
+async def test_subscribe_never_grants_a_paid_tier_locally():
+    """A paid tier is only written by the verified checkout webhook (#787).
+
+    Granting SVOD straight from the request would let any authenticated caller
+    mint themselves a subscription; the route must hand back a Stripe checkout
+    URL instead and leave activation to ``checkout.session.completed``.
+    """
     user = uuid4()
     svc = _svc(subscribe=AsyncMock(return_value=_sub(user_id=user, tier=RevenueTier.SVOD)))
     app = _app(svc)
-    resp = await _call(
-        app, "POST", f"/api/v1/billing/subscribe/{user}", headers=_auth(user), json={"tier": "svod"}
-    )
+    session = MagicMock(id="cs_svod", url="https://checkout.stripe.com/pay/cs_svod")
+    with patch(
+        "app.api.billing_routes.StripeClient.create_checkout_session",
+        return_value=session,
+    ) as create:
+        resp = await _call(
+            app,
+            "POST",
+            f"/api/v1/billing/subscribe/{user}",
+            headers=_auth(user),
+            json={"tier": "svod"},
+        )
     assert resp.status_code == 200
     assert resp.json() == {
-        "status": "subscribed",
+        "status": "checkout_required",
         "tier": "svod",
-        "monthly_price": "7.99",
+        "checkout_url": session.url,
     }
-    svc.subscribe.assert_awaited_once_with(user, "svod")
+    svc.subscribe.assert_not_awaited()
+    create.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_subscribe_translates_an_invalid_tier_to_400():
+async def test_subscribe_applies_the_free_avod_tier_directly():
+    # AVOD costs nothing, so there is no checkout to wait on.
     user = uuid4()
-    svc = _svc(subscribe=AsyncMock(side_effect=TierInvalidError("Invalid tier 'platinum'")))
+    svc = _svc(subscribe=AsyncMock(return_value=_sub(user_id=user, tier=RevenueTier.AVOD)))
+    app = _app(svc)
+    resp = await _call(
+        app,
+        "POST",
+        f"/api/v1/billing/subscribe/{user}",
+        headers=_auth(user),
+        json={"tier": "avod"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "subscribed"
+    svc.subscribe.assert_awaited_once_with(user, "avod")
+
+
+@pytest.mark.asyncio
+async def test_subscribe_rejects_an_unknown_tier_at_validation():
+    # A free-form tier would reach Stripe and charge for a session the
+    # webhook then refuses to activate, so the pattern rejects it outright.
+    user = uuid4()
+    svc = _svc()
     app = _app(svc)
     resp = await _call(
         app,
@@ -245,8 +281,41 @@ async def test_subscribe_translates_an_invalid_tier_to_400():
         headers=_auth(user),
         json={"tier": "platinum"},
     )
+    assert resp.status_code == 422
+    svc.subscribe.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_redirects_tvod_to_the_purchase_endpoint():
+    user = uuid4()
+    svc = _svc()
+    app = _app(svc)
+    resp = await _call(
+        app,
+        "POST",
+        f"/api/v1/billing/subscribe/{user}",
+        headers=_auth(user),
+        json={"tier": "tvod"},
+    )
     assert resp.status_code == 400
-    assert "platinum" in resp.json()["detail"]
+    assert "/api/v1/billing/purchase" in resp.json()["detail"]
+    svc.subscribe.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_subscribe_translates_an_invalid_tier_to_400():
+    user = uuid4()
+    svc = _svc(subscribe=AsyncMock(side_effect=TierInvalidError("Invalid tier 'avod'")))
+    app = _app(svc)
+    resp = await _call(
+        app,
+        "POST",
+        f"/api/v1/billing/subscribe/{user}",
+        headers=_auth(user),
+        json={"tier": "avod"},
+    )
+    assert resp.status_code == 400
+    assert "avod" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio

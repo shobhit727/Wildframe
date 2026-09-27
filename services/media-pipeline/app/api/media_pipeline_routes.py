@@ -159,6 +159,10 @@ async def get_job(
     job = await service.job_repo.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Pipeline job not found")
+    # Authorize before loading logs: job metadata and its stage trail are the
+    # caller's own. 404 (not 403) so a stranger cannot probe job existence.
+    if (job.context or {}).get("_creator_id") != str(current_user):
+        raise HTTPException(status_code=404, detail="Pipeline job not found")
     logs = await service.log_repo.list_for_job(job_id)
     return JobDetailResponse(
         job=_job_to_response(job),
@@ -201,8 +205,14 @@ async def start_transcoding(
     content_id: Annotated[UUID, Body(...)],
     source_url: Annotated[str, Body(...)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
-    """Legacy entry point: create a TranscodingJob (compatibility)."""
+    """Legacy entry point: create a TranscodingJob (compatibility).
+
+    Authenticated like the canonical surface; the legacy rows carry no owner,
+    so this only guarantees the caller is signed in, not that they own the
+    content. The compatibility surface should be retired.
+    """
     service = MediaPipelineService(PipelineJobRepository(db), PipelineStageLogRepository(db))
     job = await service.start_transcoding(content_id, source_url)
     return {"job_id": str(job.id), "status": "pending"}
@@ -212,8 +222,13 @@ async def start_transcoding(
 async def get_transcoding_status(
     content_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
-    """Legacy entry point: fetch a TranscodingJob by content id."""
+    """Legacy entry point: fetch a TranscodingJob by content id (authenticated).
+
+    Legacy jobs have no creator column, so ownership cannot be enforced here;
+    retire this route rather than widening it.
+    """
     service = MediaPipelineService(PipelineJobRepository(db), PipelineStageLogRepository(db))
     job = await service.get_job_status(content_id)
     if not job:

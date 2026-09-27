@@ -15,11 +15,11 @@ on PostgreSQL deadlock (40P01) and lock_not_available (55P03) errors.
 """
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
 import asyncio
-from sqlalchemy import text, and_, select, update
+from sqlalchemy import and_, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,38 +55,33 @@ async def _execute_with_deadlock_retry(
     base_delay: float = 0.05,
     max_delay: float = 0.5,
 ):
-    """Execute a statement with exponential backoff on deadlock/lock errors.
+    """Execute a statement in its own savepoint, retrying on deadlock errors.
 
     Retries on PostgreSQL error codes:
       - 40P01: deadlock_detected
       - 55P03: lock_not_available (could not obtain lock within timeout)
 
-    Also enforces a per-statement timeout via SET LOCAL statement_timeout
-    to cap transaction duration per #631.
+    Each attempt runs inside a ``SAVEPOINT``, so a deadlocked attempt is
+    rolled back to the savepoint while the caller's already-flushed work in
+    the outer transaction survives. A session-wide ``rollback()`` would
+    discard that work (e.g. the tranche RELEASED update that precedes a
+    payout accrual) while the caller still reports success.
+
+    The per-statement cap comes from the connection-level
+    ``statement_timeout`` configured in ``core/database.py``; a
+    ``SET LOCAL`` here would be reverted together with its savepoint.
     """
-    last_exc: BaseException | None = None
     for attempt in range(1, max_attempts + 1):
         try:
-            # Cap statement execution time (ms). Adjust based on workload.
-            await session.execute(text("SET LOCAL statement_timeout = '10s'"))
-            result = await session.execute(stmt)
+            async with session.begin_nested():
+                result = await session.execute(stmt)
             return result
         except OperationalError as exc:
-            code = getattr(exc.orig, "pgcode", None)
-            if code in _DEADLOCK_CODES and attempt < max_attempts:
-                last_exc = exc
+            if getattr(exc.orig, "pgcode", None) in _DEADLOCK_CODES and attempt < max_attempts:
                 delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
                 await asyncio.sleep(delay)
-                await session.rollback()  # reset transaction state
                 continue
             raise
-        except BaseException as exc:
-            last_exc = exc
-            raise
-    # Should not reach here (re-raised above), but for type safety:
-    if last_exc is not None:
-        raise last_exc
-    raise RuntimeError("Unexpected state in _execute_with_deadlock_retry")
 
 
 class WebhookEventRepository:
@@ -329,15 +324,6 @@ class InvoiceRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_user(self, user_id: UUID) -> list[Invoice]:
-        stmt = (
-            select(Invoice)
-            .where(Invoice.user_id == user_id)
-            .order_by(Invoice.issued_at.desc(), Invoice.id.desc())
-        )
-        result = await self.session.execute(stmt)
-        return list(result.scalars().all())
-
 
 class RegionFloorRepository:
     """CRUD for RegionFloor (living-wage floor rates)."""
@@ -422,14 +408,29 @@ class MilestoneRepository:
         )
         self.session.add(ms)
         await self.session.flush()
-        # Auto-create the 4 tranches (10/20/30/40)
+        # Auto-create the 4 tranches (10/20/30/40).
+        #
+        # The last tranche absorbs the rounding remainder instead of rounding
+        # every tranche independently (#854): NUMERIC(12,2) rounds each value on
+        # its own, so a commitment of 999.99 produced 100+200+300+400 = 1000.00
+        # — 0.01 more than the commitment, and unrecoverable because the kill
+        # path only reverses what was already released.
         percentages = [Decimal("10.00"), Decimal("20.00"), Decimal("30.00"), Decimal("40.00")]
+        allocated = Decimal("0.00")
+        last = len(percentages)
         for i, pct in enumerate(percentages, start=1):
+            if i == last:
+                amount = total_commitment - allocated
+            else:
+                amount = (total_commitment * pct / Decimal("100.00")).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+                allocated += amount
             tranche = MilestoneTranche(
                 milestone_id=ms.id,
                 tranche_number=i,
                 percentage=pct,
-                amount=total_commitment * pct / Decimal("100.00"),
+                amount=amount,
             )
             self.session.add(tranche)
         await self.session.flush()
@@ -470,7 +471,14 @@ class PayoutLedgerRepository:
         cycle_end,
         breakdown: dict | None = None,
     ) -> PayoutLedger:
-        """Create an accrued payout entry, idempotently."""
+        """Create an accrued payout entry, idempotently.
+
+        The INSERT runs inside a savepoint so that losing the unique-key race
+        rolls back only this statement: the caller's other pending work (the
+        tranche status update that triggers the accrual) stays in the outer
+        transaction. A session-wide ``rollback()`` would silently discard it
+        while the caller still reports the release as successful.
+        """
         existing = await self.get_by_idempotency_key(idempotency_key)
         if existing:
             return existing
@@ -483,13 +491,13 @@ class PayoutLedgerRepository:
             cycle_end=cycle_end,
             breakdown=breakdown,
         )
-        self.session.add(entry)
         try:
-            await self.session.flush()
+            async with self.session.begin_nested():
+                self.session.add(entry)
+                await self.session.flush()
         except IntegrityError:
             # Concurrent replay lost the race: the unique constraint guarantees
-            # one row per idempotency_key. Refresh in this transaction.
-            await self.session.rollback()
+            # one row per idempotency_key. Re-read it in this transaction.
             existing = await self.get_by_idempotency_key(idempotency_key)
             if existing:
                 return existing

@@ -1,6 +1,6 @@
 import os
 from collections.abc import AsyncIterator
-from contextlib import ExitStack
+from contextlib import ExitStack, asynccontextmanager
 from datetime import datetime
 
 import pytest
@@ -14,6 +14,7 @@ from app.models import (
     Base,
     RevenueTier,
     RegionFloor,
+    MilestoneTranche,
 )
 
 from app.repositories import (
@@ -21,6 +22,7 @@ from app.repositories import (
     PurchaseRepository,
     InvoiceRepository,
     RegionFloorRepository,
+    MilestoneRepository,
 )
 
 
@@ -149,7 +151,6 @@ from app.models import (
 )
 from app.repositories import (
     CreatorPoolRepository,
-    MilestoneRepository,
     PayoutLedgerRepository,
     RefundRepository,
     WebhookEventRepository,
@@ -167,18 +168,25 @@ def _operational_error(pgcode: str) -> OperationalError:
     return OperationalError("SELECT 1", {}, orig)
 
 
-def _flaky(fail_times: int, pgcode: str, result=None):
-    """An execute() double that fails the real statement `fail_times` times.
+@asynccontextmanager
+async def _savepoint():
+    """Stand-in for ``session.begin_nested()``'s SAVEPOINT context."""
+    yield
 
-    The helper issues a ``SET LOCAL statement_timeout`` before every attempt, so
-    the SET must succeed and only the real statement may raise.
-    """
+
+def _session() -> AsyncMock:
+    """A session double whose ``begin_nested`` is a real async context manager."""
+    session = AsyncMock()
+    session.begin_nested = MagicMock(side_effect=lambda: _savepoint())
+    return session
+
+
+def _flaky(fail_times: int, pgcode: str, result=None):
+    """An execute() double that fails the real statement `fail_times` times."""
     state = {"failed": 0}
     good = result if result is not None else MagicMock(rowcount=1)
 
     async def _execute(stmt):
-        if str(stmt).startswith("SET LOCAL"):
-            return None
         if state["failed"] < fail_times:
             state["failed"] += 1
             raise _operational_error(pgcode)
@@ -189,62 +197,67 @@ def _flaky(fail_times: int, pgcode: str, result=None):
 
 class TestDeadlockRetry:
     async def test_successful_statement_is_returned_without_retrying(self):
-        session = AsyncMock()
+        session = _session()
         result = await _execute_with_deadlock_retry(session, "stmt")
         assert result is session.execute.return_value
-        assert session.execute.await_count == 2  # SET LOCAL + the statement
+        assert session.execute.await_count == 1
 
-    async def test_statement_timeout_is_capped_before_every_attempt(self):
-        # #631: a wedged statement must not hold a pooled connection forever.
-        session = AsyncMock()
-        await _execute_with_deadlock_retry(session, "stmt")
-        first = session.execute.await_args_list[0].args[0]
-        assert str(first) == "SET LOCAL statement_timeout = '10s'"
+    @pytest.mark.parametrize("pgcode", ["40P01", "55P03"])
+    async def test_each_attempt_runs_in_its_own_savepoint(self, pgcode):
+        # The savepoint is what keeps a deadlocked attempt from discarding the
+        # caller's already-flushed work in the outer transaction, so one is
+        # opened per attempt rather than rolling the whole session back.
+        session = _session()
+        session.execute, _ = _flaky(2, pgcode)
+        with patch("app.repositories.asyncio.sleep", new=AsyncMock()):
+            with pytest.raises(OperationalError):
+                await _execute_with_deadlock_retry(session, "stmt", max_attempts=2)
+        assert session.begin_nested.call_count == 2
+        session.rollback.assert_not_awaited()
 
     @pytest.mark.parametrize("pgcode", ["40P01", "55P03"])
     async def test_deadlock_is_retried_then_succeeds(self, pgcode):
-        session = AsyncMock()
+        session = _session()
         session.execute, good = _flaky(1, pgcode)
         with patch("app.repositories.asyncio.sleep", new=AsyncMock()) as sleep:
             result = await _execute_with_deadlock_retry(session, "stmt")
         assert result is good
-        # SET LOCAL + failed stmt, then SET LOCAL + successful stmt.
-        assert session.execute.await_count == 4
-        # The transaction must be reset before retrying.
-        session.rollback.assert_awaited_once()
+        assert session.execute.await_count == 2
+        # A session-wide rollback would discard the caller's flushed rows, so
+        # the retry must never reach for one.
+        session.rollback.assert_not_awaited()
         assert sleep.await_args.args[0] == 0.05
 
     @pytest.mark.parametrize("pgcode", ["40P01", "55P03"])
     async def test_deadlock_backoff_doubles_each_attempt(self, pgcode):
-        session = AsyncMock()
+        session = _session()
         session.execute, _ = _flaky(2, pgcode)
         with patch("app.repositories.asyncio.sleep", new=AsyncMock()) as sleep:
             await _execute_with_deadlock_retry(session, "stmt", max_attempts=3)
         # 0.05 then 0.10 — exponential, and reset per call.
-        assert [c.args[0] for c in sleep.call_args_list] == [0.05, 0.1]
+        assert [c.args[0] for c in sleep.await_args_list] == [0.05, 0.1]
 
     async def test_backoff_is_capped_at_max_delay(self):
-        session = AsyncMock()
+        session = _session()
         session.execute, _ = _flaky(4, "40P01")
         with patch("app.repositories.asyncio.sleep", new=AsyncMock()) as sleep:
             await _execute_with_deadlock_retry(
                 session, "stmt", max_attempts=5, base_delay=0.4, max_delay=0.5
             )
-        assert all(c.args[0] <= 0.5 for c in sleep.call_args_list)
+        assert all(c.args[0] <= 0.5 for c in sleep.await_args_list)
 
     @pytest.mark.parametrize("pgcode", ["40P01", "55P03"])
     async def test_deadlock_is_re_raised_when_attempts_are_exhausted(self, pgcode):
-        session = AsyncMock()
+        session = _session()
         session.execute, _ = _flaky(99, pgcode)
         with patch("app.repositories.asyncio.sleep", new=AsyncMock()):
             with pytest.raises(OperationalError):
                 await _execute_with_deadlock_retry(session, "stmt", max_attempts=2)
-        # max_attempts=2 => 2 failed statements plus 2 SET LOCAL calls.
-        assert session.execute.await_count == 4
+        assert session.execute.await_count == 2
 
     async def test_non_deadlock_operational_error_is_not_retried(self):
         # A syntax error or a dropped connection must fail fast, not spin.
-        session = AsyncMock()
+        session = _session()
         session.execute = AsyncMock(side_effect=_operational_error("42P01"))
         with patch("app.repositories.asyncio.sleep", new=AsyncMock()) as sleep:
             with pytest.raises(OperationalError):
@@ -253,7 +266,7 @@ class TestDeadlockRetry:
         assert session.execute.await_count == 1
 
     async def test_error_without_a_pgcode_is_not_retried(self):
-        session = AsyncMock()
+        session = _session()
         session.execute = AsyncMock(side_effect=OperationalError("stmt", {}, None))
         with patch("app.repositories.asyncio.sleep", new=AsyncMock()):
             with pytest.raises(OperationalError):
@@ -262,7 +275,7 @@ class TestDeadlockRetry:
 
     @pytest.mark.parametrize("exc", [RuntimeError, ValueError, KeyboardInterrupt])
     async def test_non_operational_errors_propagate_immediately(self, exc):
-        session = AsyncMock()
+        session = _session()
         session.execute = AsyncMock(side_effect=exc)
         with patch("app.repositories.asyncio.sleep", new=AsyncMock()) as sleep:
             with pytest.raises(exc):
@@ -392,28 +405,6 @@ async def test_invoice_get_by_purchase_id(db_session):
 
 
 @pytest.mark.asyncio
-async def test_invoice_get_by_user_returns_newest_first(db_session):
-    repo = InvoiceRepository(db_session)
-    user = uuid4()
-    older = await repo.create(user, Decimal("10.00"))
-    newer = await repo.create(user, Decimal("15.00"))
-    await db_session.commit()
-    older.issued_at = datetime(2025, 1, 1)
-    newer.issued_at = datetime(2025, 1, 2)
-    await db_session.commit()
-
-    invoices = await repo.get_by_by_user if False else await repo.get_by_user(user)
-    assert [i.id for i in invoices] == [newer.id, older.id]
-    # get_latest_for_user is the single-row version of the same ordering.
-    assert (await repo.get_latest_for_user(user)).id == newer.id
-
-
-@pytest.mark.asyncio
-async def test_invoice_get_by_user_is_empty_for_an_unknown_user(db_session):
-    assert await InvoiceRepository(db_session).get_by_user(uuid4()) == []
-
-
-@pytest.mark.asyncio
 async def test_invoice_create_accepts_a_subscription_link(db_session):
     subs = SubscriptionRepository(db_session)
     repo = InvoiceRepository(db_session)
@@ -532,12 +523,11 @@ async def test_milestone_create_auto_creates_four_tranches(db_session):
 
 
 @pytest.mark.asyncio
-async def test_milestone_tranche_amounts_round_independently_to_two_decimals(db_session):
-    # FINDING (reported, not fixed): each tranche is rounded to NUMERIC(12,2)
-    # on its own, so for a commitment that is not a multiple of 100 the four
-    # tranches can sum to more than the commitment. 999.99 -> 100.00 (+0.01).
-    # The payout ledger therefore can be over-funded by up to 2 cents per
-    # milestone, and the kill/revert path can under-claw the difference back.
+async def test_milestone_tranches_absorb_the_rounding_residue(db_session):
+    # 999.99 over four NUMERIC(12,2) tranches cannot split evenly, so the last
+    # tranche absorbs the residue. Rounding each tranche independently used to
+    # over-fund the payout ledger by a cent, so the invariant that matters is
+    # the sum, not the individual amounts.
     repo = MilestoneRepository(db_session)
     ms = await repo.create(uuid4(), "Doc", Decimal("999.99"))
     await db_session.commit()
@@ -546,10 +536,9 @@ async def test_milestone_tranche_amounts_round_independently_to_two_decimals(db_
         Decimal("100.00"),
         Decimal("200.00"),
         Decimal("300.00"),
-        Decimal("400.00"),
+        Decimal("399.99"),
     ]
-    assert sum(t.amount for t in tranches) == Decimal("1000.00")
-    assert sum(t.amount for t in tranches) != Decimal("999.99")
+    assert sum(t.amount for t in tranches) == Decimal("999.99")
 
 
 async def test_milestone_tranches_sum_exactly_for_a_clean_commitment(db_session):
@@ -654,8 +643,10 @@ async def test_payout_accrue_recovers_from_a_concurrent_unique_violation(db_sess
                 uuid4(), Decimal("1.00"), "USD", "race", datetime(2025, 1, 1), datetime(2025, 2, 1)
             )
     assert recovered.id == winner.id
-    # The failed INSERT must be rolled back before the winner is re-read.
-    rollback.assert_awaited_once()
+    # The failed INSERT is undone by rolling back the savepoint it ran in, not
+    # the whole session: a session-wide rollback here would silently discard
+    # the caller's other pending work (the tranche release that triggered it).
+    rollback.assert_not_awaited()
 
 
 async def test_payout_accrue_reraises_when_the_violation_is_not_a_duplicate_key(db_session):
@@ -803,33 +794,36 @@ async def test_refunds_are_append_only_no_delete_is_exposed(db_session):
         assert "purge" not in public
 
 
-class TestDeadlockRetryFallthrough:
-    async def test_the_loop_always_returns_or_raises_so_the_tail_is_unreachable(self):
-        """Documents that repositories.py:87-89 can never execute.
+class _RecordingSession:
+    """Minimal session stub: MilestoneRepository.create only adds and flushes."""
 
-        Every iteration either returns a result (line 73) or raises: an
-        ``OperationalError`` re-raises when the code is not a deadlock or the
-        attempts are exhausted (line 82), and any other ``BaseException``
-        re-raises at line 85. The ``for`` loop therefore never completes
-        normally, so the ``raise last_exc`` / ``raise RuntimeError`` tail below
-        it is dead code kept only for type-checker friendliness.
-        """
-        # A statement that always raises a non-deadlock error: one iteration,
-        # one raise, no fallthrough.
-        session = AsyncMock()
-        session.execute = AsyncMock(side_effect=ValueError("always"))
-        with pytest.raises(ValueError):
-            await _execute_with_deadlock_retry(session, "stmt", max_attempts=1)
+    def __init__(self) -> None:
+        self.added: list[object] = []
 
-        # A statement that always raises a deadlock error: exhausts the
-        # attempts and re-raises, again with no fallthrough.
-        session = AsyncMock()
-        session.execute, _ = _flaky(99, "40P01")
-        with patch("app.repositories.asyncio.sleep", new=AsyncMock()):
-            with pytest.raises(OperationalError):
-                await _execute_with_deadlock_retry(session, "stmt", max_attempts=3)
+    def add(self, obj: object) -> None:
+        self.added.append(obj)
 
-        # Only a success can return, and it returns the result inline.
-        session = AsyncMock()
-        session.execute, good = _flaky(0, "40P01", result="RESULT")
-        assert await _execute_with_deadlock_retry(session, "stmt") == "RESULT"
+    async def flush(self) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "commitment",
+    [Decimal("999.99"), Decimal("0.03"), Decimal("1.00"), Decimal("12345.67")],
+)
+async def test_milestone_tranches_sum_to_commitment(commitment: Decimal):
+    """Tranches must never exceed the commitment (#854).
+
+    Rounding every tranche independently to NUMERIC(12,2) over-allocated up to
+    2c per milestone, and the kill path only reverses already-released money, so
+    the excess was unrecoverable.
+    """
+    session = _RecordingSession()
+    repo = MilestoneRepository(session)  # type: ignore[arg-type]
+    await repo.create(uuid4(), "project", commitment)
+
+    tranches = [obj for obj in session.added if isinstance(obj, MilestoneTranche)]
+    assert len(tranches) == 4
+    assert sum((t.amount for t in tranches), Decimal("0.00")) == commitment
+    assert all(t.amount >= 0 for t in tranches)

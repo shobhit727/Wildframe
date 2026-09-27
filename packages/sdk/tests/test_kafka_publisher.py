@@ -471,11 +471,14 @@ class TestGetProducer:
         pub = KafkaEventPublisher("kafka:9092")
         with pytest.raises(OSError, match="broker down"):
             await pub._get_producer()
-        assert pub._producer is created[0]  # assigned before start() failed
+        # A producer whose start() failed is never cached: the next call must
+        # build a fresh one instead of reusing a dead producer.
+        assert pub._producer is None
         type(created[0]).start_error = None
-        # A retry re-uses the stored object rather than leaking a second one.
-        assert await pub._get_producer() is created[0]
-        assert len(created) == 1
+        retried = await pub._get_producer()
+        assert retried is not created[0]
+        assert len(created) == 2
+        assert pub._producer is retried
 
 
 # ---------------------------------------------------------------------------

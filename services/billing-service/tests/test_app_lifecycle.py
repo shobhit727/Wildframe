@@ -384,15 +384,14 @@ class TestBodySizeCap:
 
 
 class TestMetricsGate:
-    """Characterisation tests for the /metrics admin token gate (#469).
+    """Regression tests for the /metrics admin token gate (#469, #841).
 
-    FINDING (reported, not fixed): the gate does not take effect.
-    ``create_app`` calls ``wire_observability(app, ...)`` at main.py:202, which
-    registers an *ungated* ``GET /metrics``. The gated handler is only
-    registered afterwards at main.py:221. Starlette resolves routes in
-    registration order, so the first ``/metrics`` entry always wins and
-    ``require_metrics_token`` is unreachable. ``/metrics`` is therefore public
-    in production, exposing request-rate and error metrics.
+    The gate is now effective: ``create_app`` passes ``register_metrics=False``
+    to ``wire_observability``, so the SDK does not register a second, ungated
+    ``GET /metrics`` ahead of the service's own token-gated one. These tests
+    assert the fixed behaviour over real HTTP against the real app — they
+    previously asserted the leak (200 without a token) and are what issue #841
+    warned would fail once fixed.
     """
 
     def test_metrics_returns_prometheus_text(self):
@@ -401,38 +400,43 @@ class TestMetricsGate:
         assert resp.status_code == 200
         assert "python_info" in resp.text
 
-    def test_two_metrics_routes_are_registered_in_that_order(self):
+    def test_metrics_is_registered_exactly_once_and_is_the_gated_route(self):
         app = create_app()
         metrics_routes = [
             route for route in app.routes if getattr(route, "path", None) == "/metrics"
         ]
-        assert len(metrics_routes) == 2
-        # The observability route is registered first, so it is the one matched.
-        assert metrics_routes[0].name == "metrics"
-        assert metrics_routes[1].name == "gated_metrics"
+        assert len(metrics_routes) == 1
+        assert metrics_routes[0].name == "gated_metrics"
+        assert [d.call.__name__ for d in metrics_routes[0].dependant.dependencies] == [
+            "require_metrics_token"
+        ]
 
-    def test_metrics_is_readable_in_production_without_any_token(self):
-        # This is the bug: the gate never runs.
+    def test_production_metrics_scrape_fails_closed_without_a_token(self):
         with patch.object(settings, "ENVIRONMENT", "production"):
             with patch.object(settings, "METRICS_TOKEN", "s3cr3t-metrics"):
                 app = create_app()
                 resp = _run(app, "/metrics")
-        assert resp.status_code == 200
-        assert "python_info" in resp.text
+        assert resp.status_code == 401
 
-    def test_a_wrong_token_is_still_accepted_because_the_gate_is_unreachable(self):
+    def test_production_metrics_scrape_fails_closed_with_a_wrong_token(self):
         with patch.object(settings, "ENVIRONMENT", "production"):
             with patch.object(settings, "METRICS_TOKEN", "s3cr3t-metrics"):
                 app = create_app()
                 resp = _run(app, "/metrics", headers={"Authorization": "Bearer wrong"})
+        assert resp.status_code == 401
+
+    def test_production_metrics_scrape_succeeds_with_the_configured_token(self):
+        with patch.object(settings, "ENVIRONMENT", "production"):
+            with patch.object(settings, "METRICS_TOKEN", "s3cr3t-metrics"):
+                app = create_app()
+                resp = _run(app, "/metrics", headers={"Authorization": "Bearer s3cr3t-metrics"})
         assert resp.status_code == 200
+        assert "python_info" in resp.text
 
     def test_the_gate_dependency_itself_is_correct(self):
-        """Proves the ordering is the sole cause of the leak.
+        """The gate dependency itself rejects a missing or wrong token.
 
-        ``gated_metrics`` carries ``dependencies=[Depends(require_metrics_token)]``.
-        Calling that dependency callable directly exercises the real production
-        closure and shows it *would* reject — it is simply never reached.
+        Exercised directly so the contract is pinned independently of routing.
         """
         app = create_app()
         gated = next(
@@ -465,8 +469,7 @@ class TestMetricsGate:
         assert _run_sync(gate(None)) is None
 
     def test_the_gated_endpoint_body_emits_prometheus_text(self):
-        # The handler body itself is correct; only its route is shadowed. This
-        # covers the 4 statements that no HTTP request can reach.
+        # The handler body itself is correct.
         app = create_app()
         gated = next(
             r

@@ -604,12 +604,12 @@ class TestAppendOnlyAudit:
         from app.models.admin import AdminAuditLog
 
         listeners = event.registry._key_to_collection
-        assert any(
-            k[0] == id(AdminAuditLog) and k[1] == "before_update" for k in listeners
-        ), "before_update listener not registered"
-        assert any(
-            k[0] == id(AdminAuditLog) and k[1] == "before_delete" for k in listeners
-        ), "before_delete listener not registered"
+        assert any(k[0] == id(AdminAuditLog) and k[1] == "before_update" for k in listeners), (
+            "before_update listener not registered"
+        )
+        assert any(k[0] == id(AdminAuditLog) and k[1] == "before_delete" for k in listeners), (
+            "before_delete listener not registered"
+        )
 
 
 class TestBatchLimits:
@@ -779,15 +779,28 @@ class TestAuditLogs:
 
 class TestSystemStats:
     @pytest.mark.asyncio
-    async def test_get_system_stats(self, admin_service):
-        # get_system_stats() counts flagged content and unacknowledged alerts
-        # with two db.scalar() aggregates, not the repository list methods.
-        admin_service.db.scalar = AsyncMock(side_effect=[5, 2])
+    async def test_get_system_stats_counts_own_tables_and_never_invents_users(self, admin_service):
+        # Flagged content, unacknowledged alerts and suspended/banned users are
+        # SQL aggregates over this service's own tables. User totals are not:
+        # user-service owns the directory and exposes no count, so they stay
+        # null instead of reporting a fabricated zero.
+        admin_service.db.scalar = AsyncMock(side_effect=[5, 2, 7])
 
-        result = await admin_service.get_system_stats(total_users=5000, suspended_users=50)
+        result = await admin_service.get_system_stats()
 
-        assert result["total_users"] == 5000
-        assert result["active_users"] == 4950
-        assert result["suspended_users"] == 50
+        assert admin_service.db.scalar.await_count == 3
         assert result["flagged_content"] == 5
         assert result["active_alerts"] == 2
+        assert result["suspended_users"] == 7
+        assert result["total_users"] is None
+        assert result["active_users"] is None
+
+    @pytest.mark.asyncio
+    async def test_get_system_stats_uptime_is_measured_not_fixed(self, admin_service):
+        admin_service.db.scalar = AsyncMock(side_effect=[0, 0, 0])
+
+        result = await admin_service.get_system_stats()
+
+        # 99.9 was hardcoded; uptime now comes from the process start marker.
+        assert result["system_uptime_hours"] != 99.9
+        assert result["system_uptime_hours"] >= 0

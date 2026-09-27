@@ -260,6 +260,15 @@ class BillingService:
     # TVOD purchases
     # -----------------------------------------------------------------------
 
+    async def get_purchase_price(self, content_id: UUID) -> Decimal:
+        """Canonical server-side price for a title.
+
+        content-service is the single source of truth for TVOD pricing; the
+        client never supplies an amount. Used by the checkout route so the
+        Stripe session is priced from the same value the purchase records.
+        """
+        return await self._fetch_content_price(content_id)
+
     async def _fetch_content_details(self, content_id: UUID) -> tuple[Decimal, UUID]:
         content_service_url = "http://content-service:8000"
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -546,7 +555,8 @@ class BillingService:
                 status=RefundStatus.PENDING_REVIEW,
             )
             self._logger.warning(
-                "Refund %s pending review: supplied invoice %s does not match Stripe-linked invoice %s",
+                "Refund %s pending review: supplied invoice %s does not match"
+                " Stripe-linked invoice %s",
                 refund_id,
                 invoice_id,
                 resolved_invoice_id,

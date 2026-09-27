@@ -617,10 +617,9 @@ async def resend_verification(
     token = TokenManager.create_email_verification_token(user.id, user.email)
     logger.info("Email verification token issued for %s", user.email)
 
-    response: dict = {"message": _ENUMERATION_SAFE_MESSAGE}
-    if settings.ENVIRONMENT != "production":
-        response["verification_token"] = token
-    return response
+    # Production already returned 503 above, so this is always non-production:
+    # the token is the only delivery path that exists.
+    return {"message": _ENUMERATION_SAFE_MESSAGE, "verification_token": token}
 
 
 @router.post("/mfa/setup")

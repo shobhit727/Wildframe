@@ -359,48 +359,30 @@ async def test_metrics_is_open_outside_production():
     assert response.headers["content-type"].startswith("text/plain")
 
 
-def _only_gated_metrics_app() -> FastAPI:
-    """Build the app with the observability-owned /metrics route suppressed.
+def test_metrics_is_registered_exactly_once():
+    """The #469 admin-token gate on /metrics used to be dead code.
 
-    ``wire_observability`` registers its own ``GET /metrics`` unless it is told
-    the service owns the route; suppressing it isolates the service's gate so
-    the gate logic itself can be asserted on its own.
+    ``wire_observability`` registers its own ungated ``GET /metrics`` unless it
+    is told the service owns the route. Starlette matches routes in
+    registration order, so a second ``/metrics`` — registered before the
+    token-gated one — permanently shadows ``require_metrics_token`` and the
+    scrape endpoint is world-readable in production. One route, gate attached.
     """
-    with patch.object(app_main, "wire_observability") as wire:
-        wire.side_effect = lambda app, **kwargs: None
-        return app_main.create_app()
+    app = _build("production")
+    metrics_routes = [r for r in app.routes if getattr(r, "path", None) == "/metrics"]
+    assert len(metrics_routes) == 1
+    (route,) = metrics_routes
+    assert route.endpoint.__name__ == "gated_metrics"
+    assert [d.call.__name__ for d in route.dependant.dependencies] == ["require_metrics_token"]
 
 
-async def test_metrics_is_publicly_readable_in_production_despite_the_token_gate():
-    """BUG (app/main.py:232): the #469 admin-token gate on /metrics is dead code.
-
-    ``wire_observability(app, ...)`` is called *without* ``register_metrics=False``,
-    so it registers its own ungated ``GET /metrics`` at line 232 — i.e. before the
-    token-gated route the service defines at line 250. Starlette matches routes
-    in registration order, so the observability route always wins and
-    ``require_metrics_token`` is never consulted. uploads-service passes
-    ``register_metrics=False`` and is not affected.
-
-    Asserted as-is: production code is not modified.
-    """
+async def test_production_metrics_scrape_fails_closed_without_the_token():
+    """The real app, not an isolated one: the gate must be the route that answers."""
     with (
         patch.object(settings, "ENVIRONMENT", "production"),
         patch.object(settings, "METRICS_TOKEN", "s3cret-metrics-token"),
     ):
         app = _build("production")
-        async with _client(app) as client:
-            response = await client.get("/metrics")
-    assert response.status_code == 200
-    assert b"python_info" in response.content
-
-
-async def test_the_metrics_token_gate_itself_rejects_an_unauthenticated_scrape():
-    """With the duplicate route gone, the gate does fail closed."""
-    with (
-        patch.object(settings, "ENVIRONMENT", "production"),
-        patch.object(settings, "METRICS_TOKEN", "s3cret-metrics-token"),
-    ):
-        app = _only_gated_metrics_app()
         async with _client(app) as client:
             unauthenticated = await client.get("/metrics")
     assert unauthenticated.status_code == 401
@@ -412,12 +394,13 @@ async def test_the_metrics_token_gate_accepts_the_configured_token():
         patch.object(settings, "ENVIRONMENT", "production"),
         patch.object(settings, "METRICS_TOKEN", "s3cret-metrics-token"),
     ):
-        app = _only_gated_metrics_app()
+        app = _build("production")
         async with _client(app) as client:
             response = await client.get(
                 "/metrics", headers={"Authorization": "Bearer s3cret-metrics-token"}
             )
     assert response.status_code == 200
+    assert b"python_info" in response.content
 
 
 async def test_the_metrics_token_gate_rejects_a_wrong_token():
@@ -425,7 +408,7 @@ async def test_the_metrics_token_gate_rejects_a_wrong_token():
         patch.object(settings, "ENVIRONMENT", "production"),
         patch.object(settings, "METRICS_TOKEN", "s3cret-metrics-token"),
     ):
-        app = _only_gated_metrics_app()
+        app = _build("production")
         async with _client(app) as client:
             response = await client.get("/metrics", headers={"Authorization": "Bearer wrong"})
     assert response.status_code == 401
@@ -437,7 +420,7 @@ async def test_the_metrics_token_gate_fails_closed_without_a_configured_token():
         patch.object(settings, "ENVIRONMENT", "production"),
         patch.object(settings, "METRICS_TOKEN", ""),
     ):
-        app = _only_gated_metrics_app()
+        app = _build("production")
         async with _client(app) as client:
             response = await client.get("/metrics")
     assert response.status_code == 401

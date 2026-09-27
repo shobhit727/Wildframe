@@ -259,11 +259,16 @@ def fake_clamd():
     _FakeClamd.instances = []
 
 
-async def test_clamav_scanner_defaults_to_clean_when_daemon_returns_nothing(fake_clamd):
+async def test_clamav_scanner_never_passes_an_unscanned_file_as_clean(fake_clamd):
+    """clamd answers ``None`` when it did not scan the file at all (size /
+    StreamMaxLength limits). That is indeterminate, not clean: reporting True
+    would let the orchestrator advance bytes nothing ever inspected.
+    """
     fake_clamd.result = None
     scanner = ClamavScanner(socket_path="/run/clamav.sock")
     assert scanner.socket_path == "/run/clamav.sock"
-    assert await scanner.scan("/tmp/sample.bin") is True
+    with pytest.raises(RuntimeError, match="did not scan"):
+        await scanner.scan("/tmp/sample.bin")
     assert fake_clamd.instances[0].socket_path == "/run/clamav.sock"
     assert fake_clamd.instances[0].scanned == ["/tmp/sample.bin"]
 
@@ -273,14 +278,21 @@ async def test_clamav_scanner_detects_an_infected_sample(fake_clamd):
     assert await ClamavScanner().scan("/tmp/sample.bin") is False
 
 
-async def test_clamav_scanner_treats_ok_and_empty_statuses_as_clean(fake_clamd):
-    fake_clamd.result = {"/tmp/sample.bin": ("OK",)}
+async def test_clamav_scanner_treats_an_ok_status_as_clean(fake_clamd):
+    fake_clamd.result = {"/tmp/sample.bin": ("OK", None)}
     assert await ClamavScanner().scan("/tmp/sample.bin") is True
-    fake_clamd.result = {"/tmp/sample.bin": (None, None)}
-    assert await ClamavScanner().scan("/tmp/sample.bin") is True
+
+
+@pytest.mark.parametrize("status", [(None, None), ("ERROR", "cannot read")])
+async def test_clamav_scanner_rejects_an_unrecognised_status(fake_clamd, status):
+    """Only OK and FOUND are verdicts; anything else must not read as clean."""
+    fake_clamd.result = {"/tmp/sample.bin": status}
+    with pytest.raises(RuntimeError, match="returned"):
+        await ClamavScanner().scan("/tmp/sample.bin")
 
 
 async def test_clamav_scanner_uses_the_default_socket_path(fake_clamd):
+    fake_clamd.result = {"/tmp/sample.bin": ("OK", None)}
     assert ClamavScanner().socket_path == "/var/run/clamav/clamd.ctl"
     await ClamavScanner().scan("/tmp/sample.bin")
     assert fake_clamd.instances[0].socket_path == "/var/run/clamav/clamd.ctl"

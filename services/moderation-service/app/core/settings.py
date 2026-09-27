@@ -48,7 +48,17 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
     AUTH_SERVICE_URL: str = "http://auth-service:8000"
+
+    # Redis
     REDIS_URL: str | None = None
+    # content-service is the authority for who owns a piece of content. Strikes
+    # are issued against that resolved identity, never a request-body field.
+    # Set to http://content-service:8003 inside the docker network.
+    CONTENT_SERVICE_URL: str = "http://content-service:8003"
+    CONTENT_SERVICE_TIMEOUT_SECONDS: float = 3.0
+    CONTENT_SERVICE_MAX_CONNECTIONS: int = 10
+
+    # Logging
     LOG_LEVEL: str = "INFO"
     CORS_ALLOWED_ORIGINS: list[str] = [
         "http://localhost:3000",

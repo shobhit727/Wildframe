@@ -1,9 +1,14 @@
 """Tests for `app.core.event_consumer.run_user_registered_consumer`.
 
-The long-running Kafka loop had no coverage at all (22 missed lines). The
-contract that matters is *resilience*: a single bad message, or a broker that
-goes away, must never crash the consumer task, and offsets must still be
-committed so the message is not redelivered forever.
+The long-running Kafka loop had no coverage at all (22 missed lines). Two
+contract halves pull in opposite directions here:
+
+* A *structurally* unprocessable payload (no user_id, non-UUID, bad JSON) can
+  never succeed, so it is skipped and committed -- otherwise the poison pill
+  wedges the partition forever.
+* A payload that fails for a *transient* reason (DB down, unique violation)
+  must not advance the offset. The loop stops and the message is redelivered
+  on restart rather than being committed and lost for good.
 
 `aiokafka.AIOKafkaConsumer` is replaced with a scripted fake, so no broker and
 no network are involved.
@@ -153,7 +158,7 @@ async def test_a_message_without_a_user_id_is_skipped_but_still_committed():
         consumer = await _run(messages=[_msg({"topic": USER_REGISTERED_TOPIC})])
 
     provision.assert_not_awaited()
-    # `finally` commits regardless, so the poison message is not replayed.
+    # Committed as skipped, so the poison message is not replayed forever.
     assert consumer.commits == 1
 
 
@@ -165,18 +170,27 @@ async def test_undecodable_json_is_skipped_but_still_committed():
     assert consumer.commits == 1
 
 
-async def test_a_provisioning_failure_does_not_kill_the_loop():
-    good = _msg({"payload": {"user_id": USER_ID}})
+async def test_a_provisioning_failure_stops_the_loop_without_committing():
+    """A real failure must not advance the offset: the message is redelivered.
 
+    Committing on the way out (from a `finally` block) would ack a
+    registration whose profile was never created, dropping that user forever.
+    """
     with patch(
         "app.core.event_consumer._provision_profile",
-        new=AsyncMock(side_effect=[RuntimeError("profile exists"), None]),
+        new=AsyncMock(side_effect=RuntimeError("profile exists")),
     ) as provision:
-        consumer = await _run(messages=[good, _msg({"payload": {"user_id": USER_ID}})])
+        consumer = await _run(
+            messages=[
+                _msg({"payload": {"user_id": USER_ID}}),
+                _msg({"payload": {"user_id": USER_ID}}),
+            ]
+        )
 
-    assert provision.await_count == 2
-    # Both offsets acked even though the first message failed.
-    assert consumer.commits == 2
+    # Nothing is acked, so the failed offset is redelivered on restart.
+    assert consumer.commits == 0
+    # The loop stops instead of moving on past a message it could not apply.
+    provision.assert_awaited_once()
     assert consumer.stopped is True
 
 

@@ -9,7 +9,7 @@ Targets the branches the existing ``test_observability.py`` does not reach:
   authenticated scrape route).
 * ``logging.py`` — the field-type guard in ``_is_sensitive_field``, the
   depth guards, and the promoted-attribute branch in ``JSONFormatter``.
-* ``metrics.py`` — the leading-slash normalisation in ``_normalize_endpoint``.
+* ``metrics.py`` — endpoint-label selection from the matched route template.
 * ``health.py`` / ``middleware.py`` — the paths not already exercised.
 """
 
@@ -41,10 +41,6 @@ from wildframe_observability.logging import (  # noqa: E402
     _is_sensitive_field,
     _redact_secrets,
     _sanitize_for_log,
-)
-from wildframe_observability.metrics import (  # noqa: E402
-    _is_uuid_like,
-    _normalize_endpoint,
 )
 from wildframe_observability.middleware import (  # noqa: E402
     RequestLoggingMiddleware,
@@ -457,59 +453,6 @@ class TestJSONFormatterPromotedAttributes:
         record.weird = object()  # type: ignore[attr-defined]
         assert "object" in json.loads(formatter.format(record))["weird"]
 
-
-# ---------------------------------------------------------------------------
-# metrics.py gaps
-# ---------------------------------------------------------------------------
-
-
-class TestNormalizeEndpointEdgeCases:
-    def test_leading_slash_is_added_when_missing(self):
-        assert _normalize_endpoint("users/42") == "/users/{id}"
-        assert _normalize_endpoint("users") == "/users"
-
-    def test_trailing_slash_preserved(self):
-        assert _normalize_endpoint("/users/") == "/users/"
-
-    def test_root_unchanged(self):
-        assert _normalize_endpoint("/") == "/"
-
-    def test_empty_string_becomes_root(self):
-        assert _normalize_endpoint("") == "/"
-
-    def test_only_real_uuid_segments_are_collapsed(self):
-        # Near-misses must keep their own label, or real endpoints get merged
-        # into a single series and their errors become invisible.
-        for path in (
-            "/users/550e8400e29b41d4a716446655440000",  # no dashes
-            "/users/550e8400-e29b-41d4-a716-44665544000",  # one char short
-            "/users/550e8400-e29b-41d4-a716-4466554400000",  # one char long
-            "/users/550e8400-e29b-41d4-a716-44665544000g",  # non-hex
-        ):
-            assert _normalize_endpoint(path) == path
-
-    def test_uppercase_uuid_is_still_recognised(self):
-        assert _normalize_endpoint("/t/550E8400-E29B-41D4-A716-446655440000") == "/t/{id}"
-
-    def test_mixed_numeric_and_uuid_segments(self):
-        assert (
-            _normalize_endpoint("/api/v1/users/550e8400-e29b-41d4-a716-446655440000/playbacks/7")
-            == "/api/v1/users/{id}/playbacks/{id}"
-        )
-
-    def test_repeated_slashes_are_preserved(self):
-        assert _normalize_endpoint("/a//42") == "/a//{id}"
-
-    def test_already_normalised_path_is_idempotent(self):
-        once = _normalize_endpoint("/users/42")
-        assert _normalize_endpoint(once) == once
-
-    def test_is_uuid_like_edge_cases(self):
-        assert _is_uuid_like("550e8400-e29b-41d4-a716-446655440000") is True
-        assert _is_uuid_like("550E8400-E29B-41D4-A716-446655440000") is True
-        assert _is_uuid_like("550e8400-e29b-41d4-a716-446655440000 ") is False  # trailing space
-        assert _is_uuid_like("") is False
-        assert _is_uuid_like("42") is False
 
 
 # ---------------------------------------------------------------------------

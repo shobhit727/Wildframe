@@ -8,7 +8,7 @@ with its retry bookkeeping) are all covered here against repository doubles.
 
 from datetime import datetime, timedelta
 from decimal import Decimal
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 import pytest_asyncio
@@ -155,6 +155,22 @@ class TestAccruePayout:
         assert kwargs["share_cents"] == 500
         assert kwargs["net_cents"] == 490
 
+    async def test_a_fractional_cent_floor_is_rounded_once_not_truncated(self, service):
+        """0.005/min is a half-cent rate: truncating the per-minute rate first
+        paid 0 for 100 minutes. The product is rounded once, at the cents."""
+        creator_id = uuid4()
+        service.acct_repo.get = _async(return_value=_active_account(creator_id))
+        service.floor_repo.get_floor_for_creator = _async(
+            return_value=type("Floor", (), {"per_minute_amount": 0.005})()
+        )
+        service.ledger_repo.accrued = _async(return_value="row")
+
+        await service.accrue_payout(creator_id, NOW, NOW, 100, 0, 0)
+
+        kwargs = service.ledger_repo.accrued.await_args.kwargs
+        assert kwargs["floor_cents"] == 50
+        assert kwargs["share_cents"] == 50
+
     async def test_no_floor_means_no_topup(self, service):
         creator_id = uuid4()
         service.acct_repo.get = _async(return_value=_active_account(creator_id))
@@ -224,7 +240,7 @@ class TestInboundSuspension:
 
     async def test_inbound_repository_is_required(self, service):
         with pytest.raises(CreatorSuspendedError, match="inbound event repository"):
-            await service.process_inbound_suspension(str(uuid4()), {})
+            await service.process_inbound_suspension(uuid4(), {})
 
     async def test_suspension_deactivates_the_creator(self, service):
         creator_id = uuid4()
@@ -232,21 +248,24 @@ class TestInboundSuspension:
         service.acct_repo.get = _async(return_value=acct)
         service.acct_repo.update = _async(return_value=acct)
         service.inbound_repo = _inbound_repo()
-        event_key = str(uuid4())
+        # The inbound_events row id is generated independently of event_key, so
+        # the two are unrelated values: only the row that ran may be marked,
+        # otherwise a real event is drained as PENDING forever.
+        event = self._event(payload={"creator_id": str(creator_id)})
 
-        await service.process_inbound_suspension(event_key, {"creator_id": str(creator_id)})
+        await service.process_inbound_suspension(event.id, event.payload)
 
         service.acct_repo.update.assert_awaited_once_with(
             acct, is_active=False, kyc_status="suspended"
         )
-        service.inbound_repo.mark_processed.assert_awaited_once_with(UUID(event_key))
+        service.inbound_repo.mark_processed.assert_awaited_once_with(event.id)
 
     async def test_unknown_creator_is_rejected(self, service):
         service.acct_repo.get = _async(return_value=None)
         service.inbound_repo = _inbound_repo()
 
         with pytest.raises(CreatorSuspendedError, match="does not exist"):
-            await service.process_inbound_suspension(str(uuid4()), {"creator_id": str(uuid4())})
+            await service.process_inbound_suspension(uuid4(), {"creator_id": str(uuid4())})
 
     async def test_drain_without_a_repository_is_a_noop(self, service):
         assert await service.drain_inbound_events() == 0
@@ -273,17 +292,48 @@ class TestInboundSuspension:
         assert processed == 0
         service.inbound_repo.mark_failed.assert_awaited_once_with(event.id)
 
-    async def test_drain_marks_a_failing_event_failed_and_keeps_going(self, service):
-        bad = self._event(payload={"creator_id": "not-a-uuid"})
+    async def test_drain_marks_an_unprocessable_event_failed_and_keeps_going(self, service):
+        """A creator that does not exist is permanent: FAILED is terminal, so
+        retrying can never succeed. The row is parked and the drain continues."""
+        missing_creator = uuid4()
+        bad = self._event(payload={"creator_id": str(missing_creator)})
         good = self._event(payload={"creator_id": str(uuid4())})
         service.inbound_repo = _inbound_repo(pending=[bad, good])
-        service.acct_repo.get = _async(return_value=_active_account())
+
+        def _get(creator_id, *args, **kwargs):
+            return None if creator_id == missing_creator else _active_account()
+
+        service.acct_repo.get = _async(side_effect=_get)
         service.acct_repo.update = _async(return_value=None)
 
         processed = await service.drain_inbound_events()
 
         assert processed == 1
         service.inbound_repo.mark_failed.assert_awaited_once_with(bad.id)
+        service.inbound_repo.mark_processed.assert_awaited_once_with(good.id)
+        service.inbound_repo.session.commit.assert_awaited_once()
+
+    async def test_drain_leaves_a_transient_failure_pending_and_keeps_going(self, service):
+        """A one-off failure is not permanent: the row stays PENDING for the next
+        poll. Marking it FAILED would silently drop a creator suspension."""
+        flaky_creator = uuid4()
+        flaky = self._event(payload={"creator_id": str(flaky_creator)})
+        good = self._event(payload={"creator_id": str(uuid4())})
+        service.inbound_repo = _inbound_repo(pending=[flaky, good])
+
+        def _get(creator_id, *args, **kwargs):
+            if creator_id == flaky_creator:
+                raise RuntimeError("database is down")
+            return _active_account()
+
+        service.acct_repo.get = _async(side_effect=_get)
+        service.acct_repo.update = _async(return_value=None)
+
+        processed = await service.drain_inbound_events()
+
+        assert processed == 1
+        service.inbound_repo.mark_failed.assert_not_awaited()
+        service.inbound_repo.mark_processed.assert_awaited_once_with(good.id)
         service.inbound_repo.session.commit.assert_awaited_once()
 
 
@@ -475,6 +525,29 @@ class TestMilestoneRepositoryLookups:
         assert rows[50].status.value == "released"
         assert rows[90].status.value == "rolled_back"
         assert await repo.kill_milestone(uuid4(), "budget") is None
+
+    async def test_only_a_locked_tranche_of_a_live_milestone_is_released(self, session):
+        """Re-releasing a released tranche, or releasing one of a killed
+        milestone, must move no money: released/rolled_back tranches are
+        immutable (capital protection, PRODUCT_VISION §2.3)."""
+        from app.repositories import MilestoneRepository
+
+        repo = MilestoneRepository(session)
+        milestone = await repo.create("Launch film", uuid4(), 1000, "USD", "ship")
+        await repo.add_tranche(milestone.id, 50, 500, "views")
+        await repo.add_tranche(milestone.id, 90, 500, "views")
+
+        first = await repo.release_tranche(milestone.id, 50)
+        assert first.status.value == "released"
+
+        # Already released: not releasable a second time.
+        assert await repo.release_tranche(milestone.id, 50) is None
+
+        await repo.kill_milestone(milestone.id, "budget")
+
+        # Rolled back by the kill, and its milestone is no longer live.
+        assert await repo.release_tranche(milestone.id, 90) is None
+        assert await repo.release_tranche(milestone.id, 50) is None
 
 
 class TestPoolBalanceGuards:

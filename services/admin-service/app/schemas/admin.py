@@ -92,8 +92,11 @@ class AdminAuditLogResponse(BaseModel):
 
 
 class SystemStatsResponse(BaseModel):
-    total_users: int
-    active_users: int
+    # The user directory is owned by user-service, which exposes no count
+    # endpoint, so total/active users are reported as null rather than a
+    # fabricated zero. Populate once that aggregate exists.
+    total_users: int | None
+    active_users: int | None
     suspended_users: int
     flagged_content: int
     active_alerts: int
