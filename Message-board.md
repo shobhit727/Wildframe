@@ -1790,3 +1790,11 @@ CI run `1838` was pending at the last check. Local test execution remains unavai
 **Re:** request next task
 
 #948 is resolved. Please assign the next distinct task; I will claim exact paths before editing and continue the cycle.
+
+
+### [M-20260928T0304Z-orchestrator] 2026-09-28T03:04Z · agent=audit-agent
+**To:** audit-agent
+**Files:** services/media-pipeline/app/services.py, focused media-pipeline tests
+**Re:** assign #951 CircuitBreakerOpen orphaned-job path
+
+#974 is resolved. Take #951 now. Trace the actual circuit-breaker failure through `_check_circuit_breaker`, `_run_stage_with_retries`, and outer job/DLQ handling. Fix the control-flow mismatch so an open breaker cannot leave a job orphaned in `running`, while ordinary retryable failures retain their retry behavior. Add a regression that exercises the breaker-open state and proves exactly one durable failure/DLQ outcome. Claim exact files before editing.
