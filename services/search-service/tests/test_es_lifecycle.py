@@ -15,6 +15,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -24,6 +25,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.api.search_routes as search_routes
+import app.core.security as security_module
 import app.services as services_module
 from app.core.security import decode_cursor, encode_cursor
 from app.core.settings import settings
@@ -738,12 +740,19 @@ class TestSharedEsClient:
 # ----------------------------------------------------------------------
 
 
-def _sign(payload: dict) -> str:
-    """Build a correctly-signed cursor for an arbitrary payload."""
+def _sign(payload: dict, key: bytes | str | None = None) -> str:
+    """Build a correctly-signed cursor for an arbitrary payload.
+
+    ``key`` defaults to the real cursor key so callers cannot accidentally
+    produce a cursor the service would not itself have minted. Pass an explicit
+    key to forge one under a different secret.
+    """
+    if key is None:
+        key = settings.SEARCH_CURSOR_SECRET
+    if isinstance(key, str):
+        key = key.encode()
     raw = json.dumps(payload, separators=(",", ":")).encode()
-    signature = hmac.new(
-        search_routes.settings.JWT_SECRET_KEY.encode(), raw, hashlib.sha256
-    ).digest()
+    signature = hmac.new(key, raw, hashlib.sha256).digest()
     return (
         base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
         + "."
@@ -806,14 +815,265 @@ class TestCursorIntegrity:
             with pytest.raises(ValueError, match="invalid cursor"):
                 decode_cursor(bad, "action", None, 20)
 
-    def test_cursor_from_a_foreign_secret_is_rejected(self, monkeypatch):
-        from app.core.settings import settings
-
+    def test_cursor_from_a_foreign_cursor_secret_is_rejected(self, monkeypatch):
         cursor = encode_cursor("action", None, 20, [9.5, "doc-1"])
-        monkeypatch.setattr(settings, "JWT_SECRET_KEY", "a-completely-different-secret-value")
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", "a-completely-different-secret-value")
 
         with pytest.raises(ValueError, match="invalid cursor"):
             decode_cursor(cursor, "action", None, 20)
+
+
+class TestCursorKeyIsNotTheJwtSecret:
+    """The cursor HMAC must not be keyed on JWT_SECRET_KEY.
+
+    Two defects motivated the split, and each needs its own assertion: cursors
+    were defended by a value committed to the repository, and the two keys were
+    rotationally coupled. A rename alone would satisfy neither.
+    """
+
+    def test_a_cursor_signed_with_the_jwt_secret_is_rejected(self):
+        """The regression that matters: the key really changed, it was not renamed."""
+        from app.core.security import _scope_hash
+
+        forged = _sign(
+            {"scope": _scope_hash("action", None, 20), "sort": [9.5, "doc-1"]},
+            key=settings.JWT_SECRET_KEY,
+        )
+
+        with pytest.raises(ValueError, match="invalid cursor"):
+            decode_cursor(forged, "action", None, 20)
+
+    def test_rotating_the_jwt_secret_leaves_existing_cursors_valid(self, monkeypatch):
+        """The lifecycle half: the two keys rotate independently."""
+        cursor = encode_cursor("action", None, 20, [9.5, "doc-1"])
+        monkeypatch.setattr(settings, "JWT_SECRET_KEY", "a-totally-rotated-jwt-secret")
+
+        assert decode_cursor(cursor, "action", None, 20) == [9.5, "doc-1"]
+
+    def test_rotating_the_cursor_secret_invalidates_existing_cursors(self, monkeypatch):
+        """The converse, so the previous test is not vacuous."""
+        cursor = encode_cursor("action", None, 20, [9.5, "doc-1"])
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", "a-rotated-cursor-secret")
+
+        with pytest.raises(ValueError, match="invalid cursor"):
+            decode_cursor(cursor, "action", None, 20)
+
+    def test_cursor_format_is_byte_identical_apart_from_the_key(self):
+        """Only the key changed: the payload segment and the algorithm are untouched.
+
+        Guards the promise that cursors stay wire-compatible -- the previous
+        construction is reproduced here line for line, with the new key, and the
+        two strings must match exactly.
+        """
+        from app.core.security import _scope_hash
+
+        raw = json.dumps(
+            {"scope": _scope_hash("action", None, 20), "sort": [9.5, "doc-1"]},
+            separators=(",", ":"),
+        ).encode()
+        signature = hmac.new(settings.SEARCH_CURSOR_SECRET.encode(), raw, hashlib.sha256).digest()
+        expected = (
+            base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+            + "."
+            + base64.urlsafe_b64encode(signature).rstrip(b"=").decode()
+        )
+
+        assert encode_cursor("action", None, 20, [9.5, "doc-1"]) == expected
+
+    def test_only_the_signature_segment_differs_from_the_old_construction(self):
+        """Same payload bytes, same shape, same length -- a different signature."""
+        from app.core.security import _scope_hash
+
+        payload = {"scope": _scope_hash("action", None, 20), "sort": [9.5, "doc-1"]}
+        raw = json.dumps(payload, separators=(",", ":")).encode()
+
+        old_sig = hmac.new(settings.JWT_SECRET_KEY.encode(), raw, hashlib.sha256).digest()
+        old = (
+            base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+            + "."
+            + base64.urlsafe_b64encode(old_sig).rstrip(b"=").decode()
+        )
+        new = encode_cursor("action", None, 20, [9.5, "doc-1"])
+
+        assert old.count(".") == new.count(".") == 1
+        assert old.rsplit(".", 1)[0] == new.rsplit(".", 1)[0]
+        assert old.rsplit(".", 1)[1] != new.rsplit(".", 1)[1]
+        assert len(old) == len(new)
+
+
+class TestUnsetCursorSecret:
+    """An unset key must degrade availability, never raise and never weaken.
+
+    Asserting "does not raise" alone would pass for a fallback to the committed
+    dev default, which is precisely the property that must not hold. Each case
+    below pins one part of the chosen behaviour: a per-process random key.
+    """
+
+    @pytest.mark.parametrize("unset", ["", None])
+    def test_signer_and_verifier_do_not_raise(self, monkeypatch, unset):
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", unset)
+
+        cursor = encode_cursor("action", None, 20, [9.5, "doc-1"])
+
+        assert decode_cursor(cursor, "action", None, 20) == [9.5, "doc-1"]
+
+    def test_no_configured_signing_key_raises_nothing(self, monkeypatch):
+        """Defect #2 pinned without assuming which attribute the signer reads.
+
+        Both candidate attributes are emptied when they are declared, so this
+        runs against the pre-fix code too: there it dies with
+        ``RuntimeError("JWT_SECRET_KEY is not configured")``, which the search
+        route does not map and which therefore surfaces as a 500. Here it
+        round-trips. A 400-shaped degradation is the point -- a hard failure on
+        a read-only endpoint is not.
+        """
+        candidates = ("SEARCH_CURSOR_SECRET", "JWT_SECRET_KEY")
+        emptied = [a for a in candidates if a in type(settings).model_fields]
+        assert "JWT_SECRET_KEY" in emptied
+        for attribute in emptied:
+            monkeypatch.setattr(settings, attribute, "")
+
+        cursor = encode_cursor("action", None, 20, [9.5, "doc-1"])
+
+        assert decode_cursor(cursor, "action", None, 20) == [9.5, "doc-1"]
+
+    @pytest.mark.parametrize("unset", ["", None])
+    def test_fallback_key_is_random_and_not_any_committed_value(self, monkeypatch, unset):
+        from app.core.settings import DEV_DEFAULTS
+
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", unset)
+
+        key = security_module._cursor_secret()
+
+        assert len(key) == 32
+        assert key.decode(errors="ignore") not in DEV_DEFAULTS.values()
+        assert key != settings.JWT_SECRET_KEY.encode()
+        assert key != DEV_DEFAULTS["SEARCH_CURSOR_SECRET"].encode()
+
+    def test_fallback_does_not_fall_back_to_the_dev_default(self, monkeypatch):
+        """A client holding the committed dev default must not be able to forge."""
+        from app.core.security import _scope_hash
+        from app.core.settings import DEV_DEFAULTS
+
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", "")
+        forged = _sign(
+            {"scope": _scope_hash("action", None, 20), "sort": [9.5, "doc-1"]},
+            key=DEV_DEFAULTS["SEARCH_CURSOR_SECRET"],
+        )
+
+        with pytest.raises(ValueError, match="invalid cursor"):
+            decode_cursor(forged, "action", None, 20)
+
+    def test_a_client_signing_with_the_jwt_secret_still_cannot_forge(self, monkeypatch):
+        from app.core.security import _scope_hash
+
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", "")
+        forged = _sign(
+            {"scope": _scope_hash("action", None, 20), "sort": [9.5, "doc-1"]},
+            key=settings.JWT_SECRET_KEY,
+        )
+
+        with pytest.raises(ValueError, match="invalid cursor"):
+            decode_cursor(forged, "action", None, 20)
+
+    def test_the_fallback_is_stable_within_a_process(self, monkeypatch):
+        """Otherwise every cursor would be invalid the moment it was minted."""
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", "")
+
+        assert security_module._cursor_secret() == security_module._cursor_secret()
+
+    def test_cursors_signed_before_the_key_was_unset_stop_verifying(self, monkeypatch):
+        """The documented cost of the fallback, stated as behaviour not folklore."""
+        cursor = encode_cursor("action", None, 20, [9.5, "doc-1"])
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", "")
+
+        with pytest.raises(ValueError, match="invalid cursor"):
+            decode_cursor(cursor, "action", None, 20)
+
+    def test_an_unusable_key_raises_value_error_not_runtime_error(self, monkeypatch):
+        """The mapping the route depends on: ValueError -> 4xx, RuntimeError -> 500."""
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", "")
+
+        with pytest.raises(ValueError) as excinfo:
+            decode_cursor("not-even-a-cursor", "action", None, 20)
+
+        assert not isinstance(excinfo.value, RuntimeError)
+
+
+class TestCursorSecretIsNeverDisclosed:
+    """The key must not reach a log record or a client-visible error."""
+
+    def test_the_fallback_warning_omits_the_key(self, monkeypatch, caplog):
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", "")
+        monkeypatch.setattr(security_module, "_ephemeral_cursor_secret_warned", False)
+
+        with caplog.at_level(logging.WARNING, logger="app.core.security"):
+            encode_cursor("action", None, 20, [9.5, "doc-1"])
+
+        assert any("SEARCH_CURSOR_SECRET" in r.getMessage() for r in caplog.records)
+        assert all(
+            security_module._EPHEMERAL_CURSOR_SECRET.decode(errors="ignore") not in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_no_value_ever_appears_in_a_log_record(self, monkeypatch, caplog):
+        """Exercise every cursor path while recording, then scan the lot."""
+        from app.core.settings import DEV_DEFAULTS
+
+        secrets_ = {
+            DEV_DEFAULTS["SEARCH_CURSOR_SECRET"],
+            DEV_DEFAULTS["JWT_SECRET_KEY"],
+            "a-very-distinctive-cursor-secret-value-for-scanning",
+        }
+        monkeypatch.setattr(security_module, "_ephemeral_cursor_secret_warned", False)
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", "")
+
+        with caplog.at_level(logging.DEBUG):
+            encode_cursor("action", None, 20, [9.5, "doc-1"])
+            for bad in ("", "no-dot", "a.b.c", "!!!.???"):
+                with pytest.raises(ValueError):
+                    decode_cursor(bad, "action", None, 20)
+
+        monkeypatch.setattr(
+            settings, "SEARCH_CURSOR_SECRET", "a-very-distinctive-cursor-secret-value-for-scanning"
+        )
+        with caplog.at_level(logging.DEBUG):
+            encode_cursor("action", None, 20, [9.5, "doc-1"])
+            with pytest.raises(ValueError):
+                decode_cursor("garbage", "action", None, 20)
+
+        blob = "\n".join(r.getMessage() for r in caplog.records)
+        assert caplog.records, "expected the fallback warning to have been recorded"
+        for secret in secrets_:
+            assert secret not in blob
+
+    def test_error_messages_never_echo_the_key(self, monkeypatch):
+        from app.core.settings import DEV_DEFAULTS
+
+        key = "a-very-distinctive-cursor-secret-value-for-scanning"
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", key)
+        raw, sig = encode_cursor("action", None, 20, [9.5, "doc-1"]).rsplit(".", 1)
+        tampered = f"{raw}.{('A' if sig[0] != 'A' else 'B')}{sig[1:]}"
+
+        for bad in (tampered, "garbage", "", "a.b.c", "!!!.???"):
+            with pytest.raises(ValueError) as excinfo:
+                decode_cursor(bad, "action", None, 20)
+            rendered = (
+                f"{excinfo.value} {excinfo.value.__cause__!r} {excinfo.value.__traceback__!r}"
+            )
+            assert key not in rendered
+            assert DEV_DEFAULTS["SEARCH_CURSOR_SECRET"] not in rendered
+
+    def test_the_fallback_warning_is_emitted_once_per_process(self, monkeypatch, caplog):
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", "")
+        monkeypatch.setattr(security_module, "_ephemeral_cursor_secret_warned", False)
+
+        with caplog.at_level(logging.WARNING, logger="app.core.security"):
+            for _ in range(3):
+                encode_cursor("action", None, 20, [9.5, "doc-1"])
+
+        warnings = [r for r in caplog.records if "SEARCH_CURSOR_SECRET" in r.getMessage()]
+        assert len(warnings) == 1
 
 
 # ----------------------------------------------------------------------
@@ -953,6 +1213,28 @@ class TestSearchCursorRoundTrip:
 
         assert response.status_code == 422
         route_service.search.assert_not_awaited()
+
+    def test_an_unset_cursor_secret_does_not_500_a_search(self, client, route_service, monkeypatch):
+        """The reported defect, end to end.
+
+        With no SEARCH_CURSOR_SECRET configured, both the cursor page and a
+        fresh search must still answer. The old code raised RuntimeError out of
+        the signer, which the route does not map, so this was a 500 on a
+        read-only endpoint.
+        """
+        monkeypatch.setattr(settings, "SEARCH_CURSOR_SECRET", "")
+        _use(route_service)
+
+        paged = client.get(
+            "/api/v1/search/query",
+            params={"q": "action", "limit": 1, "cursor": "not-even-a-cursor"},
+        )
+        first = client.get("/api/v1/search/query", params={"q": "action", "limit": 1})
+
+        assert paged.status_code == 422
+        assert first.status_code == 200
+        assert first.json()["next_cursor"] is not None
+        route_service.search.assert_awaited()
 
     def test_service_level_query_error_maps_to_422(self, client, route_service):
         route_service.search = AsyncMock(side_effect=ValueError("query too long"))

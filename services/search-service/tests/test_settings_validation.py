@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from app.core.settings import (
     DEV_DEFAULTS,
     DEV_ENVIRONMENTS,
+    KNOWN_INSECURE_CURSOR_SECRETS,
     KNOWN_INSECURE_DB_CREDENTIALS,
     KNOWN_INSECURE_JWT_SECRETS,
     Settings,
@@ -20,6 +21,7 @@ from app.core.settings import (
 # remove exactly one requirement.
 STRONG_DB_URL = "postgresql+asyncpg://app_user:s3cret-passphrase@db.internal:5432/search_db"
 STRONG_JWT_SECRET = "k7Qm2Xz9Tb4LpR8vNc6Wy1Ae5Hd0Jf3Ug5SiOq7X"  # 40 chars, not a known default
+STRONG_CURSOR_SECRET = "R4t2Wq8Lm3Zx6Nv1By7Kd0Ce5Sh9Jg3Uf1Ap4To6I"  # 40 chars, not a known default
 
 
 def _clear_dev_env(monkeypatch) -> None:
@@ -34,6 +36,7 @@ def production(**overrides) -> dict:
         "DATABASE_URL": STRONG_DB_URL,
         "REDIS_URL": "redis://redis.internal:6379/0",
         "JWT_SECRET_KEY": STRONG_JWT_SECRET,
+        "SEARCH_CURSOR_SECRET": STRONG_CURSOR_SECRET,
         "KAFKA_BOOTSTRAP_SERVERS": "kafka:29092",
     }
     base.update(overrides)
@@ -96,6 +99,52 @@ class TestJwtSecretGate:
         secret = "b" * 32
 
         assert Settings(**production(JWT_SECRET_KEY=secret)).JWT_SECRET_KEY == secret
+
+
+class TestCursorSecretGate:
+    """The cursor key is gated exactly as JWT_SECRET_KEY is, and independently.
+
+    Sharing a key coupled two unrelated lifecycles, so the cursor key gets its
+    own gate rather than riding on the token secret's.
+    """
+
+    def test_missing_cursor_secret_is_rejected(self):
+        with pytest.raises(ValidationError, match="SEARCH_CURSOR_SECRET must be set"):
+            Settings(**production(SEARCH_CURSOR_SECRET=None))
+
+    @pytest.mark.parametrize("secret", KNOWN_INSECURE_CURSOR_SECRETS)
+    def test_known_default_cursor_secrets_are_rejected(self, secret):
+        with pytest.raises(ValidationError, match="strong random value"):
+            Settings(**production(SEARCH_CURSOR_SECRET=secret))
+
+    def test_the_dev_default_is_one_of_the_known_insecure_values(self):
+        """The dev default must be rejected in production, or the gate is decorative."""
+        assert DEV_DEFAULTS["SEARCH_CURSOR_SECRET"] in KNOWN_INSECURE_CURSOR_SECRETS
+
+    def test_short_cursor_secret_is_rejected(self):
+        with pytest.raises(ValidationError, match="at least 32 characters"):
+            Settings(**production(SEARCH_CURSOR_SECRET="a" * 31))
+
+    def test_exactly_32_characters_is_accepted(self):
+        secret = "c" * 32
+
+        assert Settings(**production(SEARCH_CURSOR_SECRET=secret)).SEARCH_CURSOR_SECRET == secret
+
+    def test_the_cursor_secret_is_independent_of_the_jwt_secret(self):
+        """A strong cursor key with a strong token key needs both, separately."""
+        settings = Settings(**production())
+
+        assert settings.SEARCH_CURSOR_SECRET == STRONG_CURSOR_SECRET
+        assert settings.SEARCH_CURSOR_SECRET != settings.JWT_SECRET_KEY
+
+    def test_a_dev_default_cursor_secret_is_rejected_even_with_a_strong_jwt_key(self):
+        """A weak cursor key is not excused by a strong token key."""
+        with pytest.raises(ValidationError, match="strong random value"):
+            Settings(**production(SEARCH_CURSOR_SECRET=DEV_DEFAULTS["SEARCH_CURSOR_SECRET"]))
+
+    def test_a_strong_jwt_key_does_not_satisfy_a_missing_cursor_key(self):
+        with pytest.raises(ValidationError, match="SEARCH_CURSOR_SECRET must be set"):
+            Settings(**production(SEARCH_CURSOR_SECRET=None))
 
 
 class TestKafkaGate:
@@ -165,6 +214,26 @@ class TestDevelopmentDefaults:
 
         assert settings.JWT_SECRET_KEY == "secret"
 
+    def test_the_cursor_dev_default_is_usable_but_distinct(self, monkeypatch):
+        """Documented dev posture: a real-looking length, a different value.
+
+        The length has to clear the production gate so a dev default copied
+        into an environment file is not a tripwire, and it has to differ from the
+        token secret so the two keys stay uncoupled even by accident.
+        """
+        _clear_dev_env(monkeypatch)
+        settings = Settings(ENVIRONMENT="development")
+
+        assert len(DEV_DEFAULTS["SEARCH_CURSOR_SECRET"]) >= 32
+        assert DEV_DEFAULTS["SEARCH_CURSOR_SECRET"] != DEV_DEFAULTS["JWT_SECRET_KEY"]
+        assert settings.SEARCH_CURSOR_SECRET == DEV_DEFAULTS["SEARCH_CURSOR_SECRET"]
+
+    def test_the_cursor_dev_default_never_reaches_a_production_instance(self, monkeypatch):
+        _clear_dev_env(monkeypatch)
+
+        with pytest.raises(ValidationError, match="strong random value"):
+            Settings(**production(SEARCH_CURSOR_SECRET=DEV_DEFAULTS["SEARCH_CURSOR_SECRET"]))
+
 
 class TestCorsCredentialsGate:
     def test_wildcard_origins_with_credentials_are_rejected_in_production(self):
@@ -189,6 +258,7 @@ class TestCorsCredentialsGate:
             DATABASE_URL=STRONG_DB_URL,
             REDIS_URL="redis://redis:6379/0",
             JWT_SECRET_KEY=STRONG_JWT_SECRET,
+            SEARCH_CURSOR_SECRET=STRONG_CURSOR_SECRET,
             KAFKA_BOOTSTRAP_SERVERS="kafka:29092",
             CORS_ALLOWED_ORIGINS=["*"],
             CORS_ALLOW_CREDENTIALS=True,

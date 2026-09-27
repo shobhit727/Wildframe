@@ -12,6 +12,7 @@ DEV_DEFAULTS = {
     "DATABASE_URL": "postgresql+asyncpg://postgres:password@localhost:5432/search_db",
     "REDIS_URL": "redis://localhost:6379",
     "JWT_SECRET_KEY": "dev-secret-key-change-in-production-min-32-bytes",
+    "SEARCH_CURSOR_SECRET": "dev-cursor-secret-change-in-production-min-32-bytes",
     "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
 }
 
@@ -28,6 +29,20 @@ KNOWN_INSECURE_JWT_SECRETS = (
     "secret",
     "changeme",
 )
+# Mirrors KNOWN_INSECURE_JWT_SECRETS for the pagination cursor key. Kept as its
+# own tuple rather than shared, so the two keys are gated independently: a
+# cursor key strong enough to pass this gate is still a separate concern from
+# token signing, and neither list can drift into accepting the other's default.
+KNOWN_INSECURE_CURSOR_SECRETS = (
+    "dev-cursor-secret",
+    "dev-cursor-secret-change-in-production",
+    "dev-cursor-secret-change-in-production-min-32-bytes",
+    "your-cursor-secret-change-in-production",
+    "cursor-secret",
+    "search-cursor-secret",
+    "secret",
+    "changeme",
+)
 
 
 class Settings(ComplianceSettingsMixin, BaseSettings):
@@ -38,6 +53,10 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     ENVIRONMENT: str = "development"
     DATABASE_URL: str | None = None
     JWT_SECRET_KEY: str | None = None
+    # Signs the pagination cursor only. Deliberately *not* JWT_SECRET_KEY:
+    # token signing and cursor integrity have different lifecycles, and sharing
+    # one key means rotating either silently invalidates the other.
+    SEARCH_CURSOR_SECRET: str | None = None
     JWT_ALGORITHM: str = "RS256"
     JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
     JWT_AUDIENCE: str = "wildframe-api"
@@ -102,6 +121,18 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
         if len(self.JWT_SECRET_KEY) < 32:
             raise ValueError(
                 "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
+            )
+        if self.SEARCH_CURSOR_SECRET is None:
+            raise ValueError(
+                "SEARCH_CURSOR_SECRET must be set to a strong random value when ENVIRONMENT is not development."
+            )
+        if self.SEARCH_CURSOR_SECRET in KNOWN_INSECURE_CURSOR_SECRETS:
+            raise ValueError(
+                "SEARCH_CURSOR_SECRET must be set to a strong random value when ENVIRONMENT is not development."
+            )
+        if len(self.SEARCH_CURSOR_SECRET) < 32:
+            raise ValueError(
+                "SEARCH_CURSOR_SECRET must be at least 32 characters long when ENVIRONMENT is not development."
             )
         if self.KAFKA_BOOTSTRAP_SERVERS is None:
             raise ValueError(
