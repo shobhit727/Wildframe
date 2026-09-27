@@ -1,9 +1,9 @@
 # 🎨 Frontend Architecture
 
-The Wildframe web app is a Next.js 15 application using the App Router, TypeScript, TailwindCSS, and a small set of opinionated client libraries.
+The Wildframe web app is a Next.js 16.3.6 application using the App Router, TypeScript, TailwindCSS, and a small set of opinionated client libraries.
 
 **Last Updated**: September 27, 2026
-**Stack**: Next.js 15 · React 19 · TypeScript 5 · TailwindCSS 4 · TanStack Query · Zustand · Axios
+**Stack**: Next.js 16.3.6 · React 19 RC · TypeScript 6.0.3 · TailwindCSS 4 · TanStack Query · Zustand · Axios
 
 ---
 
@@ -69,10 +69,12 @@ Route folders are organized by **user intent**, not by backend resource:
 | `/` | Marketing / home (server component, ISR) |
 | `/login`, `/signup` | Auth (client components) |
 | `/browse` | Catalog (server component + client island) |
-| `/watch/[contentId]` | Player page (client component, dynamic) |
+| `/watch/[id]` | Player page (client component, dynamic) |
 | `/my-list` | Personal watchlist (client, auth-gated) |
 | `/account` | Profile + preferences (client, auth-gated) |
 | `/billing` | Subscription management (client, auth-gated) |
+| `/creator` | Creator workspace |
+| `/admin` | Admin dashboard and admin subroutes |
 
 Each route folder can contain:
 
