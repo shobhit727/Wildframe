@@ -133,12 +133,25 @@ class TestCircuitBreakerOpenHandlerIsUnreachable:
         assert len(failed) == 3, [log.message for log in failed]
         assert all("circuit breaker open" in log.message for log in failed)
 
-    async def test_an_already_open_breaker_propagates_out_of_advance(self):
-        """Line 605's check is outside the try, so it escapes instead.
+class TestPreOpenBreakerIsRecordedNotPropagated:
+    """A breaker that is *already* open when ``advance()`` is called.
 
-        This is the other (and only) source of ``CircuitBreakerOpen``, and it
-        bypasses 630 entirely: no stage log, no FAILED status, no DLQ event.
-        """
+    This is a different path from the class above. Here the failure comes from
+    ``_check_circuit_breaker`` before the stage runs, rather than from a stage
+    tripping the breaker during its own retries, so it reaches the
+    ``except CircuitBreakerOpen`` handler in ``app/services.py`` rather than the
+    generic retry handler.
+
+    It used to assert the opposite -- that the exception escaped ``advance()``
+    and left the job in ``running`` with no stage log and no DLQ event. The
+    handler is now reachable and the job is properly failed, so asserting the
+    escape would re-introduce the orphaned-job defect. This test was moved out of
+    ``TestCircuitBreakerOpenHandlerIsUnreachable`` because that class name is no
+    longer true of it; the two tests in that class still describe the retry path
+    accurately.
+    """
+
+    async def test_an_already_open_breaker_fails_the_job_without_running_the_stage(self):
         repo = FakeJobRepo()
         registry = _fresh_registry()
         stage = CountingStage("a")
@@ -149,14 +162,14 @@ class TestCircuitBreakerOpenHandlerIsUnreachable:
         )
         service._circuit_breaker["a"] = settings.PIPELINE_CIRCUIT_BREAKER_THRESHOLD
 
-        with pytest.raises(CircuitBreakerOpen):
-            await service.advance(job.id)
+        result = await service.advance(job.id)
 
-        assert stage.calls == 0
-        assert job.status == PipelineJobStatus.RUNNING, "the 630 handler never marked it FAILED"
-        assert await service.log_repo.list_for_job(job.id) == []
+        assert stage.calls == 0, "an open breaker must not run the stage at all"
+        assert result.status == PipelineJobStatus.FAILED, "the job must not stay in running"
+        rows = await service.log_repo.list_for_job(job.id)
+        assert [r.status for r in rows] == [PipelineStageStatus.FAILED]
         await service.drain_outbox()
-        assert not [e for e in service.publisher.sent if e.topic == "content.pipeline.failed"]
+        assert [e for e in service.publisher.sent if e.topic == "content.pipeline.failed"]
 
 
 class TestPostStageFailedGuard:

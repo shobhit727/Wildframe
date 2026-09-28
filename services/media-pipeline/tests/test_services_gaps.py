@@ -335,17 +335,21 @@ async def test_advance_skips_stages_already_recorded_as_complete():
 
 
 async def test_advance_refuses_to_run_a_stage_whose_breaker_is_open():
-    """An open breaker stops the stage from running — as an exception.
+    """An open breaker stops the stage from running, and records the failure.
 
-    NOTE (app/services.py:584-605 vs 630-637): the breaker check happens
-    *outside* the per-stage ``try``, so ``CircuitBreakerOpen`` propagates out
-    of ``advance()`` instead of being converted into a failed job + DLQ event by
-    the handler at line 630. That handler is therefore unreachable:
-    ``_run_stage_with_retries`` only ever re-raises ``PipelineNonRetryable``,
-    and a ``CircuitBreakerOpen`` from a stage is swallowed by its generic
-    ``except Exception`` retry handler. The job is also left in ``running``
-    (set at line 584) with no stage log and no DLQ row, so it only recovers once
-    its lease goes stale. Asserted as-is; not fixed here.
+    This test previously asserted the *opposite*: that ``CircuitBreakerOpen``
+    escaped ``advance()`` and left the job orphaned in ``running`` with no stage
+    log and no DLQ event. That was a real defect, documented here rather than
+    fixed -- the original docstring said so explicitly ("the breaker check
+    happens outside the per-stage try... that handler is therefore unreachable"
+    and "asserted as-is; not fixed here").
+
+    The handler at ``app/services.py`` is now reachable, and the current
+    behaviour is the correct one: the stage must not run, and the job must be
+    recorded as failed with a stage row and a DLQ event rather than being left
+    stuck in ``running`` until its lease went stale. Asserting the old behaviour
+    here would re-introduce that defect on the next refactor, so the expectations
+    below describe what the code should do, not what it used to get wrong.
     """
     repo = FakeJobRepo()
     registry = _fresh_registry()
@@ -355,17 +359,18 @@ async def test_advance_refuses_to_run_a_stage_whose_breaker_is_open():
     job = await service.start_job(content_id=uuid4(), upload_session_id=uuid4(), storage_key="k")
     service._circuit_breaker["a"] = settings.PIPELINE_CIRCUIT_BREAKER_THRESHOLD
 
-    with pytest.raises(CircuitBreakerOpen, match="circuit breaker open for stage a"):
-        await service.advance(job.id)
+    result = await service.advance(job.id)
 
     assert stage.calls == 0, "an open breaker must not run the stage at all"
-    assert job.status == PipelineJobStatus.RUNNING, "orphaned in running, not failed"
-    assert job.leased_by is None, "the finally block still released the lease"
-    assert await service.log_repo.list_for_job(job.id) == [], "no stage was attempted"
+    assert result.status == PipelineJobStatus.FAILED, "the job must be failed, not orphaned in running"
+    rows = await service.log_repo.list_for_job(job.id)
+    assert [r.status for r in rows] == [PipelineStageStatus.FAILED], (
+        "the open breaker must be recorded as a FAILED stage row"
+    )
     await service.drain_outbox()
-    assert not [
+    assert [
         e for e in service.publisher.sent if e.topic == "content.pipeline.failed"
-    ], "no DLQ event is emitted for an open breaker"
+    ], "an open breaker must emit the pipeline-failed event"
 
 
 async def test_advance_fails_the_job_when_a_stage_blows_the_retry_budget():
