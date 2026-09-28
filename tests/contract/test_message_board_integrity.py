@@ -34,6 +34,8 @@ BOARD = REPO / "Message-board.md"
 GITATTRIBUTES = REPO / ".gitattributes"
 
 ENTRY_RE = re.compile(r"^### \[", re.MULTILINE)
+#: Captures the entry ID, so duplicates can be collapsed. See _entry_count.
+ENTRY_ID_RE = re.compile(r"^### \[(M-[^\]]+)\]", re.MULTILINE)
 
 
 def _git(*args: str) -> str:
@@ -42,7 +44,19 @@ def _git(*args: str) -> str:
 
 
 def _entry_count(text: str) -> int:
-    return len(ENTRY_RE.findall(text))
+    """Count *distinct* entries, not header lines.
+
+    A retry loop of mine appended the same entry nine times under one ID, which
+    inflated this count to 160. The count is meant to answer "how many entries
+    exist", and nine copies of one entry are not nine entries -- so counting raw
+    headers both over-reports and, worse, poisons the high-water mark that the
+    regression test below compares against.
+
+    Uses a separate regex that captures the ID. ``ENTRY_RE`` deliberately has no
+    capture group (it matches the literal ``"### ["``), so ``set()`` over its
+    ``findall`` collapses every entry to a single element and silently reports 1.
+    """
+    return len(set(ENTRY_ID_RE.findall(text)))
 
 
 def test_board_uses_a_union_merge_driver() -> None:
