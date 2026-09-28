@@ -27,12 +27,25 @@ again the moment someone bumps it to another incompatible line.
 from __future__ import annotations
 
 import pytest
-from fastapi import APIRouter, FastAPI
-from fastapi.testclient import TestClient
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+# The SDK CI job installs a hand-maintained pip list that does not include
+# opentelemetry, so an unguarded import here is a *collection error* in CI
+# rather than a skip -- it would turn a missing optional dependency into a red
+# build. Skip instead, and let the CI job grow the dependency list (raised on
+# the board) is what actually makes this test meaningful rather than vacuous.
+pytest.importorskip("opentelemetry", reason="opentelemetry is not installed in this environment")
+pytest.importorskip(
+    "opentelemetry.sdk.trace", reason="opentelemetry-sdk is not installed in this environment"
+)
+
+from fastapi import APIRouter, FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # noqa: E402
+from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor  # noqa: E402
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: E402
+    InMemorySpanExporter,
+)
 
 
 @pytest.fixture
