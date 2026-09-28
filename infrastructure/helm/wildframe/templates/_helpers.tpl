@@ -27,6 +27,12 @@ postgresql://wildframe:$(POSTGRES_PASSWORD)@{{ .Values.infra.postgresHost }}:{{ 
 {{- if empty .Values.infra.redisHost }}
 {{- fail "production requires infra.redisHost set to managed ElastiCache endpoint" }}
 {{- end }}
+{{- if empty .Values.secrets.searchCursorSecretKey }}
+{{- fail "production requires secrets.searchCursorSecretKey set to the key name holding the search cursor secret inside secrets.existingSecret" }}
+{{- end }}
+{{- if empty .Values.secrets.existingSecret }}
+{{- fail "production requires secrets.existingSecret naming the Secret that holds runtime credentials" }}
+{{- end }}
 {{- $forbiddenPg := list "postgres" "postgres-prod" "postgres-staging" }}
 {{- if has .Values.infra.postgresHost $forbiddenPg }}
 {{- fail (printf "production infra.postgresHost %q is in-cluster and not allowed; set to RDS endpoint" .Values.infra.postgresHost) }}

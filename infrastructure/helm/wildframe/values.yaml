@@ -162,7 +162,13 @@ resources:
     memory: 512Mi
 secrets:
   existingSecret: wildframe-runtime
+  # These are key *names* inside secrets.existingSecret, not secret values. The
+  # Secret itself is provisioned out of band and must never be committed here.
   jwtSecretKey: JWT_SECRET_KEY
+  # Signs the search-service pagination cursor. Deliberately a separate key from
+  # jwtSecretKey: token signing and cursor integrity rotate independently, and
+  # sharing one key means rotating either silently invalidates the other.
+  searchCursorSecretKey: SEARCH_CURSOR_SECRET
   postgresPasswordKey: POSTGRES_PASSWORD
 migration:
   enabled: true

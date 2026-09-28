@@ -34,6 +34,41 @@ def test_prod_renders_with_external():
     assert 'name: KAFKA_SSL_INSECURE\n          value: "false"' in res.stdout
 
 
+def test_prod_renders_search_cursor_secret():
+    # search-service validates SEARCH_CURSOR_SECRET at startup outside
+    # development (must be set, not a known-insecure value, >= 32 chars).
+    # Without this env var the production pod crash-loops on its own validator.
+    res = helm_template("wildframe-production", PROD, [])
+    assert_success(res, "prod with search cursor secret")
+    assert (
+        "- name: SEARCH_CURSOR_SECRET\n"
+        "          valueFrom:\n"
+        "            secretKeyRef:\n"
+        "              name: wildframe-runtime\n"
+        "              key: SEARCH_CURSOR_SECRET" in res.stdout
+    ), "search-service must receive SEARCH_CURSOR_SECRET from the existing Secret"
+
+
+def test_search_cursor_secret_is_scoped_to_search_service():
+    # A secretKeyRef with a missing key is a hard container-start failure, so
+    # injecting this into all 15 services would turn one service's missing key
+    # into a 15-service outage. Only search-service declares the setting.
+    res = helm_template("wildframe-production", PROD, [])
+    assert_success(res, "prod scoping")
+    carriers = []
+    for doc in res.stdout.split("\n---\n"):
+        if "SEARCH_CURSOR_SECRET" in doc:
+            name = next(
+                line.split(":", 1)[1].strip()
+                for line in doc.splitlines()
+                if line.startswith("  name: ")
+            )
+            carriers.append(name)
+    assert carriers == ["search-service"], (
+        f"SEARCH_CURSOR_SECRET must be scoped to search-service only, got {carriers}"
+    )
+
+
 def test_prod_fails_when_kafka_tls_verification_is_disabled():
     res = helm_template(
         "wildframe-production", PROD, [("kafka.sasl.insecureSkipVerify", "true")]
@@ -69,6 +104,13 @@ def test_prod_fails_with_incluster_redisHost():
 def test_prod_fails_with_empty_postgresHost():
     res = helm_template("wildframe-production", PROD, [("infra.postgresHost", "")])
     assert_fail(res, "prod with empty postgresHost")
+
+
+def test_prod_fails_with_empty_search_cursor_secret_key():
+    res = helm_template(
+        "wildframe-production", PROD, [("secrets.searchCursorSecretKey", "")]
+    )
+    assert_fail(res, "prod with empty search cursor secret key")
 
 
 def test_prod_fails_with_empty_redisHost():
@@ -118,6 +160,12 @@ if __name__ == "__main__":
     print("PASS dev renders")
     test_prod_renders_with_external()
     print("PASS prod renders")
+    test_prod_renders_search_cursor_secret()
+    print("PASS prod renders search cursor secret")
+    test_search_cursor_secret_is_scoped_to_search_service()
+    print("PASS search cursor secret scoped to search-service")
+    test_prod_fails_with_empty_search_cursor_secret_key()
+    print("PASS prod fails with empty search cursor secret key")
     test_prod_fails_without_postgres_enabled()
     print("PASS prod fails without postgres enabled")
     test_prod_fails_without_redis_enabled()

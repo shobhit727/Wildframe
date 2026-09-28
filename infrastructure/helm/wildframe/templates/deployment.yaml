@@ -134,6 +134,13 @@ spec:
             secretKeyRef:
               name: {{ $.Values.secrets.existingSecret }}
               key: {{ $.Values.secrets.jwtSecretKey }}
+        {{- if eq $name "search-service" }}
+        - name: SEARCH_CURSOR_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ $.Values.secrets.existingSecret }}
+              key: {{ $.Values.secrets.searchCursorSecretKey }}
+        {{- end }}
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
