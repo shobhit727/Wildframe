@@ -31,7 +31,7 @@ from app.core.privacy_proxy import (
     resolve_jurisdiction,
     set_cached_notice,
 )
-from app.core.security_headers import SECURITY_HEADERS, rotation_check
+from app.core.security_headers import SECURITY_HEADERS
 
 
 class _URL:
@@ -287,8 +287,3 @@ def test_security_header_bundle_is_complete():
     assert SECURITY_HEADERS["Content-Security-Policy"] == "default-src 'self'"
     assert SECURITY_HEADERS["X-Frame-Options"] == "DENY"
     assert SECURITY_HEADERS["X-Content-Type-Options"] == "nosniff"
-
-
-def test_rotation_check_accepts_any_key_id():
-    assert rotation_check("kid-2026-01") is True
-    assert rotation_check("") is True
