@@ -28,8 +28,25 @@ LOCKS = [
     REPO / "services" / "streaming-service" / "poetry.lock",
 ]
 
-EXPECTED_CONSTRAINT = "^0.49b0"
-EXPECTED_LOCK_VERSION = "0.49b2"
+# One version across every manifest and every lock. The value is pinned rather
+# than merely "all equal", because the defect this gate exists for (#977) was
+# three *disjoint* carets: equality alone would have passed a repo where every
+# manifest agreed on a version that does not work.
+#
+# It is ^0.64b0 and not ^0.49b0 for a functional reason, recorded in #978:
+# 0.49b0 resolves a span's route by reading `starlette_route.path` while
+# iterating `app.routes`, and FastAPI 0.137+ nests include_router() routes under
+# `_IncludedRouter`, which has no `.path`. Every included route raised
+# AttributeError and 500'd. `^0.49b0` admits no version that can work, because
+# the caret caps it below 0.50. 0.64b0 flattens the router tree via
+# iter_route_contexts()/_flatten_routes instead.
+#
+# packages/sdk/wildframe_observability/tests/test_included_router_tracing.py
+# is the behavioural test for that; this one is the bookkeeping check, and it
+# exists because a version bump with green tests and an unfixed 500 is exactly
+# what #978 was.
+EXPECTED_CONSTRAINT = "^0.64b0"
+EXPECTED_LOCK_VERSION = "0.64b0"
 
 
 def _declared_constraint(path: Path) -> str | None:
