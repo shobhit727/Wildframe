@@ -5342,3 +5342,86 @@ which module actually resolves at runtime (`python -c "import
 wildframe_compliance.jurisdiction as j; print(j.__file__)"` from the service
 dir) and migrate. Posting this so nobody treats the fork as a local
 convention.
+
+### [A-074] 2026-09-29 · agent=Agent074 · status=closed
+**Files:** `services/auth-service/tests/test_remaining_final.py` (run only, no edits)
+**Result:** PASS — 1 passed, exit 0. sys.executable: `/home/phoenix/.cache/pypoetry/virtualenvs/wildframe-auth-service-qTDkoVkP-py3.12/bin/python`. Note: venv was empty and poetry.lock was stale vs pyproject (no `poetry install` possible); ran `poetry lock` + `poetry install --sync` in services/auth-service to restore deps (new lock resolved to py3.12 venv). Smallest-change warning: only I touched services/auth-service/poetry.lock — main should note it when integrating.
+
+### [A-067] 2026-09-29 · agent=Agent067 (A-067) · status=resolved
+**Files:** `services/auth-service/tests/test_core_events.py` (run only, no code edits); removed four EMPTY root-owned shadow dirs `services/auth-service/wildframe_{auth,compliance,events,observability}` (rmdir, contained nothing — same packaging defect A-048 found in api-gateway)
+**Re:** auth-service test_core_events.py.
+**Result:** PASS — 28 tests, 0 failures, 0 errors, 0 skipped, exit 0. sys.executable: `/home/phoenix/.cache/pypoetry/virtualenvs/wildframe-auth-service-qTDkoVkP-py3.12/bin/python` (Poetry 1.8.3). Used board pattern `PYTHONPATH="$PWD/packages/sdk/wildframe_auth:$PWD/packages/sdk/wildframe_compliance" poetry run pytest`. Note: `poetry lock --no-update` times out (>600s, bg job killed); `poetry install` refuses with "pyproject.toml changed significantly since poetry.lock was last generated" — stale lock, #940 area. No environmental blocker for the test itself.
+
+### [A-090] 2026-09-29 · agent=Agent090 · status=closed
+**Files:** `services/auth-service/tests/test_telemetry.py` (rewritten, stale), `services/auth-service/app/telemetry/__init__.py` (1 line)
+**Re:** auth-service test_telemetry.py — 12 failures before.
+
+**Result:** PASS — 15 passed, exit 0. sys.executable: `/home/phoenix/.cache/pypoetry/virtualenvs/wildframe-auth-service-qTDkoVkP-py3.12/bin/python` (Poetry resolved py3.12 after `poetry lock` + `poetry install --sync` restored deps; A-074 already regenerated the lock — my `--sync` only installed).
+
+**Root causes (two classes):**
+1. **Stale tests (12 failures)** — commit `31702a81` (#978 fix) rewrote `app/telemetry` to lazy OTLP imports but left the old Jaeger-exporter tests red: they swap module-level attributes (`telemetry.JaegerExporter`, `FastAPIInstrumentor`, `BatchSpanProcessor`) that no longer exist, and assert removed log strings. This is exactly the class M-20260928T1615Z §2 flagged for audit-agent. Rewrote to patch the **import sources** (`opentelemetry.exporter.otlp.proto.grpc.trace_exporter`, instrumentation modules, `sdk.trace.export`) since the lazy imports mean `app.telemetry` attrs only exist during a call; asserts the current OTLP contract (OTLPSpanExporter, `Tracing disabled`/`Tracing initialized`/`Failed to setup tracing` log strings, endpoint-from-env).
+2. **Real latent bug (app fix, 1 line)** — `FastAPIInstrumentor.instrument()` was called on the *class*; in opentelemetry-instrumentation 0.64b0 `BaseInstrumentor.instrument` is an instance method (`(self, **kwargs)`), so the call raised `TypeError` and the surrounding `except` swallowed it — tracing dead even when JAEGER_ENABLED=true, SQLAlchemy/Redis instrumentors never ran. Fixed to `FastAPIInstrumentor().instrument()` in `app/telemetry/__init__.py:51`, matching the existing SQLAlchemy/Redis pattern and the SDK's `wire.py`.
+
+**Verified beyond pytest:** real in-venv run of shipped `setup_tracing()` with JAEGER_ENABLED=True — before the 1-line fix it logged the swallowed `TypeError` and instrumented nothing; after, `FastAPIInstrumentor` and `RedisInstrumentor` both instrument (`_is_instrumented_by_opentelemetry=True`) and a real span records. Also verified the disabled gate and missing-OTel-imports path.
+
+**Finding, reported not fixed (would touch shared poetry.lock, Agent074's):** `opentelemetry-instrumentation-sqlalchemy 0.64b0` declares `sqlalchemy >= 1.0.0, < 2.1.0`, but the venv/pyproject has `sqlalchemy 2.1.1` (`^2.0.0` admits it) — SQLAlchemy instrumentation logs `DependencyConflict` and silently skips on every setup. Same class as #978's pin-vs-reality drift. Checked upstream 0.64b0/0.65b0/0.66b0 wheels: all carry the same `< 2.1.0` cap; no newer release exists. FastAPI (`~= 0.92`) and redis (`>= 2.6`) constraints are satisfied. Smallest fix would be pinning `sqlalchemy = ">=2.0.0,<2.1.0"` or waiting for an upstream cap bump — either way it touches `pyproject.toml` + `poetry.lock`.
+
+**Note for main (integration):** root-owned stale `__pycache__` in `app/telemetry/` (`.cpython-313.pyc`, root:root from Aug 19) could not be deleted without sudo; it is inert (source compiles fresh, module resolves from source) but may need `sudo rm -rf` during packaging cleanup. Also: my `poetry install --sync` modified nothing on disk besides installing into the py3.12 venv (lock already regenerated by A-074).
+
+### [A-MAIN-2] 2026-09-29 · agent=verification-main · status=resolved
+**Closes:** the 100-agent test/fix campaign
+**Files:** services/auth-service/app/telemetry/__init__.py, services/auth-service/tests/test_rate_limit_faults.py, services/auth-service/tests/test_telemetry.py, spawn-board.md
+**Re:** 100-agent campaign complete — consolidated report
+
+All 100 subagents finished (spawn-board.md has the slice map: 3 agents per
+service + web + sdk). **Every one of the 100 test files passed green** after
+environment repair; two real code bugs found and fixed, one real compliance
+finding raised.
+
+**Real code bugs found and fixed (verified green, committed):**
+1. `services/auth-service/app/telemetry/__init__.py:51` —
+   `FastAPIInstrumentor.instrument()` called on the CLASS; in otel 0.64b0
+   `instrument` is an instance method, so the call raised TypeError and the
+   surrounding except swallowed it → tracing dead even when
+   JAEGER_ENABLED=true. Fixed to `FastAPIInstrumentor().instrument()`; Agent090
+   verified with a real setup_tracing() run recording a real span.
+2. `services/auth-service/tests/test_telemetry.py` — 12 stale tests left red by
+   `31702a81`'s lazy-import OTLP rewrite (they patched module-level attributes
+   that no longer exist). Rewritten to patch the import sources and assert the
+   current OTLP contract.
+3. `services/auth-service/tests/test_rate_limit_faults.py` —
+   `test_no_redis_client_fails_open` failed because REDIS_URL defaults to
+   localhost:6379 and a live dev Redis was reachable, masking the no-client
+   branch. Agent087 unset REDIS_URL in the test; app code is correct.
+
+**Real compliance finding (open, owners notified):** A-MAIN-1 —
+`services/creators-service/wildframe_compliance/` is a COMMITTED divergent fork
+of the SDK (4 lowercase jurisdictions vs the SDK's 25+ with US-CA/US-TX).
+creators-service imports it from its own directory, so it silently ships the
+fork into the image. Fix is migration to the SDK, not deletion.
+
+**Systemic environment findings (host/lock level, for the user or lock owners):**
+- `poetry` binary itself is broken session-wide (no `python` shim; venvs
+  drifted). The working invocation everywhere: venv python directly + explicit
+  PYTHONPATH (wildframe_auth + wildframe_compliance + packages/sdk root; do NOT
+  add packages/sdk/wildframe_observability raw — its logging.py shadows stdlib
+  logging).
+- Stale poetry.lock vs pyproject in several services (api-gateway, auth-service
+  — regenerating required a 20-minute `poetry lock` resolution; auth lock was
+  regenerated by A-071/A-074/A-075).
+- Root-owned empty shadow dirs (`wildframe_{auth,compliance,events,observability}` in
+  services/*/; services/analytics-service/.venv root-owned) — removed where
+  possible without sudo; the analytics .venv needs user action.
+- Root-owned stale `__pycache__` (cpython-313) in services/auth-service/app/telemetry/
+  — inert but needs sudo rm -rf during packaging cleanup.
+- opentelemetry-instrumentation-sqlalchemy 0.64b0 declares `sqlalchemy < 2.1.0`
+  but the repo pins ^2.0.0 (resolves 2.1.1) — DependencyConflict logged,
+  instrumentation silently skips; upstream wheels all carry the cap, no newer
+  release. Fix would touch pyproject + lock.
+- services/creators-service has a divergent local SDK copy (see A-MAIN-1).
+- services/analytics-service/poetry.toml — Agent042's local override
+  (virtualenvs.in-project=false + /tmp/pyshim); may want reverting once the
+  host venv is fixed.
+
+The campaign is complete: 100/100 test files green, 2 real bugs fixed, 1
+compliance finding open with owners notified.
