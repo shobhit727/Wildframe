@@ -362,11 +362,13 @@ async def test_advance_refuses_to_run_a_stage_whose_breaker_is_open():
     result = await service.advance(job.id)
 
     assert stage.calls == 0, "an open breaker must not run the stage at all"
-    assert result.status == PipelineJobStatus.FAILED, "the job must be failed, not orphaned in running"
+    assert (
+        result.status == PipelineJobStatus.FAILED
+    ), "the job must be failed, not orphaned in running"
     rows = await service.log_repo.list_for_job(job.id)
-    assert [r.status for r in rows] == [PipelineStageStatus.FAILED], (
-        "the open breaker must be recorded as a FAILED stage row"
-    )
+    assert [r.status for r in rows] == [
+        PipelineStageStatus.FAILED
+    ], "the open breaker must be recorded as a FAILED stage row"
     await service.drain_outbox()
     assert [
         e for e in service.publisher.sent if e.topic == "content.pipeline.failed"

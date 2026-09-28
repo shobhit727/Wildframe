@@ -133,6 +133,7 @@ class TestCircuitBreakerOpenHandlerIsUnreachable:
         assert len(failed) == 3, [log.message for log in failed]
         assert all("circuit breaker open" in log.message for log in failed)
 
+
 class TestPreOpenBreakerIsRecordedNotPropagated:
     """A breaker that is *already* open when ``advance()`` is called.
 
