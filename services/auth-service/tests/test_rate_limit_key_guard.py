@@ -30,7 +30,10 @@ from unittest.mock import patch
 import pytest
 
 from app.core import rate_limit
-from app.core.rate_limit import BucketKind, allow
+
+import asyncio
+
+from app.core.rate_limit import BucketKind, _scope, allow
 
 # (key exactly as app/api/routes/auth.py builds it, expected rl:token: key)
 # Captured from the pre-constraint implementation; see module docstring.
@@ -315,18 +318,38 @@ def test_excluding_buckets_reject_every_credential_shape():
     which strings happened to be chosen. ``resend:email`` is excluded here
     because an address is *not* distinguishable from an address-shaped
     secret -- see the dedicated test for that residual.
+
+    This goes through ``allow()``, not through a local re-implementation of the
+    two checks. An earlier version of this test called the helpers directly, so
+    it kept passing when the guard was spliced out of ``allow()`` entirely: it
+    was validating the helpers, not the control, while being cited as the
+    evidence that a secret cannot reach the hash.
     """
     for kind in BucketKind:
         if kind is BucketKind.RESEND_EMAIL:
             continue
-        # Note "0.0.0.0" is deliberately absent: it is a valid IPv4 address, so
-        # accepting it is correct. "0", "1e999" and "::ffff:1.2.3.4.5" are the
-        # near-misses worth pinning.
-        for secret in SECRETS + ["", " ", "::", "0", "1e999", "::ffff:1.2.3.4.5"]:
-            assert _refused(kind, secret), f"{kind.value} accepted {secret!r}"
+        # "0.0.0.0" and "::" are deliberately absent: both are valid addresses
+        # (the unspecified address), so accepting them is correct. "0" and
+        # "1e999" are not addresses, and "::ffff:1.2.3.4.5" is a malformed
+        # IPv4-mapped literal -- those are the near-misses worth pinning.
+        for secret in SECRETS + ["", " ", "0", "1e999", "::ffff:1.2.3.4.5"]:
+            assert _refused_via_allow(kind, secret), f"{kind.value} accepted {secret!r}"
         # ...while the subject the bucket exists for is still accepted.
         expected = "unknown" if kind.value.endswith(":ip") else USER_ID
-        assert not _refused(kind, expected), f"{kind.value} rejected a valid subject"
+        assert not _refused_via_allow(kind, expected), f"{kind.value} rejected a valid subject"
+
+
+def _refused_via_allow(kind, subject: str) -> bool:
+    """Whether the real ``allow()`` refuses this bucket/subject, either stage.
+
+    Uses a fake Redis and asserts on ``keys_used``, not just the return value:
+    a refusal that still wrote the key would be a failure wearing a passing
+    return value.
+    """
+    client = _FakeRedis()
+    with _using(client):
+        allowed = asyncio.run(allow(f"{kind.value}:{subject}", max_requests=5, window_seconds=60))
+    return not allowed and not client.keys_used
 
 
 async def test_resend_email_is_bounded_not_excluded():
@@ -464,3 +487,72 @@ def test_scope_digests_the_namespace_and_subject_together():
     # never collide.
     assert first != rate_limit._scope(BucketKind.STEP_UP_IP, IP)
     assert first != rate_limit._scope(BucketKind.RESEND_IP, "198.51.100.4")
+
+
+# --- coverage for the three gaps the adversarial review found at 0/86 ---------
+#
+# An earlier draft of this file left all three unmeasured, and each of them is a
+# way the guard could silently stop doing its job.
+
+
+async def test_ipv6_subjects_are_accepted_by_every_ip_bucket():
+    """IPv6 peers must not be refused.
+
+    An earlier version rejected any subject containing ":", on the theory that
+    this closed a slot for splicing a credential onto a key. It also rejected
+    every valid IPv6 address, so every IPv6 client got a permanent 429 on
+    /resend-verification, /mfa/* and /step-up. The docstring claimed "a secret
+    cannot be expressed at all" for these buckets, which was false.
+    """
+    client = _FakeRedis()
+    with _using(client):
+        for subject in (
+            "::1",
+            "2001:db8::1",
+            "2001:db8::dead:beef",
+            "::ffff:203.0.113.9",  # IPv4-mapped, arrives from dual-stack sockets
+            "fe80::1",
+        ):
+            for kind in BucketKind:
+                if not kind.value.endswith(":ip"):
+                    continue
+                allowed = await allow(f"{kind.value}:{subject}", max_requests=5, window_seconds=60)
+                assert allowed, f"{kind.value} refused IPv6 peer {subject!r}"
+    assert client.keys_used  # accepted *and* counted, not just waved through
+
+
+async def test_equivalent_identifier_spellings_share_one_bucket():
+    """Canonicalise before hashing, so a client cannot multiply its own limit.
+
+    The guard validated the subject but hashed the raw string, so the same UUID
+    upper-cased, un-hyphenated or brace-wrapped each produced a different digest
+    and therefore a fresh counter.
+    """
+    canonical = "6f1c2a44-9d1e-4a0b-9c2f-1d3e5f7a9b11"
+    spellings = [
+        canonical,
+        canonical.upper(),
+        canonical.replace("-", ""),
+        "{" + canonical + "}",
+        "urn:uuid:" + canonical,
+    ]
+    digests = {_scope(BucketKind.STEP_UP_USER, s) for s in spellings}
+    assert len(digests) == 1, f"{len(digests)} buckets for one identifier: {spellings}"
+
+
+async def test_oversized_key_is_refused_before_redis():
+    """A subject beyond the cap must be refused, not truncated or hashed.
+
+    Deleting the cap was detected by 0 of 86 tests: a 1 MiB key was refused
+    downstream by the address grammar instead, so the test claimed to pin the
+    cap while never exercising it.
+    """
+    client = _FakeRedis()
+    with _using(client):
+        allowed = await allow(
+            f"stepup:user:{USER_ID}{'x' * 4096}",
+            max_requests=5,
+            window_seconds=60,
+        )
+    assert allowed is False
+    assert not client.keys_used

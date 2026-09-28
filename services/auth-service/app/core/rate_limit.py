@@ -180,6 +180,16 @@ _SUBJECT_VALIDATORS: dict[BucketKind, Callable[[str], bool]] = {
     BucketKind.STEP_UP_USER: _is_user_subject,
 }
 
+# Derived from the validator mapping rather than listed separately: a second
+# hand-maintained list of which buckets take IPs would be free to drift from
+# the grammar those buckets actually enforce, and the drift would be silent.
+_IP_BUCKETS: frozenset[BucketKind] = frozenset(
+    kind for kind, check in _SUBJECT_VALIDATORS.items() if check is _is_ip_subject
+)
+_USER_BUCKETS: frozenset[BucketKind] = frozenset(
+    kind for kind, check in _SUBJECT_VALIDATORS.items() if check is _is_user_subject
+)
+
 # Longest namespace first so no shorter member can shadow a longer one.
 _BUCKET_PREFIXES: tuple[tuple[str, BucketKind], ...] = tuple(
     sorted(
@@ -193,22 +203,43 @@ _BUCKET_PREFIXES: tuple[tuple[str, BucketKind], ...] = tuple(
 def _parse_bucket(key: str) -> tuple[BucketKind, str] | None:
     """Split ``"<namespace>:<subject>"`` into its two validated halves.
 
-    Returns ``None`` when the key is oversized, names an unknown namespace,
-    or carries anything other than exactly one subject segment. Rejecting a
-    subject containing ``:`` is what stops a caller from smuggling extra
-    dimensions -- a credential included alongside a legitimate value --
-    into the hashed material.
+    Returns ``None`` when the key is oversized or names an unknown namespace.
+
+    The subject is everything after the matched namespace prefix, taken
+    verbatim. It is deliberately *not* split further and *not* screened for a
+    delimiter: the namespace is already unambiguous because ``_BUCKET_PREFIXES``
+    is ordered longest-prefix-first, so the subject is a single field that may
+    legitimately contain any character the bucket's own grammar allows.
+
+    An earlier version rejected any subject containing ``:`` on the theory that
+    this removed a slot for splicing a credential onto a real key. That rule
+    also rejected every valid IPv6 address -- ``::1``, ``2001:db8::1``,
+    ``::ffff:203.0.113.9`` -- and therefore hard-429ed every IPv6 client on
+    ``/resend-verification``, ``/mfa/*`` and ``/step-up``. The splice it
+    purported to prevent does not need a colon: ``resend:email`` accepts
+    ``alice@example.com-s3cr3tPassw0rd`` today. The bucket's validator is the
+    right place to judge the subject, and it judges grammar, not provenance.
     """
-    if not key or len(key) > _MAX_KEY_LENGTH:
+    if not isinstance(key, str) or not key or len(key) > _MAX_KEY_LENGTH:
         return None
     for prefix, kind in _BUCKET_PREFIXES:
         if not key.startswith(prefix):
             continue
         subject = key[len(prefix) :]
-        if not subject or ":" in subject:
+        if not subject:
             return None
         return kind, subject
     return None
+
+
+def _namespace_of(key: str) -> str:
+    """Return the leading ``<namespace>:`` of a key, for diagnostics only.
+
+    Never the subject. Returns ``"<none>"`` for a key with no delimiter so the
+    log line cannot be blank or misleading.
+    """
+    head, sep, _ = key.partition(":") if isinstance(key, str) else ("", "", "")
+    return f"{head}:" if sep else "<none>"
 
 
 def _scope(kind: BucketKind, subject: str) -> str:
@@ -216,10 +247,36 @@ def _scope(kind: BucketKind, subject: str) -> str:
 
     ``kind`` and ``subject`` are kept apart so the namespace is always an
     enum member and only the identifier is ever hashed as caller material.
-    The digest input is byte-for-byte what the call sites already sent, so
-    existing keys are untouched.
+
+    The subject is canonicalised before hashing, so equivalent spellings of one
+    identifier collapse onto one counter. Without this, ``stepup:user:<uuid>``
+    and the same UUID upper-cased, un-hyphenated, or brace-wrapped each got
+    their own bucket, so a client that varied its own formatting could multiply
+    its rate limit simply by changing case. It also keeps the existing keys
+    intact: the twelve live call sites already send the canonical form, so
+    ``str(UUID(...))`` and ``str(ip_address(...))`` are the strings that are
+    hashed today and their digests are unchanged.
     """
-    return hashlib.blake2s(f"{kind.value}:{subject}".encode(), digest_size=20).hexdigest()
+    return hashlib.blake2s(
+        f"{kind.value}:{_canonical_subject(kind, subject)}".encode(), digest_size=20
+    ).hexdigest()
+
+
+def _canonical_subject(kind: BucketKind, subject: str) -> str:
+    """Return the canonical spelling of an already-validated subject.
+
+    The subject has passed ``_SUBJECT_VALIDATORS[kind]`` by the time this runs,
+    so the parse cannot fail; it is wrapped defensively because an unparseable
+    value must still hash to *something* rather than raise out of ``allow()``.
+    """
+    try:
+        if kind in _IP_BUCKETS:
+            return str(ipaddress.ip_address(subject))
+        if kind in _USER_BUCKETS:
+            return str(UUID(subject))
+    except ValueError:
+        pass
+    return subject
 
 
 async def allow(
@@ -244,10 +301,16 @@ async def allow(
     """
     parsed = _parse_bucket(key)
     if parsed is None:
-        # Deliberately does not log ``key``: it may be the secret.
+        # Deliberately does not log ``key``: it may be the secret. The namespace
+        # prefix IS logged, because it is a call-site constant and an operator
+        # hitting this needs to know *which* call site to look at. The most
+        # likely cause is a new bucket added without extending BucketKind, and
+        # that used to produce the least diagnosable message of the two branches.
         logger.error(
-            "rate limiter refused a key that is not a single '<bucket>:<subject>' pair"
-            " (len=%d); check the call site",
+            "rate limiter refused a key naming an unknown or empty bucket"
+            " (prefix=%r, len=%d); if this is a new bucket, add it to BucketKind"
+            " with its subject grammar, otherwise check the call site",
+            _namespace_of(key),
             len(key),
         )
         return False

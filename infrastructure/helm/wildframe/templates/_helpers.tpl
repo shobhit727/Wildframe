@@ -27,7 +27,9 @@ postgresql://wildframe:$(POSTGRES_PASSWORD)@{{ .Values.infra.postgresHost }}:{{ 
 {{- if empty .Values.infra.redisHost }}
 {{- fail "production requires infra.redisHost set to managed ElastiCache endpoint" }}
 {{- end }}
-{{- if empty .Values.secrets.searchCursorSecretKey }}
+{{- /* `empty` is a length test, not a trim test, so a whitespace-only
+       value would sail through and render `key:` as null. */}}
+{{- if empty (trim (default "" .Values.secrets.searchCursorSecretKey)) }}
 {{- fail "production requires secrets.searchCursorSecretKey set to the key name holding the search cursor secret inside secrets.existingSecret" }}
 {{- end }}
 {{- if empty .Values.secrets.existingSecret }}
