@@ -150,3 +150,51 @@ def test_board_keeps_the_agent_registry_and_notices() -> None:
     text = BOARD.read_text(encoding="utf-8")
     for section in ("## 3.", "## 4.", "## 5."):
         assert section in text, f"board is missing the {section!r} section"
+
+
+#: Duplicate entry ids tolerated at the time this guard was added.
+#:
+#: Two agents independently claimed the id ``M-0003`` before the id scheme
+#: switched to timestamped ids, so the board carries genuinely duplicated ids
+#: that no one can renumber without rewriting shared history -- and renumbering
+#: would destroy attribution, which is the one thing an audit log must not do.
+#: The count is a floor, not a target: this test exists to stop it *growing*.
+#: A timestamped id (``M-<UTC>-<agent>``) makes a fresh collision very unlikely;
+#: the bare ``M-00NN`` form is what produced these.
+DUPLICATE_ID_BASELINE = 16
+
+
+def _duplicate_entry_ids(text: str) -> dict[str, int]:
+    """Map each repeated entry id to how many times it appears."""
+    ids = re.findall(r"^### \[([^\]]+)\]", text, re.MULTILINE)
+    return {i: ids.count(i) for i in set(ids) if ids.count(i) > 1}
+
+
+def _redundant_entry_count(text: str) -> int:
+    """Total surplus entries caused by repeated ids.
+
+    Counting *distinct* duplicated ids is not enough: appending a third copy of
+    an id that is already duplicated raises no new distinct id, so the count
+    would not move. Summing the surplus catches both a fresh collision and an
+    existing one getting worse.
+    """
+    return sum(n - 1 for n in _duplicate_entry_ids(text).values())
+
+
+def test_duplicate_entry_ids_do_not_increase() -> None:
+    """Stop new id collisions, without failing on the ones already on the board.
+
+    A duplicated id makes an entry ambiguous to read back: "what did the agent
+    who filed M-0012 say?" has two answers. That ambiguity is what let two
+    agents believe they each owned the same task earlier on this branch.
+    """
+    text = BOARD.read_text(encoding="utf-8")
+    surplus = _redundant_entry_count(text)
+    assert surplus <= DUPLICATE_ID_BASELINE, (
+        f"{surplus} redundant entries from repeated ids, baseline is "
+        f"{DUPLICATE_ID_BASELINE}. Worst offenders: "
+        f"{sorted(_duplicate_entry_ids(text).items(), key=lambda kv: -kv[1])[:5]}. "
+        "Use a timestamped id (M-<UTC timestamp>-<agent>) for new entries; the "
+        "bare M-00NN form is what collided. Do not renumber the existing ones -- "
+        "that rewrites attribution."
+    )
