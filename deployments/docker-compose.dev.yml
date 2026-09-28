@@ -450,6 +450,11 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      # Spans are exported over OTLP. The Jaeger exporter was
+      # discontinued upstream at 1.21.0 and cannot be used with the SDK
+      # this stack now requires; Jaeger ingests OTLP natively because
+      # COLLECTOR_OTLP_ENABLED is set on the jaeger service above.
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://jaeger:4317'
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${AUTH_SERVICE_KAFKA_USERNAME:-auth-service}
@@ -499,6 +504,11 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      # Spans are exported over OTLP. The Jaeger exporter was
+      # discontinued upstream at 1.21.0 and cannot be used with the SDK
+      # this stack now requires; Jaeger ingests OTLP natively because
+      # COLLECTOR_OTLP_ENABLED is set on the jaeger service above.
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://jaeger:4317'
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${USER_SERVICE_KAFKA_USERNAME:-user-service}
@@ -545,6 +555,11 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      # Spans are exported over OTLP. The Jaeger exporter was
+      # discontinued upstream at 1.21.0 and cannot be used with the SDK
+      # this stack now requires; Jaeger ingests OTLP natively because
+      # COLLECTOR_OTLP_ENABLED is set on the jaeger service above.
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://jaeger:4317'
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${ADMIN_SERVICE_KAFKA_USERNAME:-admin-service}
@@ -591,6 +606,11 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      # Spans are exported over OTLP. The Jaeger exporter was
+      # discontinued upstream at 1.21.0 and cannot be used with the SDK
+      # this stack now requires; Jaeger ingests OTLP natively because
+      # COLLECTOR_OTLP_ENABLED is set on the jaeger service above.
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://jaeger:4317'
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${CONTENT_SERVICE_KAFKA_USERNAME:-content-service}
@@ -663,6 +683,11 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      # Spans are exported over OTLP. The Jaeger exporter was
+      # discontinued upstream at 1.21.0 and cannot be used with the SDK
+      # this stack now requires; Jaeger ingests OTLP natively because
+      # COLLECTOR_OTLP_ENABLED is set on the jaeger service above.
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://jaeger:4317'
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN

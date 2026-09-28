@@ -93,10 +93,16 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     compliance_grievance_officer_email: str = "grievance@wildframe.com"
     compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
     EVENT_PUBLISHER: str = "memory"
+    # JAEGER_ENABLED is retained as the tracing on/off switch so existing compose
+    # and Helm values keep working. The agent host/port fields are retained for
+    # compatibility but are no longer used for export: the Jaeger exporter was
+    # discontinued at 1.21.0 and cannot be used with the required SDK. Spans go
+    # over OTLP instead. See issue #978.
     JAEGER_ENABLED: bool = False
     JAEGER_AGENT_HOST: str = "localhost"
     JAEGER_AGENT_PORT: int = 6831
     JAEGER_SERVICE_NAME: str = "auth-service"
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://jaeger:4317"
     EMAIL_VERIFICATION_ENABLED: bool = True
     EMAIL_VERIFICATION_EXPIRATION_HOURS: int = 24
     MFA_ENABLED: bool = True

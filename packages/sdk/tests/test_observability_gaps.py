@@ -90,12 +90,11 @@ class TestSetupTracingDisabled:
 
 
 class TestSetupTracingEnabled:
-    def test_installs_a_jaeger_backed_tracer_provider(self, monkeypatch):
+    def test_installs_an_otlp_backed_tracer_provider(self, monkeypatch):
         """The full enabled path: real TracerProvider + BatchSpanProcessor
-        wrapping a real JaegerExporter, wired into FastAPI."""
+        wrapping a real OTLPSpanExporter, wired into FastAPI."""
         monkeypatch.setenv("JAEGER_ENABLED", "true")
-        monkeypatch.setenv("JAEGER_AGENT_HOST", "jaeger.test")
-        monkeypatch.setenv("JAEGER_AGENT_PORT", "16831")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector.test:4317")
 
         app = FastAPI()
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -117,7 +116,7 @@ class TestSetupTracingEnabled:
             patch("opentelemetry.trace.set_tracer_provider", _record),
             patch.object(FastAPIInstrumentor, "instrument_app") as instrument,
             patch(
-                "opentelemetry.exporter.jaeger.thrift.JaegerExporter"
+                "opentelemetry.exporter.otlp.proto.grpc.trace_exporter.OTLPSpanExporter"
             ) as exporter_cls,
         ):
             _setup_tracing(app, "billing-service")
@@ -129,8 +128,10 @@ class TestSetupTracingEnabled:
         assert instrument.call_args.kwargs["tracer_provider"] is provider
         # The span processor is wired, so spans are exported, not dropped.
         provider.add_span_processor.assert_called_once()
-        # Host/port come from the env.
-        exporter_cls.assert_called_once_with(agent_host_name="jaeger.test", agent_port=16831)
+        # The exporter reads OTEL_EXPORTER_OTLP_ENDPOINT from the environment, so
+        # it takes no agent host/port. Constructing it with those kwargs is what
+        # pinned this code to the discontinued Jaeger exporter.
+        exporter_cls.assert_called_once_with()
         assert real_trace_set is not _record
 
     def test_service_name_is_attached_as_a_resource_attribute(self, monkeypatch):
@@ -159,8 +160,16 @@ class TestSetupTracingEnabled:
 
         assert captured["attrs"]["service.name"] == "streaming-service"
 
-    def test_defaults_host_and_port_when_unset(self, monkeypatch):
+    def test_exporter_takes_no_agent_host_or_port(self, monkeypatch):
+        """The agent host/port env vars must no longer influence the exporter.
+
+        These two tests previously asserted JAEGER_AGENT_HOST/PORT were parsed and
+        handed to the exporter. Nothing reads them now, and the test is kept in a
+        reduced form so a future reintroduction of agent-host plumbing shows up
+        as a failure rather than passing silently.
+        """
         monkeypatch.setenv("JAEGER_ENABLED", "true")
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
         app = FastAPI()
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
@@ -168,17 +177,26 @@ class TestSetupTracingEnabled:
             patch("opentelemetry.trace.set_tracer_provider"),
             patch("opentelemetry.sdk.trace.TracerProvider", MagicMock()),
             patch.object(FastAPIInstrumentor, "instrument_app"),
-            patch("opentelemetry.exporter.jaeger.thrift.JaegerExporter") as exporter,
+            patch(
+                "opentelemetry.exporter.otlp.proto.grpc.trace_exporter.OTLPSpanExporter"
+            ) as exporter,
         ):
             _setup_tracing(app, "svc")
-        exporter.assert_called_once_with(agent_host_name="localhost", agent_port=6831)
+        exporter.assert_called_once_with()
 
 
 class TestSetupTracingFailureIsContained:
-    def test_non_numeric_port_is_swallowed(self, monkeypatch):
-        """A misconfigured JAEGER_AGENT_PORT must not crash app startup."""
+    def test_unreachable_otlp_endpoint_is_swallowed(self, monkeypatch):
+        """A misconfigured OTEL_EXPORTER_OTLP_ENDPOINT must not crash startup.
+
+        The exporter builds its channel lazily, so a bad endpoint surfaces as
+        export-time errors from the batch processor's worker thread rather than a
+        raise here. What matters for this guard is that startup completes and the
+        provider is still installed: a dead collector must not stop the service
+        from serving traffic or from buffering spans for later delivery.
+        """
         monkeypatch.setenv("JAEGER_ENABLED", "true")
-        monkeypatch.setenv("JAEGER_AGENT_PORT", "not-a-port")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "not a url at all")
 
         app = FastAPI()
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -189,8 +207,9 @@ class TestSetupTracingFailureIsContained:
         ):
             _setup_tracing(app, "svc")  # must not raise
 
-        set_provider.assert_not_called()
-        instrument.assert_not_called()
+        # Startup survived the bad endpoint, so the app is instrumented.
+        set_provider.assert_called_once()
+        assert instrument.call_args.args[0] is app
 
     def test_missing_instrumentor_package_is_swallowed(self, monkeypatch):
         """`from opentelemetry.instrumentation.fastapi import ...` failing
@@ -200,10 +219,10 @@ class TestSetupTracingFailureIsContained:
         with patch.dict(sys.modules, {"opentelemetry.instrumentation.fastapi": None}):
             _setup_tracing(app, "svc")  # must not raise
 
-    def test_jaeger_exporter_import_failure_is_swallowed(self, monkeypatch):
+    def test_otlp_exporter_import_failure_is_swallowed(self, monkeypatch):
         monkeypatch.setenv("JAEGER_ENABLED", "true")
         app = FastAPI()
-        with patch.dict(sys.modules, {"opentelemetry.exporter.jaeger.thrift": None}):
+        with patch.dict(sys.modules, {"opentelemetry.exporter.otlp.proto.grpc.trace_exporter": None}):
             _setup_tracing(app, "svc")  # must not raise
 
     def test_instrument_app_failure_is_swallowed(self, monkeypatch):
@@ -602,3 +621,161 @@ class TestMetricsMiddlewareErrorPath:
 
 def _sample(registry: Any, metric: str, labels: dict[str, str]) -> float:
     return registry.get_sample_value(metric, labels) or 0.0
+
+
+def _instrumented_client(app: FastAPI) -> tuple[TestClient, Any]:
+    """Wire the real FastAPI instrumentor with an in-memory exporter.
+
+    Two things this deliberately does:
+
+    * It uses the genuine ``FastAPIInstrumentor`` and the genuine SDK, because
+      the bug lives inside OpenTelemetry's span-name resolution
+      (``_get_route_details``), not in our own ``_setup_tracing``. Mocking the
+      instrumentor is what let the original suite stay green against 0.49b0.
+    * It returns the exporter so the test can assert a span was actually
+      recorded. ``_setup_tracing`` swallows its own failures, so an app whose
+      tracing setup broke comes back perfectly healthy and uninstrumented --
+      a test that only checks the response code then passes for the wrong reason.
+    """
+    from opentelemetry import trace
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
+
+    # Without this the global provider is already set by an earlier test, and
+    # set_tracer_provider would refuse to replace it, so the instrumentor would
+    # keep exporting to the previous provider and our spans would be lost.
+    trace._TRACER_PROVIDER = None  # noqa: SLF001
+    trace.set_tracer_provider(provider)
+
+    return TestClient(app, base_url="http://localhost"), exporter
+
+
+class TestIncludeRouterRoutesSurviveInstrumentation:
+    """Regression tests for issue #978.
+
+    ``opentelemetry-instrumentation-fastapi`` 0.49b0 reads
+    ``scope["route"].path`` while resolving the span name. Under FastAPI 0.141 /
+    Starlette 1.6, ``scope["route"]`` can be an ``_IncludedRouter``, which has no
+    ``.path``, so the instrumentation raised ``AttributeError`` and every route
+    registered through ``include_router`` returned 500 in a running service.
+
+    These tests drive the real ASGI stack with the real instrumentor rather than
+    mocking it. Mocking the exporter is what let the original suite pass while
+    login and registration were returning 500 in the deployed stack.
+    """
+
+    def test_include_router_route_does_not_500(self, monkeypatch):
+        monkeypatch.setenv("JAEGER_ENABLED", "true")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4317")
+
+        from fastapi import APIRouter
+
+        router = APIRouter()
+
+        @router.get("/thing")
+        async def _thing() -> dict[str, str]:
+            return {"ok": "yes"}
+
+        app = FastAPI()
+        # The include_router call is the whole point: this is the registration
+        # style that puts an _IncludedRouter into app.routes.
+        app.include_router(router)
+
+        client, exporter = _instrumented_client(app)
+
+        with client:
+            response = client.get("/thing")
+
+        assert response.status_code == 200, (
+            "An include_router route must survive OTel instrumentation. A 500 here "
+            "means the installed opentelemetry-instrumentation-fastapi is older "
+            "than 0.64b0, which cannot handle an _IncludedRouter in scope['route']."
+        )
+        assert response.json() == {"ok": "yes"}
+        # Proves the instrumentor really ran, so the 200 above is a real result
+        # and not a vacuous pass through an uninstrumented app.
+        assert exporter.get_finished_spans(), (
+            "no span was recorded, so the OTel middleware never ran and this "
+            "assertion proves nothing"
+        )
+
+    def test_nested_include_router_route_does_not_500(self, monkeypatch):
+        """A router included into a router must also survive, since that is the
+        shape the real services use."""
+        monkeypatch.setenv("JAEGER_ENABLED", "true")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4317")
+
+        from fastapi import APIRouter
+
+        inner = APIRouter()
+
+        @inner.get("/deep")
+        async def _deep() -> dict[str, str]:
+            return {"ok": "deep"}
+
+        outer = APIRouter()
+        outer.include_router(inner, prefix="/v1")
+
+        app = FastAPI()
+        app.include_router(outer, prefix="/api")
+
+        client, exporter = _instrumented_client(app)
+
+        with client:
+            response = client.get("/api/v1/deep")
+
+        assert response.status_code == 200, (
+            "Nested include_router routes must survive OTel instrumentation."
+        )
+        assert response.json() == {"ok": "deep"}
+        assert exporter.get_finished_spans(), (
+            "no span was recorded, so the OTel middleware never ran and this "
+            "assertion proves nothing"
+        )
+
+    def test_instrumentation_floor_is_pinned_where_the_bug_lives(self):
+        """Guard the manifest, not just the behaviour.
+
+        The runtime symptom and the constraint that causes it drift apart easily:
+        a loose floor lets a future lockfile resolve back to a broken release
+        while every behavioural test still passes against whatever happens to be
+        installed locally.
+        """
+        import tomllib
+        from pathlib import Path
+
+        # This file lives in packages/sdk/tests, so the package is a sibling
+        # rather than the parent.
+        manifest = (
+            Path(__file__).resolve().parents[1] / "wildframe_observability" / "pyproject.toml"
+        )
+        deps = tomllib.loads(manifest.read_text())["tool"]["poetry"]["dependencies"]
+
+        for package in (
+            "opentelemetry-instrumentation",
+            "opentelemetry-instrumentation-fastapi",
+            "opentelemetry-instrumentation-asgi",
+        ):
+            assert deps[package] == "^0.64b0", (
+                f"{package} must stay at ^0.64b0; 0.64b0 is the first release that "
+                "tolerates an _IncludedRouter in scope['route'] (issue #978). "
+                "0.50b0 and 0.55b0 still carry the broken code."
+            )
+
+        # The API/SDK floor has to move with the instrumentation: below 1.43.0 the
+        # SDK pins an older semantic-conventions that cannot coexist with 0.64b0.
+        assert deps["opentelemetry-api"] == "^1.43.0"
+        assert deps["opentelemetry-sdk"] == "^1.43.0"
+
+        # The Jaeger exporter is discontinued at 1.21.0 and is incompatible with
+        # SDK 1.43.0, so it must not creep back in.
+        assert "opentelemetry-exporter-jaeger-thrift" not in deps

@@ -35,11 +35,11 @@ httpx = "^0.25.0"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
 wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 wildframe-compliance = {path = "../../packages/sdk/wildframe_compliance", develop = true}
-opentelemetry-api = "^1.20.0"
-opentelemetry-sdk = "^1.20.0"
-opentelemetry-exporter-jaeger = "^1.20.0"
-opentelemetry-instrumentation-fastapi = "^0.49b0"
-opentelemetry-instrumentation-sqlalchemy = "^0.49b0"
+opentelemetry-api = "^1.43.0"
+opentelemetry-sdk = "^1.43.0"
+opentelemetry-exporter-otlp-proto-grpc = "^1.43.0"
+opentelemetry-instrumentation-fastapi = "^0.64b0"
+opentelemetry-instrumentation-sqlalchemy = "^0.64b0"
 prometheus-client = "^0.18.0"
 setuptools = ">=84,<86"
 

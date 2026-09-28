@@ -22,16 +22,26 @@ python = ">=3.11,<3.16"
 # discover. They were previously undeclared, which meant `pip install -e`
 # produced an importable package whose primary feature raised
 # ModuleNotFoundError at call time.
-opentelemetry-api = "^1.27.0"
-opentelemetry-sdk = "^1.27.0"
-opentelemetry-instrumentation = "^0.49b0"
-opentelemetry-instrumentation-fastapi = "^0.49b0"
-opentelemetry-instrumentation-asgi = "^0.49b0"
-opentelemetry-exporter-otlp = "^1.27.0"
-# Discontinued upstream at 1.21; wire.py imports it lazily and the
-# import already carries a type: ignore, so pin to the last release
-# rather than leaving an undeclared optional import.
-opentelemetry-exporter-jaeger-thrift = "^1.21.0"
+# The instrumentation floor is 0.64b0 because that is the first release whose
+# _get_route_details() tolerates a scope["route"] that is an _IncludedRouter.
+# Below it, every include_router route raises AttributeError and 500s. 0.50b0
+# and 0.55b0 carry the identical unguarded code, so "bump one release" is not a
+# fix. See issue #978.
+#
+# The API/SDK floor is 1.43.0 and must move with it: 0.64b0 instrumentations
+# require semantic-conventions==0.64b0, and every SDK below 1.43.0 pins
+# semantic-conventions to its own older 0.4x, so a lower floor resolves to a set
+# that cannot install. 1.43.0 is the exact pairing for semantic-conventions
+# 0.64b0.
+opentelemetry-api = "^1.43.0"
+opentelemetry-sdk = "^1.43.0"
+opentelemetry-instrumentation = "^0.64b0"
+opentelemetry-instrumentation-fastapi = "^0.64b0"
+opentelemetry-instrumentation-asgi = "^0.64b0"
+# Traces ship over OTLP. The Jaeger exporter was discontinued upstream at 1.21.0
+# with no later release, and it is incompatible with SDK 1.43.0, so it was not a
+# choice between it and OTLP. Jaeger has ingested OTLP natively since 1.35.
+opentelemetry-exporter-otlp = "^1.43.0"
 prometheus-client = "^0.18.0"
 starlette = ">=0.27.0"
 fastapi = "^0.141.0"
