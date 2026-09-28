@@ -11,7 +11,6 @@ import {
   anonymous,
   signedIn,
   expectRedirectedToLogin,
-  MOVIE_ID,
   MOVIES,
   SHOWS,
 } from './fixtures';

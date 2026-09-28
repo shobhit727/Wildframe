@@ -92,6 +92,8 @@ interface FixtureContent {
   release_date?: string | null;
   duration_minutes?: number | null;
   audience_score: number;
+  /** Personalised match percentage, 0-100. The UI renders `Math.round()` of it. */
+  matchPercentage: number;
   content_rating?: string | null;
   is_hd?: boolean;
   poster_url?: string | null;
@@ -111,6 +113,7 @@ export const MOVIES: FixtureContent[] = [
     release_date: '2024-03-18',
     duration_minutes: 118,
     audience_score: 8.4,
+    matchPercentage: 84,
     content_rating: 'PG-13',
     is_hd: true,
     poster_url: null,
@@ -127,6 +130,7 @@ export const MOVIES: FixtureContent[] = [
     release_date: '2023-11-02',
     duration_minutes: 96,
     audience_score: 7.1,
+    matchPercentage: 62,
     content_rating: 'R',
     is_hd: false,
     poster_url: null,
@@ -143,6 +147,7 @@ export const MOVIES: FixtureContent[] = [
     release_date: '2025-01-09',
     duration_minutes: 104,
     audience_score: 9.0,
+    matchPercentage: 91,
     content_rating: 'PG',
     is_hd: true,
     poster_url: null,
@@ -162,6 +167,7 @@ export const MOVIES: FixtureContent[] = [
     release_date: '2024-09-27',
     duration_minutes: 88,
     audience_score: 7.9,
+    matchPercentage: 74,
     content_rating: 'PG-13',
     is_hd: false,
     poster_url: null,
@@ -181,6 +187,7 @@ export const SHOWS: FixtureContent[] = [
     release_date: '2022-06-14',
     duration_minutes: null,
     audience_score: 8.8,
+    matchPercentage: 88,
     content_rating: 'TV-MA',
     is_hd: true,
     poster_url: null,
