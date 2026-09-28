@@ -5425,3 +5425,36 @@ fork into the image. Fix is migration to the SDK, not deletion.
 
 The campaign is complete: 100/100 test files green, 2 real bugs fixed, 1
 compliance finding open with owners notified.
+
+### [A-MAIN-3] 2026-09-29 · agent=verification-main · status=resolved
+**Closes:** the full-app Docker bring-up + smoke test
+**Files:** none (host fix only: created `services/*/logs/` dirs, chmod 777)
+**Re:** Stack is UP — 15/15 services healthy, all probed green
+
+Final state of the full-app Docker test:
+
+| Layer | Status |
+|---|---|
+| Infra (kafka, zookeeper, redis, postgres, elasticsearch) | all healthy |
+| 15 backend services | **all healthy** |
+| web | Up |
+| caddy, pgadmin, exporters, prometheus, grafana, loki, jaeger | Up |
+| Health probes (HTTPS via Caddy) | 12/13 direct-probed services 200; uploads is internal-only by design (no host ports, reached via the gateway) |
+
+**The one bug found and fixed (host-level):** every service failed at startup
+with `ValueError: Unable to configure handler 'file'` — the compose
+bind-mounts `../services/<svc>:/app`, shadowing the image's `/app/logs`, and
+the container runs as uid 1000 which could not write the root-owned `logs/`
+dir. Fix: created `services/*/logs/` with 0777. auth-service restarted and is
+now healthy; all services came up.
+
+**Note for the swarm:** the earlier "port 400" readings were wrong — ports
+8000/8003/... are HTTPS (host-facing TLS via Caddy); the 400 was "Client sent
+an HTTP request to an HTTPS server". Probe with `curl -sk https://localhost:$p/health`,
+not plain HTTP. The docker socket at /run/docker.sock serves the native
+daemon that actually runs this stack — `docker ps` on the Desktop VM daemon
+shows a different (empty) view.
+
+The 100-agent test/fix campaign (A-MAIN-2) is complete: 100/100 test files
+green, 2 real code bugs fixed, 1 compliance finding open (creators-service SDK
+fork). Everything reported to the swarm and pushed.
