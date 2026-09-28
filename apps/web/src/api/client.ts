@@ -7,6 +7,7 @@ import type {
   BackendContent,
   BackendContentListItem,
   BackendContentPayload,
+  BackendSearchContentDocument,
   BackendEpisode,
   BackendGenre,
   BackendSeason,
@@ -112,6 +113,37 @@ export function clearTokens(): void {
 }
 
 // ---- Normalization: backend DTOs -> UI types ----
+
+/**
+ * Map the search-service Elasticsearch document to the content payload
+ * consumed by the UI. Search documents are not BackendContent objects:
+ * genres are strings and rating is the service's canonical score.
+ */
+export function normalizeSearchContentDocument(
+  item: BackendSearchContentDocument
+): BackendContentPayload {
+  const title = String(item.title || '');
+  const genres = (Array.isArray(item.genres) ? item.genres : [])
+    .filter((genre): genre is string => typeof genre === 'string' && genre.length > 0)
+    .map((name) => {
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      return { id: slug, name, slug };
+    });
+
+  return {
+    id: String(item.id || ''),
+    title,
+    slug: title.toLowerCase().replace(/\s+/g, '-'),
+    description: String(item.description || ''),
+    content_type: String(item.content_type || 'movie'),
+    status: String(item.status || 'published'),
+    poster_url: null,
+    backdrop_url: null,
+    audience_score: Number(item.rating || 0),
+    is_premium: false,
+    genres,
+  };
+}
 
 export function normalizeContent(item: BackendContentPayload): Content {
   const type = item.content_type === 'series' || item.content_type === 'show' ? 'show' : 'movie';
@@ -354,7 +386,7 @@ class APIClient {
     content_type?: string;
     status?: string;
     genre_id?: string;
-  } = {}): Promise<BackendContent[]> {
+  } = {}): Promise<BackendContentListItem[]> {
     return this.unwrap(
       this.client.get('/content/api/v1/content', { params: { page: 1, page_size: 50, ...params } })
     );
@@ -384,21 +416,8 @@ class APIClient {
         this.client.get('/search/api/v1/search/query', { params: { q: query, limit: 30 } })
       );
       return results.results
-        .filter((r) => r.title)
-        .map(
-          (r): BackendContent => ({
-            id: String(r.id || r.content_id || ''),
-            title: String(r.title),
-            slug: String(r.slug || r.title || '').toLowerCase().replace(/\s+/g, '-'),
-            description: String(r.description || ''),
-            content_type: String(r.content_type || 'movie'),
-            status: 'published',
-            poster_url: r.poster ? String(r.poster) : null,
-            backdrop_url: r.backdrop ? String(r.backdrop) : null,
-            audience_score: Number(r.audience_score || r.rating || 0),
-            genres: [],
-          })
-        );
+        .filter((r) => r && r.title)
+        .map((r) => normalizeSearchContentDocument(r as unknown as BackendSearchContentDocument));
     } catch {
       const all = await this.getContentList({ page_size: 100 });
       const q = query.toLowerCase();
@@ -408,12 +427,12 @@ class APIClient {
     }
   }
 
-  async getTrending(): Promise<BackendContentListItem[]> {
+  async getTrending(): Promise<BackendContentPayload[]> {
     try {
-      const data = await this.unwrap<{ trending: Record<string, unknown>[]; total: number }>(
+      const data = await this.unwrap<{ trending: BackendSearchContentDocument[]; total: number }>(
         this.client.get('/search/api/v1/search/trending', { params: { limit: 20 } })
       );
-      if (data.trending?.length) return data.trending as unknown as BackendContent[];
+      if (data.trending?.length) return data.trending.map(normalizeSearchContentDocument);
     } catch {
       // ignore - fall back to score-sorted catalog below
     }

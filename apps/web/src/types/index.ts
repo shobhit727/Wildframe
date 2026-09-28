@@ -51,6 +51,19 @@ export interface BackendGenre {
   icon_url?: string | null;
 }
 
+export interface BackendSearchContentDocument {
+  id: string;
+  title: string;
+  description: string;
+  content_type: string;
+  genres: string[];
+  actors: string[];
+  director: string;
+  release_year: number | null;
+  rating: number;
+  status: string;
+}
+
 export interface BackendContentListItem {
   id: string;
   title: string;

@@ -4,6 +4,7 @@ import {
   clearTokens,
   getAccessToken,
   normalizeContent,
+  normalizeSearchContentDocument,
   setTokens,
 } from '@/api/client';
 import type { BackendContent, BackendContentListItem } from '@/types';
@@ -78,6 +79,26 @@ describe('normalizeContent', () => {
     expect(normalized.rating).toBe(8.1);
     expect(normalized.matchPercentage).toBe(81);
     expect(normalized.duration).toBe(0);
+  });
+
+  it('normalizes search-service content documents', () => {
+    const normalized = normalizeSearchContentDocument({
+      id: 'search-1',
+      title: 'Search Result',
+      description: 'From the Elasticsearch document shape.',
+      content_type: 'movie',
+      genres: ['Drama'],
+      actors: [],
+      director: '',
+      release_year: 2025,
+      rating: 76,
+      status: 'published',
+    });
+
+    expect(normalized.slug).toBe('search-result');
+    expect(normalized.matchPercentage).toBe(76);
+    expect(normalized.genres).toEqual(['Drama']);
+    expect(normalized.poster_url).toBeNull();
   });
 
   it('maps genre names arrays', () => {

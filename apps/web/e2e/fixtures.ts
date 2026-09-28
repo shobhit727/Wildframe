@@ -234,6 +234,21 @@ export function toContentListItem(content: FixtureContent): BackendContentListIt
     genres: content.genres,
   };
 }
+/** Mirror search-service's indexed document shape used by trending/search mocks. */
+export function toSearchContentDocument(content: FixtureContent): BackendSearchContentDocument {
+  return {
+    id: content.id,
+    title: content.title,
+    description: content.description,
+    content_type: content.content_type,
+    genres: content.genres.map((genre) => genre.name),
+    actors: content.cast_members?.map((member) => member.name) ?? [],
+    director: '',
+    release_year: content.release_date ? Number(content.release_date.slice(0, 4)) : null,
+    rating: Number(content.audience_score || content.imdb_rating || 0),
+    status: content.status,
+  };
+}
 
 /** Highest-scoring title — the fallback ordering `getTrending` uses. */
 export const TOP_RATED_TITLE = 'Lantern District';
@@ -565,7 +580,7 @@ export async function mockGateway(page: Page, options: GatewayOptions = {}): Pro
 
     // ---- search-service ----
     if (path === '/search/api/v1/search/trending') {
-      return json_({ trending: catalog.map(toContentListItem), total: catalog.length });
+      return json_({ trending: catalog.map(toSearchContentDocument), total: catalog.length });
     }
     if (path === '/search/api/v1/search/query') {
       const q = (url.searchParams.get('q') ?? '').toLowerCase();
@@ -574,7 +589,11 @@ export async function mockGateway(page: Page, options: GatewayOptions = {}): Pro
           c.title.toLowerCase().includes(q) ||
           c.description.toLowerCase().includes(q)
       );
-      return json_({ query: url.searchParams.get('q'), results, total: results.length });
+      return json_({
+        query: url.searchParams.get('q'),
+        results: results.map(toSearchContentDocument),
+        total: results.length,
+      });
     }
 
     // ---- recommendation-service ----
