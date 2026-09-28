@@ -45,8 +45,10 @@ def setup_tracing() -> None:
         # Set global trace provider
         trace.set_tracer_provider(trace_provider)
 
-        # Instrument libraries
-        FastAPIInstrumentor.instrument()
+        # Instrument libraries. `BaseInstrumentor.instrument` is an instance
+        # method, so the instrumentor must be constructed first; the
+        # SQLAlchemy/Redis calls below already follow this pattern.
+        FastAPIInstrumentor().instrument()
         SQLAlchemyInstrumentor().instrument()
         RedisInstrumentor().instrument()
 

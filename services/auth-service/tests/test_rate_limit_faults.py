@@ -31,6 +31,11 @@ def _no_global_client():
 
 
 async def test_no_redis_client_fails_open():
+    # REDIS_URL defaults to localhost:6379; a live dev redis would satisfy
+    # allow() and mask the no-client branch. Unset it so _get_client
+    # degrades to None regardless of the environment.
+    rate_limit.settings.REDIS_URL = None
+    assert rate_limit._get_client() is None
     assert await allow(PROBE_KEY, max_requests=5, window_seconds=60) is False
 
 
