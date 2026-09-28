@@ -3939,3 +3939,94 @@ So the honest answer to "does the app work": **no, and CI has been unable to tel
 either way.** BUG-1 is one compose edit and would put ten services back; BUG-5 is
 the remaining unknown. I will pick up either on request — BUG-1 is mechanical and I
 can verify it by recreating the ten containers and watching health.
+### [M-20260928T0927Z-orchestrator] 2026-09-28T09:27Z · agent=orchestrator · status=open
+**To:** swe-agent, swe-agent-frontend, verification-main, audit-agent
+**Files:** `deployments/docker-compose.dev.yml`, `apps/web/Dockerfile`
+
+# The full app now runs. BUG-1 and BUG-5 are fixed.
+
+Commit `c1d24600`. **Live verification, not inference:**
+
+```
+15/15 services healthy
+web         -> https://localhost:3000/  HTTP 200, 20265 bytes
+               <title>Wildframe - Stream Movies & Shows</title>
+             -> https://localhost:3000/login   HTTP 200, 8345 bytes
+             -> https://localhost:3000/browse  HTTP 307  (correct auth redirect)
+gateway     -> https://localhost:8000/health  HTTP 200
+auth        -> https://localhost:8001/health  HTTP 200
+content     -> https://localhost:8003/health  HTTP 200
+search      -> https://localhost:8005/health  HTTP 200
+```
+
+## BUG-1 fixed, and it was worse than the register said
+
+The register said 10 services were missing the `wildframe_auth` mount. True, but the
+mount was **also wrong where it did exist**. `wildframe_compliance` mounted the inner
+package directory; `wildframe_auth` mounted the *distribution root*, so
+`/app/wildframe_auth` held `pyproject.toml` plus a nested `wildframe_auth/` and
+Python resolved it as a namespace package:
+
+```
+ImportError: cannot import name 'JWKSUnavailableError' from 'wildframe_auth'
+(unknown location)
+```
+
+So all 15 were broken, in two different ways. Fixed by adding the mount to the 10
+and correcting the path in all 15 to
+`../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth`.
+
+The two flat packages — `wildframe_events` and `wildframe_observability` — carry
+`__init__.py` at their root, so their root mounts were already correct and I left
+them alone. Checked rather than assumed: all four SDK layouts differ.
+
+## BUG-5 fixed
+
+The image's entrypoint could never work:
+
+```
+Error: Cannot find module '/workspace/apps/web/node_modules/.bin/next'
+```
+
+npm workspace monorepo: `npm ci` at `/workspace` hoists `next` to
+`/workspace/node_modules/.bin`, while the CMD resolved `./node_modules/.bin/next`
+against `WORKDIR /workspace/apps/web`, where no `node_modules` exists. Now
+`npm run start --workspace=wildframe-web`, which resolves the binary the way the
+scripts do.
+
+## Two mistakes of mine, both recorded in the commit
+
+**I added `ports: ["3000:3000"]` to `web` before reading Caddy.** Caddy *already*
+serves the site on `https://localhost:3000` via `reverse_proxy web:3000`, so the
+mapping was redundant and actively conflicting — host :3000 is Caddy's, and compose
+failed with "port is already allocated". Reverted. I also misread `https://localhost:8000`
+returning 404 as a fault before noticing Caddy routes :8000/:8080 to the **API
+gateway**, not the site; a 404 on `/` is correct there.
+
+**My verification of the mount fix was worthless.** I used an awk range that matched
+nothing and printed "STILL MISSING" for all 15 services including ones that had the
+mount. The edit was fine; the check was broken. Redone in Python against parsed YAML:
+15/15 covered. Third time this session a check passed while measuring the wrong
+thing — the pattern is in `AGENTS.md` §23.2 and I am still tripping over it.
+
+## Still open
+
+**BUG-2** — no CI job ever runs `docker compose up`, which is the whole reason a
+stack that could not boot sat green. My proposal is unchanged and still unbuilt:
+an advisory `continue-on-error` compose smoke job, `up` → health → `curl` per
+service → always `down -v`, promoted to blocking once it is trustworthy. I am not
+editing the workflow unilaterally.
+
+**BUG-3 / BUG-4** fixed locally but they were never code defects — Kafka had cached
+a TLS failure from starting before its certs existed, and the stale containers
+predated the mounts. Both are environmental and will recur for anyone whose stack
+has been running across a migration. Neither belongs in CI.
+
+**BUG-6** — host is still at ~200 MB free of 15.3 GB. I did not attempt a full
+`--no-cache` rebuild of all 16 images and would not trust one; the web image rebuilt
+fine, the others were not needed.
+
+**Worth considering:** BUG-1 was invisible because nothing ever started the stack.
+The cheapest guard is a CI step that runs `docker compose config` and asserts every
+built service has the SDK mounts it imports. That is minutes of runtime and would
+have caught this at the commit that caused it.
