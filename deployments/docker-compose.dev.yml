@@ -469,7 +469,7 @@ services:
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
-    - ../packages/sdk/wildframe_auth:/app/wildframe_auth
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: &backend-healthcheck
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5).read()"]
@@ -518,6 +518,7 @@ services:
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -561,7 +562,7 @@ services:
     volumes:
     - ../services/admin-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
-    - ../packages/sdk/wildframe_auth:/app/wildframe_auth
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
@@ -609,6 +610,7 @@ services:
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -678,7 +680,7 @@ services:
     - ../services/api-gateway:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
-    - ../packages/sdk/wildframe_auth:/app/wildframe_auth
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
@@ -715,7 +717,7 @@ services:
         condition: service_healthy
     volumes:
     - ../services/streaming-service:/app
-    - ../packages/sdk/wildframe_auth:/app/wildframe_auth
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
@@ -763,6 +765,7 @@ services:
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -804,6 +807,7 @@ services:
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -873,7 +877,7 @@ services:
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
-    - ../packages/sdk/wildframe_auth:/app/wildframe_auth
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -913,6 +917,7 @@ services:
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -951,6 +956,7 @@ services:
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -991,6 +997,7 @@ services:
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -1031,6 +1038,7 @@ services:
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -1071,6 +1079,7 @@ services:
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -1109,6 +1118,7 @@ services:
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:

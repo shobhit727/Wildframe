@@ -18,4 +18,12 @@ USER nextjs
 WORKDIR /workspace/apps/web
 EXPOSE 3000
 ENV PORT=3000
-CMD ["./node_modules/.bin/next", "start"]
+# Run the workspace's own start script rather than a relative path to the binary.
+# This is an npm workspace monorepo, so `npm ci` at /workspace hoists `next` into
+# /workspace/node_modules/.bin. The old CMD resolved ./node_modules/.bin/next
+# against WORKDIR /workspace/apps/web, where no node_modules exists, so the
+# container died at startup with MODULE_NOT_FOUND on its own entrypoint:
+#   Error: Cannot find module '/workspace/apps/web/node_modules/.bin/next'
+# `npm run --workspace` resolves the binary the same way the scripts do, so it
+# keeps working regardless of where npm decides to hoist.
+CMD ["npm", "run", "start", "--workspace=wildframe-web"]
