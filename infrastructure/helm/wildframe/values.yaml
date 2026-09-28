@@ -9,6 +9,14 @@ image:
   tag: 1.0.0
   pullPolicy: IfNotPresent
 imagePullSecrets: []
+# Which enforcement tier to apply. The production gate is keyed on
+# this, NOT on the namespace name: a namespace is a string an operator
+# controls, so a release rendered with production values into a
+# renamed namespace would otherwise skip every production check
+# while still producing production-shaped manifests. Set by
+# values-production.yaml and values-staging.yaml.
+environment: development
+
 namespace: wildframe
 infra:
   postgresHost: postgres

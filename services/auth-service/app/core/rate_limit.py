@@ -122,9 +122,16 @@ _LOCAL_PART_MAX = 64
 _DOMAIN_LABEL_MAX = 63
 
 # A shape check, deliberately not a deliverability check. The local part and
-# each domain label are bounded and dot-separated so a non-address cannot be
-# spliced in, but an address-shaped *secret* still passes: this bucket is
-# bounded, not excluded.
+# each domain label are bounded and dot-separated, so a non-address is rejected
+# -- but an address-shaped *secret* still passes this grammar.
+#
+# That is a property of the bucket, not the current risk. The only caller is
+# ``auth.py``'s resend-verification route, whose request model types the field
+# as Pydantic ``EmailStr``, so a validated address is the only value that can
+# reach it today and the residual is a verified zero rather than "11 of 12".
+# ``test_resend_email_has_exactly_one_caller_and_it_is_schema_validated`` turns
+# that from a claim in a comment into a failing test if it stops being true: add
+# a second caller, or widen the field, and that test goes red.
 _EMAIL_RE = re.compile(
     rf"[^@\s]{{1,{_LOCAL_PART_MAX}}}@"
     rf"(?:[^@\s.]{{1,{_DOMAIN_LABEL_MAX}}}\.)+"
@@ -308,10 +315,9 @@ async def allow(
         # that used to produce the least diagnosable message of the two branches.
         logger.error(
             "rate limiter refused a key naming an unknown or empty bucket"
-            " (prefix=%r, len=%d); if this is a new bucket, add it to BucketKind"
-            " with its subject grammar, otherwise check the call site",
+            " (prefix=%r); if this is a new bucket, add it to BucketKind with its"
+            " subject grammar, otherwise check the call site",
             _namespace_of(key),
-            len(key),
         )
         return False
 

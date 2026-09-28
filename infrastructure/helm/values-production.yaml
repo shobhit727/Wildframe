@@ -11,6 +11,7 @@
 # infra.postgresHost/redisHost is in-cluster or external.*.enabled is false
 # or CIDRs/FQDNs are empty. Set infra.hosts to real RDS/ElastiCache endpoints
 # and CIDRs/FQDNs to VPC ranges for NetworkPolicy egress.
+environment: production
 namespace: wildframe-production
 
 replicaCount: 2

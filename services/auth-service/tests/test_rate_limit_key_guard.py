@@ -556,3 +556,36 @@ async def test_oversized_key_is_refused_before_redis():
         )
     assert allowed is False
     assert not client.keys_used
+
+
+def test_resend_email_has_exactly_one_caller_and_it_is_schema_validated():
+    """Turn "resend:email is a verified zero" from a comment into a test.
+
+    The bucket's grammar cannot exclude an address-shaped secret -- no email
+    grammar can. What makes it safe today is that its single caller feeds it a
+    Pydantic ``EmailStr``, so a validated address is the only value that can
+    reach it. That is an argument about the call graph, and arguments about call
+    graphs rot silently. If a second caller appears, or the field is widened to
+    ``str``, this fails and the docstring has to be rewritten.
+    """
+    import pathlib
+
+    routes = pathlib.Path(__file__).resolve().parents[1] / "app" / "api" / "routes" / "auth.py"
+    source = routes.read_text(encoding="utf-8")
+    assert source.count("resend:email:") == 1, (
+        "resend:email now has more than one caller; its subject is no longer"
+        " guaranteed to be a schema-validated address, so the residual is no"
+        " longer a verified zero and the module docstring must change"
+    )
+
+    schemas = (
+        pathlib.Path(__file__).resolve().parents[1] / "app" / "schemas" / "__init__.py"
+    ).read_text(encoding="utf-8")
+    block = re.search(
+        r"class ResendVerificationRequest\(BaseModel\):(.*?)\n\nclass ", schemas, re.S
+    )
+    assert block, "ResendVerificationRequest not found; the caller may have moved"
+    assert "email: EmailStr" in block.group(1), (
+        "ResendVerificationRequest.email is no longer EmailStr, so an arbitrary"
+        " string can reach the resend:email bucket"
+    )

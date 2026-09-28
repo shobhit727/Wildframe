@@ -28,7 +28,14 @@ from pathlib import Path
 
 import yaml
 
-from test_production_external import PROD, assert_fail, assert_success, helm_template
+from test_production_external import (
+    PROD,
+    assert_fail,
+    assert_success,
+    helm_template,
+)
+
+STAGING = Path(__file__).resolve().parent.parent / "values-staging.yaml"
 
 SCRATCH = Path(__file__).resolve().parents[3] / "tem" / "search_cursor_gate"
 
@@ -272,3 +279,37 @@ if __name__ == "__main__":
         check()
         print(f"PASS {check.__name__}")
     print("ALL PASS")
+
+
+# --- production tier must not be disableable by renaming the namespace ---------
+#
+# $isProd used to be derived from the namespace alone, so rendering the
+# production values file into any other namespace skipped *every* production
+# check -- external endpoints, cidrs, Kafka TLS, this gate -- while still
+# emitting 15 production-shaped Deployments. The checks are now keyed on
+# .Values.environment, which the production values file sets.
+
+
+def test_production_checks_survive_a_renamed_namespace():
+    """A renamed namespace must not switch off the production tier."""
+    assert_fail(
+        helm_template(
+            "wildframe",
+            PROD,
+            [("namespace", "wildframe"), ("secrets.searchCursorSecretKey", "")],
+        ),
+        "production values in a renamed namespace",
+    )
+
+
+def test_staging_tier_is_not_treated_as_production():
+    """Staging must keep rendering, or the gate stops being a usable signal."""
+    assert_success(
+        helm_template("wildframe-staging", STAGING, []),
+        "staging render",
+    )
+
+
+def test_default_tier_is_not_treated_as_production():
+    """The bare default must keep rendering."""
+    assert_success(helm_template("wildframe", None, []), "default render")

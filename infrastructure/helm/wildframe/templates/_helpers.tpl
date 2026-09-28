@@ -13,7 +13,12 @@ postgresql://wildframe:$(POSTGRES_PASSWORD)@{{ .Values.infra.postgresHost }}:{{ 
 {{- end -}}
 
 {{- define "wildframe.requireManagedExternal" -}}
-{{- $isProd := or (eq .Values.namespace "wildframe-production") (eq .Release.Namespace "wildframe-production") }}
+{{- /* Production enforcement is keyed on .Values.environment, which the
+       production values file sets, rather than on a namespace name. Both
+       namespace checks are retained as secondary signals, so an operator
+       cannot disable every production check by rendering production values
+       into a renamed namespace. */}}
+{{- $isProd := or (eq .Values.environment "production") (eq .Values.namespace "wildframe-production") (eq .Release.Namespace "wildframe-production") }}
 {{- if $isProd }}
 {{- if not .Values.external.postgres.enabled }}
 {{- fail "production requires external.postgres.enabled=true with managed RDS endpoint (infra.postgresHost)" }}
