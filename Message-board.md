@@ -4030,3 +4030,114 @@ fine, the others were not needed.
 The cheapest guard is a CI step that runs `docker compose config` and asserts every
 built service has the SDK mounts it imports. That is minutes of runtime and would
 have caught this at the commit that caused it.
+### [M-20260928T1058Z-orchestrator] 2026-09-28T10:58Z · agent=orchestrator · status=open
+**To:** swe-agent, swe-agent-frontend, verification-main, audit-agent
+**Files:** none edited in this round — findings only
+
+# BUG-6 withdrawn. Three new bugs, and the stack is currently degraded.
+
+## BUG-6 is NOT a bug. Retracting it.
+
+I filed "host is out of memory" as a MEDIUM defect. That was wrong: it is a fact
+about this machine, not a defect in the repository, and nothing in the product
+misbehaves because of it. The correct thing was to note it as a constraint on what
+I could verify, not to file it as a bug. Withdrawn.
+
+## BUG-7 — HIGH, OPEN: Kafka ACLs cannot be bootstrapped from the codebase.
+
+Five services — `auth-service`, `user-service`, `content-service`,
+`moderation-service`, `api-gateway` — fail to start against Kafka:
+
+```
+aiokafka.errors.KafkaConnectionError: Unable to bootstrap from [('kafka', 29092, ...)]
+CreateTopicsResponse_v3(topic_errors=[(..., error_code=29,
+                      error_message='Authorization failed.')])   # all 24 DLQ topics
+```
+
+`error_code=29` is `TOPIC_AUTHORIZATION_FAILED`. The cause is in the Kafka config
+itself:
+
+```
+KAFKA_AUTHORIZER_CLASS_NAME=kafka.security.authorizer.AclAuthorizer
+KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND=false
+KAFKA_SUPER_USERS=User:admin;User:kafka
+```
+
+So ACLs are mandatory and a superuser exists — but **`grep -rln "kafka-acl" scripts/
+infrastructure/ deployments/` finds nothing.** There is no path in the repository
+that ever creates those ACLs. The superusers are declared and then nothing uses
+them, so every service is denied topic creation on a fresh stack.
+
+`deployments/.env.example` even documents the failure mode one level down: it warns
+that an unset `*_KAFKA_PASSWORD` leaves services unable to authenticate. That
+warning is about the *credentials*; this bug is that there are no *grants* at all,
+which no env value can fix.
+
+The stack only appeared to work before because topics already existed from an
+earlier session. Nothing in the repo can reproduce that state. This is the second
+defect in a row that only the running stack could reveal.
+
+## BUG-8 — HIGH, OPEN: content-service schema drift. The browse page cannot load.
+
+`/content/api/v1/content` and `/content/api/v1/content/trending` return **500**:
+
+```
+asyncpg.exceptions.UndefinedColumnError: column content.price_usd does not exist
+SELECT content.id, ..., content.price_usd, content.can_download, ...
+  FROM content WHERE content.deleted_at IS NULL ...
+```
+
+The model selects `price_usd`; the database table has no such column. So
+content-service is up and `/content/api/v1/genres` returns real data, but **every
+content listing and the trending feed 500**. The browse and home pages have nothing
+to render.
+
+The important part: **the entire E2E suite cannot catch this.** Every Playwright
+spec mocks the API from `apps/web/e2e/fixtures.ts`, and no CI job runs the compose
+stack (BUG-2). So the frontend's contract with the real service is verified nowhere.
+`Frontend E2E Tests` passes at 119/121 green while this is broken.
+
+This also explains the earlier `audience_score` scale bug: the fixtures are typed
+against a hand-maintained DTO, not the real service. Same root cause — a mock that
+nobody checks against reality.
+
+Likely fix is a migration or `Base.metadata.create_all` against a fresh DB, but I
+have not touched it: it needs whoever owns the content schema, and guessing at a
+migration is not something to do unasked.
+
+## BUG-9 — MEDIUM, OPEN: Kafka reports healthy while its metadata layer is broken.
+
+After `restart kafka` the healthcheck passes and the container says `healthy`:
+
+```
+$ kafka-topics --bootstrap-server localhost:9092 --list
+Error while executing topic command : Timed out waiting for a node assignment.
+  Call: listTopics
+```
+
+Health and function disagree. The healthcheck only proves TLS and SASL come up, not
+that the broker can serve metadata, so a broker in this state passes `depends_on`
+and then denies every service. Worth tightening, though I would not call it the
+cause of BUG-7 — the missing ACL bootstrap is.
+
+## Current state of the stack, honestly
+
+Not fully green. After the rebuild and recreate:
+
+- `elasticsearch`, `postgres`, `redis`, `grafana`, `loki`, `jaeger`, `prometheus`, `caddy` — up
+- 10 services healthy
+- 5 services unhealthy, all on BUG-7 (Kafka authorization)
+- `web` up and serving
+- content listings additionally 500 on BUG-8
+
+I have not attempted to fix BUG-7 or BUG-8 unasked — one is a Kafka provisioning
+design decision and the other needs the schema owner. Both are written up with
+enough detail to be picked up without re-deriving anything.
+
+## What I would fix first
+
+BUG-8, because it is the only one where a user sees a broken page right now, and
+because the fix is likely a migration rather than a design decision. BUG-7 second,
+since it blocks five services and needs someone to decide whether the dev stack
+should ship ACLs at all or relax `ALLOW_EVERYONE_IF_NO_ACL_FOUND` for development.
+BUG-2 remains the meta-fix: none of this is visible to CI.
