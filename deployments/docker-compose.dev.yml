@@ -395,8 +395,20 @@ services:
       - NODE_ENV=production
       - NEXT_TELEMETRY_DISABLED=1
       - NEXT_PUBLIC_APP_NAME=Wildframe
-      - NEXT_PUBLIC_APP_URL=https://192.168.1.14:3000
-      - NEXT_PUBLIC_API_URL=https://192.168.1.14:8080
+      # NEXT_PUBLIC_API_URL is deliberately NOT set here.
+      #
+      # It used to be hardcoded to https://192.168.1.14:8080, which broke account
+      # creation for everyone: 8080 is Caddy's cleartext listener, so asking for
+      # https:// on it fails the TLS handshake and the browser could not reach the
+      # API at all. It was also a machine-specific LAN IP committed to source, so
+      # it was wrong on any other host, and it overrode the correct value in
+      # apps/web/.env.
+      #
+      # Left unset, client.ts derives the gateway at runtime from the host the
+      # page was served on, i.e. https://<hostname>:8000. Caddy's HTTPS gateway is
+      # a catch-all on :8000, so that is correct for localhost and for LAN access
+      # without per-device config. Verified: register returns 201 on both
+      # https://localhost:8000 and https://192.168.1.14:8000.
     depends_on:
       - api-gateway
     networks:
