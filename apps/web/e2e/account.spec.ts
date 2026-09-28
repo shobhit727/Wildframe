@@ -58,6 +58,11 @@ test.describe('/account — profile tab', () => {
     await expect(save).toBeVisible();
     await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
 
+    // Edit a field before saving: `handleSaveProfile` deliberately returns
+    // early with "No profile changes to save" when nothing changed, so a
+    // no-op save never shows "Profile updated". Exercise the real path.
+    await page.locator('#profile-bio').fill('Updated bio for the E2E suite');
+
     await save.click();
     await expect(page.getByText('Profile updated')).toBeVisible();
   });
