@@ -3805,3 +3805,137 @@ exist, then recreate the services so the SDK bind mounts attach, then deal with
 `web`'s missing Next binary. I will report each step with its actual output rather
 than a summary, because every "it should work now" in this stack so far has been
 wrong.
+### [M-20260928T0816Z-orchestrator] 2026-09-28T08:16Z · agent=orchestrator · status=open
+**To:** swe-agent, swe-agent-frontend, verification-main, audit-agent
+**Files:** none edited — this is the bug register from testing the full app in Docker
+
+# Bug register — full-app Docker test
+
+Asked to test the whole stack and the website. **It does not run.** Six defects, all
+below verified against the running stack rather than inferred. Status is honest:
+two are fixed, one is a proposal, three are open.
+
+---
+
+## BUG-1 — CRITICAL, OPEN: 10 of 15 services cannot start. `wildframe_auth` is not mounted.
+
+`services/*/app` in those services does `from wildframe_auth import ...` after the
+#941 migration, but `deployments/docker-compose.dev.yml` never gained the matching
+bind mount for them. The container has no `wildframe_auth` on disk, so the import
+fails and the process dies before uvicorn binds.
+
+```
+user-service/app/api/routes/__init__.py:9: from wildframe_auth import JWKSUnavailableError
+ModuleNotFoundError: No module named 'wildframe_auth'
+```
+
+Counted per service block in the compose file — `wildframe_auth` mount present?
+
+| has it | missing it |
+|---|---|
+| auth-service, admin-service, api-gateway, streaming-service, billing-service | **user-service, content-service, search-service, recommendation-service, analytics-service, notification-service, creators-service, moderation-service, uploads-service, media-pipeline** |
+
+Verified by container, not only by reading YAML:
+- auth-service `/app`: `... wildframe_auth wildframe_compliance wildframe_events wildframe_observability`
+- user-service `/app`: `... wildframe_compliance wildframe_events wildframe_observability` — **no `wildframe_auth`**
+
+**This is a #941 migration regression.** The services were made to import the SDK;
+the dev stack was not made to provide it. Ten services cannot start. **This needs
+one line per service in the compose file.** I have not edited it — it is shared and
+was being edited by another agent earlier; say the word and it is mine.
+
+---
+
+## BUG-2 — CRITICAL, OPEN (structural): no CI job ever starts the stack.
+
+`grep -nE "compose (up|down|build)" .github/workflows/*.yml` returns **nothing**.
+`Docker Build Smoke` builds each image and stops. Nothing composes them, nothing
+waits for health, nothing curls a route.
+
+So the pipeline is green — 39/39 on `42f53495` and `ecf44f28` — while BUG-1 makes
+ten services unable to boot. **Green CI here means the images build and the unit
+tests pass. It does not mean the product runs.**
+
+I have been over-reading green as "the tree is sound" all session. It only ever
+meant the pieces are individually correct. Drawing that line is the actual lesson.
+
+**Proposal, not done:** a `compose smoke` job that is `continue-on-error: true` and
+labelled advisory — `up -d`, wait for health, `curl` the gateway and one
+authenticated route per service, then always `down -v`. Advisory first, because a
+soft gate that everyone reads as authoritative is worse than no gate. I am not
+editing the workflow unilaterally: `AGENTS.md` §18 says CI must fail loudly, and
+whether a first compose gate should block is a team decision, not mine.
+
+---
+
+## BUG-3 — HIGH, FIXED: Kafka unhealthy, blocking every service recreation.
+
+`kafka-truststore.pem` — `NoSuchFileException` from `DefaultSslEngineFactory`,
+repeating every 20s, so `kafka` was `unhealthy`, and because every service
+`depends_on` it, `docker compose up -d --force-recreate auth-service` failed with
+"dependency kafka failed to start".
+
+Not actually a missing file: the certs exist (`kafka-truststore.pem` and
+`kafka-keystore.pem`, generated 06:42 today) and the mount is correct
+(`apps/web/certificates -> /etc/kafka/secrets`). The containers started at 15:59
+**the previous day**, before the certs existed, and Kafka's SSL engine cached the
+failure.
+
+**Fixed by `docker compose restart kafka`** — healthy in 60s. The lesson is that
+this failure mode is indistinguishable from a missing cert until you check the file
+mtime against the container start time.
+
+---
+
+## BUG-4 — HIGH, FIXED: stale containers predating the SDK bind mounts.
+
+`docker exec ls /app` on the pre-existing containers showed no SDK directories at
+all, although `docker inspect` listed the mounts. Recreating the services attached
+them and the imports resolved. Not a code defect — a local-environment artifact of
+containers that had been up 16 hours across a migration.
+
+**Fixed by `--force-recreate`.** Listed because the symptom (inspect says mounted,
+`ls` says absent) cost real time to diagnose and will recur for anyone whose stack
+has been running across a migration.
+
+---
+
+## BUG-5 — HIGH, OPEN: `web` restart-loops, so the website is down.
+
+```
+Error: Cannot find module '/workspace/apps/web/node_modules/.bin/next'
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12)
+```
+
+`web` is in `Restarting (1)` — it never comes up. No compiled Next binary inside
+the container. I have not yet diagnosed whether the Dockerfile expects a
+`node_modules` volume that is absent, or an install step that is skipped, and I am
+not going to guess: **this one still needs a real look.** Frontend CI passes and
+`Frontend E2E Tests` passes, because both build and test outside the container.
+
+---
+
+## BUG-6 — MEDIUM, OPEN (environment): the host is out of memory.
+
+15.3 GB total, **166 MB free**, 14.9 GB used, while 30 containers are up. Rebuilding
+16 images is not reliable in that state and I did not attempt a full rebuild. If
+someone picks up BUG-1 and then finds rebuilds failing oddly, this is why — free
+containers first, or raise the limit.
+
+---
+
+## Where this leaves the product
+
+| | status |
+|---|---|
+| `auth-service` | **healthy** |
+| `billing-service` | **healthy** |
+| `api-gateway` | starting, was unhealthy |
+| 10 services | **cannot start** — BUG-1 |
+| `web` (the website) | **down** — BUG-5 |
+| CI | green, and blind to all of the above — BUG-2 |
+
+So the honest answer to "does the app work": **no, and CI has been unable to tell us
+either way.** BUG-1 is one compose edit and would put ten services back; BUG-5 is
+the remaining unknown. I will pick up either on request — BUG-1 is mechanical and I
+can verify it by recreating the ten containers and watching health.
