@@ -20,6 +20,7 @@
  *     dependency on a new API shows up as a failed assertion.
  */
 import { test as base, expect, type Page } from '@playwright/test';
+import type { BackendContentListItem, BackendGenre } from '@/types';
 
 export const API_ORIGIN = 'https://localhost:8000';
 export const REFRESH_COOKIE = '__Host-wf_refresh';
@@ -60,10 +61,7 @@ export const ADMIN: MockUser = {
 export const MOVIE_ID = 'wf-movie-nightfall';
 export const SHOW_ID = 'wf-show-meridian';
 
-interface FixtureGenre {
-  id: string;
-  name: string;
-}
+type FixtureGenre = BackendGenre;
 
 interface FixtureEpisode {
   id: string;
@@ -81,7 +79,7 @@ interface FixtureSeason {
   episodes: FixtureEpisode[];
 }
 
-/** Mirrors the shape `apiClient` consumes (`BackendContent`). */
+/** Full content fixture used for detail responses and projected for list responses. */
 interface FixtureContent {
   id: string;
   title: string;
@@ -113,12 +111,11 @@ export const MOVIES: FixtureContent[] = [
     release_date: '2024-03-18',
     duration_minutes: 118,
     audience_score: 84,
-    matchPercentage: 84,
     content_rating: 'PG-13',
     is_hd: true,
     poster_url: null,
     backdrop_url: null,
-    genres: [{ id: 'g-1', name: 'Thriller' }],
+    genres: [{ id: 'g-1', name: 'Thriller', slug: 'thriller', description: null, icon_url: null }],
   },
   {
     id: 'wf-movie-saltflats',
@@ -130,12 +127,11 @@ export const MOVIES: FixtureContent[] = [
     release_date: '2023-11-02',
     duration_minutes: 96,
     audience_score: 71,
-    matchPercentage: 62,
     content_rating: 'R',
     is_hd: false,
     poster_url: null,
     backdrop_url: null,
-    genres: [{ id: 'g-2', name: 'Drama' }],
+    genres: [{ id: 'g-2', name: 'Drama', slug: 'drama', description: null, icon_url: null }],
   },
   {
     id: 'wf-movie-lantern',
@@ -147,7 +143,6 @@ export const MOVIES: FixtureContent[] = [
     release_date: '2025-01-09',
     duration_minutes: 104,
     audience_score: 90,
-    matchPercentage: 91,
     content_rating: 'PG',
     is_hd: true,
     poster_url: null,
@@ -167,7 +162,6 @@ export const MOVIES: FixtureContent[] = [
     release_date: '2024-09-27',
     duration_minutes: 88,
     audience_score: 79,
-    matchPercentage: 74,
     content_rating: 'PG-13',
     is_hd: false,
     poster_url: null,
@@ -187,12 +181,11 @@ export const SHOWS: FixtureContent[] = [
     release_date: '2022-06-14',
     duration_minutes: null,
     audience_score: 88,
-    matchPercentage: 88,
     content_rating: 'TV-MA',
     is_hd: true,
     poster_url: null,
     backdrop_url: null,
-    genres: [{ id: 'g-3', name: 'Sci-Fi' }],
+    genres: [{ id: 'g-3', name: 'Sci-Fi', slug: 'sci-fi', description: null, icon_url: null }],
     seasons: [
       {
         id: 'wf-season-1',
@@ -221,6 +214,26 @@ export const SHOWS: FixtureContent[] = [
 ];
 
 export const ALL_CONTENT: FixtureContent[] = [...MOVIES, ...SHOWS];
+
+/**
+ * Project a full detail fixture to the exact ContentListResponse wire shape.
+ * The backend response_model strips detail-only fields from /content and
+ * /content/trending; the E2E mock must do the same or it can hide contract drift.
+ */
+export function toContentListItem(content: FixtureContent): BackendContentListItem {
+  return {
+    id: content.id,
+    title: content.title,
+    slug: content.slug,
+    description: content.description,
+    content_type: content.content_type,
+    poster_url: content.poster_url ?? null,
+    imdb_rating: content.imdb_rating ?? null,
+    audience_score: content.audience_score,
+    is_premium: content.is_premium ?? false,
+    genres: content.genres,
+  };
+}
 
 /** Highest-scoring title — the fallback ordering `getTrending` uses. */
 export const TOP_RATED_TITLE = 'Lantern District';
@@ -524,7 +537,7 @@ export async function mockGateway(page: Page, options: GatewayOptions = {}): Pro
     if (path === '/content/api/v1/content' && method === 'GET') {
       const type = url.searchParams.get('content_type');
       const filtered = type ? catalog.filter((c) => c.content_type === type) : catalog;
-      return json_(filtered);
+      return json_(filtered.map(toContentListItem));
     }
     if (path.startsWith('/content/api/v1/content/') && method === 'GET') {
       // Strip the known prefix so the remaining segments are addressable by
@@ -544,15 +557,15 @@ export async function mockGateway(page: Page, options: GatewayOptions = {}): Pro
       return json_(found);
     }
     if (path === '/content/api/v1/genres') {
-      const names = Array.from(
-        new Set(catalog.flatMap((c) => c.genres.map((g) => g.name)))
-      ).map((name, i) => ({ id: `g-${i}`, name }));
-      return json_(names);
+      const genres = Array.from(
+        new Map(catalog.flatMap((c) => c.genres).map((genre) => [genre.id, genre])).values()
+      );
+      return json_(genres);
     }
 
     // ---- search-service ----
     if (path === '/search/api/v1/search/trending') {
-      return json_({ trending: catalog, total: catalog.length });
+      return json_({ trending: catalog.map(toContentListItem), total: catalog.length });
     }
     if (path === '/search/api/v1/search/query') {
       const q = (url.searchParams.get('q') ?? '').toLowerCase();

@@ -6,7 +6,7 @@ import {
   normalizeContent,
   setTokens,
 } from '@/api/client';
-import type { BackendContent } from '@/types';
+import type { BackendContent, BackendContentListItem } from '@/types';
 
 describe('token helpers', () => {
   const access = 'access.token.value';
@@ -57,6 +57,28 @@ describe('normalizeContent', () => {
     release_date: '2024-05-01',
     audience_score: 87,
   };
+
+
+  it('normalizes the exact content-list response shape', () => {
+    const listItem: BackendContentListItem = {
+      id: 'list-1',
+      title: 'Catalog Only',
+      slug: 'catalog-only',
+      description: 'Only fields returned by ContentListResponse.',
+      content_type: 'movie',
+      poster_url: null,
+      imdb_rating: 8.1,
+      audience_score: 81,
+      is_premium: false,
+      genres: [{ id: 'g1', name: 'Drama', slug: 'drama' }],
+    };
+
+    const normalized = normalizeContent(listItem);
+    expect(normalized.title).toBe('Catalog Only');
+    expect(normalized.rating).toBe(8.1);
+    expect(normalized.matchPercentage).toBe(81);
+    expect(normalized.duration).toBe(0);
+  });
 
   it('maps genre names arrays', () => {
     const c = normalizeContent(movie);

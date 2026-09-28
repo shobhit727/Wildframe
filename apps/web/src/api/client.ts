@@ -5,6 +5,8 @@ import axios, { AxiosInstance } from 'axios';
 import type {
   AuthTokens,
   BackendContent,
+  BackendContentListItem,
+  BackendContentPayload,
   BackendEpisode,
   BackendGenre,
   BackendSeason,
@@ -111,7 +113,7 @@ export function clearTokens(): void {
 
 // ---- Normalization: backend DTOs -> UI types ----
 
-export function normalizeContent(item: BackendContent): Content {
+export function normalizeContent(item: BackendContentPayload): Content {
   const type = item.content_type === 'series' || item.content_type === 'show' ? 'show' : 'movie';
 
   // The API's audience_score is 0-100; keep the UI's existing rating field at 0-10
@@ -376,7 +378,7 @@ class APIClient {
     );
   }
 
-  async searchContent(query: string): Promise<BackendContent[]> {
+  async searchContent(query: string): Promise<BackendContentPayload[]> {
     try {
       const results = await this.unwrap<{ query: string; results: Record<string, unknown>[] }>(
         this.client.get('/search/api/v1/search/query', { params: { q: query, limit: 30 } })
@@ -406,7 +408,7 @@ class APIClient {
     }
   }
 
-  async getTrending(): Promise<BackendContent[]> {
+  async getTrending(): Promise<BackendContentListItem[]> {
     try {
       const data = await this.unwrap<{ trending: Record<string, unknown>[]; total: number }>(
         this.client.get('/search/api/v1/search/trending', { params: { limit: 20 } })
@@ -419,7 +421,7 @@ class APIClient {
     return [...all].sort((a, b) => (b.audience_score || 0) - (a.audience_score || 0)).slice(0, 20);
   }
 
-  async getRecommendations(userId: string, limit = 20): Promise<BackendContent[]> {
+  async getRecommendations(userId: string, limit = 20): Promise<BackendContentPayload[]> {
     try {
       const data = await this.unwrap<{
         recommendations: { content_id: string; score: number; reason?: string }[];

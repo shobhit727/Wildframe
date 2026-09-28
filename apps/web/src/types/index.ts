@@ -51,6 +51,19 @@ export interface BackendGenre {
   icon_url?: string | null;
 }
 
+export interface BackendContentListItem {
+  id: string;
+  title: string;
+  slug: string;
+  description: string;
+  content_type: string;
+  poster_url?: string | null;
+  imdb_rating?: number | null;
+  audience_score: number;
+  is_premium: boolean;
+  genres: BackendGenre[];
+}
+
 export interface BackendContent {
   id: string;
   title: string;
@@ -77,6 +90,9 @@ export interface BackendContent {
   cast_members?: { name: string }[];
   seasons?: BackendSeason[];
 }
+
+export type BackendContentPayload = BackendContentListItem &
+  Partial<Pick<BackendContent, Exclude<keyof BackendContent, keyof BackendContentListItem>>>;
 
 export interface BackendSeason {
   id: string;
