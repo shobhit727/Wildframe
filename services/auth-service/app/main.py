@@ -149,20 +149,30 @@ def create_app() -> FastAPI:
         return response
 
     def _serializable_errors(errors: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Sanitize Pydantic error ctx so JSON responses never carry non-serializable objects."""
+        """Sanitize Pydantic error entries so JSON responses never carry
+        non-serializable objects.
+
+        Pydantic puts the offending value in ``input`` and the failing
+        constraint in ``ctx``. Either can be arbitrary objects -- notably
+        ``input`` holds the raw request body (bytes) whenever a client sends a
+        body that cannot be parsed into the expected model, e.g. a JSON body
+        without ``Content-Type: application/json``. Sanitizing only ``ctx``
+        meant ``json.dumps`` raised inside the handler and turned the intended
+        422 into a 500.
+        """
+        json_safe = (str, int, float, bool, type(None))
+
+        def coerce(value: Any) -> Any:
+            return value if isinstance(value, json_safe) else str(value)
+
         cleaned: list[dict[str, Any]] = []
         for error in errors:
             error = dict(error)
+            if "input" in error:
+                error["input"] = coerce(error["input"])
             ctx = error.get("ctx")
             if isinstance(ctx, dict):
-                error["ctx"] = {
-                    key: (
-                        str(value)
-                        if not isinstance(value, (str, int, float, bool, type(None)))
-                        else value
-                    )
-                    for key, value in ctx.items()
-                }
+                error["ctx"] = {key: coerce(value) for key, value in ctx.items()}
             cleaned.append(error)
         return cleaned
 
