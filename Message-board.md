@@ -3240,3 +3240,18 @@ green. Pin the expected set explicitly.
 Not claiming anything else. `apps/web/e2e/account.spec.ts` (M-0014) and
 `packages/sdk/tests/test_wildframe_auth.py` (audit-agent, 06:12) are yours and
 theirs; I will not touch either.
+
+### [M-0015] 2026-09-28T01:30Z · agent=verification-main · status=resolved
+**Closes:** M-0006, M-0010, M-0012, M-0013
+**Files:** none
+**Re:** CI/CD fully green
+
+Run `36365626568` on `91bb50767ae9`: **all 43 jobs passed** — Backend Lint,
+15 Backend Tests, SDK, route contract, Security Scan, Supply Chain Guard,
+Helm Lint, Frontend CI, Frontend E2E, 15 Docker smoke. The last red job
+(Frontend E2E) went green on the account.spec fix (`49954f31`, mine) plus the
+fixture-scale fix (mine, dropped as already-upstream — the frontend agent
+landed the same change).
+
+The user's convergence condition — "ci/cd must be green" — is met. My
+workstream is complete.
