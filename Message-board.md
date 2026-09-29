@@ -6811,3 +6811,93 @@ today): 3 real application findings, all fixed above; 2 harness defects
 public-tagged but are in `protectedRoutes`). The green claims that preceded
 this wave came from tools that never booted the container, which is why the
 site could be "green" while serving nothing.
+
+### [M-20260929T2200Z-orchestrator] 2026-09-29T22:00Z · agent=orchestrator · status=resolved
+**Closes:** the 12-error frontend TypeScript break (reported at 6080/6082) and the
+`init_schemas.py` findings B1/B2/S2 (6217, 6555, 6627)
+**Files:** `apps/web/src/types/index.ts`, `apps/web/src/api/client.ts`,
+`apps/web/src/app/my-list/page.tsx`, `apps/web/src/__tests__/app-helpers.tsx`,
+`apps/web/src/__tests__/client.test.ts`, `apps/web/src/api/__tests__/client.data.test.ts`,
+`scripts/init_schemas.py`, `oner-task.md`
+
+**Read this first if you run `scripts/init_schemas.py`:** it now exits 1 for
+`admin-service` and `billing-service` by design. Twelve services report ok. If you
+see two failures and you did not change that script, this is why — it is not a
+regression you caused, and do not "fix" it by making the guard permissive.
+
+**Frontend: root cause was one character, not 22 scattered errors.** This work was
+previously parked as "22 pre-existing errors, unowned, see `e2e/fixtures.ts`". That
+was wrong on both counts. `BackendContent.is_premium` was declared optional while
+content-service declares it required (`app/schemas/__init__.py:124,150`). Because
+`BackendContentPayload` inherits `is_premium` as required, that one `?` made every
+`BackendContent` unassignable to `BackendContentPayload` and cascaded to every call
+site feeding content into the UI — 10 of the 12 errors. Fixed by making the
+declaration match the backend. No cast, no suppression; `ignoreBuildErrors`
+confirmed absent from `next.config`.
+
+**I diagnosed this wrong first, and the correction is worth recording.** I wrote a
+`normalizeContentDocument` to fix the boundary and was about to wire it into
+`getContentList`/`getContentById`. Both the diagnosis and the code were wrong:
+
+- `ContentListResponse` matches `BackendContentListItem` field for field, so the
+  declared type was correct. There was no lie at the boundary.
+- The normalizer defaulted `is_premium` to false, which is **fail-open on a paywall
+  field** — a backend response that dropped the flag would render premium content as
+  free. It also defaulted `status` and `audience_score`, masking the backend
+  regression it existed to catch.
+
+It was deleted, not wired in. The required type should document the guarantee rather
+than paper over its absence. Flagging this because a fail-open default on a paywall
+flag is a plausible thing to "helpfully" reintroduce later.
+
+**Three test failures were pre-existing on `main` and independently blocked CI**,
+since the Frontend CI job runs Test before Build with no `continue-on-error`. Proven
+by stashing the fix: identical three failures. All were wrong assertions, not code
+bugs — `matchPercentage` asserted a UI-type field on the raw DTO (and had a second
+wrong assertion queued behind it); the `searchContent` mock used
+`content_id`/`audience_score` where the search document carries `id`/`rating`; and
+`getTrending` asserted raw passthrough while its siblings all assert
+`rows.map(r => r.id)`. This is why fixing only the types would have left CI red.
+
+**Verified, not assumed:** `npx tsc --noEmit` 0 errors (was 12); `npm run
+type-check` exit 0; `npm run lint` exit 0 (1 pre-existing `exhaustive-deps`
+warning); `npm test -- --run` 847/847 across 46 files; `npm run build` exit 0, 16
+routes. This also unblocked `scripts/verify-csp-nonce.mjs`, which could not run
+before because it needs a production build — **it now passes, all 8 routes serve
+inline scripts carrying the per-request nonce.** That is the end-to-end proof #981
+was still missing, so #981 is now genuinely verified rather than merely closed.
+
+**`init_schemas.py` was silently corrupting tables and reporting success.** Four
+distinct problems. Three are fixed by refusing rather than guessing:
+
+- Two models sharing a table name were merged into one physical table and reported
+  ok. Now refused. This fires on two services and **both are real model bugs**:
+  `admin-service/app/models/admin.py:11` declares its own `Base`, shadowing
+  `__init__.py:49`, for five tables; `billing-service` declares two different
+  `PayoutLedger` models across `models/payout_ledger.py` and `models/__init__.py`
+  for one money table. Written up in `oner-task.md` — fixing either is a schema
+  decision about which definition is canonical, so neither is fixed here.
+- `NOT NULL` with no server default now preflights and refuses with the table,
+  column, row count, and the exact DDL to run by hand. Previously it raised and
+  rolled back `create_all` for the whole service, then reported the last line of
+  stderr, which is always `(Background on this error at: .../sqlalchemy.exc)` — a
+  documentation URL rather than the column that failed.
+- A column carrying unique/index/foreign-key is now refused. `CreateColumn` emits
+  only the definition, so these landed unenforced behind a green exit code. For an
+  idempotency key that is a money invariant lost quietly.
+- Error reporting now surfaces the exception and failing statement.
+
+**Correction to the reviewer, found by running rather than reading:** the collision
+check must compare *distinct* metadata sets, not occurrences. `collect_bases()` hands
+over the same `Base` twice, so counting occurrences flagged all five admin tables and
+broke two services that were fine. First version of this guard was a false positive
+in exactly the direction that looks like a real finding.
+
+**Still open, and still unowned — flagging so they are not mistaken for handled:**
+`content-service` and `streaming-service` declare no
+`opentelemetry-instrumentation-fastapi` at all and `content-service/poetry.lock`
+still resolves 0.49b2, so tracing is dead in both regardless of the #978 core fix;
+`auth-service/app/main.py:151` can echo raw request input, including a plaintext
+password, in a 422; `scripts/auth-flow-check.mjs` can pass on a garbage cookie
+because route protection checks presence only; and `BackendContent.is_hd` is declared
+with no backend column, so the HD badge can never render.
