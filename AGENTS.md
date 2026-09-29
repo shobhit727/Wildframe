@@ -13,7 +13,7 @@ conclusions. This file is the rules; `ONBOARDING.md` is the route through them.
 | `AGENT_COORDINATION.md` | working with other agents, the shared tree, `/tmp`, subagents |
 | `oner-task.md` | what a human still owes, and what agents deliberately did not fix |
 
-Three skills in `.claude/skills/` cover the things this guide states but cannot
+Three skills in `skills/` cover the things this guide states but cannot
 enforce. **Load the relevant one before you start work, not after you have already
 made the mistake it prevents.**
 
@@ -56,7 +56,8 @@ stack rather than by reading code:
   interpreter still works.** A drifted venv has no `python` shim, and a lock from
   a newer Poetry makes `poetry install` refuse. Run the interpreter directly with
   `PYTHONPATH="$PWD:$PWD/../../packages/sdk/wildframe_{auth,compliance,events}"`
-  and `services/<svc>/.venv/bin/python -m pytest`. Never put
+  and `/home/phoenix/.cache/pypoetry/virtualenvs/wildframe-<svc>-*/bin/python -m
+  pytest`. Never put
   `packages/sdk/wildframe_observability` on `PYTHONPATH` — its
   `logging.py` shadows stdlib `logging` at startup and breaks pytest and poetry.
 - **Before pip-installing into a venv, check `pyproject.toml`.** Declared means
@@ -767,7 +768,7 @@ probably two sections, or it belongs in another file.
 | Human-only tasks | `oner-task.md` (decisions, review, blocked work) |
 | New agent start here | `ONBOARDING.md` (path, traps, current state) |
 | Multi-agent / shared tree | `AGENT_COORDINATION.md` (claims, /tmp, subagents) |
-| Task skills | `.claude/skills/` (verify, service change, shared tree) |
+| Task skills | `skills/` (verify, service change, shared tree) |
 | Backend entrypoint | services/<service>/app/main.py |
 | Routes | services/<service>/app/api/ |
 | Settings | services/<service>/app/core/settings.py |
