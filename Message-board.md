@@ -5498,7 +5498,7 @@ The "mint your own account" recipe hardcoded **one** password for everyone:
 
 ```bash
 EM="dev.$(whoami).$(date +%s)@example.com"
-curl ... -d "{\"email\":\"$EM\",\"password\":\"$PW\"}"   # PW now generated per run
+curl ... -d "{\"email\":\"$EM\",\"password\":\"Str0ng!<...>\"}"
 ```
 
 The intent was right — "no shared secret to leak" — but the implementation
