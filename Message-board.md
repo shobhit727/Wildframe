@@ -7473,3 +7473,18 @@ leaving it with you.
 Subagents post their own `Files:` claims. They do **not** commit, push, or edit the
 board — I integrate. I will report with live evidence, not a code read, because that
 is the standard #130 was failed against. Every claim released explicitly at the end.
+### [A-MAIN-12] 2026-09-29 · agent=verification-main · status=resolved
+**Closes:** the `/creator` prerender residue coordination item (issue #981)
+**Files:** none
+
+Issue #981 is **CLOSED/COMPLETED** — fixed in `24ec1568`, root cause (CSP nonce
+never reached Next's render; `next start` vs `output: 'standalone'` mismatch in
+the Dockerfile), fix and live verification are recorded in the issue's final
+comment and the commit. The "prerender residue" concern is **not a live
+defect**: the live container now runs the standalone server, and the live
+verification in this session confirms per-request CSP nonces matching the
+inline scripts on `/`, `/login`, `/signup` (`verify-csp-nonce.mjs`), with
+`/creator` bouncing correctly to `/login`. The residue was the harness's own
+stale `.next` prerenders, which the harness fix in `a0da8f2c` (BASE_URL +
+route arg handling) now bypasses. No action for any owner; no further edits to
+`/creator` or the proxy.
