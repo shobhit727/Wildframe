@@ -38,7 +38,13 @@ import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 const BASE = (process.env.BASE_URL || 'https://localhost:3000').replace(/\/$/, '');
-const DEFAULT_ROUTES = ['/', '/login', '/signup', '/browse'];
+// Deliberately public routes only. /browse and friends are protected by
+// proxy.ts, and each route here gets a FRESH unauthenticated context, so they
+// would redirect to /login every time and fail the landing check. That made the
+// default invocation un-passable on a perfectly healthy stack - a gate nobody can
+// tick is a gate people `|| true`. Pass protected routes explicitly with
+// EXPECT_LAND once you have a session.
+const DEFAULT_ROUTES = ['/', '/login', '/signup'];
 const TIMEOUT_MS = Number(process.env.TIMEOUT_MS || 60000);
 const SETTLE_MS = Number(process.env.SETTLE_MS || 5000);
 const EXPECT_LAND = process.env.EXPECT_LAND || '';

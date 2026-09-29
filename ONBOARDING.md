@@ -39,7 +39,7 @@ cat oner-task.md                   # what a human still owes — READ THIS
 cat Message-board.md               # who is working on what right now
 
 # 2. Bring the stack up (see docs/QUICKSTART.md for full detail)
-python scripts/generate-dev-certs.sh
+bash scripts/generate-dev-certs.sh
 docker compose -f deployments/docker-compose.dev.yml up -d
 
 # 3. Confirm it is actually up before you touch anything
@@ -154,7 +154,7 @@ Trivy over the working tree flags locally generated dev certs, which are gitigno
 `apps/web/certificates/*.pem` are gitignored and never committed. A local Trivy
 non-zero exit over them is not a CI result.
 
-### 8. `apps/web/AGENTS.md` points at a directory that does not exist
+### 8. `apps/web/AGENTS.md` points at a hoisted path
 
 It tells you to read `node_modules/next/dist/docs/` before writing Next.js code. It is
 not in this install. Don't burn time looking — check the version, then the installed
@@ -278,7 +278,16 @@ reload, content-service 500s (#980), OTel 500s (#978).
 **The highest-value open item, and it is unowned:**
 
 ```bash
-cd apps/web && npx tsc --noEmit    # 22 errors
+python -c "import tomllib; tomllib.load(open('pyproject.toml','rb'))"   # was: TOMLDecodeError
+```
+
+One missing `exclude = [` line at `pyproject.toml:153` made the root manifest invalid
+TOML, which broke `poetry install` in 16 backend jobs, `ruff`, and pytest config
+parsing — roughly 20 of 24 CI failures. Introduced by `d5fadb23` ("resolve stash
+conflict"). **Fixed on this branch.** The next-highest item is the frontend type break:
+
+```bash
+cd apps/web && npx tsc --noEmit    # 11 errors
 ```
 
 22 pre-existing TypeScript errors from commit `e8b6666b` (content-normalization types

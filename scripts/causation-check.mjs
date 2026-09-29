@@ -118,17 +118,26 @@ async function main() {
   }
 
   const rendered = (o) => o.inputs > 0 || o.text.length > 0;
-  const baseRenders = KEEP ? !rendered(withHeader) : rendered(withHeader);
-  const testRenders = KEEP ? rendered(withoutHeader) : !rendered(withoutHeader);
 
-  if (baseRenders) {
-    console.log('  The page already renders as served, so this header is not what is\n');
-    console.log('  breaking it. Either the fault is elsewhere, or you need a route that\n');
-    console.log('  actually fails. No cause established.\n');
+  // Naming matters here, and the previous version had this inverted: it reached
+  // "CAUSE SUPPORTED" only when the header was demonstrably NOT the cause. A
+  // truth table over the four combinations is in scripts/README.md.
+  //
+  // baseline: what happens with the header as served
+  // variant:  what happens with the header removed
+  const baselineRenders = rendered(withHeader);
+  const variantRenders = rendered(withoutHeader);
+
+  // Nothing to explain if the page already works as served, or if both arms
+  // behave identically.
+  if (baselineRenders || baselineRenders === variantRenders) {
+    console.log('  The page renders as served (or behaves identically either way), so this\n');
+    console.log('  header is not what is breaking it. Either the fault is elsewhere, or\n');
+    console.log('  you need a route that actually fails. No cause established.\n');
     process.exit(3);
   }
 
-  if (testRenders) {
+  if (variantRenders && !baselineRenders) {
     console.log(`  CAUSE SUPPORTED — removing '${HEADER}' alone makes the page render.\n`);
     console.log('  That is a demonstrated cause, not a correlation. Now fix that header.\n');
     process.exit(0);

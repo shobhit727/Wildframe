@@ -11,7 +11,7 @@ commit messages and on `Message-board.md`.
 
 ## BLOCKER — CI and the image build are broken
 
-### 1. `npm run build` fails with 22 pre-existing TypeScript errors
+### 1. `npm run build` fails with 11 pre-existing TypeScript errors
 
 **Owner: unassigned. This is the highest-value thing left.**
 
