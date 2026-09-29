@@ -111,6 +111,15 @@ describe('inline bootstrap scripts are admitted by the served CSP', () => {
    *   scope, so its inline scripts carry no nonce — which is exactly what
    *   `.next/server/app/<route>.html` contained for every broken route.
    */
+    // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag
+    // `csp` is not external input. It is the return of buildCspHeader, a local
+    // helper, and the <script> occurrences below are string literals this file
+    // builds to assert against. Semgrep flags the helper's parameter because it
+    // cannot see through the call boundary, so it treats a locally-derived string
+    // as untrusted. Scoped to this one helper, with the reason stated, rather than
+    // widening .semgrepignore or muting the rule repo-wide: this is the test that
+    // guards the #981 outage, so muting it globally would blind us to the very
+    // thing it exists to catch.
   const admitsInlineScripts = (csp: string, html: string): boolean => {
     const expected = nonceFromHeader(csp);
     return inlineScriptNonces(html).every((actual) => expected !== undefined && actual === expected);
