@@ -202,6 +202,31 @@ agents may be active at once.
   entries in this repo are corrections. Quietly fixing the code and leaving the wrong
   conclusion in the history helps nobody.
 
+## 4c. When to hand work to a subagent
+
+You have real multi-agent dispatch available. Use it rather than writing a paragraph
+about why you did not.
+
+**Dispatch one when** the investigation is done and the rest is execution; when the
+task needs a long verification loop (rebuild, restart, browser, prove red/green); when
+you want an independent second opinion on a diagnosis you are not confident in; or
+when two tasks are genuinely independent.
+
+**Do not dispatch** for something small, something you already know the fix for, or a
+decision rather than an implementation.
+
+**Write the prompt as a handover.** The highest-value part is **what you already
+ruled out, with evidence**. An agent told "the CSP is the cause" re-tests the CSP; one
+told "the proxy sets the request header, Next reads it at render.js:407, the nonce
+regex accepts our hex nonce, and both delivery mechanisms were tried" starts somewhere
+new. Also state the hard constraints, what you have already changed, that it must not
+commit or push (other agents share the tree), and that an honest failure report beats
+a confident wrong one.
+
+**Verify its report yourself.** An agent saying "fixed" is a claim, not evidence. Every
+agent that reported a fix in this audit was right about the code and one was still
+wrong about the cause. A trustworthy report also says what it did **not** do.
+
 ## 5. Working here
 
 **Claim before you edit.** Post a `Files:` entry to `Message-board.md` and check for an

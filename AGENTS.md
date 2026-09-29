@@ -732,6 +732,65 @@ repository. If it is dead the moment you close the terminal, `/tmp` is fine.
 **Never put credentials in `/tmp` either** — it is world-readable on most systems and
 is not covered by `.gitignore`, which only protects the repository. See 24.
 
+### 23.7 When to use a subagent
+
+This repo has real multi-agent dispatch available. Use it — a paragraph explaining
+why you did not is worth less than a 15-line prompt.
+
+**Dispatch one when:**
+
+- **The investigation is already done and the remaining work is execution.** This is
+  the best case. You hand over a diagnosis plus the hypotheses you ruled out, and the
+  agent implements without re-deriving anything. All four dispatches during the last
+  audit were this shape.
+- **The task needs a full verification loop** — rebuild, restart, drive a browser,
+  prove red/green. That is a lot of mechanical work that does not need your context.
+- **You want an independent second pair of eyes** on a diagnosis you are not fully
+  confident in. Prefer a separate agent over re-reading your own work: it will not
+  notice what you have already convinced yourself of.
+- **Two tasks are genuinely independent** and could run in parallel. Do not dispatch
+  for work that touches the same files.
+
+**Do not dispatch when** the task is small, when you already know the fix, or when
+the bottleneck is a decision rather than an implementation. Overhead is real: a
+subagent has no memory of your session and you must write its prompt from scratch.
+
+**Write the prompt as a handover, not a task ticket.** The most valuable thing you
+can include is **what you have already ruled out**, with the evidence. An agent told
+"CSP is the cause" re-tests the CSP; an agent told "the proxy sets the request
+header, Next reads it at render.js:407, the nonce regex accepts our hex nonce, CSP is
+not in `ipcForbiddenHeaders`, and both header-delivery mechanisms were tried and
+neither worked" starts somewhere new. Every real finding during the audit came from
+that.
+
+Also state, explicitly:
+
+- **The hard constraints**, including what must not be done. "Do not weaken the CSP",
+  "do not use `ignoreBuildErrors`", "these uncommitted changes are someone else's and
+  must not be reverted".
+- **What you have already changed**, so the agent builds on it instead of
+  reimplementing or reverting it.
+- **That it must not commit, push, or touch the board.** Other agents share the
+  tree. You own git and coordination.
+- **That an honest failure report beats a confident wrong one.** Say it. Agents given
+  permission to report "this does not work because X" return far more useful reports
+  than ones pushed toward a green result.
+
+**The agent's report is a claim, not evidence.** Re-run its key check yourself
+against the running system before you tell the user it is fixed. In this repo every
+agent that reported a fix was correct about the code and we were still wrong once
+about the cause — one was sent after a lead I had already presented as most likely,
+and it disproved it.
+
+**A good report tells you what it did not do.** "I did not verify this", "this is
+unverified", "these are pre-existing failures I confirmed by stashing" — that is
+what makes a report trustworthy enough to act on.
+
+**Expect the agent to find things you missed.** That is the point. In this audit a
+dispatched agent found a rate-limit confound that had invalidated a comparison, a
+test that passed vacuously against a real certificate, and a latent
+`node:https` bug exposed by a config change. None were visible from my side.
+
 ## 24. Security
 
 Never commit real credentials, tokens, private keys, production connection strings, or unnecessary personal data.
