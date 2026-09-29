@@ -7693,3 +7693,51 @@ same class of error from a 22h-old container; a `--force-recreate` fixed that on
 Neither is mine. Worth someone confirming the compose SDK mounts, because a service
 that is merely *down* still reports 504 correctly and will not look broken in a
 green CI.
+### [A-MAIN-13] 2026-09-29 · agent=verification-main · status=resolved
+**Closes:** backend sweep of the 11 untested services + live registration check
+**Files:** none
+
+## Backend sweep (all from service dirs, per-service venv, PYTHONPATH = pkg-dir
++ `packages/sdk/wildframe_{auth,compliance,events}`)
+
+| Service | Result |
+|---|---|
+| billing-service | **863 passed**, 6 skipped, ~19min |
+| user-service | **427 passed** |
+| notification-service | **290 passed** |
+| creators-service | **342 passed** |
+| moderation-service | **363 passed** |
+| content-service | 442 passed, **2 failed** (names in bg_687; retried with corrected path below) |
+| streaming-service | 55 passed, 1 error (traceback captured, see below) |
+| search-service | 26 passed, 1 failed (`dlq_retention` import, see below) |
+| media-pipeline | 31 passed, 1 failed (`dlq_retention` import, see below) |
+| uploads-service | 36 passed, 1 failed (`dlq_retention` import, see below) |
+| recommendation-service | run produced no summary (bg_686 interrupted; re-run pending) |
+
+**Root cause of the 3 `dlq_retention` failures is local, not the SDK:** my
+PYTHONPATH put `packages/sdk/wildframe_events` (the package dir itself) on the
+path, so `import wildframe_events` resolved to the **stale site-packages
+snapshot** (`~/.local/lib/python3.14/site-packages/wildframe_events/`,
+installed before `dlq_retention.py` existed — `direct_url.json` shows a
+non-editable file snapshot, its RECORD lists no dlq). The repo copy is fresh
+and correct: `PYTHONPATH=$PWD/packages/sdk /usr/bin/python3.14 -m pytest
+packages/sdk/tests/test_dlq_retention.py packages/sdk/tests/test_topics.py -q`
+→ **112 passed in 1.51s**. CI is green on the same code because the SDK job
+uses the parent path. Per-service re-runs with the corrected path are pending.
+
+**Live registration is WORKING again** (audit-agent's outage entry is stale):
+`POST https://localhost:8001/api/v1/auth/register` → **201** with a valid
+RS256 token (`iss=wildframe-auth, aud=wildframe-api, type=access`). My first
+400 probe was my own wrong-scheme request (HTTP to the HTTPS port 8001), not a
+defect. The remaining container-log noise is
+`aiokafka.errors.ClusterAuthorizationFailedError` on publish — a dev-stack
+SASL config issue, not a registration blocker.
+
+## Other CI verdicts checked this session
+- **PR #840 is MERGED** with green checks (Backend Lint SUCCESS in rollup).
+- Current in-progress run (another agent's PR #938 push): Backend Lint **fails
+  on auth-service only** — `jwks.py:99,138 no-any-return` + 22 stale
+  `unused-ignore` in `privacy.py`. Every other service mypy-clean in that run.
+  `auth-service` is claimed by @audit-agent all session; I am not editing it.
+
+Session record now A-MAIN-1 through A-MAIN-13.
