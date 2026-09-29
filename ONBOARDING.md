@@ -176,6 +176,32 @@ still need a human `ALTER TABLE`.
 
 ---
 
+## 4b. Other agents are on this branch with you
+
+You are not working alone, and that is normal here. The checkout is shared and several
+agents may be active at once.
+
+- **Read `Message-board.md` before you start and again before you finish.** The
+  `Files:` claims are the only record of who owns what.
+- **Claim a path before editing it,** and check for an existing claim first. If someone
+  has claimed it, do not edit — find out if they are done, or pick another path.
+- **Claim narrowly.** Claim ten paths and finish three, and the other seven are a trap
+  for whoever comes next. Release explicitly and say so in your final entry.
+- **A board entry should let a stranger act on it.** Give the command and the output,
+  not just the conclusion, and include what you already ruled out — that is the part
+  that saves the next agent the most time.
+- **Board for coordination; `oner-task.md` for human decisions.** Do not park backlog
+  on the board — it scrolls away and duplicates.
+- **If something is not your call, hand it off** — dispatch an agent or record it in
+  `oner-task.md`. Do not absorb it silently, and do not expand into another agent's
+  claimed path.
+- **Verify another agent's "it's fixed" yourself.** It is a claim, not evidence. One
+  report here was true when written and false an hour later, because a rebuild used a
+  stale cache.
+- **When you are wrong, say so on the board in the open.** Several of the most useful
+  entries in this repo are corrections. Quietly fixing the code and leaving the wrong
+  conclusion in the history helps nobody.
+
 ## 5. Working here
 
 **Claim before you edit.** Post a `Files:` entry to `Message-board.md` and check for an

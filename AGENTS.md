@@ -527,6 +527,23 @@ batching (one push per ~10 minutes), not weakening the guard. Do not silence
 `cancel-in-progress` to make the dashboard look greener: that hides real
 regressions behind stale runs.
 
+**Conclusions drawn from a bad check**
+- **Do not report a lead as a finding.** A strong hypothesis was presented to the
+  user as the likely cause, and it turned out to be disproven by the very agent
+  dispatched to test it. Say "this is the strongest lead" until it is proven, and
+  correct it publicly when it is not.
+- **A check that cannot fail is worse than no check.** Reading `self.__next_f: 0`
+  as "the script never ran" produced a confident "the site is still blank" when the
+  page was rendering perfectly. React consumes those pushes; the check was wrong, the
+  conclusion built on it was wrong, and it nearly caused a working fix to be
+  reverted. Verify the check itself before trusting its output.
+- **Grepping a rendered page for markup is not a test.** A curl-and-grep for
+  `<input` said "0 inputs" on a page that a real browser showed with five. Use a
+  browser for anything the browser renders.
+- **Mocking an environment that can raise can mask the real error.** A test that
+  patched a module whose import had broken passed, because the patch replaced the
+  failure with a stub. The app was fully broken underneath.
+
 **Local verification that lied**
 
 - **Install before you type-check or test.** CI runs
@@ -617,6 +634,52 @@ consequence each one produced.
   tree rather than leaving it for the next agent.
 - **Resolving a board or docs conflict by taking `origin`.** That silently discards
   your appended text while `rebase --continue` commits the reduced file anyway.
+
+### 23.5 Working with other agents
+
+Other agents are working this branch in the same checkout, right now. Coordination
+is not overhead here; it is how work survives.
+
+**Read the board before you start and before you finish.** The `Files:` claims are the
+only record of who owns what. An agent that never reads it will eventually edit a file
+someone else is mid-way through, and the conflict will surface as a broken file rather
+than as a conflict.
+
+**Post a `Files:` claim before you edit, and check for an existing claim first.** If
+someone has already claimed the path, do not edit it — find out whether their work is
+finished, or pick a different path. Overlap is the main way work is lost in this repo.
+
+**What goes on the board** is coordination: claims, handovers, and findings that block
+other people. **What goes in `oner-task.md`** is anything a human must decide. Do not
+put backlog on the board; it scrolls away and duplicates. Do not put a human decision
+on the board; see 23.3.
+
+**A board entry should be readable by someone with no context.** State what you
+observed, with the command and the output, not the conclusion alone. "500 with
+`UndefinedColumnError: column content.price_usd does not exist`" is useful; "content
+is broken" is not. Include what you already ruled out, so the next agent does not
+re-derive it — that is the single most valuable part of a handover.
+
+**Hand off rather than silently absorbing.** If a task is outside what you were asked
+to do, or needs a decision that is not yours, dispatch an agent for it or record it in
+`oner-task.md`. Do not quietly leave it undone, and do not quietly expand into another
+agent's claimed path. This repo has real multi-agent coordination available; using it
+beats writing a paragraph about why you did not.
+
+**Take only what you can finish.** If you claim ten paths and finish three, the other
+seven are now a trap for the next agent. Claim narrowly, release explicitly, and say in
+your final entry which claims you have released.
+
+**Verify another agent's report rather than repeating it.** An agent saying a bug is
+fixed is a claim, not evidence. Re-run the check yourself against the running system.
+In this repo an agent reported a green end-to-end flow that another agent then broke
+by rebuilding the image with a stale cache, so the report was true when written and
+false an hour later.
+
+**When you are wrong, say so on the board, in the open.** Several of the most useful
+entries in this repo are corrections: a wrong root cause, a bad verification command,
+an overstated scope. Record them where the next agent will read them instead of
+quietly fixing the code and leaving the wrong conclusion in the history.
 
 ## 24. Security
 
