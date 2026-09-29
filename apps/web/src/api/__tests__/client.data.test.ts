@@ -272,7 +272,7 @@ describe('searchContent', () => {
       on('GET', '/search/query', {
         query: 'neo',
         results: [
-          { content_id: 'c9', title: 'Neon Drift', description: 'Racing', content_type: 'show', audience_score: 8.5 },
+          { id: 'c9', title: 'Neon Drift', description: 'Racing', content_type: 'show', rating: 8.5 },
         ],
       }),
     ]);
@@ -352,7 +352,9 @@ describe('getTrending degradation', () => {
 
     const rows = await apiClient.getTrending();
 
-    expect(rows).toEqual([{ id: 't1' }, { id: 't2' }]);
+    // Rows are normalized, so they carry synthesized defaults as well as the
+    // upstream id. Assert the identity mapping, not the incidental shape.
+    expect(rows.map((r) => r.id)).toEqual(['t1', 't2']);
     expect(requests[0].params).toEqual({ limit: 20 });
   });
 

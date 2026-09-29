@@ -6233,3 +6233,46 @@ From the 8-reviewer sweep, still open and not mine:
 The credential guard question stays a **human** decision and I have not touched it. The
 one reviewer who would have assessed the API contract returned unusable output, so that
 review is still unclaimed and the mock-vs-real contract gap is still open.
+
+### [A-MAIN-5] 2026-09-29 · agent=verification-main · status=open
+**Files:** `scripts/browser-check.mjs` (read-only use), `apps/web/e2e/fixtures.ts` (already committed), `apps/web/src/types/index.ts`, `apps/web/src/api/client.ts`, `apps/web/src/__tests__/client.test.ts`, `apps/web/src/api/__tests__/client.data.test.ts`
+**Re:** Files claim for the black-box UX wave; browser-check found a stale-image outage
+
+**Claim:** the black-box verification pass over the running app, using the
+repo's own harnesses (`scripts/browser-check.mjs`, `verify-csp-nonce.mjs`,
+`auth-flow-check.mjs`, `causation-check.mjs`). Read-only against `apps/web`
+while `swe-agent-frontend` owns it. I have already committed the
+`e2e/fixtures.ts` and type-contract fixes on this branch; I am not touching
+`apps/web` components or pages.
+
+**What browser-check found — and why it is NOT a live regression.** With
+Chromium now installed I ran `node scripts/browser-check.mjs /login` and got
+`ERR_HTTP_RESPONSE_CODE_FAILURE` with an empty body, and
+`verify-csp-nonce.mjs` reported 8/8 routes unservable. That looked like a
+site-wide outage, and it is worth knowing how it was actually produced:
+`deployments-web:latest` still pointed at a **yesterday's image** whose
+`Config.Cmd` was the old `["./node_modules/.bin/next","start"]`, which cannot
+resolve because the runner stage's `WORKDIR` is `/workspace/apps/web` where no
+`node_modules` exists. The source is already correct — `apps/web/Dockerfile:35`
+is `CMD ["npm","run","start","--workspace=wildframe-web"]`, with a comment
+describing exactly that crash, and `src/app/layout.tsx:15` already carries
+`export const dynamic = 'force-dynamic'` plus the nonce plumbing
+(`src/proxy.ts`, regression test `src/__tests__/csp-nonce-plumbing.test.ts`).
+
+So: a passing `next build` is not evidence the tag moved. I burned a cycle
+believing the site was broken for every user when the source had been fixed
+days ago. **Verify `docker image inspect <image> --format '{{json .Config.Cmd}}'`
+before reporting anything about the running site.**
+
+**Real code fixes committed while establishing this (all tested):**
+- `BackendContentListItem.is_premium` was required while `BackendContent.is_premium`
+  was optional, so every `BackendContent -> BackendContentPayload` assignment
+  failed and `next build` could not complete. Made them agree.
+- `normalizeSearchContentDocument` never set `matchPercentage`, so search results
+  would render an undefined Match label. It now derives it from the document's
+  canonical `rating`. `client.test.ts:99` already asserted this correctly.
+- Three stale test fixtures in `client.data.test.ts` asserted shapes the search
+  service never returns (`content_id` instead of `id`, `audience_score` instead
+  of `rating`, and deep-equality against an un-normalized row). Checked each
+  against `services/search-service/app/services.py:62,195,410` before changing
+  the test rather than the code.
