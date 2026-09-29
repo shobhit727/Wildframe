@@ -20,7 +20,7 @@
  *     dependency on a new API shows up as a failed assertion.
  */
 import { test as base, expect, type Page } from '@playwright/test';
-import type { BackendContentListItem, BackendGenre } from '@/types';
+import type { BackendContentListItem, BackendGenre, BackendSearchContentDocument } from '@/types';
 
 export const API_ORIGIN = 'https://localhost:8000';
 export const REFRESH_COOKIE = '__Host-wf_refresh';
@@ -90,6 +90,9 @@ interface FixtureContent {
   release_date?: string | null;
   duration_minutes?: number | null;
   audience_score: number;
+  imdb_rating?: number | null;
+  is_premium?: boolean;
+  cast_members?: { name: string }[];
   /** Personalised match percentage, 0-100. The UI renders `Math.round()` of it. */
   matchPercentage: number;
   content_rating?: string | null;
@@ -111,6 +114,7 @@ export const MOVIES: FixtureContent[] = [
     release_date: '2024-03-18',
     duration_minutes: 118,
     audience_score: 84,
+    matchPercentage: 84,
     content_rating: 'PG-13',
     is_hd: true,
     poster_url: null,
@@ -127,6 +131,7 @@ export const MOVIES: FixtureContent[] = [
     release_date: '2023-11-02',
     duration_minutes: 96,
     audience_score: 71,
+    matchPercentage: 84,
     content_rating: 'R',
     is_hd: false,
     poster_url: null,
@@ -143,11 +148,12 @@ export const MOVIES: FixtureContent[] = [
     release_date: '2025-01-09',
     duration_minutes: 104,
     audience_score: 90,
+    matchPercentage: 84,
     content_rating: 'PG',
     is_hd: true,
     poster_url: null,
     backdrop_url: null,
-    genres: [{ id: 'g-1', name: 'Thriller' }],
+    genres: [{ id: 'g-1', name: 'Thriller', slug: 'thriller' }],
   },
   // Third Thriller title: `browse` only renders a genre row once a genre has
   // at least three items, so this entry is what makes the "Thriller" row
@@ -162,11 +168,12 @@ export const MOVIES: FixtureContent[] = [
     release_date: '2024-09-27',
     duration_minutes: 88,
     audience_score: 79,
+    matchPercentage: 84,
     content_rating: 'PG-13',
     is_hd: false,
     poster_url: null,
     backdrop_url: null,
-    genres: [{ id: 'g-1', name: 'Thriller' }],
+    genres: [{ id: 'g-1', name: 'Thriller', slug: 'thriller' }],
   },
 ];
 
@@ -181,6 +188,7 @@ export const SHOWS: FixtureContent[] = [
     release_date: '2022-06-14',
     duration_minutes: null,
     audience_score: 88,
+    matchPercentage: 84,
     content_rating: 'TV-MA',
     is_hd: true,
     poster_url: null,
