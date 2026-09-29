@@ -30,6 +30,26 @@ export default function proxy(request: NextRequest) {
     (route) => pathname === route || pathname.startsWith(`${route}/`),
   );
 
+  // A page route has no handler for POST, PUT or DELETE, but Next serves the
+  // page for any verb, so a write against /login returns the page with a
+  // success status and a client that checks res.ok records a false success.
+  // Reject them here, before the page route, and answer OPTIONS (a CORS
+  // preflight) with 204 and an Allow header instead of the redirect it got
+  // before, which made cross-origin preflight fail on every route.
+  if (request.method === 'OPTIONS') {
+    const res = new NextResponse(null, { status: 204 });
+    res.headers.set('Allow', 'GET, HEAD, OPTIONS');
+    return withCsp(res, csp);
+  }
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    const res = NextResponse.json(
+      { error: { code: 'METHOD_NOT_ALLOWED', message: `${request.method} is not supported on this route` } },
+      { status: 405 },
+    );
+    res.headers.set('Allow', 'GET, HEAD, OPTIONS');
+    return withCsp(res, csp);
+  }
+
   if (isProtectedRoute && !token) {
     return withCsp(NextResponse.redirect(new URL('/login', request.url)), csp);
   }
