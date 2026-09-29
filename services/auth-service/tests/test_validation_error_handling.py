@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 VALID_REGISTRATION = {
     "email": "handler-regression@example.com",
-    "password": "Zq7!vR2m#xL9pTn4W",
+    "password": "Str0ng!Passw0rd#2026",
     "first_name": "Handler",
     "last_name": "Regression",
 }

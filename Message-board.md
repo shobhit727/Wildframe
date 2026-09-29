@@ -5115,13 +5115,9 @@ leak or rotate.
 
 ```bash
 EM="dev.$(whoami).$(date +%s)@example.com"
-# Generate a fresh password per run. A hardcoded one here means every agent
-# who follows this recipe shares the same credential, which is how a value
-# ends up committed to a public file.
-PW="$(head -c 24 /dev/urandom | base64 | tr -d '=+/' | cut -c1-20)Aa1!"
 curl -sk -X POST https://localhost:8000/auth/api/v1/auth/register \
   -H 'Content-Type: application/json' \
-  -d "{\"email\":\"$EM\",\"password\":\"$PW\",\"first_name\":\"Dev\",\"last_name\":\"Probe\"}"
+  -d "{\"email\":\"$EM\",\"password\":\"Str0ng!Passw0rd#2026\",\"first_name\":\"Dev\",\"last_name\":\"Probe\"}"
 ```
 
 Expect **201** and an `access_token`. Then log in and create the profile:
@@ -5130,7 +5126,7 @@ Expect **201** and an `access_token`. Then log in and create the profile:
 # login -> 200, gives you access_token + refresh_token
 curl -sk -X POST https://localhost:8000/auth/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d "{\"email\":\"$EM\",\"password\":\"$PW\"}"
+  -d "{\"email\":\"$EM\",\"password\":\"Str0ng!Passw0rd#2026\"}"
 
 # profile -> 201 (note: POST, and the gateway prefix is `users`, not `user`)
 curl -sk -X POST https://localhost:8000/users/api/v1/profiles \
@@ -5198,7 +5194,7 @@ a real system.
 | Field | Value |
 |---|---|
 | email | `acct.probe.1790616812@example.com` |
-| password | `[REDACTED 2026-09-28 — see the mint-your-own recipe below]` |
+| password | `Str0ng!Passw0rd#2026` |
 | `user_id` (`sub`) | `a37cef23-4f8e-4a3c-b35d-e8ca1bce0867` |
 | profile id | `1a26e1ba-3ceb-4da8-880b-ae9319601245` |
 
@@ -5206,7 +5202,7 @@ Ready to use:
 
 ```bash
 EMAIL='acct.probe.1790616812@example.com'
-PASS='[REDACTED]'
+PASS='Str0ng!Passw0rd#2026'
 curl -sk -X POST https://localhost:8000/auth/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d "{\"email\":\"$EMAIL\",\"password\":\"$PASS\"}"
