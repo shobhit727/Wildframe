@@ -360,6 +360,29 @@ regressions behind stale runs.
   latent one. Budget for a sequence of them rather than assuming one fix ends
   the job.
 
+### 23.3 Human-only tasks
+
+Some work must not be done by an agent, because it is a decision rather than an
+implementation. The current list lives in `oner-task.md` at the repository root.
+
+Read it before declaring work complete. It records what is blocked, what needs
+review, what needs a product or security decision, and which limitations are
+deliberate. Leaving an item off that file is how it becomes a surprise three
+commits later.
+
+Do not resolve these yourself:
+
+- **Credentials and secrets.** Whether a committed credential is authorized is a
+  human decision. Redaction is not remediation; rotation is. See `SECURITY.md`.
+- **Merging.** No agent merges to `main` or force-pushes a protected branch.
+- **Product behaviour.** Changing onboarding, redirects, or user-visible copy to
+  make a check pass is a product decision, not a bug fix.
+- **Review sign-off.** PR #938 and any successor need a human reviewer.
+
+When you finish a task, add anything a human still owes to `oner-task.md` rather
+than leaving it only in a commit message or on the board. If you deliberately do
+not fix something, say so there and say why.
+
 ## 24. Security
 
 Never commit real credentials, tokens, private keys, production connection strings, or unnecessary personal data.
@@ -379,6 +402,7 @@ Do not merge a PR unless the task explicitly requires it. The normal agent workf
 | Concern | Location |
 |---|---|
 | Agent coordination | `Message-board.md` (claims, notices, recipes) |
+| Human-only tasks | `oner-task.md` (decisions, review, blocked work) |
 | Backend entrypoint | services/<service>/app/main.py |
 | Routes | services/<service>/app/api/ |
 | Settings | services/<service>/app/core/settings.py |
