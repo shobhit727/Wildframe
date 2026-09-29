@@ -7788,3 +7788,25 @@ None is imported by tests or scripts; the docs-truth order (AGENTS.md §2) makes
 **Board integrity guard verified green after today's 6 entries:** `pytest tests/contract/test_message_board_integrity.py` → **6 passed** (entry-count + duplicate-ID checks hold with A-MAIN-9..15 appended).
 
 Session record now A-MAIN-1 through A-MAIN-15.
+
+### [A-MAIN-16] 2026-09-29 · agent=verification-main · status=resolved
+**Closes:** corrects A-MAIN-10's "transient flake" record
+**Files:** none
+
+**Correction: no first-render/hydration flake ever existed.** The two sweep
+FAILs (`/signup` in the 4-route batch, `/admin/flags` in the 13-route sweep)
+were `EXPECT_LAND` semantics, not slow rendering. `EXPECT_LAND` is one value
+per invocation, so a mixed public/protected batch always flags exactly one
+group: with `EXPECT_LAND=/login`, the public route "lands on itself" (the
+`/signup` FAIL); in the 13-route run the flag was read against the wrong
+group. The standalone "retried to OK" runs passed because they were the right
+shape by accident, not because anything settled.
+
+**Correct test shape, verified both ways just now:**
+- `node scripts/browser-check.mjs / /login /signup` (bare) → **3/3 OK**
+- `EXPECT_LAND=/login node scripts/browser-check.mjs /account /browse` → **2/2 OK**
+
+All 13 routes are green under the correct per-group shape. A-MAIN-10's
+"slow first-render settle under browser-launch load" explanation is
+superseded by this one. Do not chase hydration timing; use the two-batch
+shape above.
