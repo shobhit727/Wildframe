@@ -65,6 +65,19 @@ const inlineScriptNonces = (html) =>
 const SESSION_HEADERS = { cookie: '__Host-wf_refresh=verify-only-presence-token' };
 
 async function main() {
+  // BASE_URL makes this script verify a RUNNING server — typically the
+  // container on :3000 — instead of spawning its own. Without it the script
+  // serves whatever .next happens to sit in apps/web: a stale build predating
+  // a force-dynamic fix reports a false site-wide CSP failure (issue #981's
+  // own symptom) about code that was already correct, and the BUILD_ID check
+  // below cannot distinguish a fresh build from a stale one.
+  const liveBase = process.env.BASE_URL?.replace(/\/$/, '');
+  if (liveBase) {
+    const { default: check } = await import('./verify-csp-live.mjs');
+    await check(liveBase);
+    return;
+  }
+
   if (!existsSync(join(WEB_DIR, '.next', 'BUILD_ID'))) {
     console.log('· no production build found, running `next build` (this takes a minute)…');
     await run('npm', ['run', 'build'], { cwd: WEB_DIR });

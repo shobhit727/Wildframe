@@ -150,7 +150,13 @@ async function main() {
     // common version of this and was being reported as OK.
     const asked = r.route.split('?')[0].replace(/\/$/, '');
     const landedClean = r.landed.split('?')[0].replace(/\/$/, '');
-    if (asked && landedClean && landedClean !== asked) {
+    // EXPECT_LAND is what makes a protected route certifiable: the app's
+    // documented unauthenticated behaviour for /browse, /watch, /my-list,
+    // /account, /billing and /creator is a 307 to /login, and without this
+    // branch the redirect problem fires on every one of them, so no protected
+    // route can ever print OK. When the landing matches what was asked for,
+    // the bounce is correct and is not a problem.
+    if (asked && landedClean && landedClean !== asked && !(EXPECT_LAND && landedClean === EXPECT_LAND.replace(/\/$/, ''))) {
       problems.push(`landed on ${r.landed} instead of ${r.route}`);
     }
     if (EXPECT_LAND && landedClean !== EXPECT_LAND.replace(/\/$/, '')) {
