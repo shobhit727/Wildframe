@@ -2,7 +2,7 @@
 
 **Branch:** `audit/fix-open-github-issues` · **PR:** [#938](https://github.com/shobhit727/Wildframe/pull/938) (OPEN, MERGEABLE, no review yet) · **Base:** `main` (protected — do not push, merge, or force-push it)
 
-Last updated: 2026-09-28. Produced while fixing the Docker stack on the audit branch.
+Last updated: 2026-09-28. New agents should start with `ONBOARDING.md`. Produced while fixing the Docker stack on the audit branch.
 Every item below is a decision, a review, or a piece of work an agent deliberately
 did not do. Nothing here is a surprise left at the end — the reasoning is in the
 commit messages and on `Message-board.md`.

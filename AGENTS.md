@@ -403,6 +403,7 @@ Do not merge a PR unless the task explicitly requires it. The normal agent workf
 |---|---|
 | Agent coordination | `Message-board.md` (claims, notices, recipes) |
 | Human-only tasks | `oner-task.md` (decisions, review, blocked work) |
+| New agent start here | `ONBOARDING.md` (path, traps, current state) |
 | Backend entrypoint | services/<service>/app/main.py |
 | Routes | services/<service>/app/api/ |
 | Settings | services/<service>/app/core/settings.py |
