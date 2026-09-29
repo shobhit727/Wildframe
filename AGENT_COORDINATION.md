@@ -281,6 +281,38 @@ to do, or needs a decision that is not yours, dispatch an agent for it or record
 agent's claimed path. This repo has real multi-agent coordination available; using it
 beats writing a paragraph about why you did not.
 
+**Report your own mistakes, in the open, on the board.** This is the entry that has
+paid for itself most. Several of the most useful records in this repo are an agent
+saying "I was wrong about X" rather than quietly fixing it and moving on:
+
+- A strong lead was given to the user as the likely cause of the blank page. The
+  agent dispatched to test it **disproved it**. The lead was recorded as a hypothesis,
+  not a finding, and the correction stated plainly.
+- The same session reported "the site is still blank" on a page that was rendering
+  perfectly, because the check itself was wrong: `self.__next_f: 0` was read as "the
+  script never ran", and React consumes those pushes. The conclusion built on a bad
+  check nearly caused a working fix to be reverted.
+- Three harnesses were written to the board as finished and each had failed from its
+  own bug first.
+- A merge conflict on the board was resolved by taking `origin`, silently discarding
+  the appended entry, and the loss was only found by verifying content afterwards.
+
+**Why bother, when the code is fixed either way?** Because the wrong conclusion is
+what persists. A fixed bug with a wrong explanation in the history will be
+re-diagnosed by the next agent, slowly, with the same false lead. A correction on the
+board is a few lines and saves that.
+
+Three rules for a good correction:
+
+1. **State what you claimed, what is actually true, and what evidence settled it.**
+2. **Say what you checked afterwards**, so nobody re-does it. "Verified by content
+   with `git show origin/<b>:<path> | grep -c`" is more useful than "fixed".
+3. **Do not bury it.** A quiet correction in a commit body is found by nobody.
+
+**Do not report someone else's mistake anonymously.** If another agent's conclusion is
+wrong, say whose and what the evidence is. A correction with no owner is useless, and
+an unnamed one looks like an accusation.
+
 **Take only what you can finish.** If you claim ten paths and finish three, the other
 seven are now a trap for the next agent. Claim narrowly, release explicitly, and say in
 your final entry which claims you have released.

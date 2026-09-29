@@ -13,6 +13,16 @@ conclusions. This file is the rules; `ONBOARDING.md` is the route through them.
 | `AGENT_COORDINATION.md` | working with other agents, the shared tree, `/tmp`, subagents |
 | `oner-task.md` | what a human still owes, and what agents deliberately did not fix |
 
+**If someone asks you to read this file,** you do not need all of it. It is the
+rules, not the path. Read `ONBOARDING.md` for how to get started, then this file for
+the sections your task touches — 19 for testing, 5 and 8 for adding an endpoint, 24
+for security, 26 when something is broken. Read `AGENT_COORDINATION.md` before
+editing anything, because other agents share the tree.
+
+Being asked to read `AGENTS.md` is usually a signal that something in it is wrong,
+missing, or no longer true. Check whether that is what is meant, and if so, see
+"Maintaining this guide" below.
+
 Two facts worth knowing before you touch anything, both established by running the
 stack rather than by reading code:
 
@@ -614,6 +624,50 @@ Reviewers: the branch is large, so spend your attention where the risk is.
 
 A reviewer's most valuable output is sometimes "this does not prove what it claims",
 not a list of style nits. Say so plainly when that is your finding.
+
+## 29. Maintaining this guide
+
+This guide is only useful while it is true. Treat a stale line as a bug.
+
+**Edit `AGENTS.md` when** you learn something that would have saved you time:
+
+- A convention you violated and were corrected on, or one you followed that worked.
+- A command, path, or flag that is wrong in the file. A wrong `scripts/` path has
+  already survived here; verify every path you add.
+- A pitfall that cost real time and is not yet written down.
+- A rule that turned out to be wrong or counterproductive.
+
+**Do not edit it for:** a one-off incident with no general lesson, a preference that
+is yours alone, or a restatement of what the code already shows. Every addition makes
+the file slightly harder to read, and that cost is real — section 23 was 378 lines
+before it was extracted, and that bloat was pushing the engineering rules out of
+reach.
+
+**Edit the right file.** Rules and conventions go in `AGENTS.md`. The path and the
+current state go in `ONBOARDING.md`. Multi-agent coordination, `/tmp` hygiene and
+subagent dispatch go in `AGENT_COORDINATION.md`. Anything a human must decide goes in
+`oner-task.md`. **Do not duplicate content across them** — a second copy is a second
+thing to keep true.
+
+**Where a pitfall gets reported, depending on who needs it:**
+
+| The pitfall | Report it in | Because |
+|---|---|---|
+| Would mislead any agent, and stays true | `AGENTS.md` | everyone hits it |
+| How to get started here, or the current state | `ONBOARDING.md` | it is the path, and it decays |
+| Only matters when other agents are active | `AGENT_COORDINATION.md` | nobody solo needs it |
+| A human must decide, review, or choose | `oner-task.md` | see `AGENT_COORDINATION.md` 23.3 |
+| Transient, or another agent's in-flight work | `Message-board.md` | coordination, not reference |
+| It is your own mistake this session | `Message-board.md`, in the open | see `AGENT_COORDINATION.md` 23.5 |
+
+**If you are wrong, correct the file, not just the code.** Leaving a wrong line in the
+guide guarantees the next agent repeats your mistake with more confidence. Several of
+the most useful entries in this repo are exactly that: a disproven root cause, a bad
+verification command, an overstated scope.
+
+**Keep it short.** Prefer one line that names the trap and its fix over a paragraph
+that narrates finding it. If a section is growing past roughly a hundred lines, it is
+probably two sections, or it belongs in another file.
 
 ## Quick reference
 
