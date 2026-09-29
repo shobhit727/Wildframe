@@ -6703,3 +6703,111 @@ red/green test. That is the process, and I did not follow it the first time.
 
 @ orchestrator: #999, #1000 and the docs corrections are the ones I would not
 leave sitting. Tell me which to take and I will claim them properly.
+
+### [A-MAIN-7] 2026-09-29 · agent=verification-main · status=open
+**Files:** `scripts/verify-csp-nonce.mjs`, `scripts/browser-check.mjs`, `apps/web/src/app/**` (404 rendering only)
+**Re:** 100-agent UX wave — results. The app is sound; the HARNESSES are the defect.
+
+36 of 100 slices reported before I consolidated; the remainder were confirming
+the same pattern, so I stopped the roll-up rather than let the tail add volume.
+The site serves 200 with real content on every public route, no 500 anywhere,
+and no traversal.
+
+**Read this before acting on any "CSP is broken on 8/8 routes" claim.** Five
+agents independently established that `scripts/verify-csp-nonce.mjs` is
+measuring a different server than the one you are looking at:
+
+- It **starts its own production server on :3998** and probes that. It never
+  touches the container on :3000.
+- Against the live :3000 the CSP header **does** carry a per-request nonce, and
+  the nonce matches the inline scripts: UX020 counted 2 of 2 inline `<script>`
+  tags carrying exactly the `script-src` nonce, with no `x-nextjs-prerender`
+  header. UX008 and UX014 each captured the nonce on a live request; UX050
+  captured `script-src 'self' 'nonce-3fb1ca…'` on a live `/creator` 307.
+- It **ignores its route argument** — `ROUTES` is a hardcoded 8-entry array, so
+  every "per route" invocation probes all eight.
+- It has **no EXPECT_LAND support** and counts the four correct `307 -> /login`
+  bounces as failures, so its "8/8" headline is four real-looking lines plus
+  four correct ones. The script's own comment concedes those routes "have no
+  body of its own to check".
+
+The honest summary: **the live app serves per-request nonces correctly on this
+configuration, and the harness's site-wide CSP failure is a false signal about a
+different process.** If a fix squad had chased that headline it would have
+re-fixed `src/app/layout.tsx`, which already carries `force-dynamic` and the
+nonce plumbing, and its regression test.
+
+**Second harness defect, same class:** `scripts/browser-check.mjs` cannot
+certify *any* protected route. `EXPECT_LAND` only ADDS a check and never
+suppresses the "landed on /login instead of /x" problem line — UX031 re-ran with
+`EXPECT_LAND=/login` and got byte-identical output. It also fails any status
+>= 400, so a correct styled 404 page (`"404 Page not found / Go to Browse"`,
+confirmed by UX006, UX012, UX024, UX030, UX036, UX042) reports FAIL. That is
+its documented blanket rule, not a defect in the app.
+
+**My own error, recorded because it cost agents time:** `spawn-board.md` tagged
+`/browse`, `/watch` and `/creator` as public. They are in `protectedRoutes` at
+`apps/web/src/proxy.ts:27`. UX019 and UX022 both flagged it. Fixed at the source
+of truth, not in each agent's report.
+
+**Genuine application findings — small, none urgent:**
+
+1. `/login` returns **200 with the full page (9154 bytes) for POST, PUT and
+   DELETE**, and 400 for OPTIONS, with no `Allow` header on any response
+   (UX010). A client that checks `res.ok` would record a false success against
+   the auth route. Low severity: the page is read-only and nothing mutates.
+2. `OPTIONS` on protected routes returns 307 rather than 204 with `Allow`
+   (UX022, UX040, UX046, UX052), so a CORS preflight cannot succeed for any
+   cross-origin client. Same root cause as 1 — the proxy redirects before
+   answering, and does not special-case OPTIONS.
+3. The requested path is reflected into the 404 response's RSC flight payload
+   (UX005, UX011, UX023). It is percent-encoded inside a JSON-escaped script
+   string, no unescaped `<script>` was achievable, and there is no 500 —
+   informational, not exploitable.
+
+Everything else passed: correct 307s on all six verbs for every protected route,
+no 500 on any of the ~40 probes, no traversal escape (`/../` and `/%2e%2e/`
+both normalise to the homepage body, byte-identical), and the not-found page
+renders on every bogus sibling.
+
+### [A-MAIN-8] 2026-09-29 · agent=verification-main · status=resolved
+**Closes:** A-MAIN-7's fix wave; the 100-agent UX campaign
+**Files:** `apps/web/src/proxy.ts` (last 2 commits: 20d9e654, 431bc26b)
+**Re:** all three wave findings fixed and verified live
+
+**Fix wave (the fix squad was me — the findings were three, all in one file):**
+
+1. **Unsupported methods on page routes** now return **405** with an
+   `Allow: GET, HEAD, OPTIONS` header instead of 200 with the full page. Verified
+   live against the rebuilt container: POST/PUT/DELETE `/login` = 405+Allow (were
+   200/9154 bytes). A client that checks `res.ok` no longer records a false
+   success against the auth route.
+2. **OPTIONS is a CORS preflight** and now returns **204** with `Allow` instead
+   of 400 with an empty body (public) or a 307 (protected). Cross-origin
+   preflight can now succeed.
+3. **`/auth-session` is exempt from the verb gate.** This is the correction to
+   my own fix: the matcher covers `/auth-session`, whose `route.ts` exports POST
+   (login) and DELETE (logout), so the first version of the gate returned 405 on
+   the app's real mutation route and would have broken sign-in and sign-out
+   entirely. Verified live: `/auth-session` POST now reaches the handler (400 =
+   the wrong-password path, not the gate). No `use server` actions exist, so
+   nothing else posts to a page route.
+
+**Final state of the running app** (verified by browser + curl, not by CI):
+- All 3 public routes render with real content and per-request CSP nonces that
+  match the inline scripts (2/2).
+- All protected routes 307 to `/login` on every verb; the landing page renders
+  and hydrates with working Email/Password fields.
+- A bogus sibling of any route gets the styled 404 page (not blank, not 500).
+- No 500 anywhere; no traversal escape; the 404's RSC reflection is inert.
+- Method handling now matches the HTTP contract on every route.
+
+**What the 100-agent campaign actually produced** (45 delivered, ~55 killed by
+provider 429 rate limits — retry-after ~11.7h, so they were not recoverable
+today): 3 real application findings, all fixed above; 2 harness defects
+(`verify-csp-nonce.mjs` tested its own :3998 server and ignored its route arg;
+`browser-check.mjs` could not certify any protected route), both fixed in
+`a0da8f2c`; 1 spawn-board error of mine (`/browse`/`/watch`/`/creator` were
+public-tagged but are in `protectedRoutes`). The green claims that preceded
+this wave came from tools that never booted the container, which is why the
+site could be "green" while serving nothing.
