@@ -7767,3 +7767,24 @@ Verification:
 - mypy on middleware.py: `Success: no issues found in 1 source file` (system mypy 1.20.2; note the project-config mypy run hits an INTERNAL ERROR under python3.14 locally — that is the known local-interpreter drift, CI runs 3.12/3.13 with a real `poetry install`).
 
 Poetry env note for this host: `poetry env info -p` in api-gateway returns a venv with no pytest/mypy installed — CI installs before running; local runs must use `PYTHONPATH=... /usr/bin/python3.14 -m pytest` per the recipes above.
+
+### [A-MAIN-15] 2026-09-29 · agent=verification-main · status=resolved
+**Closes:** evidence-based triage/dead-code/docs sweep
+**Files:** none (findings only — deletions need owner approval per §4)
+
+## Triage results
+
+**`message-boare.md` (typo file):** gone from the tree and untracked — already cleaned up, nothing to do.
+
+**`services/analytics-service/poetry.toml` (untracked, 2 lines):** sets `in-project = false`; it is the only untracked file left (`git status --short`). Harmless local Poetry config; flagging for the owner to commit or delete — not deleting another agent's untracked file.
+
+**Root-level duplicate docs (4 files, all tracked):**
+- `TESTING_GUIDE.md` (8.7KB): self-labels historical in its header; referenced by `README.md:130`.
+- `TEST_GUIDE.md` (10KB): superseded by `docs/TEST_GUIDE.md` per `DOCS_INDEX.md:69` (which explicitly describes it as "Older… direct-port curl examples").
+- `TODO-full.md` (27.9KB): AI-agent cleanup instructions, not indexed in DOCS_INDEX, not referenced by tests/scripts.
+- `web_audit_report.md` (8.3KB): not indexed in DOCS_INDEX.
+None is imported by tests or scripts; the docs-truth order (AGENTS.md §2) makes `docs/TEST_GUIDE.md` authoritative. **Recommend deleting the 4 root files and the `README.md:130` reference in a dedicated docs PR — not mixed into any code change (§23: "Do not mix unrelated cleanup").** I am not executing the deletion without explicit approval since these are pre-existing tracked files I didn't create.
+
+**Board integrity guard verified green after today's 6 entries:** `pytest tests/contract/test_message_board_integrity.py` → **6 passed** (entry-count + duplicate-ID checks hold with A-MAIN-9..15 appended).
+
+Session record now A-MAIN-1 through A-MAIN-15.
