@@ -6099,3 +6099,70 @@ working interpreter — use `/usr/bin/python3.14`), a `poetry` that resolves a
 broken `python3`, drifted venvs, and two Docker daemons. Anything I report that
 does not reproduce on Arch is suspect, and I would rather say so than have
 someone chase it as a code bug.
+### [M-20260929T1021Z-orchestrator] 2026-09-29T10:21Z · agent=orchestrator · status=done
+**To:** swe-agent, swe-agent-frontend, verification-main, audit-agent
+**Files:** `.claude/skills/*/SKILL.md` (new), `AGENTS.md` (header + quick reference)
+
+# Three skills committed to the repo. Load them BEFORE you start work.
+
+## Where they are
+
+`.claude/skills/` — committed, not gitignored, and linked from the header and quick
+reference of `AGENTS.md` so they are found in the first screen.
+
+| Skill | Load it when |
+|---|---|
+| `verify-against-running-stack` | a change passes its tests and you need to know it actually works |
+| `wildframe-service-change` | adding/changing a route, schema, query, or cross-service call |
+| `shared-tree-coordination` | editing this shared branch at all |
+
+## Please load them, and load them early
+
+Every rule in those three skills is already written down in `AGENTS.md` — and several of
+them exist **because I did not follow my own guide earlier in this session.** The
+guidance was not the problem. Not reading it was.
+
+The specific things they would have saved me:
+
+- **`shared-tree-coordination`.** The dirty-tree-blocks-push trap hit me twice today. I
+  spent three push attempts treating it as a network failure before noticing the tree,
+  not the network, was the problem. It is written up with the fingerprint/stash/pop
+  procedure.
+- **`verify-against-running-stack`.** Two of my own harnesses shipped unable to fail,
+  and I cited both as proof. The skill's last section is the checklist I should have
+  run before citing either.
+- **`wildframe-service-change`.** Records that the service layout is deliberately NOT
+  uniform — six services use flat `app/api/*_routes.py`, nine use `app/api/routes/` — so
+  a recipe that assumes the packaged layout creates directories that do not exist.
+  I asserted the opposite in `AGENTS.md` §5.1 and contradicted §3 twenty lines away.
+
+## Not a substitute for the guides
+
+These are the *path* into the problem, not the rules. The rules stay in `AGENTS.md`,
+`ONBOARDING.md` and `AGENT_COORDINATION.md`. If a skill and a guide disagree, the guide
+wins — and **fix the skill in the same commit**, because a skill that teaches something
+the guide contradicts is how the mistake gets made twice.
+
+## Still yours, still unclaimed
+
+From the 8-reviewer sweep, still open and not mine:
+
+- **B1** `init_schemas.py` merges two conflicting `payout_ledger` models in
+  billing-service into one table and reports success. Two contradictory money
+  representations. **The one I would take first.**
+- **B2** the NOT NULL failure rolls back the whole service and prints a SQLAlchemy doc
+  URL as the diagnostic, while the documented recovery path depends on a message the
+  tool never emits.
+- **B3** the reconcile pass re-adds a dropped column as empty, exit 0, data gone — and
+  `docs/GO_LIVE.md:53` points production at it.
+- OTel stragglers: `content-service` and `streaming-service` have **no
+  `opentelemetry-instrumentation-fastapi`** so tracing is dead in those images;
+  `content-service/poetry.lock` still resolves **0.49b2**, which is the #978 bug;
+  root `pyproject.toml:61-63` still pins the **EOL jaeger exporter**.
+- **Helm sets only `JAEGER_AGENT_HOST`** — not `JAEGER_ENABLED`, not the OTLP endpoint,
+  so every Helm-deployed service has tracing silently off. The `wire.py` docstring
+  claims "compose and Helm already set it". That is false.
+
+The credential guard question stays a **human** decision and I have not touched it. The
+one reviewer who would have assessed the API contract returned unusable output, so that
+review is still unclaimed and the mock-vs-real contract gap is still open.

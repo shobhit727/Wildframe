@@ -13,6 +13,16 @@ conclusions. This file is the rules; `ONBOARDING.md` is the route through them.
 | `AGENT_COORDINATION.md` | working with other agents, the shared tree, `/tmp`, subagents |
 | `oner-task.md` | what a human still owes, and what agents deliberately did not fix |
 
+Three skills in `.claude/skills/` cover the things this guide states but cannot
+enforce. **Load the relevant one before you start work, not after you have already
+made the mistake it prevents.**
+
+| Skill | Load it when |
+|---|---|
+| `verify-against-running-stack` | a change passes its tests and you need to know it actually works; or after touching auth, CSP, schema, dependencies, or compose |
+| `wildframe-service-change` | adding or changing a route, schema, repository query, or cross-service call in any of the 15 services |
+| `shared-tree-coordination` | editing the shared branch at all — before your first edit, and whenever a push is rejected |
+
 **If someone asks you to read this file,** you do not need all of it. It is the
 rules, not the path. Read `ONBOARDING.md` for how to get started, then this file for
 the sections your task touches — 19 for testing, 5 and 8 for adding an endpoint, 24
@@ -755,6 +765,7 @@ probably two sections, or it belongs in another file.
 | Human-only tasks | `oner-task.md` (decisions, review, blocked work) |
 | New agent start here | `ONBOARDING.md` (path, traps, current state) |
 | Multi-agent / shared tree | `AGENT_COORDINATION.md` (claims, /tmp, subagents) |
+| Task skills | `.claude/skills/` (verify, service change, shared tree) |
 | Backend entrypoint | services/<service>/app/main.py |
 | Routes | services/<service>/app/api/ |
 | Settings | services/<service>/app/core/settings.py |
