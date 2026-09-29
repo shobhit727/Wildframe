@@ -241,7 +241,7 @@ surprise three commits later.
 
 **When you are done and something still needs a human** — a review, a product
 decision, a credential ruling — that is not a failure. `oner-task.md` is the home for
-it, and `AGENTS.md` §23.3 requires you to record it there.
+it, and `AGENT_COORDINATION.md` 23.3 requires you to record it there.
 
 ### Testing, per area
 
