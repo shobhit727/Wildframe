@@ -268,6 +268,10 @@ describe('getProfile auto-creation on 404', () => {
 
 describe('searchContent', () => {
   it('maps search hits and synthesises a slug from the title', async () => {
+    // The search-service document carries `id` and `rating`
+    // (`search-service/app/services.py` `_content_document`), not `content_id` /
+    // `audience_score` -- `rating` is derived from `audience_score` on the way in.
+    // The sibling tests below already use the real field names.
     install([
       on('GET', '/search/query', {
         query: 'neo',
@@ -352,8 +356,9 @@ describe('getTrending degradation', () => {
 
     const rows = await apiClient.getTrending();
 
-    // Rows are normalized, so they carry synthesized defaults as well as the
-    // upstream id. Assert the identity mapping, not the incidental shape.
+    // The trending rows go through `normalizeSearchContentDocument`, so they come
+    // back as normalized payloads rather than raw documents. What this test is
+    // actually about is which endpoint was used, so assert the ids and the params.
     expect(rows.map((r) => r.id)).toEqual(['t1', 't2']);
     expect(requests[0].params).toEqual({ limit: 20 });
   });

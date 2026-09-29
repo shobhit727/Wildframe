@@ -66,6 +66,9 @@ export function makeBackendContent(overrides: Partial<BackendContent> = {}): Bac
     audience_score: 87,
     content_rating: 'PG-13',
     is_hd: true,
+    // `ContentResponse.is_premium` is a required bool on the backend, so a real
+    // response always carries it.
+    is_premium: false,
     genres: [{ id: 'g-1', name: 'sci-fi', slug: 'sci-fi' }],
     ...overrides,
   };

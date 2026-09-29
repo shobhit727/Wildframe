@@ -57,6 +57,7 @@ describe('normalizeContent', () => {
     duration_minutes: 118,
     release_date: '2024-05-01',
     audience_score: 87,
+    is_premium: false,
   };
 
 
@@ -82,7 +83,7 @@ describe('normalizeContent', () => {
   });
 
   it('normalizes search-service content documents', () => {
-    const normalized = normalizeSearchContentDocument({
+    const payload = normalizeSearchContentDocument({
       id: 'search-1',
       title: 'Search Result',
       description: 'From the Elasticsearch document shape.',
@@ -95,13 +96,19 @@ describe('normalizeContent', () => {
       status: 'published',
     });
 
-    expect(normalized.slug).toBe('search-result');
+    // `normalizeSearchContentDocument` returns the backend DTO: it synthesises a
+    // slug, leaves artwork null, and maps the document's string genres onto
+    // `BackendGenre`. `matchPercentage` and the genre-name list are UI-level
+    // fields on `Content` and only exist once `normalizeContent` has run, so
+    // assert the DTO and the UI type separately.
+    expect(payload.slug).toBe('search-result');
+    expect(payload.poster_url).toBeNull();
+    expect(payload.genres).toEqual([{ id: 'drama', name: 'Drama', slug: 'drama' }]);
+
+    const normalized = normalizeContent(payload);
     expect(normalized.matchPercentage).toBe(76);
-    // browse/page.tsx maps every payload through normalizeContent, so assert the
-    // post-normalized shape the UI actually consumes (string[] genres), not the
-    // pre-normalization BackendGenre[] the payload carries.
-    expect(normalizeContent(normalized).genres).toEqual(['Drama']);
-    expect(normalized.poster_url).toBeNull();
+    expect(normalized.genre).toBe('Drama');
+    expect(normalized.genres).toEqual(['Drama']);
   });
 
   it('maps genre names arrays', () => {

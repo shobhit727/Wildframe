@@ -393,6 +393,8 @@ class APIClient {
     status?: string;
     genre_id?: string;
   } = {}): Promise<BackendContentListItem[]> {
+    // `response_model=list[ContentListResponse]` on the content-service route --
+    // these declared fields are the whole response, not a guess.
     return this.unwrap(
       this.client.get('/content/api/v1/content', { params: { page: 1, page_size: 50, ...params } })
     );
@@ -403,6 +405,9 @@ class APIClient {
   }
 
   async getContentById(id: string): Promise<BackendContent> {
+    // `response_model=ContentResponse`. Every field `BackendContentPayload`
+    // requires is required here too, so callers can pass this straight to
+    // `normalizeContent` with no cast.
     return this.unwrap(this.client.get(`/content/api/v1/content/${id}`));
   }
 
@@ -464,7 +469,16 @@ class APIClient {
             }
           })
         );
-        const content = items.filter(Boolean) as BackendContent[];
+        // `filter(Boolean)` does not narrow, which is why this line previously carried
+        // an `as` cast. A type predicate is the honest form: these are per-item
+        // lookups that can individually fail, and null means "skip this one".
+        //
+        // The predicate has to name the array's *element* type (`BackendContent`),
+        // not this method's return type. A predicate's type must be assignable to
+        // its parameter's type, and `BackendContentPayload` leaves `status`
+        // optional while `ContentResponse.status` is required. `BackendContent[]`
+        // still satisfies the declared `Promise<BackendContentPayload[]>` return.
+        const content = items.filter((item): item is BackendContent => item !== null);
         if (content.length) return content;
       }
     } catch {

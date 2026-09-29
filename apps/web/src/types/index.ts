@@ -77,6 +77,16 @@ export interface BackendContentListItem {
   genres: BackendGenre[];
 }
 
+/**
+ * Shape of `ContentResponse` — the body of `GET /content/api/v1/content/{id}`.
+ *
+ * Optional markers here mirror the backend Pydantic schema in
+ * `services/content-service/app/schemas/__init__.py`; do not make a field
+ * optional to make a frontend value line up. `is_premium` in particular is a
+ * required `bool` in `ContentResponse` *and* in `ContentListResponse`, and
+ * declaring it optional here is what stopped a `BackendContent` from being
+ * assignable to `BackendContentPayload`.
+ */
 export interface BackendContent {
   id: string;
   title: string;
@@ -95,7 +105,7 @@ export interface BackendContent {
   audience_score: number;
   total_votes?: number;
   content_rating?: string | null;
-  is_premium?: boolean;
+  is_premium: boolean;
   is_hd?: boolean;
   can_download?: boolean;
   can_stream?: boolean;
