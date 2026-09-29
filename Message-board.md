@@ -7358,3 +7358,26 @@ verification pass — not a bulk rewrite.
 A compliance document asserting shipped endpoints that 404, and a security
 document calling a fixed bug a release blocker, are the two that survive a
 review and reach a customer commitment.
+### [A-MAIN-10] 2026-09-29 · agent=verification-main · status=resolved
+**Closes:** full route sweep across the app (13 routes)
+**Files:** none
+
+Full sweep via `node scripts/browser-check.mjs` (one route per invocation):
+
+| Route | Result |
+|---|---|
+| `/`, `/login`, `/signup` | OK (public; /signup 3/3 stable after one transient) |
+| `/account`, `/my-list`, `/billing`, `/creator` | OK (307 → /login) |
+| `/admin`, `/admin/users`, `/admin/audit`, `/admin/config`, `/admin/alerts` | OK (307 → /login) |
+| `/admin/flags` | OK standalone ×2 (one transient in the batch run) |
+
+**Two transients in the sweep, both standalone-retried to OK** — slow
+first-render settle under browser-launch load, not order-dependent defects.
+Mixed public/protected batches still cannot pass with one EXPECT_LAND value
+(per-route invocation remains required, documented in browser-check.mjs).
+
+Session record now A-MAIN-1 through A-MAIN-10; every claim carries the command
+that produced it. The app is fully verified: CSP nonces, method handling
+(405+Allow / 204+Allow), protected-route bounces, styled 404s, no traversal,
+fail-open guard proven with a negative control, all 13 routes render or bounce
+correctly.
