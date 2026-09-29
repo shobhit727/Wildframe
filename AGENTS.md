@@ -321,6 +321,16 @@ event, written cookie. Mock-heavy tests pass when the product is broken.
 
 ### 19.2 Verifying a change against the running app
 
+Ready-made harnesses live in `scripts/` — see `scripts/README.md`:
+
+- `node scripts/browser-check.mjs` — does each page actually render in a browser?
+  Reports inputs, CSP violations, visible text, and the post-redirect URL.
+- `node scripts/causation-check.mjs` — strips one response header and reports whether
+  the symptom disappears. Turns a hypothesis into a demonstrated cause, or rules a
+  layer out. This is how the blank page was diagnosed.
+- `node scripts/auth-flow-check.mjs` — can a real user register and stay signed in?
+  Registration returning 201 is not sufficient; three defects once hid behind it.
+
 The suite is necessary and not sufficient. Before calling work done:
 
 ```bash

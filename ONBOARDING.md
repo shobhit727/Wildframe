@@ -289,10 +289,13 @@ docker compose -f deployments/docker-compose.dev.yml logs <service> --tail 200
 #   use ignoreHTTPSErrors: true — the dev cert is self-signed
 ```
 
-Example scripts from a previous session are in `/tmp/opencode/uitest/` (ephemeral) and
-`scripts/verify-csp-nonce.mjs` (committed). A useful pattern from that work: prove
-causation by stripping one header in the browser and seeing the page come back, rather
-than reasoning about what *should* be blocking it.
+Ready-made harnesses live in `scripts/` — run `cat scripts/README.md` first:
+
+- `node scripts/browser-check.mjs` — does each page actually render in a browser?
+- `node scripts/causation-check.mjs` — strip one header, see if the symptom moves.
+  This is how the blank page was diagnosed rather than guessed at.
+- `node scripts/auth-flow-check.mjs` — can a real user register and stay signed in?
+- `node scripts/verify-csp-nonce.mjs` — do CSP nonces reach the rendered scripts?
 
 ---
 
