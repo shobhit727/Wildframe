@@ -47,6 +47,12 @@ mypy = "^1.7.0"
 
 [tool.mypy]
 python_version = "3.11"
+warn_unused_ignores = true
+warn_return_any = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unreachable = true
+strict_optional = true
 
 # `deprecated` 3.0.0 (pulled in transitively by the OpenTelemetry tree that
 # `wildframe-auth` brings in, and selected by the resolver for this interpreter)

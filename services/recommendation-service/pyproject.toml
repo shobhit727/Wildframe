@@ -42,3 +42,48 @@ pytest-cov = "^4.1.0"
 black = ">=23.11,<27.0"
 mypy = "^1.7.0"
 types-python-jose = "^3.3.4"
+
+[tool.mypy]
+# Type policy for this service (issue #970).
+#
+# This block was previously absent, so `mypy app --config-file pyproject.toml`
+# ran on mypy's defaults while the rest of the repo was held to a real policy.
+# The flags below are copied verbatim from the root pyproject.toml [tool.mypy]
+# section so this service is checked the same way the root policy describes.
+# Per-service history and the per-module overrides that follow mirror the
+# convention already used by services/auth-service (70b4d68a) and
+# services/search-service, which pin python_version to the 3.11 floor and scope
+# `follow_imports` around dependencies that ship syntax newer than that floor.
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_optional = true
+
+# `deprecated` 3.0.0 is pulled in transitively by the OpenTelemetry exporters and
+# declares its type aliases with PEP 695 `type X = ...`, which is 3.12+ syntax.
+# With python_version pinned to 3.11 above, mypy parses that dependency's source
+# with the 3.11 grammar and fails on a file this service does not own. Raising
+# python_version to 3.13 would also silence it, but that gives up checking
+# against the 3.11 floor we actually declare in requires-python. Skipping the
+# import is the accurate fix. Same fix as services/auth-service (70b4d68a).
+[[tool.mypy.overrides]]
+module = ["deprecated.*"]
+follow_imports = "skip"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "jose.*"
+ignore_missing_imports = true
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "redis.*"
+ignore_missing_imports = true
