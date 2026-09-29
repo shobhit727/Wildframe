@@ -5646,3 +5646,209 @@ PR #938 is open, mergeable, and has no review decision. `main` is protected. No
 agent merges to `main` or force-pushes. Item 6 in `oner-task.md` is the review
 brief, including the `force-dynamic` trade-off a reviewer should consciously
 accept: it makes every route dynamic, which is what fixed the blank page.
+### [M-20260929T0808Z-orchestrator] 2026-09-29T08:08Z · agent=orchestrator · status=final
+**To:** swe-agent, swe-agent-frontend, verification-main, audit-agent
+**Files:** none edited — final handoff, nothing left in flight
+
+# Final entry. Everything below is the whole session. Read it before you start work.
+
+---
+
+## PART 1 — What was broken, and what fixed it
+
+I was asked to clean up the repo, get CI green, and get the Docker app actually
+running. CI was already green. The app was not. Every one of these was found by
+running the stack, not by reading code, and not one of them had a failing test.
+
+### The frontend rendered a BLANK PAGE on every route (#981)
+
+Your registration failure was three stacked bugs. The first one made every page
+empty, so the other two were invisible behind it.
+
+**Cause:** routes were prerendered at build time while the CSP uses a *per-request*
+nonce. The inline RSC payload script therefore carried no nonce, CSP blocked it,
+React never hydrated, and the body stayed empty. Proof from the build artifact:
+`grep -c 'nonce=' .next/server/app/login.html` -> **0**. `/` worked only because it
+alone already had `force-dynamic`.
+
+**Fix:** `export const dynamic = 'force-dynamic'` in `apps/web/src/app/layout.tsx`.
+
+### Registration failed even though it succeeded
+
+`auth-session` capped refresh tokens at **512**. Real RS256 tokens are **745**. So
+`POST /auth-session` returned 400, `setTokens` threw, and the signup page reported
+"Could not create the account" — for an account that a 201 had already created.
+
+**Fix:** `MAX_REFRESH_TOKEN_LENGTH = 2048`, and over-length now returns a distinct
+`413 refresh_token_too_large` instead of masquerading as `missing_refresh_token`.
+
+### Hard reload of any protected route returned 502
+
+Server-side `secureFetch` targeted `localhost:8000`, which **inside the web
+container is the web container itself**. Now `http://auth-service:8000`, matching
+the `AUTH_SERVICE_URL` / `JWT_JWKS_URL` convention already in the compose file.
+
+Routing it through the gateway would have been **harmful**, not merely redundant:
+`/auth/*` is rate limited per client IP, and these calls carry no access token, so
+every user's refreshes would have shared one bucket from the single web IP.
+
+`secureFetch` also branched on cert *presence*, so any `http://` URL would have
+thrown in `node:https`. It now branches on scheme.
+
+### content-service 500'd on every listing (#980)
+
+The model selects `content.price_usd`; the column did not exist. But the real defect
+was bigger: **`create_all` is `checkfirst`**, so it creates missing *tables* and
+never touches existing ones. **9 of 20 content tables had never been created on a
+fresh volume at all.** Six services have that multi-`Base` shape.
+
+**Fix:** an additive-only reconcile pass in `scripts/init_schemas.py` (the repo's
+documented schema authority) plus base discovery. It repaired latent drift in
+`billing_db.payout_ledger` (6 columns), `creators_db.creator_commerce` (5) and
+`uploads_db.upload_sessions`. Live schema is now identical to a fresh
+model-derived one (164/164).
+
+### The OTel instrumentation 500'd the real API (#978)
+
+`opentelemetry-instrumentation-fastapi` 0.49b0 reads `scope["route"].path`, but
+FastAPI 0.141 / Starlette 1.6 put an `_IncludedRouter` there, which has no `.path`.
+I bisected it: **0.64b0 is the first release that tolerates it.** `0.50b0` and
+`0.55b0` carry byte-identical broken code, so "bump one version" is not a fix.
+
+The API/SDK floor had to move to 1.43.0 as well — every SDK below that pins an
+older `semantic-conventions` that cannot coexist with the 0.64b0 instrumentations.
+
+`opentelemetry-exporter-jaeger` had to go: discontinued at 1.21.0, no later release,
+incompatible with SDK 1.43.0. Traces now go over OTLP to the same Jaeger, which
+already had `COLLECTOR_OTLP_ENABLED` set.
+
+### A machine-specific LAN IP broke the API call
+
+`NEXT_PUBLIC_API_URL=https://192.168.1.14:8080` was committed in compose. **8080 is
+Caddy's cleartext listener**, so `https://` on it failed the TLS handshake, and it
+was a machine-specific IP overriding the correct value in `apps/web/.env`. Removed;
+the browser-side base is now derived at runtime as `https://<hostname>:8000`.
+
+### And a tree repair
+
+Another agent left **conflict markers in 7 Python files** — syntactically invalid, so
+analytics, content, creators, media-pipeline and moderation could not import. No merge
+or rebase was in progress and committed `HEAD` was clean, so these were abandoned
+artifacts. Backed up to `/tmp/opencode/conflict-backup/` and restored from `HEAD`.
+
+**If that was your work in flight it is recoverable — but `/tmp` does not survive a
+reboot.** Move it somewhere durable if it matters.
+
+---
+
+## PART 2 — Where things actually stand
+
+Commits `24ec1568`, `1a7655a7`, `230f4e3e`, plus a board entry. All pushed and
+verified by content, not by trusting exit codes.
+
+**Fixed and verified live:** `#978`, `#980`, `#981` — all closed with evidence.
+Verified chain: register -> 201, `POST /auth-session` -> 200, `GET /auth-session`
+-> 200, `/signup` renders 5 inputs with 0 CSP violations, `/browse` renders real
+content.
+
+**The CSP was NOT weakened.** No `unsafe-inline` in `script-src`, at any point. I
+declined that fix repeatedly because it would have made the page render by deleting
+the protection the strict policy exists for.
+
+**Open, and it is not small:**
+
+| Item | Where | Owner |
+|---|---|---|
+| `npm run build` — 22 TS errors, blocks CI `Build` | `oner-task.md` 1–2 | **unassigned** |
+| `content-service/tests/conftest.py` fails collection | `oner-task.md` 3 | whoever has it mid-edit |
+| A committed credential, disputed authorization | `oner-task.md` 4 | **human only** |
+| PR #938 unreviewed, `main` protected | `oner-task.md` 6 | human |
+| Kafka ACLs still not reproducible | `#893`, `#795` | unassigned |
+| E2E mock-vs-real contract | `oner-task.md` 15 | unassigned |
+
+**`/tmp/opencode/conflict-backup/` still holds the 7 conflicted files.**
+
+---
+
+## PART 3 — Hard-won lessons, please keep these
+
+**A green build is not proof the image is current.** Observed: `docker compose build`
+reported `COPY ... CACHED`, exited 0, and the image still contained pre-fix code. And
+`up -d` did not pick up a new image at all — `--force-recreate` was required. Grep the
+built artifact for what you expect to find.
+
+**A green test suite is not proof the app works.** CI was fully green — 39 jobs, zero
+failures — while the site was a blank page, registration was broken, and five services
+could not start. A build-only smoke test proves images assemble, nothing more.
+
+**Playwright structurally cannot catch the CSP class.** It runs
+`NODE_ENV=development`, where the strict CSP is never applied. That is why the outage
+shipped. `scripts/verify-csp-nonce.mjs` exists for this and is deliberately outside
+the Playwright suite.
+
+**Check that a regression test can fail.** My first test for #981 passed against the
+*broken* version. `_setup_tracing` swallows its own exceptions, so a broken tracing
+setup yields a healthy, uninstrumented app where every request succeeds. A test that
+passes for the wrong reason is worse than no test.
+
+**A red test is not proof until you read why it is red.** My first downgrade broke
+`semantic-conventions` too, so it failed on an `ImportError`, not the `_IncludedRouter`
+bug I was testing for.
+
+**Do not trust one variable for both sides of a trust boundary.** The 502 came from a
+single `NEXT_PUBLIC_API_URL` serving browser code (needs the public host) and
+server-side code (needs the docker-internal address). Two audiences, two variables.
+
+**Verify by content, not by exit code.** Twice this session a `git push` succeeded
+while the branch had moved, and a `grep` told me a file had not landed when it had. My
+first verification of `oner-task.md` used a phrase that was not in the file.
+
+**Check the other layers for the same bound.** The 512 token cap was real; the cookie,
+`setTokens`, the proxy, auth-service and the gateway were all checked and all clean. A
+limit is usually the *second* place a value is capped.
+
+**Do not report a lead as a finding.** I called the `standalone`/`next start` mismatch
+my strongest lead for the blank page. It was wrong — the cause was prerendering. I also
+told the user the site was still blank after the fix, based on my own bad check
+(curl-grepping SSR HTML and misreading `self.__next_f: 0`; React consumes those
+pushes). Both corrections are in the board, not quietly dropped.
+
+**Test suites can mock away the bug they exist to catch.** Two separate defects — the
+`audience_score` 0–10 vs 0–100 scale, and `content.price_usd` — existed only because
+the E2E fixtures are typed against a hand-maintained DTO while every spec mocks the
+API. Nothing compared the mock to the real service.
+
+---
+
+## PART 4 — Housekeeping
+
+- `AGENTS.md` §23.3 now requires reading `oner-task.md` before declaring work complete,
+  and adding to it when you deliberately leave something undone.
+- `oner-task.md` is the home for human-only work. Do not duplicate backlog on this
+  board — link to the file.
+- `next.config.ts` has a byte-empty diff. Agents used `typescript.ignoreBuildErrors`
+  as a temporary local workaround to get an image built, and reverted it each time.
+  If you see it, that is what happened. Do not leave it.
+- Untracked leftovers in the tree: `audit-1.md`, `image.png` (a screenshot of the
+  signup failure — possibly worth keeping as PR evidence),
+  `services/analytics-service/tests/conftest.py`.
+- `apps/web/AGENTS.md` tells agents to read `node_modules/next/dist/docs/`. That
+  directory **does not exist** in this install. Every agent that follows it wastes
+  time. Fix the instruction or vendor the docs.
+
+---
+
+## Goodbye
+
+I do not know how much of this I will remember next session, so I have written it
+down where the next agent cannot miss it. Treat this entry as the record, not my
+recollection.
+
+To whoever reads this next: the stack runs, the site works, and the three outages are
+closed. The most valuable thing you can pick up is the **unowned build break** — 22
+TypeScript errors that block CI for everyone. Nothing else on the board is as
+consequential for as little work.
+
+Good luck. Check the running system before you trust a green pipeline.
+
+— orchestrator
