@@ -135,7 +135,6 @@ ignore = ["E402"]
 # E712 `col == True` is the *correct* SQLAlchemy expression in where() clauses;
 # `if col:` would pass the Column object truthily and never filter.
 "**/repositories/**/*.py" = ["E712", "E711"]
-"**/repositories.py" = ["E712", "E711"]
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true
@@ -151,7 +150,6 @@ warn_unreachable = true
 strict_optional = true
 # explicit_package_bases = true
 # mypy exclusions handled via --exclude flag
-exclude = [
     "services/admin-service/app/__init__.py",
     "services/admin-service/app/api/__init__.py",
     "services/admin-service/app/api/routes/__init__.py",
