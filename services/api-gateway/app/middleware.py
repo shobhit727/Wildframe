@@ -643,9 +643,9 @@ def _decompress_chunk(decompressor, chunk: bytes, max_output_bytes: int | None =
         return b""
     if max_output_bytes is None:
         if hasattr(decompressor, "decompress"):
-            return decompressor.decompress(chunk)
+            return cast(bytes, decompressor.decompress(chunk))
         if hasattr(decompressor, "process"):
-            return decompressor.process(chunk)
+            return cast(bytes, decompressor.process(chunk))
         return b""
     if not hasattr(decompressor, "unconsumed_tail") or not hasattr(decompressor, "eof"):
         raise ValueError("Compressed encoding does not support bounded decompression")
@@ -683,7 +683,7 @@ def _flush_decompressor(decompressor) -> bytes:
         return b""
     if hasattr(decompressor, "flush"):
         try:
-            return decompressor.flush()
+            return cast(bytes, decompressor.flush())
         except Exception:
             return b""
     return b""
