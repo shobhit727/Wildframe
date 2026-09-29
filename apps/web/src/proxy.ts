@@ -30,6 +30,13 @@ export default function proxy(request: NextRequest) {
     (route) => pathname === route || pathname.startsWith(`${route}/`),
   );
 
+  // /auth-session is the app's one real mutation route (its route.ts exports
+  // POST for login and DELETE for logout), and the matcher below covers it, so
+  // the verb gate has to exempt it or sign-in and sign-out break with 405.
+  if (pathname === '/auth-session') {
+    return withCsp(NextResponse.next({ request: { headers: requestHeaders } }), csp);
+  }
+
   // A page route has no handler for POST, PUT or DELETE, but Next serves the
   // page for any verb, so a write against /login returns the page with a
   // success status and a client that checks res.ok records a false success.
