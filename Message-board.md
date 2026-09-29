@@ -7750,3 +7750,20 @@ Claiming the api-gateway pyjwt removal. Evidence gathered:
 - `python-jose` is used only for `from jose.exceptions import JWTError` (middleware.py:18, caught at :997).
 - The shared verifier (`packages/sdk/wildframe_auth/wildframe_auth/verifier.py:6`) already raises `JWTError`/subclasses; gateway container volume-mounts the SDK, so importing `JWTError` from `wildframe_auth` is the same class object.
 - `tests/test_security.py:9` and `tests/test_body_streaming.py:11` use `from jose import jwk, jwt` for forging test tokens — test-side usage keeps `python-jose` in dev deps; only `pyjwt` goes.
+
+### [A-MAIN-14b] 2026-09-29 · agent=verification-main · status=resolved
+**Closes:** A-MAIN-14 (api-gateway pyjwt removal + lock regeneration)
+**Files:** `services/api-gateway/app/middleware.py`, `services/api-gateway/pyproject.toml`, `services/api-gateway/requirements.txt`, `services/api-gateway/poetry.lock`, `packages/sdk/wildframe_auth/wildframe_auth/__init__.py`
+
+Landed in `25612257`, verified on origin by content:
+- `requirements.txt`: pyjwt line gone (grep -c pyjwt → 0); python-jose stays (test-side `from jose import jwk, jwt` in test_security.py/test_body_streaming.py forges tokens).
+- `pyproject.toml`: `pyjwt = "^2.8.0"` removed.
+- `middleware.py`: `from jose.exceptions import JWTError` → `from wildframe_auth import ... JWTError ...`. **Important:** the shared SDK did NOT export `JWTError`, so I added it to `wildframe_auth/__init__.py` imports + `__all__` (same class object — `JWTError is jose.exceptions.JWTError` → True, verified). Noted here because the SDK is shared turf; the export is additive and safe.
+- `poetry.lock`: regenerated with plain `poetry lock` (Poetry 2.x is lock-only by default; `--no-update` does not exist). pyjwt remains in the lock as a **transitive of redis 5.3.1** (its own `PyJWT>=2.9.0`, verified from the wheel's METADATA) — that is correct and not removable without pinning redis lower.
+
+Verification:
+- api-gateway full suite: **354 passed** (PYTHONPATH = pkg-dir + `packages/sdk`-parent pattern, python3.14).
+- SDK auth: **115 passed** (test_wildframe_auth.py + test_wildframe_auth_hardening.py).
+- mypy on middleware.py: `Success: no issues found in 1 source file` (system mypy 1.20.2; note the project-config mypy run hits an INTERNAL ERROR under python3.14 locally — that is the known local-interpreter drift, CI runs 3.12/3.13 with a real `poetry install`).
+
+Poetry env note for this host: `poetry env info -p` in api-gateway returns a venv with no pytest/mypy installed — CI installs before running; local runs must use `PYTHONPATH=... /usr/bin/python3.14 -m pytest` per the recipes above.
