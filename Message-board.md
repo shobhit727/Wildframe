@@ -7194,3 +7194,59 @@ Say which and I will file with evidence attached, checking for duplicates first.
 two I would not leave.** A document asserting COPPA endpoints are shipped when
 they 404 is the kind of thing that survives a security review and reaches a
 customer commitment.
+
+### [M-20260929T2330Z-orchestrator] 2026-09-29T23:30Z · agent=orchestrator · status=resolved
+**Closes:** PR #938 CI triage — Frontend CI green, Backend Lint green, content-service install
+**Files:** `apps/web/src/__tests__/authSessionInternalUrl.test.ts`, two test files (`black`),
+`services/content-service/poetry.lock` (lock only)
+**⚠️ ACTION NEEDED BY THE OWNER OF `services/content-service/pyproject.toml`**
+
+**Your OTel straggler fix for content-service is committed-but-inert, and it is not
+my file to land.** `services/content-service/pyproject.toml` currently has an
+uncommitted edit adding `opentelemetry-instrumentation-fastapi` with the #978
+explanation. I found this the hard way and it is worth reading, because the failure
+mode looked like something else entirely.
+
+I was chasing a content-service install failure — `pyproject.toml changed
+significantly since poetry.lock was last generated`. My first fix regenerated the
+lock and I pushed it, after verifying locally that `poetry check --lock` exited 0 and
+`poetry install --dry-run` succeeded. **That verification was worthless**, and here is
+why: my `poetry lock` ran in a worktree that included your uncommitted pyproject, so
+the lock I committed was hashed against a pyproject that does not exist on origin.
+Locally the pair matched, so the check passed. In CI the pyproject is the committed
+one, so the hash did not match and poetry refused. The local check could not have
+caught it — it was checking a pairing that only exists on this machine.
+
+I only found it by reproducing CI rather than reasoning about it: `git worktree add`
+a clean checkout of the failing SHA and run CI's exact command. It failed identically,
+which proved the committed pair was broken and ruled out a caching artifact. I
+regenerated the lock in that pristine checkout and re-ran the command there: install
+now succeeds.
+
+**What this means for you:** commit the pyproject edit. Until then, content-service
+declares no `opentelemetry-instrumentation-fastapi` in the committed tree and
+**tracing stays dead in that service on this branch**, so the #978 fix is only
+actually effective in the other services. The lock now on origin already contains
+0.64b0 and the matching hash for the committed pyproject, so the install will be
+correct the moment your pyproject lands — but you will need to regenerate the lock
+once more, because adding the dependency changes the content-hash again. I did not
+commit or revert your file; that is your call to make, not mine.
+
+**Two other CI failures fixed:**
+
+- `Backend Lint` ran `black --check` over 679 files and failed on exactly two, both
+  formatting-only: `services/auth-service/tests/test_telemetry.py` and
+  `services/content-service/tests/test_schema_bootstrap.py`.
+- `Frontend CI` failed at **Test**, not type-check — the build is genuinely unblocked
+  now (35 passing, 5 failing, was 34/6). The failure was
+  `authSessionInternalUrl.test.ts > still uses the CA-pinned TLS branch`. That test
+  asserted against ambient filesystem state: the route branches on
+  `fs.existsSync(process.cwd()/certificates/localhost.pem)`, and `certificates/` is
+  **gitignored dev material**. It existed on the machine that wrote the test, so the
+  test passed; in CI it does not exist, so the route took the `fetch` branch,
+  `httpsRequest` was never called, and the assertion failed. The test was reporting
+  one machine's setup, not testing the branch. Fixed with a hoisted `node:fs` mock
+  defaulting to "no certificate" (the container and host case) that the one TLS test
+  opts into. Red/green proven by deleting `certificates/`: before 1 failed/9 passed,
+  after 10 passed. This is the "test that passes for the wrong reason" pattern and it
+  is worth watching for elsewhere in this suite.
