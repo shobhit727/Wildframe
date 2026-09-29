@@ -93,7 +93,9 @@ Then bootstrap schemas and demo data (there is no migration framework —
 tables are created from the SQLAlchemy models):
 
 ```bash
-# Create all tables for the 14 app services (idempotent).
+# Create all tables for the 14 app services (idempotent). Also adds any
+# column the models declare that an existing table lacks, so re-run it after
+# changing a model rather than writing ALTER TABLE by hand.
 python scripts/init_schemas.py
 
 # Seed genres, movies, series, an SVOD subscription and a demo admin user.

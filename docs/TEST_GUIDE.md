@@ -351,12 +351,16 @@ curl -X POST https://localhost:8000/auth/api/v1/auth/login \
 
 **`ModuleNotFoundError: No module named 'app'` / wrong `app.models` imported** — you ran pytest from outside the service dir (or a combined `pytest services/` sweep). `cd services/<svc>` first.
 
-**`asyncpg.exceptions.UndefinedTableError`** — the live dev DB is missing a column/table the models expect (no migration framework; drift is repaired by hand). Verify against the running stack, e.g.:
+**`asyncpg.exceptions.UndefinedTableError` / `UndefinedColumnError`** — the live dev DB is missing a table/column the models expect. Re-run the schema bootstrap, which creates missing tables and adds any column the models declare:
+```bash
+python scripts/init_schemas.py   # prints "added column <table>.<column>" for anything it repaired
+```
+Verify against the running stack, e.g.:
 ```bash
 docker compose -f deployments/docker-compose.dev.yml exec postgres \
   psql -U wildframe -d <db_name> -c "\d <table>"
 ```
-then `ALTER TABLE` as needed (see docs/OPERATIONS.md "Database Migrations").
+Only fall back to a manual `ALTER TABLE` when the bootstrap reports a column it cannot add (see docs/OPERATIONS.md "Database Migrations").
 
 **Coverage missing lines even though they ran** — The file is loaded via a different path. Check `pyproject.toml`'s `[tool.coverage.run] source` list.
 

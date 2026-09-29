@@ -6,6 +6,16 @@ service's models in an isolated subprocess (every service owns a top-level
 `app` package, so imports cannot share a process) and runs
 ``Base.metadata.create_all`` against its database on the shared Postgres.
 
+``create_all`` is checkfirst: it creates *missing tables* and never touches a
+table that already exists. So when a model gains a column, every database
+created before that commit keeps the old shape and the service starts raising
+``UndefinedColumnError`` on the columns it selects -- content-service did
+exactly this with ``content.price_usd`` (#980), which made the whole browse
+page 500 while ``/health`` and ``/genres`` stayed green. The second pass,
+:func:`reconcile_columns`, closes that gap: it ``ADD COLUMN``s whatever the
+model declares and the live table lacks. It only ever adds columns, so it is
+safe to re-run and never rewrites or drops existing data.
+
 Usage:  python scripts/init_schemas.py
 """
 
@@ -36,8 +46,10 @@ SERVICES = {
 }
 
 RUNNER = r'''
-import asyncio, sys
+import asyncio, importlib, pkgutil, sys
+from sqlalchemy import inspect as sa_inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.schema import CreateColumn
 
 try:
     from app.models import Base
@@ -45,11 +57,68 @@ except ImportError:
     # Some services keep Base in a submodule (e.g. app.models.admin).
     from app.models.admin import Base  # type: ignore[assignment]
 
+import app.models as models_pkg
+
+
+def collect_bases():
+    """Every declarative Base the service's models package defines.
+
+    Most services keep one Base, but the compliance modules of the bigger
+    services (content, admin, billing, analytics, moderation, streaming) each
+    own a separate Base, so their tables live in separate metadata and
+    create_all on the primary Base alone silently skips them (#980).
+    """
+    bases, seen = [], set()
+
+    def _add(base):
+        if base is not None and id(base.metadata) not in seen:
+            seen.add(id(base.metadata))
+            bases.append(base)
+
+    _add(Base)
+    for info in pkgutil.iter_modules(getattr(models_pkg, "__path__", []) or []):
+        module = importlib.import_module(f"{models_pkg.__name__}.{info.name}")
+        _add(getattr(module, "Base", None))
+    return bases
+
+
+def reconcile_columns(sync_conn, bases):
+    """Add model columns missing from tables that already exist.
+
+    create_all is checkfirst, so a table created before a model gained a
+    column keeps the old shape forever. Returns the list of "table.column"
+    names added. Additive only: nothing is dropped, retyped or rewritten.
+    """
+    inspector = sa_inspect(sync_conn)
+    live_tables = set(inspector.get_table_names())
+    quote = sync_conn.dialect.identifier_preparer.quote
+    added = []
+    for base in bases:
+        for table in base.metadata.sorted_tables:
+            if table.name not in live_tables:
+                continue  # create_all owns missing tables
+            present = {c["name"] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in present:
+                    continue
+                ddl = CreateColumn(column).compile(dialect=sync_conn.dialect)
+                sync_conn.execute(
+                    text(f"ALTER TABLE {quote(table.name)} ADD COLUMN {ddl}")
+                )
+                added.append(f"{table.name}.{column.name}")
+    return added
+
+
 async def main(url: str) -> int:
     eng = create_async_engine(url)
     try:
         async with eng.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+            bases = collect_bases()
+            for base in bases:
+                await conn.run_sync(base.metadata.create_all)
+            added = await conn.run_sync(reconcile_columns, bases)
+        for name in added:
+            print(f"  + added column {name}")
         return 0
     finally:
         await eng.dispose()
@@ -77,6 +146,11 @@ def main() -> None:
         )
         if proc.returncode == 0:
             print(f"  ok  {svc:24s} -> {db}")
+            # Echo what the reconcile pass had to repair, so a stale schema is
+            # visible in the bootstrap output instead of silently fixed.
+            for line in (proc.stdout or "").splitlines():
+                if line.strip():
+                    print(f"       {line.strip()}")
         else:
             tail = (proc.stderr or "").strip().splitlines()[-1:] or ["unknown error"]
             print(f"  !   {svc:24s} -> {db}: {tail[0][:140]}")

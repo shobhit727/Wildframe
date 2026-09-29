@@ -409,6 +409,22 @@ services:
       # a catch-all on :8000, so that is correct for localhost and for LAN access
       # without per-device config. Verified: register returns 201 on both
       # https://localhost:8000 and https://192.168.1.14:8000.
+      #
+      # AUTH_SERVICE_URL is the server-side counterpart, and the two are not
+      # interchangeable. /auth-session's GET and DELETE handlers run inside this
+      # container, where `localhost:8000` is the web container itself and nothing
+      # listens on 8000. Reusing NEXT_PUBLIC_API_URL there made every hard
+      # reload of a protected route 502 with `auth_unreachable` and bounced the
+      # user to /login, even though login had succeeded. This var has no
+      # NEXT_PUBLIC_ prefix on purpose: Next inlines only NEXT_PUBLIC_* into the
+      # client bundle, so this stays server-side.
+      #
+      # It points at auth-service directly over the docker network, matching how
+      # every other service in this file reaches auth (AUTH_SERVICE_URL and
+      # JWT_JWKS_URL on api-gateway/billing-service). Only the browser needs the
+      # gateway; going through it for server-side refreshes would funnel every
+      # user's refreshes into one IP-keyed /auth/* rate-limit budget.
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8000}
     depends_on:
       - api-gateway
     networks:

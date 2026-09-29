@@ -515,9 +515,12 @@ Services communicate via:
 ### Schema Evolution
 
 > ⚠️ Historical note: the services do **not** use Alembic despite the
-> instructions below. There is no migration framework; schema changes are
-> applied by hand to the live dev DB and drift has been repaired manually
-> (e.g. billing `invoices`, Aug 2026). Keep model columns in sync with the
+> instructions below. There is no migration framework. `scripts/init_schemas.py`
+> is the schema authority: it runs `create_all` per service and then
+> reconciles any column the models declare that the live table lacks, so a
+> model that gains a column no longer needs a hand-written `ALTER TABLE`
+> against every existing database (that drift is what broke every
+> content-service listing in #980). Keep model columns in sync with the
 > running stack.
 
 Use Alembic for database migrations:
@@ -834,7 +837,7 @@ The CI pipeline (GitHub Actions) runs **54 jobs** on every push to main:
 | `apps/web/playwright.config.ts` | E2E test config |
 | `tests/contract/test_route_drift.py` | Frontend-backend route contract |
 | `tests/integration/conftest.py` | Integration test fixtures |
-| `scripts/init_schemas.py` | Create all tables |
+| `scripts/init_schemas.py` | Create all tables + reconcile missing columns |
 | `scripts/seed_demo.py` | Demo data |
 
 ---

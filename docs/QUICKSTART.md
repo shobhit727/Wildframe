@@ -145,7 +145,7 @@ Open https://localhost:3000.
 There is no migration framework — create tables and seed demo content with:
 
 ```bash
-python scripts/init_schemas.py     # Base.metadata.create_all per service
+python scripts/init_schemas.py     # create_all per service, then add missing columns
 WILDFRAME_DEMO_EMAIL=demo@wildframe.com WILDFRAME_DEMO_PASSWORD='<choose-a-strong-password>' python scripts/seed_demo.py
 # WILDFRAME_DEMO_PASSWORD also accepts DEMO_PASSWORD / DEMO_PASS; if unset a random password is generated and printed once
 ```
