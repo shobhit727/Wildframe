@@ -60,6 +60,14 @@ vi.mock('next/headers', () => ({
  * is listening on the developer's port 8000. Mocking the module to throw makes
  * "the code took the TLS branch" an explicit, local failure.
  */
+const fsMock = vi.hoisted(() => ({
+  existsSync: vi.fn<(p: unknown) => boolean>(() => false),
+  readFileSync: vi.fn<(p: unknown, enc: string) => string>(() => ''),
+}));
+// Default: no dev certificate, which is the container/host case. Individual
+// tests opt in by overriding these, so no test depends on the machine's
+// certificates/ directory.
+vi.mock('node:fs', () => fsMock);
 vi.mock('node:https', () => ({
   request: (...args: unknown[]) => httpsRequest(...args),
 }));
@@ -213,6 +221,17 @@ describe('/auth-session internal upstream addressing', () => {
   it('still uses the CA-pinned TLS branch when pointed at an https upstream', async () => {
     // The host-side `next dev` case: certificates/localhost.pem is present, so
     // an https AUTH_SERVICE_URL must keep working via the node:https fallback.
+    //
+    // The certificate must be *stubbed*, not inherited from the machine. The route
+    // branches on fs.existsSync(certificates/localhost.pem), and that file is
+    // gitignored dev material: it existed on the machine that wrote this test, so
+    // the test passed, and it does not exist in CI, so the route took the fetch
+    // branch and this failed. A test whose result depends on untracked ambient
+    // state is not a test - it is a report of one machine's setup. Stubbing both
+    // existsSync and readFileSync makes the predicate explicit and lets this pass
+    // or fail for the reason it names.
+    fsMock.existsSync.mockImplementation((p) => String(p).endsWith('localhost.pem'));
+    fsMock.readFileSync.mockReturnValue('-----BEGIN CERTIFICATE-----');
     process.env.AUTH_SERVICE_URL = 'https://localhost:8000';
     const { GET } = await loadRoute();
     httpsRequest.mockImplementation((_url: string, _opts: unknown, cb: (res: unknown) => void) => {
