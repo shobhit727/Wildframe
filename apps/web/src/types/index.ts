@@ -73,7 +73,7 @@ export interface BackendContentListItem {
   poster_url?: string | null;
   imdb_rating?: number | null;
   audience_score: number;
-  is_premium: boolean;
+  is_premium?: boolean;
   genres: BackendGenre[];
 }
 
@@ -105,7 +105,11 @@ export interface BackendContent {
 }
 
 export type BackendContentPayload = BackendContentListItem &
-  Partial<Pick<BackendContent, Exclude<keyof BackendContent, keyof BackendContentListItem>>>;
+  Partial<Pick<BackendContent, Exclude<keyof BackendContent, keyof BackendContentListItem>>> & {
+    /** Audience match on the backend's 0-100 scale; search documents carry the
+     * service's canonical score here since they have no separate audience_score. */
+    matchPercentage?: number;
+  };
 
 export interface BackendSeason {
   id: string;

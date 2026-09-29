@@ -97,7 +97,10 @@ describe('normalizeContent', () => {
 
     expect(normalized.slug).toBe('search-result');
     expect(normalized.matchPercentage).toBe(76);
-    expect(normalized.genres).toEqual(['Drama']);
+    // browse/page.tsx maps every payload through normalizeContent, so assert the
+    // post-normalized shape the UI actually consumes (string[] genres), not the
+    // pre-normalization BackendGenre[] the payload carries.
+    expect(normalizeContent(normalized).genres).toEqual(['Drama']);
     expect(normalized.poster_url).toBeNull();
   });
 

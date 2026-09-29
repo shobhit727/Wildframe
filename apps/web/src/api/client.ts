@@ -130,6 +130,8 @@ export function normalizeSearchContentDocument(
       return { id: slug, name, slug };
     });
 
+  const rating = Number(item.rating || 0);
+
   return {
     id: String(item.id || ''),
     title,
@@ -139,7 +141,11 @@ export function normalizeSearchContentDocument(
     status: String(item.status || 'published'),
     poster_url: null,
     backdrop_url: null,
-    audience_score: Number(item.rating || 0),
+    audience_score: rating,
+    // The search document has no separate audience score: its canonical
+    // `rating` is already on the 0-100 scale, so it is both the score and the
+    // match percentage. Without this the UI's Match label reads undefined.
+    matchPercentage: rating,
     is_premium: false,
     genres,
   };
