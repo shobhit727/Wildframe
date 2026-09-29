@@ -16,10 +16,17 @@
  *   - where the browser ended up after redirects (an auth bounce is usually the
  *     real story, e.g. /browse -> /login)
  *
+ * A route is only OK if it did not error, did not land somewhere else, and
+ * actually rendered. An earlier version of this script printed the status and the
+ * redirect target but never used them in its verdict, so it reported OK for a 404
+ * and for every protected route that bounced to /login. Collecting the evidence is
+ * not the same as checking it.
+ *
  * Usage:
  *   node scripts/browser-check.mjs                       # default routes
  *   node scripts/browser-check.mjs / /login /signup      # specific routes
  *   BASE_URL=http://localhost:3000 node scripts/browser-check.mjs
+ *   EXPECT_LAND=/browse node scripts/browser-check.mjs /browse
  *
  * Exit code 0 if every route rendered content, 1 otherwise — so it can gate a build.
  */
@@ -34,6 +41,7 @@ const BASE = (process.env.BASE_URL || 'https://localhost:3000').replace(/\/$/, '
 const DEFAULT_ROUTES = ['/', '/login', '/signup', '/browse'];
 const TIMEOUT_MS = Number(process.env.TIMEOUT_MS || 60000);
 const SETTLE_MS = Number(process.env.SETTLE_MS || 5000);
+const EXPECT_LAND = process.env.EXPECT_LAND || '';
 
 function resolvePlaywright() {
   for (const base of [process.cwd(), path.join(process.cwd(), 'apps/web')]) {
@@ -123,13 +131,32 @@ async function main() {
   let bad = 0;
   for (const r of results) {
     const empty = r.text.length === 0;
-    // A route that is legitimately empty (no form) is fine if it says something.
-    const ok = !r.error && !empty && r.violations.length === 0;
+    const problems = [];
+    if (r.error) problems.push(`navigation failed: ${r.error}`);
+    // A 4xx/5xx document is a failure even if Next renders a friendly 404 page,
+    // which it does: those pages have text, so a text-only check passes them.
+    if (r.status !== null && r.status >= 400) problems.push(`HTTP ${r.status}`);
+    if (empty) problems.push('body is EMPTY — the page rendered nothing');
+    if (r.violations.length) problems.push(`${r.violations.length} CSP violation(s)`);
+    if (r.pageErrors.length) problems.push(`${r.pageErrors.length} uncaught JS error(s)`);
+    // Being redirected is a failure when you asked for a specific route, because
+    // the route you asked for is not the page you got. An auth bounce is the most
+    // common version of this and was being reported as OK.
+    const asked = r.route.split('?')[0].replace(/\/$/, '');
+    const landedClean = r.landed.split('?')[0].replace(/\/$/, '');
+    if (asked && landedClean && landedClean !== asked) {
+      problems.push(`landed on ${r.landed} instead of ${r.route}`);
+    }
+    if (EXPECT_LAND && landedClean !== EXPECT_LAND.replace(/\/$/, '')) {
+      problems.push(`expected to land on ${EXPECT_LAND}, landed on ${r.landed}`);
+    }
+
+    const ok = problems.length === 0;
     if (!ok) bad++;
     console.log(`  ${ok ? 'OK  ' : 'FAIL'} ${r.route}`);
     console.log(`       status=${r.status}  inputs=${r.inputs}  landed=${r.landed}`);
     if (r.error) console.log(`       error: ${r.error}`);
-    if (empty) console.log('       body is EMPTY — the page rendered nothing');
+    problems.forEach((p) => console.log(`       problem: ${p}`));
     if (r.violations.length) r.violations.forEach((v) => console.log(`       CSP: ${v.slice(0, 120)}`));
     if (r.pageErrors.length) r.pageErrors.forEach((e) => console.log(`       JS:   ${e}`));
     console.log(`       text: ${JSON.stringify(r.text.slice(0, 90))}`);
@@ -139,7 +166,8 @@ async function main() {
   if (bad === 0) {
     console.log(`  all ${results.length} route(s) rendered content\n`);
   } else {
-    console.log(`  ${bad}/${results.length} route(s) failed — an empty body or a CSP violation means the page did not hydrate\n`);
+    console.log(`  ${bad}/${results.length} route(s) failed — a non-2xx status, a redirect away from the\n`);
+    console.log(`  requested route, an empty body, a CSP violation or a JS error all count.\n`);
   }
   process.exit(bad === 0 ? 0 : 1);
 }

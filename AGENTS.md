@@ -471,9 +471,14 @@ When changing dependencies, inspect the service metadata, root metadata if share
 resolutions in this repo did exactly that, and both looked correct in isolation:
 
 - Three manifests pinned `opentelemetry-instrumentation-fastapi` to disjoint ranges,
-  making every per-service lock unresolvable. Unifying them on `^0.49b0` fixed the
-  conflict — and `0.49b0` is a two-year-old release that crashes against the FastAPI
-  version we pin, 500ing every route registered via `include_router`. See #978.
+  making every per-service lock unresolvable. Unifying them fixed the conflict — and
+  the version chosen then, `^0.49b0`, was a two-year-old release that crashes against
+  the FastAPI version we pin, 500ing every route registered via `include_router`.
+  The current floor is **`^0.64b0`**: the first release whose `_get_route_details()`
+  tolerates an `_IncludedRouter` in `scope['route']`. `0.50b0` and `0.55b0` carry the
+  identical unguarded code, so 'bump to the next release' is not a fix — bisect. That
+  forced the API/SDK floor to `1.43.0` and, because the Jaeger exporter is EOL at
+  `1.21.0`, a migration to OTLP export. See #978.
 - Fixing that forced the API/SDK floor to `1.43.0`, which in turn broke
   `opentelemetry-exporter-jaeger`, discontinued upstream at `1.21.0` with no later
   release. There was no version of that exporter that worked, so the exporter had to
@@ -572,7 +577,8 @@ Reach for the logs before theorising. Every row here cost real time to derive.
 | Service healthy, every real route 500s | middleware raising before the handler | `logs <svc> \| grep -A20 Error` |
 | Blank page, HTTP 200, curl looks fine | page never hydrated; CSP blocked the inline script | `node scripts/browser-check.mjs /route` |
 | `502` from a Next.js server-side fetch | in-container code used a public host; `localhost` is the container itself | `exec <svc> curl -sv http://api-gateway:8000` |
-| `UndefinedColumnError` on a fresh volume | `create_all` is `checkfirst` — 9 of 20 content tables were never created | `python scripts/init_schemas.py` |
+| `UndefinedColumnError` on an existing table | model declares a column the table lacks; `create_all` is `checkfirst` and never alters tables | `python scripts/init_schemas.py`, then re-read 23.6 in AGENT_COORDINATION.md |
+| Whole bootstrap exits 1 on a `NotNullViolationError` | a `nullable=False` column with no server default, against a populated table | needs a human `ALTER TABLE`, not the reconcile pass |
 | Build says `CACHED`, image has old code | layer cache; `--no-cache` plus `--force-recreate` | `build --no-cache && up -d --force-recreate` |
 | `up -d` did not pick up a new image | container was reused, not recreated | `up -d --no-deps --force-recreate` |
 | Register returns 201 but UI says it failed | session rejected after the account was created | `node scripts/auth-flow-check.mjs` |
@@ -624,6 +630,49 @@ Reviewers: the branch is large, so spend your attention where the risk is.
 
 A reviewer's most valuable output is sometimes "this does not prove what it claims",
 not a list of style nits. Say so plainly when that is your finding.
+
+## 28b. Getting feedback on your own work
+
+**Dispatch a reviewer before you call your work done, not after.** Self-review
+re-reads what you meant to write rather than what is there, and it cannot notice the
+assumption you have already been convinced of. A fresh agent with no memory of the
+session is the only thing that can do this properly.
+
+In this repo that review was worth more than the work it reviewed. The diagnosis work
+survived scrutiny — the blank-page fix and the 502 fix were both verified end to end
+— while the *tooling* did not, and the tooling was what had been cited as proof. A
+reviewer found that `scripts/browser-check.mjs` **reported OK for a 404** and for every
+protected route that silently bounced to `/login`, because it collected the status
+and the redirect target, printed them, and then never used them in its verdict. That
+had been cited as evidence the site was healthy.
+
+**Ask for criticism, not approval.** A brief that says "check this is good" gets you
+a summary. Say: find what is wrong, assume the claims are overstated, and tell me
+which of them are wrong. Request a verdict per claim — VERIFIED / OVERSTATED / WRONG,
+with evidence. Ask specifically what was ruled out, and whether the conclusion is
+consistent with it.
+
+**A reviewer's most valuable output is often "this does not prove what it claims."**
+Take that seriously even when the code is correct. Three ways this shows up:
+
+- **A harness that cannot fail, or fails for the wrong reason.** Ask what the check
+  would report if the bug were still present, and whether it would report a *different*
+  bug. "Does each page render?" that passes on a 404 is worse than no check.
+- **Counts presented as identity.** "164/164 columns" proves a column count matched.
+  It does not prove indexes, constraints, defaults, or types matched.
+- **A test that re-asserts what an adjacent test already asserts.** Two identical
+  assertions are one assertion. Ask how many of the passing tests are actually
+  load-bearing.
+
+**When the review finds something, fix it before citing the work again.** And if it
+finds that your verification never ran — a script that exits 2 on the documented
+invocation, a build that was already broken — say so plainly rather than leaving the
+tool referenced as the designated check. A documented tool that does not run is worse
+than a missing one, because it is trusted.
+
+**Push back on findings you think are wrong**, with evidence. A reviewer is not
+automatically right, and this repo has seen both directions. But do not quietly
+decline a finding: state your reasoning, and record it if it stays disputed.
 
 ## 29. Maintaining this guide
 

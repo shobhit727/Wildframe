@@ -134,13 +134,18 @@ describe('inline bootstrap scripts are admitted by the served CSP', () => {
     expect(admitsInlineScripts(csp, html)).toBe(false);
   });
 
-  it('the app ships no prerendered route HTML, so no build-time artifact can be replayed', () => {
-    // Structural guard. A prerendered `.html` artifact existing at all means
-    // some route is being served without a request-scoped nonce.
-    // Covered end-to-end (real build, real server, real HTML) by
-    // `csp-nonce-render.test.ts`.
-    expect(rootLayout.dynamic).toBe('force-dynamic');
-  });
+    it('the app ships no prerendered route HTML, so no build-time artifact can be replayed', () => {
+      // Structural guard only. It re-asserts the same thing as the test above,
+      // so it adds no coverage: there is exactly one way to be right here.
+      //
+      // The end-to-end proof is `scripts/verify-csp-nonce.mjs`, which boots a real
+      // production build and checks the nonce against real rendered HTML. NOTE: that
+      // script currently cannot run, because `npm run build` fails on a pre-existing
+      // Edge-runtime static-analysis error in apps/web/instrumentation.ts. Treat this
+      // assertion as necessary but NOT sufficient until the build works again.
+      expect(rootLayout.dynamic).toBe('force-dynamic');
+    });
+
 });
 
 describe('proxy production CSP', () => {
