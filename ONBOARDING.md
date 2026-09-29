@@ -297,6 +297,23 @@ Everything a human still owes is in **`oner-task.md`**.
 
 ---
 
+## 6b. Symptom to cause, in one table
+
+`AGENTS.md` §26 has a longer version. The short version, because these are the ones
+that actually cost time:
+
+| Symptom | Most likely cause |
+|---|---|
+| Service healthy, every real route 500s | middleware raising before the handler |
+| Blank page, HTTP 200, curl looks fine | page never hydrated; CSP blocked the inline script |
+| `502` from a server-side fetch | in-container code used a public host; `localhost` is the container itself |
+| `UndefinedColumnError` on a fresh volume | `create_all` is `checkfirst` and never alters existing tables |
+| Build says `CACHED`, image has old code | layer cache — use `--no-cache` and `--force-recreate` |
+| Register returns 201 but the UI says it failed | the session was rejected after the account was created |
+| Hard reload bounces to `/login` | server-side session read failing |
+| `pip check` reports a transitive conflict | partial upgrade; the family pins each other |
+| A test passes but the app is broken | the test mocks the layer where the value should arrive |
+
 ## 7. Ask the running system
 
 You can talk to the app. Do it before you theorise.

@@ -179,6 +179,32 @@ frontend/client path -> gateway route -> service prefix -> FastAPI route.
 
 Update the API client, gateway, backend route, and contract tests together when an external route changes.
 
+### 8.1 Changing an API without breaking clients
+
+The frontend, the gateway, and the service are three consumers of one contract, and
+they are updated in one commit or not at all. In this monorepo that is cheap — do it
+in the same change.
+
+- **Never remove or rename a field.** Deprecate it: keep returning it, mark it
+  deprecated in the schema, and stop consuming it on your own side. A removed
+  response field is an outage for a client you cannot see.
+- **Additive first.** A new optional field or a new endpoint is safe. A changed
+  meaning of an existing field is not, however compatible the shape looks.
+- **Response models are the contract.** If a Pydantic model drops a field, the field
+  disappears. Check the response model, not just the database, when auditing what a
+  client can see.
+- **Route a changed path rather than swapping it**, then delete the old one once no
+  caller remains. `tests/contract/` is where the route inventory lives — if a path
+  exists there, something depends on it.
+- **The E2E fixtures are a second, unreconciled contract.** They are typed against a
+  hand-maintained DTO, so a backend field can change and the frontend fixture type
+  will not. Two defects during the last audit existed only in that gap: a scale
+  mismatch on `audience_score`, and `content.price_usd` present in the model and
+  absent from the schema. When you change a payload, update `e2e/fixtures.ts` and the
+  matching `types/index.ts` in the same commit.
+- **Do not treat a green contract test as proof the client works.** Those tests check
+  that no shared secret is used for JWT verification, not that the payloads agree.
+
 ## 9. Kafka and events
 
 Shared event code lives in packages/sdk/wildframe_events. Use its DomainEvent, topic definitions, publisher, and subscriber abstractions instead of creating a second event envelope.
@@ -243,6 +269,27 @@ Important areas:
 - src/proxy.ts — frontend request/proxy behavior.
 - src/__tests__/ — Vitest tests.
 - e2e/ — Playwright tests.
+
+### 15.1 Frontend conventions worth stating
+
+- **A Server Component by default.** Add `"use client"` only for state, effects,
+  refs, browser APIs, or event handlers. A client boundary that does not need to
+  exist costs bundle size and hydration work.
+- **Holding a render on an effect is a last resort.** `apps/web/src/app/providers.tsx`
+  gates the entire tree on `authReady`, so if `hydrate()` never settles the whole app
+  is a spinner — a single unguarded promise here takes down every route. If you must
+  gate, give it a timeout and a visible failure.
+- **Do not route on the client what the proxy already knows.** `src/proxy.ts`
+  redirects unauthenticated users off protected routes. A second client-side guard
+  duplicates that rule and will drift.
+- **Auth state lives in the store, not in component state.** `useAuthStore` and the
+  `__Host-wf_refresh` cookie are the source of truth; page components read them.
+- **One variable per audience.** Browser code derives its API base from
+  `window.location.hostname`; in-container server code uses `AUTH_SERVICE_URL`.
+  Merging them produced a 502 on every hard reload — see 5.2.
+- **A cookie named `__Host-` must not be given a `Domain` attribute**, in app code
+  or in a test harness. The browser drops it silently and the symptom looks like an
+  auth bug. This bit a verification script before it bit anything in `src/`.
 
 Keep browser/server boundaries explicit. Note that `apps/web/AGENTS.md` directs agents to
 `node_modules/next/dist/docs/`; that directory is not present in this install, so verify
@@ -797,13 +844,99 @@ Never commit real credentials, tokens, private keys, production connection strin
 
 Use SECURITY.md for genuine vulnerability reporting. Do not disclose exploitable secrets in public issues or pull requests.
 
+### 24.1 Handling a suspected secret
+
+If you find a credential in the repository, an agent, or a log:
+
+- **Do not decide yourself whether it is authorized.** That is a human decision, and
+  the evidence is often contradictory — one commit asserting "owner-authorized"
+  while another says it should never have been there. Record what you found, in
+  `oner-task.md`, and stop.
+- **Redaction is not remediation.** A credential that was ever committed must be
+  treated as compromised and **rotated**. Rewriting history does not un-clone anything.
+- **Do not quote the value**, not even into a board entry. A previous agent re-quoted a
+  fragment into the board to make a point, and the entry had to be removed. Refer to
+  it by location, not content.
+- **Scratch files are not a safe place for it either.** `/tmp` is world-readable on most
+  systems and `.gitignore` does not cover it. See 23.6.
+
+A secret in a dev compose file is still a secret, and a LAN IP with a TLS-terminating
+listener in front of it is not a secret but is a machine-specific hardcode that breaks
+everybody else's setup — see 23.4.
+
 ## 25. Pull requests
 
 Use descriptive branches such as fix/auth-jwt-audience, fix/billing-refund-reconciliation, test/gateway-body-limit-regression, or docs/update-architecture-guide.
 
 PR descriptions should state what changed, why, tests run, and any security, data, deployment, or configuration implications.
 
+**Attach the evidence, not just the claim.** "Tests pass" is not reviewable. Include
+the failing output before the fix and the passing output after, and say which command
+produced each. If a check could not be run, say so rather than leaving it implied.
+
 Do not merge a PR unless the task explicitly requires it. The normal agent workflow is branch -> focused commit(s) -> PR -> human review.
+
+## 26. Troubleshooting: symptom first
+
+Reach for the logs before theorising. Every row here cost real time to derive.
+
+| Symptom | Most likely cause | First command |
+|---|---|---|
+| Service healthy, every real route 500s | middleware raising before the handler | `logs <svc> \| grep -A20 Error` |
+| Blank page, HTTP 200, curl looks fine | page never hydrated; CSP blocked the inline script | `node scripts/browser-check.mjs /route` |
+| `502` from a Next.js server-side fetch | in-container code used a public host; `localhost` is the container itself | `exec <svc> curl -sv http://api-gateway:8000` |
+| `UndefinedColumnError` on a fresh volume | `create_all` is `checkfirst` — 9 of 20 content tables were never created | `python scripts/init_schemas.py` |
+| Build says `CACHED`, image has old code | layer cache; `--no-cache` plus `--force-recreate` | `build --no-cache && up -d --force-recreate` |
+| `up -d` did not pick up a new image | container was reused, not recreated | `up -d --no-deps --force-recreate` |
+| Register returns 201 but UI says it failed | session rejected after the account was created | `node scripts/auth-flow-check.mjs` |
+| Hard reload bounces to /login | server-side session read failing | `curl -sk https://localhost:3000/auth-session` |
+| Services healthy but Kafka operations fail | ACLs never created; `ALLOW_EVERYONE_IF_NO_ACL_FOUND=false` | see issue #893 |
+| Kafka healthy but `listTopics` times out | healthcheck only proves TLS/SASL, not metadata | `logs kafka \| tail` |
+| `pip check` reports a transitive conflict | partial upgrade; the family pins each other | `pip check` then align the whole family |
+| Thousands of `import-untyped` errors | deps not installed in this venv | `poetry install --with dev` |
+| A test passes but the app is broken | the test mocks the layer where the value should arrive | run it against the running stack |
+| Push says success, commit is missing | branch moved; check content, not exit code | `git show origin/<b>:<path> \| grep -c` |
+| Push rejected, tree is dirty | someone else's uncommitted work — see 23.1 | `git status --porcelain` |
+
+## 27. Before you claim something is done
+
+A single checkable list. Most of these cost me a correction during the last audit.
+
+- [ ] Ran the change against the **running stack**, not only the test suite
+- [ ] Hit a **real endpoint**, not `/health` — a healthy service can 500 on every route
+- [ ] For anything browser-rendered: `node scripts/browser-check.mjs` passes
+- [ ] If a schema changed: `python scripts/init_schemas.py` run, verified on a **fresh
+      volume**, and the migration is additive or explicitly reviewed
+- [ ] If a dependency moved: `pip check` clean, and the **whole family** moved together
+- [ ] Verified the **built artifact** contains the change, not just the source tree
+- [ ] New test **fails without the fix** — revert and watch it go red
+- [ ] Board updated: claim released, findings recorded
+- [ ] `oner-task.md` updated with anything you deliberately left undone
+- [ ] Nothing reusable left in `/tmp` — see 23.6
+- [ ] Diff reviewed for accidental security, API, dependency or docs changes
+- [ ] No secrets in the diff, in a log, or in a board entry — see 24.1
+
+**If you cannot tick a box, say so** and name it. An honest partial result is far more
+useful than a confident wrong one, and it is what the next agent can act on.
+
+## 28. Reviewing someone else's change
+
+Reviewers: the branch is large, so spend your attention where the risk is.
+
+- [ ] **Does the test actually fail without the fix?** Ask to see it go red. A test
+      that passes both ways is decoration.
+- [ ] **What was ruled out, and is the conclusion consistent with it?** Check the
+      reasoning against the evidence, not just the conclusion.
+- [ ] **Did anything get weakened to make something pass?** `except: pass`,
+      `ignoreBuildErrors`, `continue-on-error`, `|| true`, a deleted assertion, a
+      lowered threshold. These are the single most common way an outage ships green.
+- [ ] **Is there a scope creep into unrelated files?** Especially other agents' paths.
+- [ ] **Schema and dependency changes** are the highest-risk review targets: does the
+      change work on a fresh volume, and does the dependency family move together?
+- [ ] **Claims that were verified, versus claims that were assumed.** Ask which.
+
+A reviewer's most valuable output is sometimes "this does not prove what it claims",
+not a list of style nits. Say so plainly when that is your finding.
 
 ## Quick reference
 
