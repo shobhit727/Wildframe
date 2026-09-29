@@ -1,351 +1,522 @@
-# Spawn Board — 100 subagent test/fix campaign
+# Spawn Board — 100-agent read-only UX wave (adversarial, browser-level)
 
-## Rules (all agents MUST follow)
+## READ FIRST — four traps that have already cost this session real time
 
-- **Board:** this file + `Message-board.md` in the repo root (never /tmp).
-- **Interpreter:** `cd services/<svc> && poetry run pytest <files> --asyncio-mode=auto`; print `sys.executable` in your report.
-- **NO git commit/push.** Main integrates. Edit files only within your assigned list.
-- Report failures with the exact assertion/command; do not 'fix' unrelated code.
-- Fix bugs in your own assigned files; claim via Message-board.md entry if you need a file outside your list.
+1. **The site must be up.** `curl -sk -o /dev/null -w '%{http_code}' https://localhost:3000/`
+   must not be 000. If it is, stop and report; do not file a finding.
+2. **Host port 8000 is the api-gateway. 8001..8014 are individual services and are
+   NOT service names.** Probing the wrong one 404s and reads like broken routing.
+3. **Protected routes 307 to /login when unauthenticated. That is correct.**
+   Use `EXPECT_LAND=/login` for those, one route per invocation.
+4. **`/health` returning 200 means nothing.** It skips the repository; a service can
+   be 200 on /health and 500 on every real route. Test real endpoints.
 
-## Slices (100 agents, 3 per service + web + sdk)
+## Rules
 
-- **A-001** `admin-service` `test_admin_extra.py`
-- **A-002** `admin-service` `test_admin_integration.py`
-- **A-003** `admin-service` `test_admin_service.py`
-- **A-004** `admin-service` `test_core_events.py`
-- **A-005** `admin-service` `test_documents.py`
-- **A-006** `admin-service` `test_final15.py`
-- **A-007** `admin-service` `test_models.py`
-- **A-008** `admin-service` `test_repositories_admin.py`
-- **A-009** `admin-service` `test_step_up.py`
-- **A-010** `admin-service` `test_admin_final.py`
-- **A-011** `admin-service` `test_admin_jwks_verification.py`
-- **A-012** `admin-service` `test_app_lifecycle.py`
-- **A-013** `admin-service` `test_core_secrets.py`
-- **A-014** `admin-service` `test_eu.py`
-- **A-015** `admin-service` `test_india.py`
-- **A-016** `admin-service` `test_processors.py`
-- **A-017** `admin-service` `test_routes.py`
-- **A-018** `admin-service` `test_transfers.py`
-- **A-019** `admin-service` `test_admin_httpx.py`
-- **A-020** `admin-service` `test_admin_remaining.py`
-- **A-021** `admin-service` `test_core_database.py`
-- **A-022** `admin-service` `test_cov2.py`
-- **A-023** `admin-service` `test_final.py`
-- **A-024** `admin-service` `test_integration.py`
-- **A-025** `admin-service` `test_repositories.py`
-- **A-026** `admin-service` `test_settings_validation.py`
-- **A-027** `admin-service` `test_unmounted_routers.py`
-- **A-028** `analytics-service` `test_analytics_jwks_verification.py`
-- **A-029** `analytics-service` `test_core_database.py`
-- **A-030** `analytics-service` `test_dsar.py`
-- **A-031** `analytics-service` `test_repositories_gaps.py`
-- **A-032** `analytics-service` `test_service.py`
-- **A-033** `analytics-service` `test_settings_validation.py`
-- **A-034** `analytics-service` `test_analytics_routes_auth.py`
-- **A-035** `analytics-service` `test_core_logging.py`
-- **A-036** `analytics-service` `test_models.py`
-- **A-037** `analytics-service` `test_routes.py`
-- **A-038** `analytics-service` `test_service_extra.py`
-- **A-039** `analytics-service` `test_tracking.py`
-- **A-040** `analytics-service` `test_app_lifecycle.py`
-- **A-041** `analytics-service` `test_cov.py`
-- **A-042** `analytics-service` `test_repositories.py`
-- **A-043** `analytics-service` `test_schemas_dsar.py`
-- **A-044** `analytics-service` `test_services_gaps.py`
-- **A-045** `analytics-service` `test_unmounted_routers.py`
-- **A-046** `api-gateway` `test_age_gate.py`
-- **A-047** `api-gateway` `test_core_logging.py`
-- **A-048** `api-gateway` `test_decompression_budget.py`
-- **A-049** `api-gateway` `test_gateway_final3.py`
-- **A-050** `api-gateway` `test_rate_limiter_dual.py`
-- **A-051** `api-gateway` `test_service.py`
-- **A-052** `api-gateway` `test_app_lifecycle.py`
-- **A-053** `api-gateway` `test_core_misc.py`
-- **A-054** `api-gateway` `test_gateway.py`
-- **A-055** `api-gateway` `test_metrics_guard.py`
-- **A-056** `api-gateway` `test_remaining_final.py`
-- **A-057** `api-gateway` `test_xff_sanitization.py`
-- **A-058** `api-gateway` `test_body_streaming.py`
-- **A-059** `api-gateway` `test_core_settings.py`
-- **A-060** `api-gateway` `test_gateway_final2.py`
-- **A-061** `api-gateway` `test_privacy_proxy.py`
-- **A-062** `api-gateway` `test_security.py`
-- **A-063** `auth-service` `test_age_routes.py`
-- **A-064** `auth-service` `test_app_lifecycle.py`
-- **A-065** `auth-service` `test_auth_final3.py`
-- **A-066** `auth-service` `test_auth_routes_gaps.py`
-- **A-067** `auth-service` `test_core_events.py`
-- **A-068** `auth-service` `test_database.py`
-- **A-069** `auth-service` `test_final.py`
-- **A-070** `auth-service` `test_jwks_verification.py`
-- **A-071** `auth-service` `test_models.py`
-- **A-072** `auth-service` `test_privacy.py`
-- **A-073** `auth-service` `test_privacy_integration.py`
-- **A-074** `auth-service` `test_remaining_final.py`
-- **A-075** `auth-service` `test_settings.py`
-- **A-076** `auth-service` `test_suspension_enforcement.py`
-- **A-077** `auth-service` `test_api.py`
-- **A-078** `auth-service` `test_auth_endpoints.py`
-- **A-079** `auth-service` `test_auth_lifecycle_security.py`
-- **A-080** `auth-service` `test_auth_service.py`
-- **A-081** `auth-service` `test_core_logging.py`
-- **A-082** `auth-service` `test_dead_auth_guard.py`
-- **A-083** `auth-service` `test_final15.py`
-- **A-084** `auth-service` `test_metrics_guard.py`
-- **A-085** `auth-service` `test_no_unverified_decode.py`
-- **A-086** `auth-service` `test_privacy_cov.py`
-- **A-087** `auth-service` `test_rate_limit_faults.py`
-- **A-088** `auth-service` `test_repositories.py`
-- **A-089** `auth-service` `test_settings_validation.py`
-- **A-090** `auth-service` `test_telemetry.py`
-- **A-091** `auth-service` `test_api_edge_cases.py`
-- **A-092** `auth-service` `test_auth_final2.py`
-- **A-093** `auth-service` `test_auth_remaining.py`
-- **A-094** `auth-service` `test_auth_service_edges.py`
-- **A-095** `auth-service` `test_cov2.py`
-- **A-096** `auth-service` `test_dsar_verify_routes.py`
-- **A-097** `auth-service` `test_integration.py`
-- **A-098** `auth-service` `test_mfa_lifecycle_security.py`
-- **A-099** `auth-service` `test_oauth_absent.py`
-- **A-100** `auth-service` `test_privacy_httpx.py`
-- **A-101** `auth-service` `test_rate_limit_key_guard.py`
-- **A-102** `auth-service` `test_security.py`
-- **A-103** `auth-service` `test_step_up.py`
-- **A-104** `auth-service` `test_validation_error_handling.py`
-- **A-105** `billing-service` `test_app_lifecycle.py`
-- **A-106** `billing-service` `test_billing_final.py`
-- **A-107** `billing-service` `test_billing_httpx.py`
-- **A-108** `billing-service` `test_billing_service_edges.py`
-- **A-109** `billing-service` `test_cov2.py`
-- **A-110** `billing-service` `test_jwks_verification.py`
-- **A-111** `billing-service` `test_money.py`
-- **A-112** `billing-service` `test_refund_reconciliation.py`
-- **A-113** `billing-service` `test_services_gaps.py`
-- **A-114** `billing-service` `test_subscription.py`
-- **A-115** `billing-service` `test_webhook_handlers.py`
-- **A-116** `billing-service` `test_audit.py`
-- **A-117** `billing-service` `test_billing_final2.py`
-- **A-118** `billing-service` `test_billing_integration.py`
-- **A-119** `billing-service` `test_commerce.py`
-- **A-120** `billing-service` `test_final.py`
-- **A-121** `billing-service` `test_milestone_auth.py`
-- **A-122** `billing-service` `test_payment_intent_payout.py`
-- **A-123** `billing-service` `test_repositories.py`
-- **A-124** `billing-service` `test_settings_validation.py`
-- **A-125** `billing-service` `test_tvod_security.py`
-- **A-126** `billing-service` `test_webhook_inbox.py`
-- **A-127** `billing-service` `test_auth_version.py`
-- **A-128** `billing-service` `test_billing_final3.py`
-- **A-129** `billing-service` `test_billing_remaining.py`
-- **A-130** `billing-service` `test_core_database.py`
-- **A-131** `billing-service` `test_final15.py`
-- **A-132** `billing-service` `test_models.py`
-- **A-133** `billing-service` `test_payout.py`
-- **A-134** `billing-service` `test_service.py`
-- **A-135** `billing-service` `test_stripe_client.py`
-- **A-136** `billing-service` `test_unmounted_routers.py`
-- **A-137** `content-service` `test_ads_compliance_models.py`
-- **A-138** `content-service` `test_content_cov.py`
-- **A-139** `content-service` `test_content_jwks_verification.py`
-- **A-140** `content-service` `test_content_service_coverage.py`
-- **A-141** `content-service` `test_cov2.py`
-- **A-142** `content-service` `test_integration.py`
-- **A-143** `content-service` `test_repositories.py`
-- **A-144** `content-service` `test_routes.py`
-- **A-145** `content-service` `test_app_lifecycle.py`
-- **A-146** `content-service` `test_content_extra.py`
-- **A-147** `content-service` `test_content_remaining.py`
-- **A-148** `content-service` `test_core_database.py`
-- **A-149** `content-service` `test_final.py`
-- **A-150** `content-service` `test_metrics_guard.py`
-- **A-151** `content-service` `test_rights.py`
-- **A-152** `content-service` `test_settings_validation.py`
-- **A-153** `content-service` `test_auth_version.py`
-- **A-154** `content-service` `test_content_httpx.py`
-- **A-155** `content-service` `test_content_service.py`
-- **A-156** `content-service` `test_core_logging.py`
-- **A-157** `content-service` `test_final15.py`
-- **A-158** `content-service` `test_models.py`
-- **A-159** `content-service` `test_rights_integration.py`
-- **A-160** `content-service` `test_unmounted_routers.py`
-- **A-161** `creators-service` `test_app_lifecycle.py`
-- **A-162** `creators-service` `test_creators_extra.py`
-- **A-163** `creators-service` `test_creators_jwks_verification.py`
-- **A-164** `creators-service` `test_models.py`
-- **A-165** `creators-service` `test_repositories.py`
-- **A-166** `creators-service` `test_settings_validation.py`
-- **A-167** `creators-service` `test_core_database.py`
-- **A-168** `creators-service` `test_creators_final2.py`
-- **A-169** `creators-service` `test_creators_service.py`
-- **A-170** `creators-service` `test_onboarding.py`
-- **A-171** `creators-service` `test_routes.py`
-- **A-172** `creators-service` `test_unmounted_routers.py`
-- **A-173** `creators-service` `test_core_logging.py`
-- **A-174** `creators-service` `test_creators_final3.py`
-- **A-175** `creators-service` `test_metrics_guard.py`
-- **A-176** `creators-service` `test_remaining_final.py`
-- **A-177** `creators-service` `test_schemas_creator.py`
-- **A-178** `media-pipeline` `test_app_lifecycle.py`
-- **A-179** `media-pipeline` `test_ffmpeg_package.py`
-- **A-180** `media-pipeline` `test_integration.py`
-- **A-181** `media-pipeline` `test_models.py`
-- **A-182** `media-pipeline` `test_pipeline_state_machine.py`
-- **A-183** `media-pipeline` `test_repositories.py`
-- **A-184** `media-pipeline` `test_routes.py`
-- **A-185** `media-pipeline` `test_settings_validation.py`
-- **A-186** `media-pipeline` `test_core_logging.py`
-- **A-187** `media-pipeline` `test_ffmpeg_probes.py`
-- **A-188** `media-pipeline` `test_media_compliance.py`
-- **A-189** `media-pipeline` `test_orchestrator_defensive_paths.py`
-- **A-190** `media-pipeline` `test_pipeline_token_auth.py`
-- **A-191** `media-pipeline` `test_repositories_coverage.py`
-- **A-192** `media-pipeline` `test_service.py`
-- **A-193** `media-pipeline` `test_stages_ports.py`
-- **A-194** `media-pipeline` `test_events_and_db.py`
-- **A-195** `media-pipeline` `test_infrastructure_branches.py`
-- **A-196** `media-pipeline` `test_media_jwks_verification.py`
-- **A-197** `media-pipeline` `test_pipeline_security_hardening.py`
-- **A-198** `media-pipeline` `test_production_adapter_validation.py`
-- **A-199** `media-pipeline` `test_repositories_queries.py`
-- **A-200** `media-pipeline` `test_services_gaps.py`
-- **A-201** `moderation-service` `test_app_lifecycle.py`
-- **A-202** `moderation-service` `test_core_events.py`
-- **A-203** `moderation-service` `test_dmca.py`
-- **A-204** `moderation-service` `test_models.py`
-- **A-205** `moderation-service` `test_moderation_final.py`
-- **A-206** `moderation-service` `test_review_queue.py`
-- **A-207** `moderation-service` `test_unmounted_routers.py`
-- **A-208** `moderation-service` `test_auth_version.py`
-- **A-209** `moderation-service` `test_core_logging.py`
-- **A-210** `moderation-service` `test_extra2.py`
-- **A-211** `moderation-service` `test_moderation.py`
-- **A-212** `moderation-service` `test_moderation_jwks_verification.py`
-- **A-213** `moderation-service` `test_routes.py`
-- **A-214** `moderation-service` `test_core_database.py`
-- **A-215** `moderation-service` `test_cov.py`
-- **A-216** `moderation-service` `test_metrics_guard.py`
-- **A-217** `moderation-service` `test_moderation_extra.py`
-- **A-218** `moderation-service` `test_repositories_flat.py`
-- **A-219** `moderation-service` `test_settings_validation.py`
-- **A-220** `notification-service` `test_app_lifecycle.py`
-- **A-221** `notification-service` `test_core_logging.py`
-- **A-222** `notification-service` `test_notification_compliance.py`
-- **A-223** `notification-service` `test_repositories.py`
-- **A-224** `notification-service` `test_sanitization.py`
-- **A-225** `notification-service` `test_settings_validation.py`
-- **A-226** `notification-service` `test_channels.py`
-- **A-227** `notification-service` `test_db.py`
-- **A-228** `notification-service` `test_notification_routes_auth.py`
-- **A-229** `notification-service` `test_repository_edge_cases.py`
-- **A-230** `notification-service` `test_service.py`
-- **A-231** `notification-service` `test_core_database.py`
-- **A-232** `notification-service` `test_models.py`
-- **A-233** `notification-service` `test_notification_routes_http.py`
-- **A-234** `notification-service` `test_routes.py`
-- **A-235** `notification-service` `test_services_dispatch.py`
-- **A-236** `recommendation-service` `test_app_lifecycle.py`
-- **A-237** `recommendation-service` `test_core_database.py`
-- **A-238** `recommendation-service` `test_events.py`
-- **A-239** `recommendation-service` `test_rec_extra.py`
-- **A-240** `recommendation-service` `test_repositories.py`
-- **A-241** `recommendation-service` `test_settings_validation.py`
-- **A-242** `recommendation-service` `test_cache.py`
-- **A-243** `recommendation-service` `test_core_events_gaps.py`
-- **A-244** `recommendation-service` `test_generation.py`
-- **A-245** `recommendation-service` `test_recommendation_compliance.py`
-- **A-246** `recommendation-service` `test_routes.py`
-- **A-247** `recommendation-service` `test_catalog_client.py`
-- **A-248** `recommendation-service` `test_core_logging.py`
-- **A-249** `recommendation-service` `test_models.py`
-- **A-250** `recommendation-service` `test_recommendation_jwks_verification.py`
-- **A-251** `recommendation-service` `test_service.py`
-- **A-252** `search-service` `test_app_lifecycle.py`
-- **A-253** `search-service` `test_core_logging.py`
-- **A-254** `search-service` `test_events.py`
-- **A-255** `search-service` `test_repositories.py`
-- **A-256** `search-service` `test_search_compliance_extra.py`
-- **A-257** `search-service` `test_settings_validation.py`
-- **A-258** `search-service` `test_core_database.py`
-- **A-259** `search-service` `test_es_lifecycle.py`
-- **A-260** `search-service` `test_metrics_guard.py`
-- **A-261** `search-service` `test_routes.py`
-- **A-262** `search-service` `test_search_jwks_verification.py`
-- **A-263** `search-service` `test_core_events.py`
-- **A-264** `search-service` `test_event_consumer.py`
-- **A-265** `search-service` `test_models.py`
-- **A-266** `search-service` `test_search_compliance.py`
-- **A-267** `search-service` `test_service.py`
-- **A-268** `streaming-service` `test_app_lifecycle.py`
-- **A-269** `streaming-service` `test_core_logging.py`
-- **A-270** `streaming-service` `test_maturity.py`
-- **A-271** `streaming-service` `test_remaining_final.py`
-- **A-272** `streaming-service` `test_routes.py`
-- **A-273** `streaming-service` `test_settings_validation.py`
-- **A-274** `streaming-service` `test_streaming_service.py`
-- **A-275** `streaming-service` `test_config_and_db.py`
-- **A-276** `streaming-service` `test_extra2.py`
-- **A-277** `streaming-service` `test_metrics_guard.py`
-- **A-278** `streaming-service` `test_repositories.py`
-- **A-279** `streaming-service` `test_routes_gaps.py`
-- **A-280** `streaming-service` `test_streaming_extra.py`
-- **A-281** `streaming-service` `test_streaming_service_edges.py`
-- **A-282** `streaming-service` `test_core_database.py`
-- **A-283** `streaming-service` `test_integration.py`
-- **A-284** `streaming-service` `test_models.py`
-- **A-285** `streaming-service` `test_repositories_gaps.py`
-- **A-286** `streaming-service` `test_services_gaps.py`
-- **A-287** `streaming-service` `test_streaming_jwks_verification.py`
-- **A-288** `streaming-service` `test_unmounted_routers.py`
-- **A-289** `uploads-service` `test_app_lifecycle.py`
-- **A-290** `uploads-service` `test_core_logging.py`
-- **A-291** `uploads-service` `test_repositories.py`
-- **A-292** `uploads-service` `test_settings_validation.py`
-- **A-293** `uploads-service` `test_upload_lifecycle_security.py`
-- **A-294** `uploads-service` `test_uploads_compliance.py`
-- **A-295** `uploads-service` `test_core_database.py`
-- **A-296** `uploads-service` `test_models.py`
-- **A-297** `uploads-service` `test_routes_auth.py`
-- **A-298** `uploads-service` `test_storage_ports.py`
-- **A-299** `uploads-service` `test_upload_state_machine.py`
-- **A-300** `uploads-service` `test_uploads_jwks_verification.py`
-- **A-301** `uploads-service` `test_core_events.py`
-- **A-302** `uploads-service` `test_outbox_drain_and_repo.py`
-- **A-303** `uploads-service` `test_service.py`
-- **A-304** `uploads-service` `test_upload_failure_paths.py`
-- **A-305** `uploads-service` `test_upload_validation_guards.py`
-- **A-306** `uploads-service` `test_uploads_route_surface.py`
-- **A-307** `user-service` `test_app_lifecycle.py`
-- **A-308** `user-service` `test_core_database.py`
-- **A-309** `user-service` `test_cov2.py`
-- **A-310** `user-service` `test_event_consumer.py`
-- **A-311** `user-service` `test_integration.py`
-- **A-312** `user-service` `test_models_extended.py`
-- **A-313** `user-service` `test_registered_consumer.py`
-- **A-314** `user-service` `test_security_manager.py`
-- **A-315** `user-service` `test_unmounted_routers.py`
-- **A-316** `user-service` `test_user_final3.py`
-- **A-317** `user-service` `test_user_remaining.py`
-- **A-318** `user-service` `test_auth_dependencies.py`
-- **A-319** `user-service` `test_core_logging.py`
-- **A-320** `user-service` `test_database.py`
-- **A-321** `user-service` `test_final.py`
-- **A-322** `user-service` `test_metrics_guard.py`
-- **A-323** `user-service` `test_privacy.py`
-- **A-324** `user-service` `test_repositories.py`
-- **A-325** `user-service` `test_service_layer.py`
-- **A-326** `user-service` `test_user_cov.py`
-- **A-327** `user-service` `test_user_httpx.py`
-- **A-328** `user-service` `test_user_service.py`
-- **A-329** `user-service` `test_auth_version.py`
-- **A-330** `user-service` `test_core_repositories.py`
-- **A-331** `user-service` `test_dsar_integration.py`
-- **A-332** `user-service` `test_final15.py`
-- **A-333** `user-service` `test_models.py`
-- **A-334** `user-service` `test_privacy_repositories.py`
-- **A-335** `user-service` `test_routes.py`
-- **A-336** `user-service` `test_settings_validation.py`
-- **A-337** `user-service` `test_user_final2.py`
-- **A-338** `user-service` `test_user_jwks_verification.py`
-- **A-339** `user-service` `test_user_service_edges.py`
+- **READ-ONLY. Do not edit, create or delete any file. No git commands at all.**
+- One harness, one route, one question per agent. Do not run all four harnesses.
+- Report what the tool printed, not what you concluded. Quote the status code.
+- A 404 on a path that is not in the route list is NOT a finding — report it as
+  'route not found' with the exact path and move on.
+- If a command is missing or the browser will not launch, say so in one line.
+  Do not manufacture a finding.
+
+## A-001 `/` — render
+```
+node scripts/browser-check.mjs /  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-002 `/` — prerender
+```
+node scripts/verify-csp-nonce.mjs /  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-003 `/` — unauth-bounce
+```
+Is the unauthenticated response for / a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-004 `/` — http-methods
+```
+Probe / with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-005 `/` — traversal
+```
+Probe / with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-006 `/` — notfound
+```
+Is there a not-found page for a bogus sibling of /? Does it render, or does it 500/blank?
+```
+
+## A-007 `/login` — render
+```
+node scripts/browser-check.mjs /login  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-008 `/login` — prerender
+```
+node scripts/verify-csp-nonce.mjs /login  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-009 `/login` — unauth-bounce
+```
+Is the unauthenticated response for /login a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-010 `/login` — http-methods
+```
+Probe /login with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-011 `/login` — traversal
+```
+Probe /login with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-012 `/login` — notfound
+```
+Is there a not-found page for a bogus sibling of /login? Does it render, or does it 500/blank?
+```
+
+## A-013 `/signup` — render
+```
+node scripts/browser-check.mjs /signup  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-014 `/signup` — prerender
+```
+node scripts/verify-csp-nonce.mjs /signup  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-015 `/signup` — unauth-bounce
+```
+Is the unauthenticated response for /signup a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-016 `/signup` — http-methods
+```
+Probe /signup with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-017 `/signup` — traversal
+```
+Probe /signup with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-018 `/signup` — notfound
+```
+Is there a not-found page for a bogus sibling of /signup? Does it render, or does it 500/blank?
+```
+
+## A-019 `/browse` — render
+```
+node scripts/browser-check.mjs /browse  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-020 `/browse` — prerender
+```
+node scripts/verify-csp-nonce.mjs /browse  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-021 `/browse` — unauth-bounce
+```
+Is the unauthenticated response for /browse a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-022 `/browse` — http-methods
+```
+Probe /browse with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-023 `/browse` — traversal
+```
+Probe /browse with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-024 `/browse` — notfound
+```
+Is there a not-found page for a bogus sibling of /browse? Does it render, or does it 500/blank?
+```
+
+## A-025 `/account` (protected) — render
+```
+node scripts/browser-check.mjs /account  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-026 `/account` (protected) — prerender
+```
+node scripts/verify-csp-nonce.mjs /account  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-027 `/account` (protected) — unauth-bounce
+```
+Is the unauthenticated response for /account a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-028 `/account` (protected) — http-methods
+```
+Probe /account with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-029 `/account` (protected) — traversal
+```
+Probe /account with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-030 `/account` (protected) — notfound
+```
+Is there a not-found page for a bogus sibling of /account? Does it render, or does it 500/blank?
+```
+
+## A-031 `/my-list` (protected) — render
+```
+node scripts/browser-check.mjs /my-list  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-032 `/my-list` (protected) — prerender
+```
+node scripts/verify-csp-nonce.mjs /my-list  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-033 `/my-list` (protected) — unauth-bounce
+```
+Is the unauthenticated response for /my-list a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-034 `/my-list` (protected) — http-methods
+```
+Probe /my-list with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-035 `/my-list` (protected) — traversal
+```
+Probe /my-list with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-036 `/my-list` (protected) — notfound
+```
+Is there a not-found page for a bogus sibling of /my-list? Does it render, or does it 500/blank?
+```
+
+## A-037 `/billing` (protected) — render
+```
+node scripts/browser-check.mjs /billing  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-038 `/billing` (protected) — prerender
+```
+node scripts/verify-csp-nonce.mjs /billing  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-039 `/billing` (protected) — unauth-bounce
+```
+Is the unauthenticated response for /billing a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-040 `/billing` (protected) — http-methods
+```
+Probe /billing with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-041 `/billing` (protected) — traversal
+```
+Probe /billing with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-042 `/billing` (protected) — notfound
+```
+Is there a not-found page for a bogus sibling of /billing? Does it render, or does it 500/blank?
+```
+
+## A-043 `/watch/[id]` (protected) — render
+```
+node scripts/browser-check.mjs /watch/[id]  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-044 `/watch/[id]` (protected) — prerender
+```
+node scripts/verify-csp-nonce.mjs /watch/[id]  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-045 `/watch/[id]` (protected) — unauth-bounce
+```
+Is the unauthenticated response for /watch/[id] a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-046 `/watch/[id]` (protected) — http-methods
+```
+Probe /watch/[id] with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-047 `/watch/[id]` (protected) — traversal
+```
+Probe /watch/[id] with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-048 `/watch/[id]` (protected) — notfound
+```
+Is there a not-found page for a bogus sibling of /watch/[id]? Does it render, or does it 500/blank?
+```
+
+## A-049 `/creator` — render
+```
+node scripts/browser-check.mjs /creator  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-050 `/creator` — prerender
+```
+node scripts/verify-csp-nonce.mjs /creator  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-051 `/creator` — unauth-bounce
+```
+Is the unauthenticated response for /creator a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-052 `/creator` — http-methods
+```
+Probe /creator with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-053 `/creator` — traversal
+```
+Probe /creator with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-054 `/creator` — notfound
+```
+Is there a not-found page for a bogus sibling of /creator? Does it render, or does it 500/blank?
+```
+
+## A-055 `/admin` (protected) — render
+```
+node scripts/browser-check.mjs /admin  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-056 `/admin` (protected) — prerender
+```
+node scripts/verify-csp-nonce.mjs /admin  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-057 `/admin` (protected) — unauth-bounce
+```
+Is the unauthenticated response for /admin a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-058 `/admin` (protected) — http-methods
+```
+Probe /admin with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-059 `/admin` (protected) — traversal
+```
+Probe /admin with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-060 `/admin` (protected) — notfound
+```
+Is there a not-found page for a bogus sibling of /admin? Does it render, or does it 500/blank?
+```
+
+## A-061 `/admin/users` (protected) — render
+```
+node scripts/browser-check.mjs /admin/users  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-062 `/admin/users` (protected) — prerender
+```
+node scripts/verify-csp-nonce.mjs /admin/users  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-063 `/admin/users` (protected) — unauth-bounce
+```
+Is the unauthenticated response for /admin/users a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-064 `/admin/users` (protected) — http-methods
+```
+Probe /admin/users with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-065 `/admin/users` (protected) — traversal
+```
+Probe /admin/users with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-066 `/admin/users` (protected) — notfound
+```
+Is there a not-found page for a bogus sibling of /admin/users? Does it render, or does it 500/blank?
+```
+
+## A-067 `/admin/audit` (protected) — render
+```
+node scripts/browser-check.mjs /admin/audit  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-068 `/admin/audit` (protected) — prerender
+```
+node scripts/verify-csp-nonce.mjs /admin/audit  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-069 `/admin/audit` (protected) — unauth-bounce
+```
+Is the unauthenticated response for /admin/audit a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-070 `/admin/audit` (protected) — http-methods
+```
+Probe /admin/audit with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-071 `/admin/audit` (protected) — traversal
+```
+Probe /admin/audit with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-072 `/admin/audit` (protected) — notfound
+```
+Is there a not-found page for a bogus sibling of /admin/audit? Does it render, or does it 500/blank?
+```
+
+## A-073 `/admin/config` (protected) — render
+```
+node scripts/browser-check.mjs /admin/config  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-074 `/admin/config` (protected) — prerender
+```
+node scripts/verify-csp-nonce.mjs /admin/config  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-075 `/admin/config` (protected) — unauth-bounce
+```
+Is the unauthenticated response for /admin/config a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-076 `/admin/config` (protected) — http-methods
+```
+Probe /admin/config with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-077 `/admin/config` (protected) — traversal
+```
+Probe /admin/config with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-078 `/admin/config` (protected) — notfound
+```
+Is there a not-found page for a bogus sibling of /admin/config? Does it render, or does it 500/blank?
+```
+
+## A-079 `/admin/alerts` (protected) — render
+```
+node scripts/browser-check.mjs /admin/alerts  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-080 `/admin/alerts` (protected) — prerender
+```
+node scripts/verify-csp-nonce.mjs /admin/alerts  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-081 `/admin/alerts` (protected) — unauth-bounce
+```
+Is the unauthenticated response for /admin/alerts a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-082 `/admin/alerts` (protected) — http-methods
+```
+Probe /admin/alerts with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-083 `/admin/alerts` (protected) — traversal
+```
+Probe /admin/alerts with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-084 `/admin/alerts` (protected) — notfound
+```
+Is there a not-found page for a bogus sibling of /admin/alerts? Does it render, or does it 500/blank?
+```
+
+## A-085 `/admin/flags` (protected) — render
+```
+node scripts/browser-check.mjs /admin/flags  # does it render, hydrate, and log no CSP/JS errors?
+```
+
+## A-086 `/admin/flags` (protected) — prerender
+```
+node scripts/verify-csp-nonce.mjs /admin/flags  # served per-request (nonce) or build-time prerendered?
+```
+
+## A-087 `/admin/flags` (protected) — unauth-bounce
+```
+Is the unauthenticated response for /admin/flags a correct 307 to /login (or 200 for a public route)? Report the code, and EXPECT_LAND=/login if protected.
+```
+
+## A-088 `/admin/flags` (protected) — http-methods
+```
+Probe /admin/flags with GET, POST, HEAD, OPTIONS, PUT, DELETE. Report any method that should be rejected but is not, and any 500.
+```
+
+## A-089 `/admin/flags` (protected) — traversal
+```
+Probe /admin/flags with ../, %2e%2e/, null byte, and a 10KB path. Report any 500 or reflected input.
+```
+
+## A-090 `/admin/flags` (protected) — notfound
+```
+Is there a not-found page for a bogus sibling of /admin/flags? Does it render, or does it 500/blank?
+```
+
+## A-091 cross-cutting — site-wide hydration
+```
+node scripts/browser-check.mjs  # default route set; report each
+```
+
+## A-092 cross-cutting — auth flow end to end
+```
+node scripts/auth-flow-check.mjs  # can a real user register and stay signed in?
+```
+
+## A-093 cross-cutting — causation
+```
+node scripts/causation-check.mjs  # does the UI reflect the events that should cause it?
+```
+
+## A-094 cross-cutting — CSP across the app
+```
+node scripts/verify-csp-nonce.mjs  # all routes; separate prerender failures from 307 bounces
+```
+
+## A-095 cross-cutting — root layout only
+```
+node scripts/browser-check.mjs /  # the most basic page; if this fails everything fails
+```
+
+## A-096 cross-cutting — first paint
+```
+Measure time-to-first-byte and first contentful paint for https://localhost:3000/
+```
+
+## A-097 cross-cutting — console noise
+```
+Load / and /browse and report every console error or warning, verbatim.
+```
+
+## A-098 cross-cutting — network failures
+```
+Load /browse and report every failed request (4xx/5xx) with its URL.
+```
+
+## A-099 cross-cutting — mobile viewport
+```
+Load /, /browse and /login at 375x667 and report anything that overflows or is unreadable.
+```
+
+## A-100 cross-cutting — keyboard only
+```
+Tab through /login and /signup and report any control you cannot reach or activate.
+```
