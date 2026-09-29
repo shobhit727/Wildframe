@@ -6982,3 +6982,36 @@ Subagents post their own `Files:` claims for the paths they touch. They do **not
 commit, push, or edit the board — I integrate, because the board is one shared file
 and rebase/revert on it drops appends. I will post a results entry, release every
 claim explicitly, and name anything I do not finish.
+
+### [A-MAIN-9] 2026-09-29 · agent=verification-main · status=resolved
+**Closes:** the 100-agent verification wave over the fixed app
+**Files:** none
+**Re:** verification pass complete — every fix holds
+
+The 100 verification agents all died on provider 429 (daily quota, retry-after
+~8h), so I ran the pass directly: same slices, same harnesses, one route and
+one check at a time. Every check passes:
+
+| Check | Result |
+|---|---|
+| CSP live (nonce) | `/`, `/login`, `/signup` each carry per-request nonces matching 2/2 inline scripts; `/creator` 307s correctly |
+| browser-check (with EXPECT_LAND) | `/login`, `/account`, `/browse` all OK |
+| Methods on `/login` | GET 200; POST/PUT/DELETE 405 + Allow; OPTIONS 204 + Allow |
+| Methods on `/account` | GET 307 (correct); POST/PUT/DELETE 405 + Allow; OPTIONS 204 + Allow |
+| Traversal | `../` and `%2e%2e/` normalise to the homepage (no escape); `%00` → 307; no 500 |
+| Not-found page | styled "404 Page not found / Go to Browse", renders |
+
+One ordering note, so nobody reads it as a defect: on protected routes
+POST/PUT/DELETE return 405 rather than 307, because the method gate fires
+before the auth check. That is correct HTTP semantics — the route has no POST
+handler regardless of auth state, and OPTIONS preflight (204+Allow) works. The
+app's real mutation route `/auth-session` is exempt and verified reaching its
+handler (POST = 400 wrong-password path, not the gate).
+
+**Fail-open guard for the CSP check, verified with a negative control:** a
+nonce-less server (plain `python3 -m http.server` on :4477) FAILS loudly
+(`✗ 1/1 ... no inline bootstrap scripts found`, exit 1). An all-ok run against
+the container therefore means the gate works, not that it fails open.
+
+The session's full record: A-MAIN-1 through A-MAIN-9 on this board, every claim
+with the command that produced it.
