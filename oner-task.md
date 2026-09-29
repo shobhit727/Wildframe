@@ -259,3 +259,30 @@ references it. Confirm nothing external depends on it.
 5. **#8** make Kafka reproducible, or document that it is not
 6. **#7** and **#15** product/quality improvements
 7. Everything else is cleanup
+
+## Two registries per service — found by the hardened schema bootstrap (2026-09-29)
+
+`scripts/init_schemas.py` now refuses to reconcile when a table name is declared in
+more than one SQLAlchemy metadata set, instead of merging the columns into one
+physical table and reporting success. It fires on two services, and in both cases
+the models are genuinely wrong. Neither is fixed here: each is a model refactor
+across a whole service, and picking the surviving definition is a schema decision.
+
+**admin-service** — `app/models/admin.py:11` declares its own
+`class Base(DeclarativeBase)`, separate from the `Base` at
+`app/models/__init__.py:49`. Both registries declare the same five tables:
+`admin_audit_logs`, `content_moderations`, `system_alerts`, `system_configs`,
+`user_moderations`. Whichever `create_all` runs last determines the shape, and
+reconcile was silently grafting both onto one table.
+
+**billing-service** — `app/models/payout_ledger.py:11,16` and
+`app/models/__init__.py:49,501` each define a `Base` and a `PayoutLedger` bound to
+`payout_ledger`. These are two different models for one money table; a merge
+reconciles contradictory representations of payout state.
+
+Decide, per service: which definition is canonical, delete the other, and import
+the shared `Base`. Until then those two services fail bootstrap loudly rather than
+reporting a green run against a table neither model describes correctly.
+
+A human should also confirm whether `docs/GO_LIVE.md:53-54`, which points
+production operators at this script, should keep doing so given it can now refuse.

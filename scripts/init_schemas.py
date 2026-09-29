@@ -90,17 +90,78 @@ def reconcile_columns(sync_conn, bases):
     names added. Additive only: nothing is dropped, retyped or rewritten.
     """
     inspector = sa_inspect(sync_conn)
-    live_tables = set(inspector.get_table_names())
     quote = sync_conn.dialect.identifier_preparer.quote
+    live_tables = set(inspector.get_table_names())
     added = []
+    # A table declared in more than one metadata set is a model bug, not drift.
+    # Reconciling it grafts two different shapes into one physical table and
+    # reports success, so refuse. This is how billing-service's two conflicting
+    # `payout_ledger` definitions were being silently merged.
+    # Dedupe by identity. collect_bases() can hand us the same Base more than
+    # once, and counting occurrences flagged every table in admin-service as a
+    # collision - a false positive that blocked 5 services. Only genuinely
+    # distinct metadata sets are a collision.
+    declared_in = {}
+    for base in bases:
+        for table in base.metadata.sorted_tables:
+            declared_in.setdefault(table.name, []).append(id(base))
+    collisions = {n: g for n, g in declared_in.items() if len(set(g)) > 1}
+    if collisions:
+        names = ", ".join(sorted(collisions))
+        raise SystemExit(
+            f"refusing to reconcile: {names} declared in more than one metadata "
+            "set. Two models sharing a table name is a model bug; reconcile would "
+            "merge their columns into one physical table. Fix the models first."
+        )
+
     for base in bases:
         for table in base.metadata.sorted_tables:
             if table.name not in live_tables:
                 continue  # create_all owns missing tables
             present = {c["name"] for c in inspector.get_columns(table.name)}
+            row_count = None
             for column in table.columns:
                 if column.name in present:
                     continue
+                if row_count is None:
+                    row_count = sync_conn.execute(
+                        text(f"SELECT count(*) FROM {quote(table.name)}")
+                    ).scalar() or 0
+                # Preflight rather than discover by crashing. A NOT NULL column
+                # with no *server* default cannot be added to a populated table,
+                # and letting it throw rolled back create_all for the whole
+                # service and printed a SQLAlchemy documentation URL instead of
+                # the column and the DDL.
+                if not column.nullable and column.server_default is None and row_count > 0:
+                    raise SystemExit(
+                        f"cannot add {table.name}.{column.name}: NOT NULL with no "
+                        f"server default, and the table holds {row_count} rows. "
+                        "Backfill it manually:\n"
+                        f"  ALTER TABLE {quote(table.name)} ADD COLUMN "
+                        f"{CreateColumn(column).compile(dialect=sync_conn.dialect)} "
+                        "NOT NULL DEFAULT <value>;\n"
+                        f"  ALTER TABLE {quote(table.name)} ALTER COLUMN "
+                        f"{quote(column.name)} DROP DEFAULT;"
+                    )
+                # CreateColumn emits the column definition only: no index, no
+                # foreign key, no unique constraint. A column declared
+                # unique=True or index=True would land unenforced, which for an
+                # idempotency key is a financial invariant lost behind a green
+                # run. Refuse rather than add it bare.
+                kinds = []
+                if column.unique:
+                    kinds.append("unique")
+                if column.index:
+                    kinds.append("index")
+                if column.foreign_keys:
+                    kinds.append("foreign key")
+                if kinds:
+                    raise SystemExit(
+                        f"cannot safely add {table.name}.{column.name}: it carries "
+                        f"{', '.join(kinds)}, and this pass only emits the column "
+                        "definition. Adding it bare would leave the constraint "
+                        "unenforced. Add it by hand, or extend the pass."
+                    )
                 ddl = CreateColumn(column).compile(dialect=sync_conn.dialect)
                 sync_conn.execute(
                     text(f"ALTER TABLE {quote(table.name)} ADD COLUMN {ddl}")
@@ -152,7 +213,17 @@ def main() -> None:
                 if line.strip():
                     print(f"       {line.strip()}")
         else:
-            tail = (proc.stderr or "").strip().splitlines()[-1:] or ["unknown error"]
+            # Surface the exception line and the failing statement, not the last
+            # line. For a SQLAlchemy IntegrityError the last line is always
+            # "(Background on this error at: ...)", so an operator following the
+            # troubleshooting table was handed a documentation URL instead of the
+            # column that actually failed.
+            _err = (proc.stderr or "").strip().splitlines()
+            _keep = [
+                ln for ln in _err
+                if "sqlalchemy.exc." in ln or ln.strip().startswith("[SQL:") or "Error" in ln
+            ]
+            tail = (_keep or _err)[-3:] or ["unknown error"]
             print(f"  !   {svc:24s} -> {db}: {tail[0][:140]}")
             failures.append(svc)
     if failures:
