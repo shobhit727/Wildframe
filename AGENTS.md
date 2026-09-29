@@ -49,15 +49,15 @@ stack rather than by reading code:
   Caddy: plain `curl http://localhost:8003/health` answers `400 Client sent an
   HTTP request to an HTTPS server` from the TLS listener, which is not a broken
   service. Use `curl -sk https://localhost:$p/health`. Host 8000 is the
-  api-gateway catch-all (`infrastructure/caddy/Caddyfile:13`); 8001..8015 map the
+  api-gateway catch-all (`infrastructure/caddy/Caddyfile:13`); 8001..8014 map the
   individual services. A 404 usually means the wrong host port, not a routing
   fault.
 - **If `poetry run` fails with `No such file or directory: 'python'`, the venv
   interpreter still works.** A drifted venv has no `python` shim, and a lock from
   a newer Poetry makes `poetry install` refuse. Run the interpreter directly with
   `PYTHONPATH="$PWD:$PWD/../../packages/sdk/wildframe_{auth,compliance,events}"`
-  and `/home/phoenix/.cache/pypoetry/virtualenvs/wildframe-<svc>-*/bin/python -m
-  pytest`. Never put `packages/sdk/wildframe_observability` on `PYTHONPATH` — its
+  and `services/<svc>/.venv/bin/python -m pytest`. Never put
+  `packages/sdk/wildframe_observability` on `PYTHONPATH` — its
   `logging.py` shadows stdlib `logging` at startup and breaks pytest and poetry.
 - **Before pip-installing into a venv, check `pyproject.toml`.** Declared means
   the venv is stale; undeclared is a real missing dependency to report, not to
@@ -358,6 +358,8 @@ The local stack is defined by deployments/docker-compose.dev.yml. Caddy provides
 Relevant files include infrastructure/caddy/Caddyfile and scripts/generate-dev-certs.sh. Generated development certificates under apps/web/certificates are not committed.
 
 Inside the Docker network, service-to-service traffic normally uses container HTTP ports. Host-facing traffic is TLS-aware; do not change this boundary casually.
+
+**Every service container listens on 8000, whatever its Dockerfile declares.** Each `services/<svc>/Dockerfile` has its own `--port` (auth 8001, content 8003, uploads 8014, and so on), but `deployments/docker-compose.dev.yml` overrides every service with `command: uvicorn app.main:app --host 0.0.0.0 --reload`, which has no `--port` and therefore binds 8000. The shared healthcheck confirms it (`http://localhost:8000/health`). So `ServiceRegistry` in `services/api-gateway/app/middleware.py` is correct to point every entry at `:8000`; rewriting it to match the Dockerfiles' `SERVER_PORT` breaks routing. The per-service numbers are **host** port mappings, and they are not service names: `infrastructure/caddy/Caddyfile` maps 8000 to the api-gateway, 8001 to auth-service, 8003 to content-service, 3000 to web. Probing `https://localhost:8001/content/...` hits auth-service and 404s, which reads exactly like broken gateway routing.
 
 ## 17. Infrastructure
 
