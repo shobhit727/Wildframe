@@ -97,7 +97,9 @@ async def rolled_back_engine(database_url):
 
 async def _content_columns(engine) -> set:
     async with engine.connect() as conn:
-        return {c["name"] for c in (await conn.run_sync(lambda c: sa_inspect(c).get_columns("content")))}
+        return {
+            c["name"] for c in (await conn.run_sync(lambda c: sa_inspect(c).get_columns("content")))
+        }
 
 
 def _run_bootstrap(database_url: str) -> subprocess.CompletedProcess:

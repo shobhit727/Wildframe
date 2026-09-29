@@ -106,9 +106,7 @@ def test_telemetry_health():
 
 
 class TestSetupTracingDisabled:
-    def test_returns_without_side_effects_when_jaeger_disabled(
-        self, caplog, clean_tracer_provider
-    ):
+    def test_returns_without_side_effects_when_jaeger_disabled(self, caplog, clean_tracer_provider):
         with caplog.at_level(logging.DEBUG, logger="app.telemetry"):
             assert setup_tracing() is None
 
@@ -131,9 +129,7 @@ class TestSetupTracingDisabled:
 
         exporter.assert_not_called()
 
-    def test_does_not_instrument_any_library(
-        self, monkeypatch, clean_tracer_provider
-    ):
+    def test_does_not_instrument_any_library(self, monkeypatch, clean_tracer_provider):
         fastapi_inst = MagicMock()
         monkeypatch.setattr(fastapi_module, "FastAPIInstrumentor", fastapi_inst)
 
@@ -182,10 +178,7 @@ class TestSetupTracingEnabled:
         ):
             setup_tracing()
 
-        assert (
-            "Tracing initialized, exporting spans over OTLP to http://jaeger:4317"
-            in caplog.text
-        )
+        assert "Tracing initialized, exporting spans over OTLP to http://jaeger:4317" in caplog.text
 
     def test_adds_a_batch_span_processor_to_the_provider(
         self, jaeger_enabled, clean_tracer_provider, fastapi_instrumentor
