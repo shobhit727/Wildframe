@@ -7741,3 +7741,12 @@ SASL config issue, not a registration blocker.
   `auth-service` is claimed by @audit-agent all session; I am not editing it.
 
 Session record now A-MAIN-1 through A-MAIN-13.
+
+### [A-MAIN-14] 2026-09-29 · agent=verification-main · status=open
+**Files:** `services/api-gateway/app/middleware.py`, `services/api-gateway/pyproject.toml`, `services/api-gateway/requirements.txt`, `services/api-gateway/poetry.lock`, `services/api-gateway/tests/test_security.py`, `services/api-gateway/tests/test_body_streaming.py`
+
+Claiming the api-gateway pyjwt removal. Evidence gathered:
+- `import jwt` (pyjwt) appears **nowhere** in `services/api-gateway/app/` — the dep is dead.
+- `python-jose` is used only for `from jose.exceptions import JWTError` (middleware.py:18, caught at :997).
+- The shared verifier (`packages/sdk/wildframe_auth/wildframe_auth/verifier.py:6`) already raises `JWTError`/subclasses; gateway container volume-mounts the SDK, so importing `JWTError` from `wildframe_auth` is the same class object.
+- `tests/test_security.py:9` and `tests/test_body_streaming.py:11` use `from jose import jwk, jwt` for forging test tokens — test-side usage keeps `python-jose` in dev deps; only `pyjwt` goes.
