@@ -123,7 +123,7 @@ that was never installed.
 
 "redis 5.3.1 has 2 HIGH CVEs" came from `msgpack` and `setuptools` in a hand-built
 scratch venv, not from redis. **Confirm the package name in the finding before
-reporting it.** For real supply-chain signal use `scripts/verify-supply-chain.py`;
+reporting it.** For real supply-chain signal use `.github/scripts/verify-supply-chain.py`;
 Trivy over the working tree flags locally generated dev certs, which are gitignored.
 
 ### 7. Dev certs and generated files

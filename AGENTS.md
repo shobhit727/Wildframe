@@ -380,7 +380,7 @@ from a package that was never installed, in one recorded case.
 **Do not report a vulnerability you have not confirmed.** A scratch venv produced a
 "redis 5.3.1 has 2 HIGH CVEs" finding that actually came from `msgpack` and
 `setuptools`. Confirm the package name in the finding before escalating it. For real
-signal use `scripts/verify-supply-chain.py`; a local Trivy run over the working tree
+signal use `.github/scripts/verify-supply-chain.py`; a local Trivy run over the working tree
 flags generated dev certificates, which are gitignored and never committed.
 
 ## 21. Documentation
