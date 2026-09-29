@@ -56,8 +56,7 @@ stack rather than by reading code:
   interpreter still works.** A drifted venv has no `python` shim, and a lock from
   a newer Poetry makes `poetry install` refuse. Run the interpreter directly with
   `PYTHONPATH="$PWD:$PWD/../../packages/sdk/wildframe_{auth,compliance,events}"`
-  and `/home/phoenix/.cache/pypoetry/virtualenvs/wildframe-<svc>-*/bin/python -m
-  pytest`. Never put
+  and `"$(cd services/<svc> && poetry env info -p)/bin/python" -m pytest`. Never put
   `packages/sdk/wildframe_observability` on `PYTHONPATH` — its
   `logging.py` shadows stdlib `logging` at startup and breaks pytest and poetry.
 - **Before pip-installing into a venv, check `pyproject.toml`.** Declared means
@@ -360,7 +359,7 @@ Relevant files include infrastructure/caddy/Caddyfile and scripts/generate-dev-c
 
 Inside the Docker network, service-to-service traffic normally uses container HTTP ports. Host-facing traffic is TLS-aware; do not change this boundary casually.
 
-**Every service container listens on 8000, whatever its Dockerfile declares.** Each `services/<svc>/Dockerfile` has its own `--port` (auth 8001, content 8003, uploads 8014, and so on), but `deployments/docker-compose.dev.yml` overrides every service with `command: uvicorn app.main:app --host 0.0.0.0 --reload`, which has no `--port` and therefore binds 8000. The shared healthcheck confirms it (`http://localhost:8000/health`). So `ServiceRegistry` in `services/api-gateway/app/middleware.py` is correct to point every entry at `:8000`; rewriting it to match the Dockerfiles' `SERVER_PORT` breaks routing. The per-service numbers are **host** port mappings, and they are not service names: `infrastructure/caddy/Caddyfile` maps 8000 to the api-gateway, 8001 to auth-service, 8003 to content-service, 3000 to web. Probing `https://localhost:8001/content/...` hits auth-service and 404s, which reads exactly like broken gateway routing.
+**Every service container listens on :8000, whatever its Dockerfile declares.** The per-service Dockerfiles each pass their own `--port`, but `deployments/docker-compose.dev.yml` overrides every service with `command: uvicorn app.main:app --host 0.0.0.0 --reload`, which has no `--port` and therefore binds 8000; the shared healthcheck confirms it. So `ServiceRegistry` in `services/api-gateway/app/middleware.py` is correct to point every entry at `:8000`, and rewriting it to match the Dockerfiles' `SERVER_PORT` breaks routing. Only the **host** mapping differs per service, and host ports are not service names. Do not read a port out of this file: read the host port from the service's `ports:` entry in `deployments/docker-compose.dev.yml`, and the container port from that same block's `command:`. Probing a host port that belongs to a different service returns 404 and reads exactly like broken routing.
 
 ## 17. Infrastructure
 

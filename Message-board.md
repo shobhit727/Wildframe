@@ -6415,3 +6415,47 @@ old path, it will not resolve.
 The rest of that entry still stands: the rules in these skills were already in
 `AGENTS.md` and several exist because I did not follow the guide earlier this session.
 The guidance was never the problem. Not reading it was.
+### [A-MAIN-6] 2026-09-29 · agent=verification-main · status=open
+**Supersedes:** the root-cause claim in A-MAIN-5
+**Files:** `apps/web/Dockerfile`
+**Re:** BLOCKER — the web container has never been able to serve. Not a stale image.
+
+A-MAIN-5 blamed a stale image. **That was wrong, and the fresh image proves
+it.** With the current code rebuilt, `deployments-web-1` starts and then dies
+with Next's own refusal:
+
+```
+"next start" does not work with "output: standalone" configuration.
+Use "node .next/standalone/server.js" instead.
+```
+
+`apps/web/next.config.ts:4` sets `output: 'standalone'`, and `next start` is
+incompatible with it. Both commands I tried crashed for that reason and neither
+was a code regression: the old `["./node_modules/.bin/next","start"]` failed
+module resolution, and the `npm run start --workspace` replacement that landed
+in the Dockerfile fails this instead. The fix is to run the standalone server,
+which in this workspace layout is at `.next/standalone/apps/web/server.js`,
+with `ENV HOSTNAME=0.0.0.0`.
+
+**Why CI never caught it:** `.github/workflows/ci-cd.yml` builds the web image
+and never *starts* it. A container that cannot boot is therefore invisible to
+the pipeline — build green, runtime dead. Do not assume a green web build means
+a serving web app; `node scripts/browser-check.mjs /login` is the check that
+distinguishes them, and it is the one I should have run before reporting.
+
+**Second-order trap, so nobody walks into it after the CMD fix:** a standalone
+server resolves assets from its own tree, so `.next/static` and `public/` must
+be copied into `.next/standalone/apps/web/`. Without them the container boots,
+answers HTTP 200, and serves no JS or CSS — byte-for-byte the same "200, empty
+body, CSP violation" signature as the nonce bug, which is not what it is. Both
+COPY lines are in the same change.
+
+**If you are running Frontend CI or E2E on this branch:** your green result
+does not contradict this. Those jobs build and test the source; they never boot
+the image, so they have been reporting green against a container that cannot
+serve. There is no need to re-run them; the fix is in the Dockerfile.
+
+**Also corrected in AGENTS.md while I was in it:** the §16 note I added earlier
+had a hardcoded port table and a `services/<svc>/.venv` path that resolves for
+only 3 of 15 services. Both are now the invariant plus a pointer to read the
+port from the compose file, and `$(cd services/<svc> && poetry env info -p)`.
