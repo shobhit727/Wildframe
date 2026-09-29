@@ -6047,3 +6047,55 @@ working interpreter — use `/usr/bin/python3.14`), a `poetry` that resolves a
 broken `python3`, drifted venvs, and two Docker daemons. Anything I report that
 does not reproduce on Arch is suspect, and I would rather say so than have
 someone chase it as a code bug.
+
+### [A-MAIN-4] 2026-09-29 · agent=verification-main · status=open
+**Files:** none
+**Re:** gateway routing VERIFIED WORKING; content schema reinit; Ubuntu/Arch host note
+
+**Gateway routing is not broken — do not "fix" it.** I spent time this session
+chasing a port-drift theory that was wrong, and reverted the commit. The facts,
+established by probing the running stack:
+
+- Host **8000** is the api-gateway catch-all (`infrastructure/caddy/Caddyfile:13`).
+  8001..8015 map individual services; 8001 is **auth-service**, not the gateway.
+  Probing 8001 for a content route returns 404 and reads as a routing fault.
+- The gateway's OpenAPI has 7 paths; the proxy is a `/{service:path}` catch-all
+  whose key is the registry alias (`content`, `users`, `search`, `uploads` — not
+  `content-service`). `GET /gateway/services` lists all 14.
+- All registry entries legitimately point at container `:8000` — compose
+  overrides every service CMD with `uvicorn app.main:app --host 0.0.0.0
+  --reload` (no `--port`), and the shared healthcheck probes
+  `http://localhost:8000/health`. The Dockerfile `SERVER_PORT` values are host
+  port mappings, not the container listen port. **Do not rewrite the registry to
+  match `SERVER_PORT`.** Four tests pin `:8000` and are correct.
+
+**Verified through the proxy (host 8000):**
+
+| Path | Status | Meaning |
+|---|---|---|
+| `/search/api/v1/search/trending` | 200 | routed and served |
+| `/users/api/v1/profiles` | 405 | routed; route exists, wrong method |
+| `/uploads/api/v1/uploads/sessions` | 405 | routed; route exists, wrong method |
+| `/content/api/v1/content` | 200 | routed and served, after schema init |
+
+405 is proof of routing, not a failure. An earlier "404 everywhere" reading was
+me probing paths that do not exist — search is `/search/query`, users is
+`/profiles`, and `/api/v1/uploads/health` does not exist at all (the uploads
+router has no health route), so it 404s whether or not the gateway reaches it.
+
+**One real defect found and fixed locally:** content-service returned 500 on
+every real route with `asyncpg.exceptions.UndefinedTableError: relation
+"content" does not exist` — `/health` was 200 because the health path skips the
+repository. The database had been recreated without tables.
+`/usr/bin/python3.14 scripts/init_schemas.py` created all 15 schemas and
+content went 500 -> 200. A fresh database needs this; the bootstrap path is
+documented in AGENTS.md 26.
+
+**Host difference — read before comparing reports.** My machine is **Ubuntu**
+(older); the other agents are on **Arch** on a newer laptop. Expect and report
+these as environment, not defects: a system `python3` without `_ssl`
+(`scripts/init_schemas.py` fails on every service until you run it with a
+working interpreter — use `/usr/bin/python3.14`), a `poetry` that resolves a
+broken `python3`, drifted venvs, and two Docker daemons. Anything I report that
+does not reproduce on Arch is suspect, and I would rather say so than have
+someone chase it as a code bug.
