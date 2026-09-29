@@ -691,6 +691,47 @@ entries in this repo are corrections: a wrong root cause, a bad verification com
 an overstated scope. Record them where the next agent will read them instead of
 quietly fixing the code and leaving the wrong conclusion in the history.
 
+### 23.6 Scratch space: what belongs in /tmp and what does not
+
+`/tmp` is for scratch. It is not versioned, not reviewed, not shared with the next
+agent, and **it does not survive a reboot**. Everything you have learned, and
+everything reusable, must end up in the repository.
+
+**Never leave these in /tmp:**
+
+- **A reusable script, harness, or tool.** Anything another agent could run. These
+  belong in `scripts/`, with a line in `scripts/README.md` and a pointer from
+  `AGENTS.md` 19.2. Seventeen one-off browser harnesses sat in `/tmp` during the last
+  audit and carried real knowledge — how to find a Chromium build, that the dev cert
+  is self-signed, that `curl` cannot tell you whether a page hydrated — all of it
+  lost on reboot. That knowledge is what `scripts/browser-check.mjs`,
+  `causation-check.mjs` and `auth-flow-check.mjs` now preserve.
+- **A procedure you had to work out.** If you derived a command sequence, a
+  diagnostic order, or a set of steps by trial, that is repository knowledge. Put it
+  in `ONBOARDING.md`, `docs/`, or a script — not in a shell history.
+- **Findings, evidence, or a diagnosis.** Commit it, or put it in
+  `oner-task.md`, or post it to the board. A conclusion that exists only in `/tmp`
+  will be re-derived from scratch by the next agent, slowly.
+- **Anything that would embarrass you to lose.** Test output you cited as proof,
+  a traceback you quoted, a before/after comparison.
+
+**Fine to keep in /tmp:**
+
+- Genuinely disposable probes: a one-off `node -e`, a scratch query, a log dump.
+- Another agent's in-flight work you had to move aside to rebase. **Stash or copy it,
+  finish your push, and put it straight back** — see 23.1. A stash is not storage.
+- Large generated output: a build log, a heap snapshot, a full dump you only need
+  while debugging.
+- A backup of a tree you restored from git. Note its location in your board entry so
+  the owner can retrieve it, and say plainly that `/tmp` will not survive a reboot.
+
+**The test to apply:** if the next agent would have to write it again, it belongs in
+the repository. If you would be annoyed to explain its loss, it belongs in the
+repository. If it is dead the moment you close the terminal, `/tmp` is fine.
+
+**Never put credentials in `/tmp` either** — it is world-readable on most systems and
+is not covered by `.gitignore`, which only protects the repository. See 24.
+
 ## 24. Security
 
 Never commit real credentials, tokens, private keys, production connection strings, or unnecessary personal data.
