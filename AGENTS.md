@@ -101,6 +101,52 @@ Use async FastAPI handlers, async SQLAlchemy sessions, Pydantic schemas at API b
 
 Health endpoints are part of the deployment contract. Database health checks must use a real SQL statement such as text("SELECT 1"), not a Python callable.
 
+### 5.1 Adding an endpoint, file by file
+
+Layout is consistent across services — do not normalize it, some services use flat
+modules and some use packages. Check the target service first.
+
+```
+services/<service>/app/
+  main.py            create_app() + module-level `app`
+  api/routes/        the HTTP layer
+  schemas/           Pydantic models at the boundary
+  services/          business logic
+  repositories/      data access
+  models/            SQLAlchemy models
+  core/settings.py   pydantic-settings
+```
+
+1. **Schema** in `app/schemas/` — request *and* response models, separately. Never
+   return a password hash, access token, refresh token, or internal auth state in a
+   response model.
+2. **Repository** in `app/repositories/` — all queries live here. Keep routes free of
+   SQL.
+3. **Service** in `app/services/` — business rules, and the only place that composes
+   repositories.
+4. **Route** in `app/api/routes/` — parse, authorize, call the service, map errors to
+   status codes. No business logic, no queries.
+5. **Register** the route in that service's router aggregation (`api/routes/__init__.py`),
+   and confirm with `curl -sk https://localhost:<port>/openapi.json` that your path
+   actually appears. A route you forget to register returns 404 while the code looks
+   correct.
+6. **Test** it against the running service, not just the suite. See 19.2.
+
+**Authorization happens before state-changing side effects**, in the route or the
+service — never after the write.
+
+### 5.2 Calling another service
+
+Use the service's own settings for the URL, never a hardcoded Docker hostname. Follow
+the pattern already in `app/core/settings.py` — several services already carry
+`AUTH_SERVICE_URL: http://auth-service:8000` and `JWT_JWKS_URL`, and that is the
+convention.
+
+**Be explicit about which side of the trust boundary the code runs on.** Browser code
+and in-container server code need different base URLs, and merging them into one
+variable is a real bug we shipped: server-side code that used a *public* host resolved
+to the wrong container from inside the network and returned 502 on every request.
+
 ## 6. Database
 
 Backend persistence uses SQLAlchemy 2.x and PostgreSQL/asyncpg.
@@ -240,13 +286,102 @@ Typical commands:
 
 For authentication, billing, gateway, event, upload, media-pipeline, and authorization changes, run the relevant security/regression tests rather than only a happy-path test.
 
-Regression tests should fail against the old behavior and pass against the new behavior. Prefer externally observable assertions over tests that merely reproduce implementation details.
+### 19.1 Writing a test that can actually fail
+
+Regression tests must fail against the old behavior and pass against the new. The
+hard part is proving they can fail at all, and we have shipped tests that could not.
+
+**Verify red/green before you commit.** Revert your fix, run the new test, confirm it
+fails, restore, confirm it passes. If you never saw it red, you do not know what it
+is testing.
+
+**A test that passes for the wrong reason is worse than no test.** Real examples from
+this repo:
+
+- A test asserting only "the request succeeded" passed against a *completely broken*
+  build. The code under test swallowed its own exceptions, so the app came back
+  healthy and fully uninstrumented, and every assertion passed against nothing.
+  Fix: assert the side effect that proves the mechanism ran — a recorded span, a
+  written row, an actual call — not just the absence of an error.
+- A test whose only assertion was `not.toContain('some-url')` passed against an empty
+  list. Fix: assert length, then contents.
+- A downgrade that broke an unrelated package made the test red for the wrong reason.
+  **A red test is not proof until you have read why it is red.** Check the failure
+  message names the actual defect.
+- A test that shrank its input to fit the old limit passed, having defeated its own
+  purpose. Use realistically sized data — the bug is often that the real value is
+  bigger than anyone assumed.
+
+**Do not mock the layer where the defect lives.** Several of the worst bugs here were
+invisible precisely because the tests mocked that layer. A dependency-injection test
+proves your code calls what you told it to call; it cannot prove the real thing works.
+
+**Prefer externally observable assertions.** Status code, persisted row, emitted
+event, written cookie. Mock-heavy tests pass when the product is broken.
+
+### 19.2 Verifying a change against the running app
+
+The suite is necessary and not sufficient. Before calling work done:
+
+```bash
+docker compose -f deployments/docker-compose.dev.yml build --no-cache <service>
+docker compose -f deployments/docker-compose.dev.yml up -d --no-deps --force-recreate <service>
+curl -sk https://localhost:<port>/<real endpoint>     # a real route, not /health
+docker compose -f deployments/docker-compose.dev.yml logs <service> --tail 200
+```
+
+Hit a **real** endpoint. Three services returned 200 on `/health` while every real
+route 500'd, because the health path skipped the middleware where the bug lived.
+
+When a fix is not a plain code change — a dependency pin, a build flag, a deployment
+setting — also prove it took effect in the artifact, not just on disk. A build has been
+observed printing `CACHED`, exiting 0, and shipping pre-fix code. Grep the built
+artifact for the value you expect.
+
+For anything the browser has to run, drive a real browser. A page can return 200 with
+an empty body and look fine to `curl`.
+
+### 19.3 Proving causation, not correlation
+
+When you infer a cause from a symptom, try to break it on purpose. Strip the one
+header, comment out the one line, restore the old value — and confirm the symptom
+appears and disappears with it. If you cannot make the bug come back on demand, you
+have a theory, not a diagnosis, and you should say so.
 
 ## 20. Dependencies
 
 The repository has a root Poetry project plus service-level dependency metadata and lockfiles; some services also have independent Poetry/uv configuration.
 
 When changing dependencies, inspect the service metadata, root metadata if shared, lockfiles, Docker installation behavior, and the relevant tests. Do not add a dependency to compensate for a local package/import mistake.
+
+**A floor you raise for one conflict can create a different one.** Two dependency
+resolutions in this repo did exactly that, and both looked correct in isolation:
+
+- Three manifests pinned `opentelemetry-instrumentation-fastapi` to disjoint ranges,
+  making every per-service lock unresolvable. Unifying them on `^0.49b0` fixed the
+  conflict — and `0.49b0` is a two-year-old release that crashes against the FastAPI
+  version we pin, 500ing every route registered via `include_router`. See #978.
+- Fixing that forced the API/SDK floor to `1.43.0`, which in turn broke
+  `opentelemetry-exporter-jaeger`, discontinued upstream at `1.21.0` with no later
+  release. There was no version of that exporter that worked, so the exporter had to
+  be replaced with OTLP.
+
+**When you bump one, check the whole family and the thing it depends on.** These
+packages pin each other exactly (`sdk 1.43.0` requires `semantic-conventions==0.64b0`),
+and a partial upgrade produces a set that installs and then fails at runtime, or does
+not install at all. `pip check` must be clean before you call it done — and note that
+`pip check` reporting a conflict in a *transitive* package is how you find out.
+
+**Install before you type-check or test.** CI runs `poetry install --no-interaction
+--with dev` per service. Running mypy or pytest against an empty or stale venv produces
+confident, entirely fictional errors — an `import-untyped` storm across 13 services
+from a package that was never installed, in one recorded case.
+
+**Do not report a vulnerability you have not confirmed.** A scratch venv produced a
+"redis 5.3.1 has 2 HIGH CVEs" finding that actually came from `msgpack` and
+`setuptools`. Confirm the package name in the finding before escalating it. For real
+signal use `scripts/verify-supply-chain.py`; a local Trivy run over the working tree
+flags generated dev certificates, which are gitignored and never committed.
 
 ## 21. Documentation
 
@@ -413,6 +548,38 @@ Do not resolve these yourself:
 When you finish a task, add anything a human still owes to `oner-task.md` rather
 than leaving it only in a commit message or on the board. If you deliberately do
 not fix something, say so there and say why.
+
+### 23.4 Mistakes that are specific to this repository
+
+Not traps in general — mistakes that have actually been made here, with the
+consequence each one produced.
+
+- **Forgetting to register a route.** A correct route that is never added to the
+  aggregator returns 404 while the code looks right. Check `openapi.json` on the
+  running service.
+- **One env var for both sides of a trust boundary.** `NEXT_PUBLIC_API_URL` served
+  both browser code (needs the public host) and in-container server code (needs the
+  docker-internal name). Server-side calls got 502 on every request.
+- **A per-request nonce against prerendered HTML.** Strict CSP plus static
+  prerendering means the nonce has nothing to attach to, the inline script is blocked,
+  and the whole app renders a blank body. See #981.
+- **Trusting `create_all` to keep the schema current.** It is `checkfirst`: it creates
+  missing tables and never touches existing ones, so nine of twenty content tables had
+  never been created on a fresh volume. Use `scripts/init_schemas.py`.
+- **Hardcoding a machine-specific host in committed config.** A LAN IP on Caddy's
+  cleartext port made the browser unable to reach the API at all, and it was
+  overridden a correct `.env` value.
+- **Bumping a dependency without checking the family.** See 20 — two resolutions here
+  fixed one conflict by creating another.
+- **Silencing a tool to make a check pass.** `except: pass`, `ignoreBuildErrors`,
+  `continue-on-error`, `|| true`, blanket skips. AGENTS.md forbids it, and a silenced
+  failure is how a total outage shipped through a green pipeline.
+- **Leaving conflict markers behind.** A shared checkout has been left with
+  syntactically invalid Python in seven files, which stopped five services importing
+  and hid every regression in them. If a merge or rebase is interrupted, restore the
+  tree rather than leaving it for the next agent.
+- **Resolving a board or docs conflict by taking `origin`.** That silently discards
+  your appended text while `rebase --continue` commits the reduced file anyway.
 
 ## 24. Security
 
