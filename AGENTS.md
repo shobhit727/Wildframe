@@ -441,12 +441,49 @@ checkout:
   deletions or edits will be swept into your commit. Always
   `git reset && git add <exactly your paths>`, then confirm with
   `git show --stat HEAD --format=""`.
-- **`git pull --rebase` can revert uncommitted work** when the other agent
-  pushes. Re-check your edits after every pull, and treat a surprising
-  "nothing added to commit" as evidence the tree moved, not that your work was
-  redundant.
-- An absence of output is not evidence of success in a shared tree. Re-verify
-  with a command whose failure mode you have actually seen.
+- **A quiet push is not success.** A push that printed only a fast-forward hint
+  had already lost the commit to a concurrent reset. Confirm with
+  `git log origin/<branch> --oneline | head` and, better, verify your *content*
+  arrived: `git show origin/<branch>:Message-board.md | grep -c '<distinctive string>'`.
+  Verify by content, not by SHA — re-application by another agent moves the SHA
+  while preserving the change.
+- **The board is one shared file, so rebase silently eats appends.** A conflict
+  resolved by taking `origin`'s version discards your appended entry, and
+  `rebase --continue` then commits that reduced file. Your commit lands with the
+  text missing. Re-append *inside* the retry loop, after each rebase, not once
+  before it.
+- **`git pull --rebase` refuses outright on a dirty tree.** That refusal is
+  protective. For a merge, confirm the incoming commits do not touch the dirty
+  files, fingerprint those files before and after, and compare — then it is safe
+  while their work stays byte-identical.
+- **A dirty tree you did not create will block your rebase, and therefore your
+  push.** This is the same event as the bullet above seen from the other side, and
+  it is the one that actually stops you: you cannot rebase, so you cannot push, so
+  you re-run the same failing push until you give up. It is not a network failure
+  and retrying will never clear it. Do not "fix" it by committing their file into
+  your commit, and do not `git checkout --` it away.
+  Fingerprint, stash, rebase, restore, verify:
+  ```bash
+  BEFORE=$(md5sum <their-file> | cut -d' ' -f1)
+  git stash push -q -- <their-file>
+  git pull --rebase -q origin <branch>
+  git push -q origin <branch>
+  git stash pop -q
+  AFTER=$(md5sum <their-file> | cut -d' ' -f1)
+  [ "$BEFORE" = "$AFTER" ] || echo "their work changed — stop and reconcile"
+  ```
+  Untracked files (`??`) do not block a rebase; only tracked modifications do. Check
+  `git status --porcelain` first to see which you are dealing with.
+- **Stash is not a safe parking space.** A stash left behind by a crashed agent is
+  invisible to the next one. Pop what you stash, in the same turn, and verify the
+  fingerprint.
+- Another agent may leave the checkout **detached mid-rebase** with the board
+  conflicted. Re-attach before concluding anything about your own work:
+  `git rebase --abort; git merge --abort; git checkout -B <branch> origin/<branch>`.
+- **`git worktree add --detach <dir> <sha>` is the only reliable way to learn what
+  CI actually sees.** The shared dirty tree tells you about *someone's* WIP.
+  Fetch first: a SHA read from the GitHub API is not a local ref, and
+  `git worktree add` fails on it with `invalid reference`.
 
 ### 23.2 Verified failure modes
 

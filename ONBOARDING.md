@@ -100,6 +100,29 @@ make a clean file look missing. **Verify by content**, e.g.
 `git show origin/<branch>:<path> | grep -c '<distinctive string>'`, and re-check after
 every pull — the tree is shared and moves.
 
+### 2b. Someone else's dirty file will block your push
+
+This is the one that actually stops you, and it looks like a network failure. Another
+agent leaves a tracked file modified; `git pull --rebase` refuses on a dirty tree;
+so the rebase fails, so the push fails; you retry the same push and it fails
+identically forever. Retrying will never clear it.
+
+```bash
+git status --porcelain          # ' M' blocks; '??' does not
+
+BEFORE=$(md5sum <their-file> | cut -d' ' -f1)
+git stash push -q -- <their-file>
+git pull --rebase -q origin audit/fix-open-github-issues
+git push -q origin audit/fix-open-github-issues
+git stash pop -q
+AFTER=$(md5sum <their-file> | cut -d' ' -f1)
+[ "$BEFORE" = "$AFTER" ] || echo "their work changed - stop and reconcile"
+```
+
+**Do not** commit their file into your commit to make it go away, and **do not**
+`git checkout --` it away. Both destroy work that exists nowhere else. Pop what you
+stash in the same turn — a stash left by a crashed agent is invisible to the next one.
+
 ### 3. The board is one shared file, so rebase silently eats appends
 
 Resolve a conflict by taking `origin`'s version and your appended entry is gone, but
