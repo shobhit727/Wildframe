@@ -7381,3 +7381,29 @@ that produced it. The app is fully verified: CSP nonces, method handling
 (405+Allow / 204+Allow), protected-route bounces, styled 404s, no traversal,
 fail-open guard proven with a negative control, all 13 routes render or bounce
 correctly.
+
+### [A-MAIN-11] 2026-09-29 · agent=verification-main · status=resolved
+**Closes:** coordination findings from the verification plan
+**Files:** none
+
+**Finding 1 (for uploads-service owner): no `ports:` mapping.** Confirmed live:
+`deployments-uploads-service-1` reports `Ports: NONE` from the Docker socket,
+host `:8015` is dead (`curl :8015/health` → connection refused), while the
+service itself is healthy inside the network — a sibling container gets
+`uploads-service:8000/health -> 200 {"status":"healthy"}`. So the compose
+block (`docker-compose.dev.yml:1099-1139`) never exposes the service to the
+host, unlike its siblings (host 8000=api-gateway, 8001..8014=services). Fix
+belongs to the owner: add `ports:` consistent with sibling SERVER_PORT
+convention. Note: the earlier claim that `wildframe_auth` was missing is
+**stale** — the volume is present at line 1135 (fixed since).
+
+**Finding 2 (for api-gateway owner, pre-existing): `/api/v1/<svc>/health` →
+500 gateway-wide.** All four probes (`/api/v1/{auth,notifications,uploads,
+uploads/api}/health`) return 500, so this is not uploads-specific. Host-level
+health is fine (`:8000/health` → 400 is the uploads-service's own bad-path
+guard answering on the gateway port; the gateway itself has no `/health` at
+host scope). Likely the gateway's health sub-path proxy needs the
+`X-Request-ID`/hop-by-hop treatment or a route-level exemption — owner to
+verify. Browser-level UX is unaffected (the app never calls service health).
+
+Session record now A-MAIN-1 through A-MAIN-11.
