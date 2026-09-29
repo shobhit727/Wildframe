@@ -892,10 +892,16 @@ def test_proxy_omits_account_id_for_anonymous_requests():
     assert limiter.acquire_rate_limits.call_args.kwargs["account_id"] is None
 
 
-def test_proxy_takes_the_leftmost_forwarded_for_entry_as_the_client_ip():
-    """A spoofable XFF chain must not widen the caller's rate-limit key.
+def test_proxy_ignores_an_untrusted_forwarded_for_chain():
+    """A spoofable XFF chain must not widen the caller's rate-limit key (#130).
 
     The client IP is the *first positional* argument of acquire_rate_limits.
+    This previously asserted the opposite — that the leftmost, fully
+    caller-controlled entry became the key — which was the #130 bypass: any
+    anonymous caller could mint a fresh bucket per request by rotating the
+    header. Keying now goes through ``_derive_real_ip``, which is TRUST_PROXY
+    gated and validates the peer before walking the chain, so with no proxy
+    trusted the socket peer wins.
     """
     up = _upstream([b"{}"])
     with gateway(up) as (client, _cap, limiter):
@@ -904,7 +910,7 @@ def test_proxy_takes_the_leftmost_forwarded_for_entry_as_the_client_ip():
             headers={"x-forwarded-for": "203.0.113.9, 70.41.3.18, 150.172.238.178"},
         )
 
-    assert limiter.acquire_rate_limits.call_args.args[0] == "203.0.113.9"
+    assert limiter.acquire_rate_limits.call_args.args[0] == "testclient"
 
 
 def test_proxy_uses_the_socket_peer_when_no_forwarding_headers_are_present():
