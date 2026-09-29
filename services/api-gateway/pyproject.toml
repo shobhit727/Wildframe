@@ -26,7 +26,6 @@ sqlalchemy = { version = "^2.0.0", extras = ["asyncio"] }
 asyncpg = "^0.30.0"
 redis = "^5.0.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
-pyjwt = "^2.8.0"
 httpx = "^0.25.0"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
 wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}

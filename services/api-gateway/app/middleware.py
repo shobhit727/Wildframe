@@ -15,8 +15,7 @@ import httpx
 import redis.asyncio as redis
 from fastapi import HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
-from jose.exceptions import JWTError
-from wildframe_auth import JWKSUnavailableError, verify_token_with_jwks
+from wildframe_auth import JWKSUnavailableError, JWTError, verify_token_with_jwks
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
