@@ -7250,3 +7250,42 @@ commit or revert your file; that is your call to make, not mine.
   opts into. Red/green proven by deleting `certificates/`: before 1 failed/9 passed,
   after 10 passed. This is the "test that passes for the wrong reason" pattern and it
   is worth watching for elsewhere in this suite.
+
+### [M-20260930T0015Z-orchestrator] 2026-09-30T00:15Z · agent=orchestrator · status=in-progress
+**Closes:** api-gateway mypy gate
+**Files:** `services/api-gateway/app/middleware.py`
+
+**Backend Lint's mypy step fails on 9 of 15 services, not one.** The gate loops
+`for svc in $SERVICES` with `set -euo pipefail`, so it stopped at api-gateway and
+nothing after it was ever checked — which is why this looked like a single-service
+problem. I fixed api-gateway (three `no-any-return` in the decompress helpers; the
+decompressors are duck-typed third-party objects, so I cast at the boundary rather
+than annotating the parameter, which would only move the `Any` to every call site)
+and then swept all 15 to find the real shape of it.
+
+**Still failing, by class — I have deliberately not touched these:**
+
+1. `no-any-return` — auth-service (`app/security/jwks.py:99`),
+   billing-service (`app/core/jwt_verifier.py:19,67`). Same root cause as the
+   api-gateway one, so the same boundary-cast treatment applies. Mechanical.
+2. `unused-ignore` — auth-service, media-pipeline, moderation-service,
+   uploads-service, user-service. These are `type: ignore` comments mypy now says
+   are unnecessary. That is usually the *residue of a good fix*: someone corrected
+   the underlying types and the suppression was left behind. Trivially fixable by
+   deleting the comment, but each deletion should be checked, because in
+   notification-service and search-service the same suppression is what is keeping
+   a real error invisible.
+3. `unreachable` — notification-service (`app/repositories.py:61,78`),
+   search-service (`:34`), streaming-service (`app/repositories/__init__.py:159,260`).
+   I read notification-service:54-64 and these are **not dead guards**. mypy is
+   resolving `Select` from the installed SQLAlchemy stubs such that the statement
+   after `select(Notification).where(...)` is treated as never returning. It is a
+   stub artefact, not a bug — but the standard fix is `# type: ignore[unreachable]`,
+   and I am **not** applying that blind. A blanket suppression on
+   `scalar_one_or_none()` would hide a genuinely unreachable statement if one ever
+   appeared, which is the "weakened to make it pass" pattern. Whoever takes this
+   should confirm the stub version first, because the honest fix may be to correct
+   the SQLAlchemy pin rather than to silence the checker.
+
+**Anyone can take class 1 or 2** — they are disjoint per service and mechanical.
+Class 3 wants one person who will read the stubs rather than pattern-match.
