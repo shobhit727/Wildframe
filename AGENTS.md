@@ -2,6 +2,27 @@
 
 This is the repository-level operating guide for coding agents. It describes the current implementation on main and should be updated when the implementation changes.
 
+**New to this repository? Read `ONBOARDING.md` first.** It is the path — what to do
+in what order, which commands actually work, and the traps that produce wrong
+conclusions. This file is the rules; `ONBOARDING.md` is the route through them.
+
+Two facts worth knowing before you touch anything, both established by running the
+stack rather than by reading code:
+
+- **A green CI run is not evidence the application works.** The Playwright suite
+  mocks the API, so mock-versus-real drift is structurally invisible to it, and the
+  Docker jobs build images without running one. For a period CI was fully green while
+  the website rendered a blank page, account creation was broken, and five services
+  could not start.
+- **A passing build is not evidence the image is current.** A `docker compose build`
+  has been observed printing `CACHED`, exiting 0, and shipping pre-fix code. Verify by
+  grepping the built artifact, and use `--no-cache` plus `--force-recreate` when it
+  matters.
+
+The bugs worth finding here are mostly plumbing bugs — a value that should have
+arrived somewhere and did not. When something passes a test and fails in the app,
+believe the app.
+
 ## 1. Repository model
 
 Wildframe is a monorepo for an OTT streaming platform. It contains 15 FastAPI backend services, a Next.js/TypeScript frontend, shared Python SDK packages, local Docker/Caddy orchestration, Kubernetes/Helm manifests, Terraform, database bootstrap SQL, monitoring configuration, tests, and engineering documentation.
@@ -24,11 +45,19 @@ The repository contains many historical completion/audit/quick-start documents. 
 When sources disagree, use this order:
 1. Code and configuration on the branch being changed.
 2. Tests that execute against that code.
-3. .github/workflows/ci-cd.yml for CI behavior.
-4. Current README.md and current docs/ architecture, development, testing, deployment, and operations guides.
-5. Historical audit, completion, status, and implementation reports.
+3. The running stack. A test suite can be green while the application is broken,
+   because the suite may mock the very layer where the defect lives. When a test
+   passes and the app does not work, the app wins — go and reproduce it.
+4. .github/workflows/ci-cd.yml for CI behavior.
+5. Current README.md, ONBOARDING.md, oner-task.md, and current docs/ architecture,
+   development, testing, deployment, and operations guides.
+6. Historical audit, completion, status, and implementation reports.
 
 Before changing behavior, inspect the complete relevant path: route, schema/model, service logic, repository, settings, event handling, and tests. For cross-service work, inspect both sides of the HTTP or Kafka contract.
+
+`ONBOARDING.md` records the traps that have produced wrong conclusions in this repo
+specifically. `oner-task.md` records what a human still owes, including the
+deliberate limitations and anything an agent chose not to fix.
 
 ## 3. Backend services
 
@@ -169,7 +198,9 @@ Important areas:
 - src/__tests__/ — Vitest tests.
 - e2e/ — Playwright tests.
 
-Keep browser/server boundaries explicit. Never move server-only secrets into client components. The frontend API base URL is environment-driven and normally targets the HTTPS gateway in local development.
+Keep browser/server boundaries explicit. Note that `apps/web/AGENTS.md` directs agents to
+`node_modules/next/dist/docs/`; that directory is not present in this install, so verify
+Next.js behaviour against the installed source under `node_modules/next/dist/` instead. Never move server-only secrets into client components. The frontend API base URL is environment-driven and normally targets the HTTPS gateway in local development.
 
 ## 16. Local development and TLS
 
