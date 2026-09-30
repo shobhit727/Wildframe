@@ -26,6 +26,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import partial
+from typing import NoReturn
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +61,14 @@ class StorageError(Exception):
     """Object-storage failure (missing object, size/content-type mismatch)."""
 
 
-def _raise_storage_error(message: str) -> str:
-    """Narrow a Optional storage return by raising instead (#105 follow-up)."""
+def _raise_storage_error(message: str) -> NoReturn:
+    """Narrow an Optional storage return by raising instead (#105 follow-up).
+
+    Annotated ``NoReturn`` rather than ``str``: the function never returns, and
+    saying so lets mypy narrow the ``Optional`` at every call site. The old
+    ``-> str`` was a fiction -- nothing could ever return the value -- and it
+    left callers re-deriving the narrowing by hand.
+    """
     raise StorageError(message)
 
 
@@ -344,7 +351,15 @@ class S3StoragePort(StoragePort):
         upload lives in this process, so a restart or a second worker can still
         sign parts, complete and abort.
         """
-        created = await asyncio.get_event_loop().run_in_executor(
+        # The annotation is wider than the stub's: `boto3-stubs` types
+        # `CreateMultipartUploadOutputTypeDef["UploadId"]` as `str`, but S3 can
+        # return a null UploadId and this method is required to reject that
+        # rather than hand the caller a broken id (see
+        # test_begin_upload_raises_when_s3_returns_no_upload_id). Widening the
+        # local to `str | None` states what the service actually enforces, so
+        # the guard below is real code rather than a dead branch. The call stays
+        # inside the executor: it is a blocking S3 round trip.
+        created: str | None = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: self._client.create_multipart_upload(
                 Bucket=self.bucket,

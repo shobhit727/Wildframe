@@ -21,7 +21,7 @@ class SearchQuery(Base):
     """Search query log for analytics."""
 
     __tablename__ = "search_queries"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     query_text = Column(String(500), nullable=False)
     result_count = Column(Integer, default=0)

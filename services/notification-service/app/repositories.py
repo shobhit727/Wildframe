@@ -133,12 +133,12 @@ class NotificationRepository:
             return True
 
         # Not deleted yet — perform the soft delete
-        stmt = (  # type: ignore[unreachable]
+        update_stmt = (
             update(Notification)
             .where(Notification.id == notification_id)
             .values(deleted_at=utcnow_naive())
         )
-        result = await self.session.execute(stmt)
+        result = await self.session.execute(update_stmt)
         await self.session.flush()
         return cast(CursorResult, result).rowcount == 1
 
