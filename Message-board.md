@@ -7977,3 +7977,65 @@ it is the argument for the rule.
 modern ones. Every one is a latent `Never` that resurfaces as `unreachable` the first
 time a query expression touches it. The real fix is a schema-level conversion or
 enabling the mypy SQLAlchemy plugin — a separate piece of work, not a lint fix.
+
+### [M-20260930T0400Z-orchestrator] 2026-09-30T04:00Z · agent=orchestrator · status=in-progress
+**Closes:** E2E contract test, content-service tests. **Hands off:** two dependency scans.
+
+## Fixed and verified
+
+**Frontend E2E: 122/122 passing.** The single failure was an inert test. Its
+field-extraction regex was `/^    ([A-Za-z_]\\w*):/gm` — a regex *literal*, where
+`\\w` is not an escape sequence but a literal backslash followed by `w`. It matched
+zero fields on every run, so `fieldsForClass` always returned `[]` and the test
+compared a real 10-field fixture against an empty expected array. It could never have
+detected contract drift in either direction. Fixed to `\w`.
+
+Once it actually compared, it found the real bug it had been masking: `GenreResponse`
+in the backend carries five fields, but two of the five genres in `e2e/fixtures.ts`
+omitted `description` and `icon_url`. The mocks did not follow the backend schema,
+which is exactly what the test exists to prevent.
+
+**Proved the test can fail**, which matters more than that it passes: injecting one
+`injected_drift` field into `GenreResponse` makes it fail naming that field; removing
+the injection makes it pass. Worth flagging that my *first* drift check reported a
+false all-clear because my injection pattern did not match the real schema text, so
+nothing changed and the test correctly kept passing. "The test passed" was the wrong
+conclusion to draw from a check that had not done what I thought.
+
+**Backend Lint: mypy exits 0 across all 15 services.** No suppression added anywhere;
+three removed. All four classes fixed at the cause: `no-any-return` (boundary casts),
+`unused-ignore` (61 dead comments, none version-sensitive), `unreachable` (the real
+cause was legacy `Column()` attributes typing as `Never` with no mypy SQLAlchemy
+plugin — fixed by converting only the ten columns the reported sites touch, with DDL
+proven byte-identical by MD5), and `import-untyped` (a stale-venv problem, not code).
+
+**content-service: 444 passed.** Two bootstrap tests were asserting the unguarded
+repair behaviour that predated the `--allow-add` guard. They now authorise the column
+the way the script expects — JSON in `argv[2]`, which is the internal protocol, not the
+`--allow-add` CLI spelling.
+
+## Handing these two off — I ran out of useful progress, not out of ideas
+
+**`Frontend dependency audit`** and **`Security Scan` (Trivy)** both fail on the same
+thing: `brace-expansion` 5.0.9, a **dev-only** transitive (via
+`@typescript-eslint/typescript-estree` → `minimatch`), with three known DoS advisories.
+5.0.12 is the fix. `npm audit fix` would take it, but it also bumps
+`@tanstack/react-query` 5.101.4 → 5.103.2, a **runtime** dependency — a much larger
+blast radius than a lint fix should have.
+
+I tried an `overrides` entry pinning `brace-expansion: ^5.0.12` at the workspace root,
+which is the surgical answer. It did not take: `npm install` and
+`npm install --package-lock-only` both left the nested copy at 5.0.9 and the lock's
+root `overrides` field as `None`, on npm 12.0.2 / lockfileVersion 3. I did not want to
+keep guessing at npm's override resolution, and I reverted cleanly rather than leave a
+half-applied override in the tree.
+
+**For whoever takes it:** the obvious next step is `npm audit fix` in `apps/web`,
+verify the `@tanstack/react-query` bump separately with the frontend suite, and treat
+the two as separate decisions. A dev-only lint-chain DoS is not urgent enough to
+justify a silent runtime dependency bump inside a CI fix.
+
+**Still open and unowned:** 286 legacy `Column()` attributes remain across five
+services, each a latent `Never`. `services/content-service/tests/conftest.py` is
+another agent's uncommitted file and is the *only* thing now keeping `black`/`ruff`
+red — proven by stashing it (681 files clean, all checks pass).
