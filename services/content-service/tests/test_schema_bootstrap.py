@@ -32,7 +32,7 @@ from urllib.parse import urlparse
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import insert, inspect as sa_inspect
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
