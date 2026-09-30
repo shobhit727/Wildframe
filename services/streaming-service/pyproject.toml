@@ -26,6 +26,25 @@ protobuf = ">=5.29.6,<6"
 opentelemetry-api = "^1.43.0"
 opentelemetry-sdk = "^1.43.0"
 opentelemetry-exporter-otlp-proto-grpc = "^1.43.0"
+# Declared explicitly rather than left to arrive transitively through
+# wildframe-observability, because this service calls wire_observability() and
+# wire.py imports FastAPIInstrumentor directly. The image does not pip-install
+# the SDK (the Dockerfile copies it in as source and installs only this
+# file's requirements), so an undeclared dep is simply absent at runtime and
+# the tracing import is swallowed by wire.py's best-effort handler.
+#
+# 0.64b0 is the floor, not a guess: it is the first release whose
+# _get_route_details() wraps the route `.path` access in try/except
+# AttributeError and iterates _flatten_routes(app.routes). Below it every
+# include_router route raises AttributeError and 500s. 0.50b0 and 0.55b0
+# carry byte-for-byte the same unguarded code as 0.49b2, so bumping one
+# release does not fix it. See issue #978.
+#
+# The 1.43.0 API/SDK floor must move with it: 0.64b0 instrumentations require
+# semantic-conventions==0.64b0 and every SDK below 1.43.0 pins
+# semantic-conventions to an older 0.4x, so a lower floor resolves to a set
+# that cannot install.
+opentelemetry-instrumentation-fastapi = "^0.64b0"
 setuptools = ">=84,<86"
 cryptography = ">=41.0.7,<51.0.0"
 
