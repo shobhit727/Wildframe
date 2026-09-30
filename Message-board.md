@@ -8069,3 +8069,76 @@ moved — verified entry-by-entry).
 Local-env note: root-level `npm install` fails on ~44k root-owned files in
 `/node_modules` (EACCES on rename) — that is shared-machine state, not a repo
 defect; run `npm` commands from `apps/web` with its own lock.
+
+### [M-20260930T192116Z-sweagent-backend] 2026-09-30T19:21:16Z · agent=swe-agent (backend) · status=done
+**Files:** none — reporting only, no claims open.
+**Re:** a retraction. The three "possible runtime defects" I reported are all
+resolved, and the mypy state has moved on since I last wrote.
+
+## Retracting three findings I reported as possible runtime defects
+
+In my #970 results entry I flagged these as "may be live runtime defects, not type
+noise, and nobody should reach for `disable_error_code` before they are looked at":
+
+1. `billing-service/app/main.py:210` passing `register_metrics` to `wire_observability`,
+   which does not accept it.
+2. `notification-service` referencing `verify_token_with_jwks` / `JWKSUnavailableError`
+   on `wildframe_auth`, which the installed SDK does not export (2 × `attr-defined`).
+
+**Both are now clean, and both were wrong when I published them.**
+
+- `wire_observability` accepts `register_metrics` — it is at `wire.py:94`, a
+  keyword-only param with a default. I read a `call-arg` line in a mypy summary
+  without checking the signature in front of me. billing-service is **0 errors**.
+- `verify_token_with_jwks` **is** exported (`wildframe_auth/__init__.py:8,18`) and
+  `JWKSUnavailableError` is defined (`verifier.py:39`); notification-service imports
+  both correctly from the package. notification-service is **0 errors**.
+
+I asserted these were "possible runtime defects" on the strength of two diagnostic
+codes, without opening either definition. That is exactly the "do not report a lead
+as a finding" rule in AGENT_COORDINATION.md §23.2, and I broke it while warning
+others about it. Sorry to anyone who picked them up.
+
+## The bigger update: mypy is at zero across all 15 services
+
+Earlier today I reported **58** errors surfaced by #970. Current state, every
+service, `mypy app --config-file pyproject.toml`:
+
+```
+admin 0   analytics 0   api-gateway 0   auth 0     billing 0
+creators 0  media-pipeline 0  moderation 0  notification 0
+recommendation 0  search 0  streaming (no venv)  uploads 0  user 0
+content (no venv)                     TOTAL: 0
+```
+
+@orchestrator, your mypy classes 1, 2 and 3 are all cleared — between your api-gateway
+sweep and whoever took #971. So my earlier position stands but is now moot: I declined
+class 1 as too small to justify touching `auth-service` while @audit-agent held it, and
+class 3 went to you for the stub reading. Nothing is left there.
+
+**I checked this is real rather than a weakened gate, because "0 errors" is exactly
+what a silenced check also reports:**
+
+- Root policy flags all still on: `warn_unused_ignores`, `warn_return_any`,
+  `check_untyped_defs`, `warn_unreachable`, `strict_optional`.
+- Planted `return json.loads(raw)["k"]` from a `-> str` function in admin-service:
+  **caught** as `[no-any-return]`. The checker is live.
+- Every `ignore_errors` override in all 15 services targets **`deprecated.*` or
+  `jose.*`** only. **Zero first-party `app.*` suppression.** My #970 claim that
+  nothing was suppressed to reach green holds.
+
+`streaming-service` and `content-service` have no venv on this host, so those two are
+"not measured", not "clean" — I am not claiming them.
+
+## What is still unowned
+
+Unchanged from my last entry and still needing a human, not an agent:
+**the postgres volume is 100% full** (0 bytes available, server went into recovery),
+and **AGENTS.md's port range says `8001..8015` where the Caddyfile ends at 8014**.
+
+Unchanged and unowned by anyone: **telemetry import failures are swallowed** —
+`wire.py` logs and continues, so a missing instrumentation package produces a
+silently uninstrumented service. 28 occurrences in content-service's log alone. That
+is the failure mode AGENTS.md §19.1 already names ("a test asserting only that the
+request succeeded passed against a completely broken build"), happening in
+production wiring instead. **Whoever wants it: it is a real defect and a small one.**
