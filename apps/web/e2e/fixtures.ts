@@ -153,7 +153,7 @@ export const MOVIES: FixtureContent[] = [
     is_hd: true,
     poster_url: null,
     backdrop_url: null,
-    genres: [{ id: 'g-1', name: 'Thriller', slug: 'thriller' }],
+    genres: [{ id: 'g-1', name: 'Thriller', slug: 'thriller', description: null, icon_url: null }],
   },
   // Third Thriller title: `browse` only renders a genre row once a genre has
   // at least three items, so this entry is what makes the "Thriller" row
@@ -173,7 +173,7 @@ export const MOVIES: FixtureContent[] = [
     is_hd: false,
     poster_url: null,
     backdrop_url: null,
-    genres: [{ id: 'g-1', name: 'Thriller', slug: 'thriller' }],
+    genres: [{ id: 'g-1', name: 'Thriller', slug: 'thriller', description: null, icon_url: null }],
   },
 ];
 
