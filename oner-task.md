@@ -2,7 +2,7 @@
 
 **Branch:** `audit/fix-open-github-issues` · **PR:** [#938](https://github.com/shobhit727/Wildframe/pull/938) (OPEN, MERGEABLE, no review yet) · **Base:** `main` (protected — do not push, merge, or force-push it)
 
-Last updated: 2026-09-28. New agents should start with `ONBOARDING.md`. Produced while fixing the Docker stack on the audit branch.
+Last updated: 2026-09-30. New agents should start with `ONBOARDING.md`. Produced while fixing the Docker stack on the audit branch.
 Every item below is a decision, a review, or a piece of work an agent deliberately
 did not do. Nothing here is a surprise left at the end — the reasoning is in the
 commit messages and on `Message-board.md`.
@@ -286,3 +286,116 @@ reporting a green run against a table neither model describes correctly.
 
 A human should also confirm whether `docs/GO_LIVE.md:53-54`, which points
 production operators at this script, should keep doing so given it can now refuse.
+
+---
+
+## NEEDS A HUMAN — found during the #970 / #130 / B3 work
+
+### 19. BLOCKER: the postgres volume is 100% full
+
+`/var/lib/postgresql/data` is on a 62.7G volume with **0 bytes available**. The
+server dropped into **recovery mode** when I tried to create a scratch database.
+Every `CREATE DATABASE` I attempted failed with `No space left on device`, so the
+failure is not mine to clean up — I created nothing and dropped nothing.
+
+The host filesystem has 232G free, so this is the volume, not the machine. Docker
+reports 20.26GB of reclaimable build cache and 2.68GB of unused volumes, and
+4.68GB of dangling images, so there is likely room to reclaim without data loss —
+**but pruning Docker state on a shared machine while other agents are running is a
+human decision, not one to take unprompted.**
+
+Why it matters: every backend service depends on this database. It also silently
+caps what verification is possible — an agent cannot prove a schema fix against a
+real database while this is true, which is how unverified schema work gets shipped.
+
+### 20. `AGENTS.md` states a Caddy port range that the Caddyfile contradicts
+
+`AGENTS.md` now says host ports **8001..8015** map the individual services.
+`infrastructure/caddy/Caddyfile` has its last block on **8014**.
+
+15 services is consistent with `8000` (api-gateway) plus `8001..8014` = 14
+individual services, so the Caddyfile is right and the guide's range is wrong by
+one. I raised this once, another agent landed the 8015 change in `5967120e`, and I
+have deliberately not re-edited it: it is now a live disagreement between two
+committed files and whoever owns the guide should settle which is authoritative.
+
+Whoever decides, also settle the *other* half of that same commit, which I did
+apply because it is independently correct: the guide pointed at
+`services/<svc>/.venv/bin/python`, which does not exist. The Poetry venvs live in
+`$HOME/.cache/pypoetry/virtualenvs/wildframe-<svc>-*/bin/python`.
+
+### 21. The deployment half of #130: `TRUST_PROXY` is set nowhere
+
+The rate limiter no longer trusts a client-supplied `X-Forwarded-For` (it keys on
+`_derive_real_ip`, which is `TRUST_PROXY`-gated and peer-validated). That is
+correct and dev cardinality is unchanged, because Caddy *replaces* the header so
+dev already keyed on one bucket.
+
+**In a real multi-user deployment behind a proxy that replaces the header, this
+fix will collapse every user onto the proxy's single address** unless
+`TRUST_PROXY=true` and `TRUSTED_PROXIES` name the actual edge. Both are unset in
+`app/core/settings.py` defaults, in `deployments/`, and in CI. A human has to
+decide the trusted-proxy topology; an agent cannot infer it.
+
+Related, latent rather than live: outbound headers are still forwarded verbatim, so
+a forged `X-Forwarded-For` reaches upstream services. Every service currently has
+`TRUST_PROXY = False`, so nothing downstream honours it — it becomes exploitable
+the moment someone enables it. The fix is one line in
+`services/api-gateway/app/api/gateway_routes.py`, deliberately left out of scope.
+
+### 22. Telemetry import failures are swallowed — nobody owns this
+
+`packages/sdk/wildframe_observability/wire.py` catches import failure, logs, and
+continues. So a service missing `opentelemetry-instrumentation-fastapi` comes up
+**healthy and completely uninstrumented**.
+
+content-service's log held **28** occurrences of
+`ModuleNotFoundError: No module named 'opentelemetry.exporter.otlp'` before I
+rebuilt it, and api-gateway was crash-looping on the same class of missing-SDK
+error. Both services reported as "running"; the observability data was simply
+absent and nobody noticed for hours.
+
+This is the failure mode `AGENTS.md` §19.1 already describes — "a test asserting
+only that the request succeeded passed against a completely broken build" —
+happening in production wiring instead of a test. An unowned defect: I flagged it
+twice on the board and no agent has claimed it. It is small and it is the reason
+the observability stack has gaps nobody can explain.
+
+### 23. Two corrected claims, so nobody re-derives them
+
+**The root mypy policy was written down and never applied.** `ci-cd.yml` runs
+`mypy app --config-file pyproject.toml` from inside each service, and `--config-file`
+names one file — mypy does not walk up to a parent manifest. So the root
+`pyproject.toml`, where this repo documents its mypy policy including
+`warn_unused_ignores = true`, was never read by any service CI check. All 15
+services now enforce it; `tests/contract/test_mypy_policy_findings.py` guards it by
+rule rather than by count, since a count-parity test would be wrong the moment a
+block lands.
+
+**`python scripts/init_schemas.py --help` used to run the entire schema-changing
+bootstrap**, because `main()` ignored `sys.argv` completely. argparse now exists.
+Worth remembering that a tool which treats `--help` as "do the destructive thing"
+is a trap for anyone exploring it.
+
+### 24. `content-service` and `streaming-service` have no venv on this host
+
+Reported as "not measured" rather than "clean": mypy could not be run for those two
+because their Poetry virtualenvs are absent. Both were verified by other means
+(lock inspection and a live container rebuild), so this is a gap in the type-check
+coverage, not a known failure — but a human wanting a full local sweep needs to
+`poetry install` in both first.
+
+## A correction I owe, recorded so it is not re-derived
+
+I reported three "possible runtime defects" on the board — a `call-arg` on
+`billing-service/app/main.py:210` and two `attr-defined` in notification-service —
+as things nobody should suppress before investigating. **All three were already
+resolved**, and I published them on the strength of two diagnostic codes without
+opening either definition. `wire_observability` accepts `register_metrics`
+(`wire.py:94`); `verify_token_with_jwks` and `JWKSUnavailableError` are both
+exported from `wildframe_auth`.
+
+No code was harmed and nothing was suppressed on the basis of it, but the failure
+mode is the one named in `AGENT_COORDINATION.md` §23.2: reporting a lead as a
+finding. If a future agent sees those diagnostics in an old board entry, they are
+retracted.
