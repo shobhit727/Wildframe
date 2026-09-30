@@ -21,6 +21,7 @@ conftest's session-scoped ``postgres_url``.
 """
 
 import importlib.util
+import json
 import os
 import socket
 import subprocess
@@ -31,7 +32,7 @@ from urllib.parse import urlparse
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import insert, inspect as sa_inspect
 from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -102,7 +103,7 @@ async def _content_columns(engine) -> set:
         }
 
 
-def _run_bootstrap(database_url: str) -> subprocess.CompletedProcess:
+def _run_bootstrap(database_url: str, allow_add: str = "") -> subprocess.CompletedProcess:
     """Run the documented bootstrap for content-service against ``database_url``."""
     spec = importlib.util.spec_from_file_location("init_schemas", BOOTSTRAP)
     assert spec is not None and spec.loader is not None
@@ -112,8 +113,23 @@ def _run_bootstrap(database_url: str) -> subprocess.CompletedProcess:
     env = dict(os.environ)
     env["PYTHONPATH"] = "."
     async_url = make_url(database_url).set(drivername="postgresql+asyncpg")
+    # The script refuses to add a column to a populated table unless the operator
+    # authorises it, because a dropped column leaves no trace in information_schema
+    # and the pass cannot tell a stale table from a deliberate removal. The runner
+    # takes that authorisation as JSON in argv[2] - this is the same call the
+    # parent makes with `json.dumps(sorted(allow_add))`, not a --allow-add flag,
+    # because `--allow-add` is the CLI spelling and the runner speaks the internal
+    # protocol. These tests drive the repair path, so they must authorise the
+    # column the way the script does.
+    argv = [
+        sys.executable,
+        "-c",
+        runner.RUNNER,
+        async_url.render_as_string(hide_password=False),
+        json.dumps([allow_add] if allow_add else []),
+    ]
     return subprocess.run(
-        [sys.executable, "-c", runner.RUNNER, async_url.render_as_string(hide_password=False)],
+        argv,
         cwd=str(SERVICE_DIR),
         env=env,
         capture_output=True,
@@ -135,7 +151,7 @@ async def test_stale_column_is_repaired_by_the_schema_bootstrap(rolled_back_engi
             await conn.execute(select(Content).limit(1))
     assert "price_usd" in str(excinfo.value).lower(), excinfo.value
 
-    proc = _run_bootstrap(database_url)
+    proc = _run_bootstrap(database_url, allow_add="content.price_usd")
     assert proc.returncode == 0, proc.stderr
     assert "content.price_usd" in proc.stdout, proc.stdout
 
@@ -150,12 +166,12 @@ async def test_stale_column_is_repaired_by_the_schema_bootstrap(rolled_back_engi
 @pytest.mark.asyncio
 async def test_schema_bootstrap_is_idempotent(rolled_back_engine, database_url):
     """Re-running the bootstrap must be safe and change nothing the second time."""
-    first = _run_bootstrap(database_url)
+    first = _run_bootstrap(database_url, allow_add="content.price_usd")
     assert first.returncode == 0, first.stderr
     assert "content.price_usd" in first.stdout, first.stdout
 
     before = await _content_columns(rolled_back_engine)
-    second = _run_bootstrap(database_url)
+    second = _run_bootstrap(database_url, allow_add="content.price_usd")
     assert second.returncode == 0, second.stderr
     assert "content.price_usd" not in second.stdout, second.stdout
     assert await _content_columns(rolled_back_engine) == before
