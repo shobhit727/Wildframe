@@ -354,6 +354,11 @@ curl -X POST https://localhost:8000/auth/api/v1/auth/login \
 **`asyncpg.exceptions.UndefinedTableError` / `UndefinedColumnError`** — the live dev DB is missing a table/column the models expect. Re-run the schema bootstrap, which creates missing tables and adds any column the models declare:
 ```bash
 python scripts/init_schemas.py   # prints "added column <table>.<column>" for anything it repaired
+#   On a populated table an undeclared add is REFUSED, because the pass cannot tell
+#   drift from a column a human deliberately dropped. Re-run with:
+#     python scripts/init_schemas.py --allow-add <table>.<column>
+#   only after you have confirmed the table is stale. The flag is deliberately not
+#   a committed allowlist: a drop belongs to a database, not to the repo.
 ```
 Verify against the running stack, e.g.:
 ```bash

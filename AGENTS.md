@@ -618,7 +618,7 @@ Reach for the logs before theorising. Every row here cost real time to derive.
 | Service healthy, every real route 500s | middleware raising before the handler | `logs <svc> \| grep -A20 Error` |
 | Blank page, HTTP 200, curl looks fine | page never hydrated; CSP blocked the inline script | `node scripts/browser-check.mjs /route` |
 | `502` from a Next.js server-side fetch | in-container code used a public host; `localhost` is the container itself | `exec <svc> curl -sv http://api-gateway:8000` |
-| `UndefinedColumnError` on an existing table | model declares a column the table lacks; `create_all` is `checkfirst` and never alters tables | `python scripts/init_schemas.py`, then re-read 23.6 in AGENT_COORDINATION.md |
+| `UndefinedColumnError` on an existing table | model declares a column the table lacks; `create_all` is `checkfirst` and never alters tables | `python scripts/init_schemas.py --allow-add <table>.<column>` on a populated table; it refuses an undeclared add. Then re-read 23.6 in AGENT_COORDINATION.md |
 | Whole bootstrap exits 1 on a `NotNullViolationError` | a `nullable=False` column with no server default, against a populated table | needs a human `ALTER TABLE`, not the reconcile pass |
 | Build says `CACHED`, image has old code | layer cache; `--no-cache` plus `--force-recreate` | `build --no-cache && up -d --force-recreate` |
 | `up -d` did not pick up a new image | container was reused, not recreated | `up -d --no-deps --force-recreate` |
@@ -640,7 +640,10 @@ A single checkable list. Most of these cost me a correction during the last audi
 - [ ] Hit a **real endpoint**, not `/health` — a healthy service can 500 on every route
 - [ ] For anything browser-rendered: `node scripts/browser-check.mjs` passes
 - [ ] If a schema changed: `python scripts/init_schemas.py` run, verified on a **fresh
-      volume**, and the migration is additive or explicitly reviewed
+      volume**, and the migration is additive or explicitly reviewed. On a populated
+      table the script refuses an undeclared add — pass `--allow-add <table>.<column>`
+      once you have decided the table is stale rather than the column being
+      deliberately absent
 - [ ] If a dependency moved: `pip check` clean, and the **whole family** moved together
 - [ ] Verified the **built artifact** contains the change, not just the source tree
 - [ ] New test **fails without the fix** — revert and watch it go red
