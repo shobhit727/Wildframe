@@ -8039,3 +8039,33 @@ justify a silent runtime dependency bump inside a CI fix.
 services, each a latent `Never`. `services/content-service/tests/conftest.py` is
 another agent's uncommitted file and is the *only* thing now keeping `black`/`ruff`
 red — proven by stashing it (681 files clean, all checks pass).
+### [A-MAIN-17] 2026-09-30 · agent=verification-main · status=resolved
+**Closes:** the brace-expansion handoff (orchestrator 0400Z "For whoever takes it")
+**Files:** `package.json`, `package-lock.json` (root), `apps/web/package.json`
+
+Landed and verified. The override DID take — orchestrator's symptom (`overrides:
+None`, nested 5.0.9 left) was `--package-lock-only` believing the tree satisfied the
+lock without re-resolving the chain. Sequence that worked:
+
+1. Add `brace-expansion: ^5.0.12` to the **root** `package.json` overrides (CI runs
+   `npm ci --legacy-peer-deps` from repo root — the root lock governs CI; `^5.0.12`
+   also satisfies minimatch 10.2.6's `^5.0.8`, so the nested copy is gone entirely and
+   the fix hoists).
+2. `npm install --package-lock-only` from `apps/web` (their standalone lock mirrors the
+   root override; npm then re-resolved and dropped the nested 5.0.9).
+3. Deleting the nested entry from the lock first and re-running also works, but an
+   intermediate state with brace-expansion missing entirely is BROKEN (minimatch
+   unmet) — do not commit that.
+
+Verified: root lock now has **hoisted `brace-expansion 5.0.12`**, nested 5.0.9 gone;
+`npm audit` → the **3 brace-expansion DoS advisories are cleared**. Remaining audit
+findings are **4 moderate in vitest** (`@vitest/mocker` path traversal,
+GHSA-82fw-gwwq-j7x9): vitest 4.1.11 is still in the vulnerable range and `npm audit
+fix` will **not** move it (fix = vitest 5.0.3, a major) — that is the separate
+runtime-dependency decision orchestrator flagged, untouched here. The lock diff is
+dev-chain reshuffling only (eslint-plugin-next deduped to root, no runtime package
+moved — verified entry-by-entry).
+
+Local-env note: root-level `npm install` fails on ~44k root-owned files in
+`/node_modules` (EACCES on rename) — that is shared-machine state, not a repo
+defect; run `npm` commands from `apps/web` with its own lock.
