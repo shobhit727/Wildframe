@@ -16,9 +16,21 @@ page 500 while ``/health`` and ``/genres`` stayed green. The second pass,
 model declares and the live table lacks. It only ever adds columns, so it is
 safe to re-run and never rewrites or drops existing data.
 
-Usage:  python scripts/init_schemas.py
+Adding a column to a table that *already holds rows* invents a value for
+every one of those rows. A column that was deliberately removed leaves no
+trace in the database, so nothing in the live schema distinguishes "the table
+is stale" from "a person dropped this column on purpose" -- the two look
+identical. The pass therefore refuses to add to a populated table unless the
+operator names the column with ``--allow-add``. Adding to an *empty* table
+fabricates nothing, so it needs no flag and stays automatic.
+
+Usage:
+  python scripts/init_schemas.py
+  python scripts/init_schemas.py --allow-add content.price_usd
 """
 
+import argparse
+import json
 import os
 import subprocess
 import sys
@@ -46,7 +58,7 @@ SERVICES = {
 }
 
 RUNNER = r'''
-import asyncio, importlib, pkgutil, sys
+import asyncio, importlib, json, pkgutil, sys
 from sqlalchemy import inspect as sa_inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.schema import CreateColumn
@@ -82,12 +94,16 @@ def collect_bases():
     return bases
 
 
-def reconcile_columns(sync_conn, bases):
+def reconcile_columns(sync_conn, bases, allow_add=()):
     """Add model columns missing from tables that already exist.
 
     create_all is checkfirst, so a table created before a model gained a
     column keeps the old shape forever. Returns the list of "table.column"
     names added. Additive only: nothing is dropped, retyped or rewritten.
+
+    ``allow_add`` is the set of "table.column" the operator has authorised for
+    ADD COLUMN against a table that already holds rows. See the populated-table
+    gate below for why that authorisation is per-invocation and not stored.
     """
     inspector = sa_inspect(sync_conn)
     quote = sync_conn.dialect.identifier_preparer.quote
@@ -163,6 +179,57 @@ def reconcile_columns(sync_conn, bases):
                         "unenforced. Add it by hand, or extend the pass."
                     )
                 ddl = CreateColumn(column).compile(dialect=sync_conn.dialect)
+                # Everything above refuses, so nothing above has guessed. This
+                # is the guess, and it is the last one.
+                #
+                # ADD COLUMN on a table that already has rows manufactures a
+                # value for every one of those rows: NULL with no default, or
+                # the server default when there is one. On an empty table that
+                # fabricates nothing, so the add is right by definition. On a
+                # populated table the pass cannot tell "this table predates the
+                # model" from "somebody deliberately removed this column" --
+                # a dropped column leaves no trace in information_schema, so
+                # there is nothing here to inspect. It has to choose, and on
+                # the case where choosing wrong throws away a human's decision
+                # it chooses wrong.
+                #
+                # So it asks instead. The acknowledgement is a command-line
+                # flag, deliberately not a committed allowlist: the decision
+                # belongs to one database, not to the repository. A committed
+                # `("content", "price_usd") -> dropped` would stop a freshly
+                # created *production* database from ever receiving a column
+                # the model and the app both require, because this same script
+                # is the documented way to create it. Naming the column once
+                # is enough, because this pass repairs drift and repaired
+                # drift is no longer drift.
+                if row_count > 0 and f"{table.name}.{column.name}" not in allow_add:
+                    fills = "every one of them will be given NULL"
+                    default = column.server_default
+                    if default is not None:
+                        # str(), not repr(): repr of a TextClause is an object
+                        # address, which tells the operator nothing.
+                        arg = getattr(default, "arg", default)
+                        fills = (
+                            "every one of them will be given the server "
+                            f"default {arg}"
+                        )
+                    raise SystemExit(
+                        f"refusing to add {table.name}.{column.name}: the table "
+                        f"holds {row_count} rows, and adding the column means "
+                        f"{fills}. A dropped column leaves no trace in the "
+                        "database, so this cannot tell a stale table from a "
+                        "column somebody removed on purpose, and guessing wrong "
+                        "either resurrects that drop or overwrites real values "
+                        "with a default.\n"
+                        "If the model is right and the table is stale, re-run "
+                        f"naming it:\n"
+                        f"  python scripts/init_schemas.py "
+                        f"--allow-add {table.name}.{column.name}\n"
+                        "If the column was dropped on purpose, remove it from "
+                        "the model instead -- this pass is additive and will "
+                        "not re-add it. To apply it by hand now:\n"
+                        f"  ALTER TABLE {quote(table.name)} ADD COLUMN {ddl};"
+                    )
                 sync_conn.execute(
                     text(f"ALTER TABLE {quote(table.name)} ADD COLUMN {ddl}")
                 )
@@ -170,25 +237,59 @@ def reconcile_columns(sync_conn, bases):
     return added
 
 
-async def main(url: str) -> int:
+async def main(url: str, allow_add=()) -> int:
     eng = create_async_engine(url)
     try:
         async with eng.begin() as conn:
             bases = collect_bases()
             for base in bases:
                 await conn.run_sync(base.metadata.create_all)
-            added = await conn.run_sync(reconcile_columns, bases)
+            added = await conn.run_sync(reconcile_columns, bases, allow_add)
         for name in added:
             print(f"  + added column {name}")
         return 0
     finally:
         await eng.dispose()
 
-sys.exit(asyncio.run(main(sys.argv[1])))
+_ALLOW = json.loads(sys.argv[2]) if len(sys.argv) > 2 else []
+sys.exit(asyncio.run(main(sys.argv[1], _ALLOW)))
 '''
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser(
+        prog="init_schemas.py",
+        description=(
+            "Create every service's tables from its SQLAlchemy models, then add "
+            "the model columns existing tables lack. Additive only: nothing is "
+            "dropped, retyped or rewritten."
+        ),
+        epilog=(
+            "A column added to a table that already holds rows invents a value "
+            "for every existing row, and a deliberately dropped column leaves no "
+            "trace in the database that would distinguish it from a stale table. "
+            "So a populated table is only reconciled when you name the column "
+            "with --allow-add. An empty table is reconciled automatically, because "
+            "no existing row can be invented for."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument(
+        "--allow-add",
+        action="append",
+        default=[],
+        metavar="TABLE.COLUMN",
+        help=(
+            "authorise ADD COLUMN on a populated table for this column. "
+            "Repeatable, or comma-separated. Only use it once you have decided "
+            "the table is stale rather than the column being deliberately absent."
+        ),
+    )
+    args = ap.parse_args()
+    allow_add: set[str] = set()
+    for item in args.allow_add:
+        allow_add.update(p.strip() for p in item.split(",") if p.strip())
+
     env = dict(os.environ)
     env["PYTHONPATH"] = "."  # per-service cwd; keeps `app` unambiguous
     failures = []
@@ -199,7 +300,13 @@ def main() -> None:
             failures.append(svc)
             continue
         proc = subprocess.run(
-            [sys.executable, "-c", RUNNER, f"{PG}/{db}"],
+            [
+                sys.executable,
+                "-c",
+                RUNNER,
+                f"{PG}/{db}",
+                json.dumps(sorted(allow_add)),
+            ],
             cwd=svc_dir,
             env=env,
             capture_output=True,
