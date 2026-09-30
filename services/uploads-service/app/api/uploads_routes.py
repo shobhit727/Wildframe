@@ -178,10 +178,10 @@ async def create_session(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return CreateSessionResponse(
-        session_id=session.id,  # type: ignore[arg-type]
+        session_id=session.id,
         status=session.status.value,
-        chunk_size=session.chunk_size,  # type: ignore[arg-type]
-        total_chunks=session.total_chunks,  # type: ignore[arg-type]
+        chunk_size=session.chunk_size,
+        total_chunks=session.total_chunks,
         expires_at=session.expires_at.isoformat(),
         uploads=[
             PresignedUploadResponse(

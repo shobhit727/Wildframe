@@ -581,7 +581,7 @@ class MediaPipelineService:
         # Determine which stages are already done.
         done = set(job.stage_versions.keys())
 
-        job.status = PipelineJobStatus.RUNNING  # type: ignore[assignment]
+        job.status = PipelineJobStatus.RUNNING
         if job.started_at is None:
             job.started_at = datetime.now(UTC)  # type: ignore[unreachable]
         await self.job_repo.save(job)
@@ -604,7 +604,7 @@ class MediaPipelineService:
                 stage = self.registry.get(stage_name)
                 job.current_stage = stage_name  # type: ignore[assignment]
                 # Persist the (port-stripped) ctx so resume works mid-stage.
-                job.context = {k: v for k, v in ctx.items() if not _is_port(v)}  # type: ignore[assignment]
+                job.context = {k: v for k, v in ctx.items() if not _is_port(v)}
                 await self.job_repo.save(job)
 
                 # Heartbeat the lease before a potentially long stage run.
@@ -669,7 +669,7 @@ class MediaPipelineService:
                 }
                 job.retries = 0  # type: ignore[assignment]
                 # Persist ctx (without ports) so a later advance() can resume.
-                job.context = {k: v for k, v in ctx.items() if not _is_port(v)}  # type: ignore[assignment]
+                job.context = {k: v for k, v in ctx.items() if not _is_port(v)}
                 await self.job_repo.save(job)
 
                 # Reset circuit breaker on success.
@@ -700,7 +700,7 @@ class MediaPipelineService:
                     },
                 )
 
-            job.status = PipelineJobStatus.COMPLETED  # type: ignore[assignment]
+            job.status = PipelineJobStatus.COMPLETED
             job.current_stage = None  # type: ignore[assignment]
             job.error = None  # type: ignore[assignment]
             await self.job_repo.save(job)
@@ -835,7 +835,7 @@ class MediaPipelineService:
 
         Includes a ``dlq_key`` for downstream deduplication.
         """
-        job.status = PipelineJobStatus.FAILED  # type: ignore[assignment]
+        job.status = PipelineJobStatus.FAILED
         job.current_stage = stage_name  # type: ignore[assignment]
         job.error = message  # type: ignore[assignment]
         await self.job_repo.save(job)
@@ -891,7 +891,7 @@ class MediaPipelineService:
             # Only recover if the job is still in a retryable state.
             if job.status == PipelineJobStatus.RUNNING and job.current_stage:
                 job.leased_by = None
-                job.leased_at = None  # type: ignore[assignment]
+                job.leased_at = None
                 job.retries = 0  # type: ignore[assignment]  # reset retries for the current stage
                 await self.job_repo.save(job)
                 logger.info("recovered stale job %s (was leased by %s)", job.id, job.leased_by)

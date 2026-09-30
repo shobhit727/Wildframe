@@ -160,7 +160,7 @@ async def start_job(
             idempotency_key=request.idempotency_key,
             creator_id=current_user,
         )
-        job = await service.advance(job.id)  # type: ignore[arg-type]
+        job = await service.advance(job.id)
     except PipelineError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _job_to_response(job)

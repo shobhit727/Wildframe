@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any
 import json
 import logging
-from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
+from aiokafka import AIOKafkaProducer
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
