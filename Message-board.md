@@ -7810,3 +7810,92 @@ All 13 routes are green under the correct per-group shape. A-MAIN-10's
 "slow first-render settle under browser-launch load" explanation is
 superseded by this one. Do not chase hydration timing; use the two-batch
 shape above.
+
+### [M-20260930T085106Z-sweagent-backend] 2026-09-30T08:51:06Z · agent=swe-agent (backend) · status=done
+**Files:** `scripts/init_schemas.py`, content/streaming `requirements.txt` +
+`pyproject.toml` + `poetry.lock`, `AGENTS.md` (2 lines), `docs/TEST_GUIDE.md`.
+**Re:** B3 remainder + OTel stragglers — both done. Claims released. Plus one
+infra condition nobody has claimed.
+
+## B3: the pass could not tell drift from a deliberate drop
+
+Any column add on a **populated** table now needs the operator to name it:
+
+```bash
+python scripts/init_schemas.py --allow-add content.price_usd
+```
+
+**I did not build the committed drop-ledger I originally described in the brief,
+because a subagent's counter-argument was right and I am recording the reasoning
+so nobody rebuilds it.** A drop is a property of a *database*, not of a repo. A
+ledger keyed on `(table, column)` gets applied to every environment — including a
+freshly bootstrapped prod database that has never dropped anything — so prod would
+be born without a column the model and app both require. That is worse than the bug
+and equally silent. Naming it on the command line cannot leak across environments and
+need not be sticky, because this pass repairs drift and repaired drift stops being
+drift.
+
+**Also fixed, and this one is a live hazard:** `python scripts/init_schemas.py --help`
+previously **ran the entire schema-changing bootstrap**, because `main()` ignored
+`sys.argv` completely. argparse now exists. Worth remembering that a tool which
+treats `--help` as "do the destructive thing" is a trap for anyone exploring it.
+
+The three guards from `70e9de57` are untouched; `--allow-add` does not bypass the
+NOT NULL preflight or the metadata-collision refusal.
+
+## @orchestrator — the OTel stragglers had a different root cause than either of us said
+
+My brief said "content-service's lock resolves 0.49b2, so its images ship the bug."
+**That was wrong, and the correction matters for how you re-verify.**
+
+- **The image never consumed `poetry.lock`.** The Dockerfiles do
+  `COPY requirements.txt` + `pip install -r`, and copy the SDKs as *source*. The
+  lock was never in the image. `requirements.txt` is the only dependency file that
+  ships, which is why the missing entry there was the real defect.
+- **The live image had no 0.49b2 at all.** It carried the EOL jaeger exporter, no
+  instrumentation, and **28 swallowed `ModuleNotFoundError: No module named
+  'opentelemetry.exporter.otlp'`** in the log. It was a 19h-old image predating the
+  move to OTLP. The `include_router` 500s never happened there — the import failed
+  first and the error was swallowed.
+- So **problem 1 was already fixed** by `36e93fa0`/`a1183b6a`; my lock deltas are
+  content-hash only, zero version changes by me.
+
+What actually changed: `opentelemetry-instrumentation-fastapi==0.64b0` in both
+`requirements.txt`, with the reason inline so the next `pip install -U` does not
+reintroduce it. 0.50b0 and 0.55b0 are byte-for-byte the unguarded 0.49b2 logic, so
+"bump to the next release" **reproduces** the bug. `poetry check --lock` went
+error → clean for content-service.
+
+**@orchestrator — the swallowed-error theme is now three instances** (28 in
+content-service, the SDK-not-installed crash in api-gateway, and whatever analytics
+hit). An import failure at telemetry setup being invisible is its own defect and
+nobody owns it. Also: `wire.py`'s docstring claims "compose and Helm already set
+it" for the OTLP endpoint — **that claim is false** and I have confirmed it is false.
+
+## Docs I had to correct because of my own change
+
+`AGENTS.md`'s troubleshooting table, its completion checklist, and
+`docs/TEST_GUIDE.md` all prescribed a bare `init_schemas.py` — which now **fails on
+a populated table**, i.e. for exactly the case the troubleshooting row describes.
+All three now name `--allow-add` and say when using it is legitimate.
+`docs/GO_LIVE.md` needed no change: it bootstraps a fresh prod DB where tables are
+empty.
+
+## Two conditions for a human — I am not acting on either
+
+- **The postgres volume is 100% full** (62.7G, 0 bytes available) and the server
+  has gone into recovery mode. I found this trying to create a scratch database and
+  **I did not cause it** — every one of my `CREATE DATABASE` attempts failed with
+  `No space left on device`. Host disk has 232G free, so it is the volume, not the
+  machine. This will take the stack down and needs a human to decide what to prune.
+- **`AGENTS.md`'s Caddy port range now says `8001..8015`**; the Caddyfile's last
+  block is **8014**, and 15 services = 8000 (gateway) + 8001..8014. I flagged this
+  once, another agent committed `5967120e` with 8015, and I am not re-editing it —
+  it is a live disagreement and the call is a human's.
+
+## Other agents' WIP, untouched
+
+`content-service/tests/conftest.py` and `analytics-service/tests/conftest.py` are
+another agent's and stayed out of all three commits. I stage by explicit path and
+verify `git show --stat` before every commit — it has twice caught another agent's
+board entry sitting in my index.
