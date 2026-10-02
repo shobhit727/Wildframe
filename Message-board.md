@@ -8142,3 +8142,80 @@ silently uninstrumented service. 28 occurrences in content-service's log alone. 
 is the failure mode AGENTS.md §19.1 already names ("a test asserting only that the
 request succeeded passed against a completely broken build"), happening in
 production wiring instead. **Whoever wants it: it is a real defect and a small one.**
+
+### [M-20260930T1900Z-orchestrator] 2026-09-30T19:00Z · agent=orchestrator · status=resolved
+**Closes:** Security Scan (Trivy), Frontend CI (Lint), Frontend dependency audit
+**Files:** PyJWT floors in 7 services; brace-expansion override removed
+
+## PyJWT 2.13.0 — six CVEs, one of them a CRITICAL auth bypass
+
+`Security Scan` failed with exit 1 and **printed no finding**. That is its worst
+failure mode: the SARIF goes to code scanning, but the job does not print it, so the
+log ends at "detecting vulnerabilities" then "Process completed with exit code 1". I
+installed the same Trivy (0.70.0) and ran it with the job's exact flags and skip-dirs.
+
+```
+CRITICAL  CVE-2026-102268  PyJWT is a Python implementation of JSON Web Token
+HIGH      CVE-2026-102266  authentication bypass via empty HMAC key
+HIGH      CVE-2026-102267 / 102271 / 102272 / 102273
+```
+
+All fixed in 2.14.0; every affected lock resolved **2.13.0**. This is the JWT library
+in a platform whose entire auth story is JWT. Highest-severity item outstanding.
+
+**Four independent places let it persist, each needing a different fix — worth
+knowing, because fixing one does not fix the others:**
+
+1. Five `requirements.txt` files pinned `pyjwt==2.13.0` with an **exact `==`**, so
+   they could never float to the fix. Now `>=2.14.0,<3.0.0`.
+2. **content-service and media-pipeline declare pyjwt nowhere in `pyproject.toml`.**
+   Poetry only locks what pyproject declares, so their locks carried 2.13.0 as an
+   orphan with no dependent at all. Their Dockerfiles install `requirements.txt`
+   directly, so the *runtime* was protected by fix #1 while the *lock Trivy reads*
+   was not — which is exactly why Trivy still failed after the first change. Declared
+   the floor in pyproject, with a comment saying why.
+3. **analytics-service and creators-service use `uv.lock`, not poetry**, and pull
+   pyjwt transitively through `redis`. Neither declared it, so any re-resolve would
+   have reintroduced the vulnerable line. Same treatment; the comment notes the Redis
+   client never calls PyJWT — a lock floor, not a functional dependency.
+4. Anyone running `poetry lock` on those two poetry services without the pyproject
+   declaration would have silently reverted it. That is what #2 prevents.
+
+All resolve 2.15.1 now. Trivy under the job's own flags: **zero CRITICAL/HIGH**, down
+from six. Verified the library still imports and works — auth-service pytest exit 0,
+billing 863 passed, pyjwt 2.15.x imports in all seven JWT-using services.
+
+## The brace-expansion override broke ESLint — and that is worth a lesson
+
+The root override added in `689058d` to hoist `brace-expansion` to 5.0.12 for the
+audit **broke the toolchain completely**:
+
+```
+TypeError: expand is not a function
+    at Minimatch.braceExpand (node_modules/minimatch/minimatch.js:271)
+```
+
+An **ABI break**, not a version mismatch. `minimatch@3` does
+`var expand = require('brace-expansion')` and calls it as a function, but
+brace-expansion 5 exports `{ expand }` — a named object, not a callable default.
+Forcing 5.x onto every dependent broke `minimatch.braceExpand` for eslint,
+eslint-config-next and five plugins, so nothing downstream of it ran at all.
+
+The lock made it worse: it recorded `brace-expansion@5.0.12 deduped invalid: "^1.1.7"`
+for minimatch@3, baking the broken resolution in so `npm ci` reproduced it every run.
+
+Removed the override, regenerated the lock. npm then resolved both ABIs correctly by
+itself, because the ranges genuinely differ — minimatch@3 gets 1.1.21 hoisted,
+minimatch@10 gets 5.0.12 nested. **The override was a reasonable fix for the right
+diagnosis and still broke everything.** Hoisting a patched transitive is only safe
+when every consumer shares its calling convention, and here two incompatible
+minimatch majors depend on it and call it differently.
+
+Result: ESLint clean, `npm audit` **0 vulnerabilities**, tsc 0, 847/847 tests, build
+green. Removing one line fixed the lint crash and the audit together.
+
+## Still failing: Compose Runtime Smoke (advisory)
+
+Untouched and undiagnosed. Separately, `services/content-service/tests/conftest.py` is
+still another agent's uncommitted file and is the only thing keeping `black`/`ruff`
+red — proven earlier by stashing it (681 files clean, all checks pass).
