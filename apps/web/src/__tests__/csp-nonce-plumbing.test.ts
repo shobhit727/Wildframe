@@ -111,15 +111,6 @@ describe('inline bootstrap scripts are admitted by the served CSP', () => {
    *   scope, so its inline scripts carry no nonce — which is exactly what
    *   `.next/server/app/<route>.html` contained for every broken route.
    */
-    // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag
-    // `csp` is not external input. It is the return of buildCspHeader, a local
-    // helper, and the <script> occurrences below are string literals this file
-    // builds to assert against. Semgrep flags the helper's parameter because it
-    // cannot see through the call boundary, so it treats a locally-derived string
-    // as untrusted. Scoped to this one helper, with the reason stated, rather than
-    // widening .semgrepignore or muting the rule repo-wide: this is the test that
-    // guards the #981 outage, so muting it globally would blind us to the very
-    // thing it exists to catch.
   const admitsInlineScripts = (csp: string, html: string): boolean => {
     const expected = nonceFromHeader(csp);
     return inlineScriptNonces(html).every((actual) => expected !== undefined && actual === expected);
@@ -128,18 +119,36 @@ describe('inline bootstrap scripts are admitted by the served CSP', () => {
   it('admits a per-request render, where Next stamped the header nonce', () => {
     const csp = buildCspHeader({ nonce: 'abc123', isDev: false, apiUrl: 'https://localhost:8000' });
     const html = '<script nonce="abc123">self.__next_f.push([1])</script>';
+    // The next line carries a nosemgrep suppression. False positive, and the two
+    // assertions below share it. `csp` is the return of buildCspHeader — a pure
+    // local helper fed string literals two lines up — and the `<script>` tags
+    // Semgrep pairs it with are literals this file builds in order to assert
+    // against. It cannot see through the call boundary, so a locally-derived
+    // string reads as untrusted.
+    //
+    // Both the full rule ID and the line immediately above the finding are
+    // required: Semgrep matches nosemgrep by exact ID, so the shorter prefix does
+    // not suppress, and a comment separated from the finding by other lines
+    // suppresses nothing at all. Scoped per-line rather than via .semgrepignore
+    // or a repo-wide mute, because this is the test that guards the #981 outage
+    // and muting the rule globally would blind us to the thing it exists to catch.
+    // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
     expect(admitsInlineScripts(csp, html)).toBe(true);
   });
 
   it('REJECTS a build-time prerender — the #981 outage', () => {
     const csp = buildCspHeader({ nonce: 'abc123', isDev: false, apiUrl: 'https://localhost:8000' });
     const html = '<script>self.__next_f.push([1])</script>';
+    // Same false positive, same reason as the first assertion in this block.
+    // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
     expect(admitsInlineScripts(csp, html)).toBe(false);
   });
 
   it('rejects when the HTML carries a stale nonce from a different request', () => {
     const csp = buildCspHeader({ nonce: 'this-request', isDev: false, apiUrl: 'https://localhost:8000' });
     const html = '<script nonce="an-earlier-request">self.__next_f.push([1])</script>';
+    // Same false positive, same reason as the first assertion in this block.
+    // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
     expect(admitsInlineScripts(csp, html)).toBe(false);
   });
 
