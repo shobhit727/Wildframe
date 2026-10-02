@@ -30,6 +30,11 @@ pydantic-settings = "^2.0.0"
 sqlalchemy = { version = "^2.0.0", extras = ["asyncio"] }
 asyncpg = "^0.30.0"
 redis = "^5.0.0"
+# Trivy: PyJWT 2.13.0 carries CVE-2026-102266/102267/102268/102271/102272/102273,
+# including a CRITICAL authentication bypass via an empty HMAC key. It arrives here
+# transitively through redis, so without an explicit floor the lock drifts back to the
+# vulnerable line on any re-resolve. The Redis client itself never calls PyJWT.
+pyjwt = ">=2.14.0,<3.0.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 httpx = "^0.25.0"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}

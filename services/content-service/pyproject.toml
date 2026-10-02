@@ -7,6 +7,12 @@ packages = [{ include = "app" }]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.16"
+# Trivy: PyJWT 2.13.0 carries CVE-2026-102266/102267/102268/102271/102272/102273,
+# including a CRITICAL authentication bypass via an empty HMAC key. requirements.txt
+# already required >=2.14.0, but poetry only locks what pyproject declares, so the
+# lock kept 2.13.0 and Trivy scanned that. Declared here so the lock cannot drift
+# back to the vulnerable line again.
+pyjwt = ">=2.14.0,<3.0.0"
 # Imported by app/api/routes/__init__.py for JWKS/RS256 verification. It was
 # previously undeclared, so a clean `poetry install` produced an importable
 # app that raised ModuleNotFoundError at import time and failed every test at
