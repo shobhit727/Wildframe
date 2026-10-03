@@ -3,9 +3,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from jose import JWTError, jwt
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from jose import JWTError
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from wildframe_auth import JWKSUnavailableError, verify_token_with_jwks
 
 from app.core.content_client import (
     ContentServiceUnavailableError,
@@ -20,9 +21,48 @@ from app.repositories import (
     EventRepository,
 )
 from app.schemas import LogEventRequest, RecordViewEventRequest
-from app.services import AnalyticsService
+from app.services import MAX_EVENT_LIMIT, AnalyticsService
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
+
+
+async def _decode_token(token: str) -> dict:
+    """Verify an access token against auth-service's published JWKS.
+
+    This boundary used to hand-roll its own symmetric HMAC decode, making
+    analytics-service a shared-secret verifier (#941): ``JWT_SECRET_KEY`` is a
+    committed development value and ``DEV_ENVIRONMENTS`` exempts it from the
+    production validator, so a forged HS256 token carrying any ``sub`` and
+    ``role: "admin"`` authenticated. The HS256 path is deleted rather than
+    rotated -- rotating would keep the service on one symmetric key and reject
+    genuine RS256 tokens.
+
+    Token-type separation (#221) is delegated to the shared verifier via
+    ``expected_type="access"``: a refresh token shares the audience but is not
+    accepted here.
+    """
+    # JWKSUnavailableError must be caught *before* JWTError: it is a JWTError
+    # subclass, and it is the branch that keeps a JWKS outage (fetch failure,
+    # or a body that is not a JWKS) a 503 instead of a 401. Everything else the
+    # verifier rejects -- bad signature, expired, wrong audience, unknown kid --
+    # stays a 401.
+    try:
+        return await verify_token_with_jwks(
+            token,
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            url=settings.JWT_JWKS_URL,
+            expected_type="access",
+        )
+    except JWKSUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Token verification is unavailable",
+        ) from exc
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from exc
 
 
 async def get_current_user_claims(
@@ -39,24 +79,7 @@ async def get_current_user_claims(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid authorization header",
         )
-    token = authorization.removeprefix("Bearer ")
-    try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
-        # Token-type separation (#221): refresh tokens share the audience but
-        # must never be accepted as access tokens.
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-            )
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    payload = await _decode_token(authorization.removeprefix("Bearer "))
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
         raise HTTPException(
@@ -157,13 +180,17 @@ async def require_content_access(
 
 
 async def get_analytics_service(
+    request: Request,
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> AnalyticsService:
+    # The lifespan-managed redis client backs client_event_id idempotency;
+    # when it is absent the service logs and proceeds without dedup.
     return AnalyticsService(
         EventRepository(db),
         ContentViewEventRepository(db),
         CreatorAnalyticsSnapshotRepository(db),
         ContentPerformanceMetricsRepository(db),
+        dedup_store=getattr(request.app.state, "redis_client", None),
     )
 
 
@@ -195,7 +222,7 @@ async def log_event(
 async def get_user_events(
     user_id: Annotated[UUID, Depends(require_self)],
     service: AnalyticsService = Depends(get_analytics_service),  # noqa: B008
-    limit: int = 100,
+    limit: int = Query(default=100, ge=1, le=MAX_EVENT_LIMIT),
 ):
     """Get user events."""
     events = await service.get_user_events(user_id, limit)
@@ -211,17 +238,22 @@ async def record_view_event(
     """Record a content view/playback event."""
     if request.viewer_id != current_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    await service.record_view_event(
-        content_id=request.content_id,
-        viewer_id=request.viewer_id,
-        watch_duration_seconds=request.watch_duration_seconds,
-        content_duration_seconds=request.content_duration_seconds,
-        completion_pct=request.completion_pct,
-        playback_quality=request.playback_quality,
-        started_at=request.started_at,
-        completed_at=request.completed_at,
-        client_event_id=request.client_event_id,
-    )
+    try:
+        await service.record_view_event(
+            content_id=request.content_id,
+            viewer_id=request.viewer_id,
+            watch_duration_seconds=request.watch_duration_seconds,
+            content_duration_seconds=request.content_duration_seconds,
+            completion_pct=request.completion_pct,
+            playback_quality=request.playback_quality,
+            started_at=request.started_at,
+            completed_at=request.completed_at,
+            client_event_id=request.client_event_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
     return {"status": "recorded"}
 
 

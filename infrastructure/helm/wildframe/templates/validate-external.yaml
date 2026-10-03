@@ -1,1 +1,4 @@
 {{- include "wildframe.requireManagedExternal" . }}
+{{- if and (eq .Release.Namespace "wildframe-production") .Values.kafka.sasl.insecureSkipVerify }}
+{{- fail "production Kafka clients must verify broker TLS certificates" }}
+{{- end }}

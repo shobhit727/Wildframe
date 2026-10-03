@@ -30,7 +30,10 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     JWT_SECRET_KEY: str | None = None
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
+    JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
+    JWT_ISSUER: str = "wildframe-auth"
+    JWT_AUDIENCE: str = "wildframe-api"
     JWT_EXPIRATION_MINUTES: int = 15
     REDIS_URL: str | None = None
     LOG_LEVEL: str = "INFO"
@@ -68,6 +71,26 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     GATEWAY_BODY_STREAM_CHUNK_SIZE: int = 64 * 1024
     GATEWAY_GLOBAL_BODY_BUDGET_BYTES: int = 50 * 1024 * 1024
     GATEWAY_MAX_CONCURRENT_BODIES: int = 20
+    # Per-service rate limits. These are SUSTAINED counts per 60s window
+    # (RateLimiter._window in app/middleware.py), applied per client key: the
+    # authenticated JWT `sub` when present, plus the client IP, plus X-Device-Id.
+    # They are not burst limits -- the burst ceilings are the
+    # RATE_LIMIT_BURST_* settings below, measured over RATE_LIMIT_BURST_WINDOW
+    # seconds instead of 60.
+    #
+    # RATE_LIMIT_AUTH is the tightest bucket on purpose: "auth" is selected by
+    # the first path segment, so it covers the entire /auth/* namespace rather
+    # than just the login endpoint, and it is the namespace where a transparent
+    # proxy must be most conservative. auth-service applies its own
+    # endpoint-specific abuse limits on top (app/core/rate_limit.py), so this
+    # value is a coarse edge ceiling, not the brute-force defence.
+    #
+    # The live-stack integration suite is written against this exact value:
+    # tests/integration/conftest.py paces to <=3 auth calls per 60s per IP and
+    # tests/integration/test_gateway_auth.py asserts the 6th request in a window
+    # returns 429. deployments/docker-compose.dev.yml must not override it --
+    # a dev-only override that diverges here makes the suite stop exercising the
+    # configuration that actually ships.
     RATE_LIMIT_AUTH: int = 5
     RATE_LIMIT_SEARCH: int = 100
     RATE_LIMIT_UPLOAD_CREATE: int = 100
@@ -76,6 +99,22 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     RATE_LIMIT_DEFAULT: int = 1000
     RATE_LIMIT_BURST_WINDOW: int = 10
     RATE_LIMIT_CONCURRENCY_WINDOW: int = 5
+    # KNOWN LIMITATION (not changed here, deliberately -- see the note below).
+    # A burst ceiling is only reachable when it is TIGHTER than the sustained
+    # rate implies over the burst window. For "auth" the sustained limit is
+    # 5/60s but RATE_LIMIT_BURST_AUTH allows 10 per 10s, and the sustained
+    # check runs first (RateLimiter._check_dual), rejecting the 6th request in
+    # the same 60s. The burst branch can therefore never be the one to reject an
+    # auth request: it is unreachable configuration, and 10/10s is not a
+    # meaningful "5 per minute with a burst allowance".
+    #
+    # This is left as-is because changing it alters the shipped security
+    # posture and the live-stack suite asserts the sustained 5/60s boundary. It
+    # needs a deliberate decision: either lower RATE_LIMIT_BURST_AUTH to a value
+    # below the sustained rate so the burst branch can actually fire, or raise
+    # RATE_LIMIT_AUTH until the burst ceiling is the binding constraint. Note
+    # that the removed dev override of 60/min had accidentally made the burst
+    # branch reachable in the dev stack only.
     RATE_LIMIT_BURST_AUTH: int = 10
     RATE_LIMIT_BURST_SEARCH: int = 20
     RATE_LIMIT_BURST_UPLOAD_CREATE: int = 10
@@ -90,6 +129,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     RATE_LIMIT_CONCURRENCY_DEFAULT: int = 20
     TRUST_PROXY: bool = False
     TRUSTED_PROXIES: str = ""
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod
@@ -108,24 +148,12 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
             )
-        if self.JWT_SECRET_KEY is None:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if self.JWT_SECRET_KEY in KNOWN_INSECURE_JWT_SECRETS:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if len(self.JWT_SECRET_KEY) < 32:
-            raise ValueError(
-                "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
-            )
         unsafe_cors = self.CORS_ALLOW_CREDENTIALS and (
             "*" in self.CORS_ALLOWED_ORIGINS or not self.CORS_ALLOWED_ORIGINS
         )
         if unsafe_cors:
             raise ValueError(
-                "JWT_SECRET_KEY must be a strong secret and CORS_ALLOWED_ORIGINS must "
+                "CORS_ALLOWED_ORIGINS must be an explicit origin list in production; "
                 "be an explicit origin list in production (wildcard origins with "
                 "credentials are rejected). "
             )

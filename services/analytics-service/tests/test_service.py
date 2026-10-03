@@ -356,7 +356,7 @@ class TestRecordViewEventValidation:
 
     @pytest.mark.asyncio
     async def test_normalizes_naive_timestamps_to_utc(self, service):
-        """Naive datetimes are interpreted as UTC."""
+        """Naive input is stored as naive UTC for the naive timestamp columns."""
         naive = datetime(2026, 1, 15, 12, 0, 0)  # no tzinfo
         await service.record_view_event(
             content_id=uuid4(),
@@ -367,8 +367,11 @@ class TestRecordViewEventValidation:
             started_at=naive,
             completed_at=naive,
         )
-        assert service.view_repo.events[0].started_at.tzinfo is not None
-        assert service.view_repo.events[0].completed_at.tzinfo is not None
+        # These columns are TIMESTAMP WITHOUT TIME ZONE: handing asyncpg a
+        # tz-aware datetime raises DataError, so the write boundary is naive.
+        assert service.view_repo.events[0].started_at.tzinfo is None
+        assert service.view_repo.events[0].completed_at.tzinfo is None
+        assert service.view_repo.events[0].started_at == naive
 
     @pytest.mark.asyncio
     async def test_allows_valid_edge_cases(self, service):

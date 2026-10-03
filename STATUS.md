@@ -338,7 +338,16 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (Aug 18, 2026): 895 backend unit/route tests + 110 integration
-tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
-tests. One known pre-existing failure, billing
-`test_release_tranche_not_locked`, is unrelated to the hardening work.
+Test totals (re-measured on `audit/fix-open-github-issues`): **6,217** backend
+unit/route tests across the 15 services + **694** shared SDK tests + **24**
+static route-contract tests (CI) + **4** supply-chain guard tests + **110**
+live-stack integration tests + **805** frontend vitest tests across 44 files +
+**119** Playwright e2e tests across 9 files covering 15 routes. Per-service
+coverage is 97–99% with a 95% floor enforced in CI; mypy reports 0 errors
+across all 15 services.
+
+One known open failure: `tests/contract/test_route_drift.py::
+test_frontend_paths_resolve_to_backend_routes` fails because it globs all of
+`apps/web/src` without excluding `__tests__` and therefore reads mock URL
+literals from the frontend test files. Excluding fixtures, the scan finds **0**
+unresolved paths, so there is no real frontend↔backend route drift.

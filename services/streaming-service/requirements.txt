@@ -7,13 +7,22 @@ asyncpg==0.30.0
 greenlet==3.5.4
 redis==5.2.0
 python-jose[cryptography]==3.4.0
-pyjwt==2.13.0
+pyjwt>=2.14.0,<3.0.0
 python-json-logger==2.0.7
 email-validator==2.1.0
 httpx==0.27.0
 prometheus-client==0.19.0
 aiokafka==0.14.0
-opentelemetry-api==1.25.0
-opentelemetry-sdk==1.25.0
-opentelemetry-exporter-jaeger==1.21.0
+opentelemetry-api==1.43.0
+opentelemetry-sdk==1.43.0
+opentelemetry-exporter-otlp-proto-grpc==1.43.0
+# The floor is load-bearing, not a guess. 0.64b0 is the first release whose
+# _get_route_details() wraps the route `.path` access in try/except
+# AttributeError and iterates _flatten_routes(app.routes). Below it, every
+# route registered via include_router raises AttributeError and 500s.
+# 0.50b0 and 0.55b0 carry byte-for-byte the same unguarded code as 0.49b2, so
+# "bump to the next release" does not fix it. See issue #978.
+# This pin also drags in instrumentation/asgi/util-http/semantic-conventions
+# at 0.64b0, which is the exact pairing opentelemetry-sdk 1.43.0 requires.
+opentelemetry-instrumentation-fastapi==0.64b0
 # cryptography

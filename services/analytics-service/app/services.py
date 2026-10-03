@@ -41,12 +41,17 @@ def _check_depth(value: Any, depth: int = 0) -> None:
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
-    """Normalize naive/other-tz timestamps to UTC-aware."""
+    """Normalize naive/other-tz timestamps to naive UTC.
+
+    The bound columns are TIMESTAMP WITHOUT TIME ZONE; asyncpg rejects a
+    tz-aware datetime for them (DataError -> 500), so the tzinfo is dropped
+    here, at the write boundary, once the instant has been converted to UTC.
+    """
     if value is None:
         return None
     if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def _check_finite(value: Any) -> None:
@@ -150,7 +155,7 @@ class AnalyticsService:
                 raise ValueError(f"Unsupported playback_quality: {playback_quality}")
         started_at = _as_utc(started_at)
         completed_at = _as_utc(completed_at)
-        now = datetime.now(UTC)
+        now = datetime.now(UTC).replace(tzinfo=None)
         for label, ts in (("started_at", started_at), ("completed_at", completed_at)):
             if ts is not None and ts > now + TIMESTAMP_SKEW:
                 raise ValueError(f"{label} cannot be in the future")
@@ -210,8 +215,8 @@ class AnalyticsService:
             avg_completion_rate=avg_completion_rate,
             unique_viewers=unique_viewers,
             revenue_earned=revenue_earned,
-            period_start=period_start,
-            period_end=period_end,
+            period_start=_as_utc(period_start) if period_start else None,
+            period_end=_as_utc(period_end) if period_end else None,
         )
 
     # Content performance metrics
@@ -267,7 +272,14 @@ class AnalyticsService:
     async def _is_duplicate(self, scope: str, owner_id: UUID, client_event_id: str | None) -> bool:
         """Best-effort client_event_id dedup. Fail-open: store errors never
         drop events."""
-        if not client_event_id or self.dedup_store is None:
+        if not client_event_id:
+            return False
+        if self.dedup_store is None:
+            # Explicit, not silent: the caller asked for idempotency we cannot honour.
+            logger.warning(
+                "No dedup store available; client_event_id %s cannot be deduplicated",
+                client_event_id,
+            )
             return False
         client_event_id = client_event_id.strip()
         if not client_event_id or len(client_event_id) > MAX_CLIENT_EVENT_ID_LENGTH:

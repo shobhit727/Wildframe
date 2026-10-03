@@ -37,9 +37,11 @@ async def lifespan(app: FastAPI):
     if settings.EVENT_PUBLISHER == "kafka":
         from wildframe_events.dlq_retention import apply_dlq_retention
 
-        asyncio.create_task(
-            apply_dlq_retention(settings.KAFKA_BOOTSTRAP_SERVERS, settings.SERVICE_NAME)
-        )
+        # Retention tuning is best-effort and must never block startup, so an
+        # unset broker list skips the task instead of raising here.
+        bootstrap_servers = settings.KAFKA_BOOTSTRAP_SERVERS
+        if bootstrap_servers:
+            asyncio.create_task(apply_dlq_retention(bootstrap_servers, settings.SERVICE_NAME))
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
 
@@ -148,15 +150,21 @@ def create_app() -> FastAPI:
         checks["database"] = "ok" if db_ok else "down"
         if not db_ok:
             overall = "not_ready"
-        try:
-            redis_client = await redis.from_url(settings.REDIS_URL)
-            await asyncio.wait_for(redis_client.ping(), timeout=2.0)
-            await redis_client.close()
-            checks["redis"] = "ok"
-        except Exception as e:  # noqa: BLE001
-            logger.error("Redis readiness check failed: %s", e)
+        redis_url = settings.REDIS_URL
+        if redis_url is None:
+            logger.error("Redis readiness check failed: REDIS_URL is not configured")
             checks["redis"] = "down"
             overall = "not_ready"
+        else:
+            try:
+                redis_client = await redis.from_url(redis_url)
+                await asyncio.wait_for(redis_client.ping(), timeout=2.0)
+                await redis_client.close()
+                checks["redis"] = "ok"
+            except Exception as e:  # noqa: BLE001
+                logger.error("Redis readiness check failed: %s", e)
+                checks["redis"] = "down"
+                overall = "not_ready"
 
         payload = {
             "status": overall,

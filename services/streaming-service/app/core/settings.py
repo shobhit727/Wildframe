@@ -40,8 +40,11 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     DEBUG: bool = False
     DATABASE_URL: str | None = None
     REDIS_URL: str | None = None
+    # Legacy compatibility field; JWT verification uses RS256/JWKS and never reads this secret.
     JWT_SECRET_KEY: str | None = None
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
+    JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
+    AUTH_SERVICE_URL: str = "http://auth-service:8000"
     JWT_ISSUER: str = "wildframe-auth"
     JWT_AUDIENCE: str = "wildframe-api"
     ADMIN_ROLE_VERSION: int = 0
@@ -65,7 +68,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     PLAYBACK_SESSION_IDLE_TIMEOUT_MINUTES: int = 90
     PLAYBACK_URL_SIGNING_SECRET: str = "dev-playback-signing-secret-change-in-production"
     PLAYBACK_URL_TTL_SECONDS: int = 3600
-    ENTITLEMENT_CHECK_ENABLED: bool = True
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod
@@ -100,23 +103,6 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
         if self.REDIS_URL is None:
             raise ValueError(
                 "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
-            )
-        if self.JWT_SECRET_KEY is None:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        # Upstream guard: also reject empty / whitespace-only secrets.
-        if not self.JWT_SECRET_KEY.strip():
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if self.JWT_SECRET_KEY.strip() in KNOWN_INSECURE_JWT_SECRETS:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if len(self.JWT_SECRET_KEY) < 32:
-            raise ValueError(
-                "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
             )
         # The playback signing secret is a plain str carrying a shipped dev
         # default, so a non-development deploy that omits the env var would

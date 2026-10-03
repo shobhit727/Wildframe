@@ -39,8 +39,11 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     SERVER_PORT: int = 8006
     DATABASE_URL: str | None = None
     REDIS_URL: str | None = None
+    # Legacy compatibility field; JWT verification uses RS256/JWKS and never reads this secret.
     JWT_SECRET_KEY: str | None = None
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
+    JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
+    AUTH_SERVICE_URL: str = "http://auth-service:8000"
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
     LOG_LEVEL: str = "INFO"
@@ -94,23 +97,6 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
         if self.REDIS_URL is None:
             raise ValueError(
                 "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
-            )
-        if self.JWT_SECRET_KEY is None:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        # Upstream guard: also reject empty / whitespace-only secrets.
-        if not self.JWT_SECRET_KEY.strip():
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if self.JWT_SECRET_KEY.strip() in KNOWN_INSECURE_JWT_SECRETS:
-            raise ValueError(
-                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
-            )
-        if len(self.JWT_SECRET_KEY) < 32:
-            raise ValueError(
-                "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
             )
         if self.KAFKA_BOOTSTRAP_SERVERS is None:
             raise ValueError(

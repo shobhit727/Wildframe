@@ -157,6 +157,7 @@ class ContentService:
                 is_premium=request.is_premium,
                 can_download=request.can_download,
                 can_stream=request.can_stream,
+                price_usd=request.price_usd,
                 genres=genres,
             )
 
@@ -356,6 +357,13 @@ class ContentService:
     ):
         """Create a new episode."""
         try:
+            # The season must belong to the content in the path: both columns
+            # are free, so without this check an episode can straddle two
+            # unrelated catalog branches.
+            season = await self.season_repo.get_by_id(season_id)
+            if not season or season.content_id != content_id:
+                return None
+
             episode = await self.episode_repo.create(
                 content_id=content_id,
                 season_id=season_id,
@@ -369,10 +377,8 @@ class ContentService:
             )
 
             # Update season episode count
-            season = await self.season_repo.get_by_id(season_id)
-            if season:
-                episodes = await self.episode_repo.get_season_episodes(season_id)
-                season.episode_count = len(episodes)  # type: ignore[assignment]
+            episodes = await self.episode_repo.get_season_episodes(season_id)
+            season.episode_count = len(episodes)  # type: ignore[assignment]
 
             await self.content_repo.commit()
             return episode

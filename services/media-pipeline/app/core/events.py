@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any
 import json
 import logging
-from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
+from aiokafka import AIOKafkaProducer
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -120,5 +120,8 @@ def _build_publisher() -> EventPublisher:
     from app.core.settings import settings
 
     if settings.EVENT_PUBLISHER == "kafka":
-        return KafkaEventPublisher(settings.KAFKA_BOOTSTRAP_SERVERS)
+        bootstrap_servers = settings.KAFKA_BOOTSTRAP_SERVERS
+        if not bootstrap_servers:
+            raise RuntimeError("KAFKA_BOOTSTRAP_SERVERS is not configured")
+        return KafkaEventPublisher(bootstrap_servers)
     return InMemoryEventPublisher()

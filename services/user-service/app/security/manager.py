@@ -5,11 +5,10 @@ from typing import Any
 
 import hashlib
 import logging
-from datetime import UTC, datetime, timedelta
 
 import bcrypt
-from jose import jwt
 from jose.exceptions import ExpiredSignatureError, JWTError
+from wildframe_auth import JWKSUnavailableError, verify_token_with_jwks
 
 from app.core.settings import settings
 
@@ -53,36 +52,58 @@ class PasswordManager:
 
 
 class TokenManager:
-    """Manages JWT token creation and verification."""
+    """Verifies JWTs against auth-service's published JWKS.
+
+    This class used to both *mint* and *verify* tokens with the shared HMAC
+    secret. Both halves are gone (#941):
+
+    * ``create_access_token`` was removed. It signed with the committed
+      development secret, so it was a forge-token factory living in the same
+      module as the verifier -- and after the verifier moved to the JWKS, no
+      service would have accepted its output, making it dead code as well as
+      dangerous. Nothing in ``app/`` called it. auth-service is the only
+      issuer in this platform.
+    * ``verify_token`` now delegates to ``wildframe_auth``'s
+      ``verify_token_with_jwks``, so a forged HS256 token can no longer
+      authenticate. The shared secret is a committed development value and
+      ``DEV_ENVIRONMENTS`` exempts it from the production validator, so the
+      old path was a live bypass rather than a latent one.
+    """
 
     @staticmethod
-    def create_access_token(user_id: str, expires_delta: timedelta | None = None) -> str:
-        """Create a new access token."""
-        if expires_delta is None:
-            expires_delta = timedelta(minutes=settings.JWT_EXPIRATION_MINUTES)
+    async def verify_token(token: str, token_type: str = "access") -> dict[str, Any] | None:
+        """Verify a JWT against the JWKS. ``None`` when the token is not valid.
 
-        expires = datetime.now(UTC) + expires_delta
-        payload = {"sub": str(user_id), "exp": expires, "iat": datetime.now(UTC), "type": "access"}
+        **Now a coroutine.** The replacement ``verify_token_with_jwks`` fetches
+        the JWKS over the network, so keeping this synchronous would have meant
+        blocking the event loop on I/O on every authenticated request. The only
+        caller, ``app.api.routes.get_current_user_id``, was already a coroutine
+        and now awaits this.
 
-        return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
-
-    @staticmethod
-    def verify_token(token: str, token_type: str = "access") -> dict[str, Any] | None:
-        """Verify and decode a JWT token."""
+        The ``None``-on-invalid contract is preserved, because every caller and
+        its tests depend on a bad token being an ordinary answer rather than an
+        exception. One thing deliberately does *not* return ``None``: a JWKS
+        outage raises, so the caller can answer 503. Folding an outage into
+        ``None`` would tell the caller their token was bad when the service
+        merely could not check it.
+        """
+        # JWKSUnavailableError must be caught *before* JWTError: it is a JWTError
+        # subclass, and it is the branch that keeps a JWKS outage (fetch failure,
+        # or a body that is not a JWKS) a 503 instead of a 401. Everything else
+        # the verifier rejects -- bad signature, expired, wrong audience, unknown
+        # kid, wrong type -- stays ``None``.
         try:
-            payload = jwt.decode(
+            return await verify_token_with_jwks(
                 token,
-                settings.JWT_SECRET_KEY,
-                algorithms=[settings.JWT_ALGORITHM],
                 audience=settings.JWT_AUDIENCE,
+                issuer=settings.JWT_ISSUER,
+                url=settings.JWT_JWKS_URL,
+                expected_type=token_type,
             )
-
-            if payload.get("type") != token_type:
-                logger.warning(f"Token type mismatch: expected {token_type}")
-                return None
-
-            return payload
-
+        except JWKSUnavailableError:
+            # Deliberately not swallowed: this is an availability failure, and
+            # the caller must be able to distinguish it from a bad token.
+            raise
         except ExpiredSignatureError:
             logger.debug("Token expired")
             return None

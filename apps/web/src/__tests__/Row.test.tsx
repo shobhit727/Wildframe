@@ -15,6 +15,7 @@ function makeContent(id: string, overrides: Partial<Content> = {}): Content {
     duration: 100,
     releaseDate: '2020-01-01',
     rating: 8,
+    matchPercentage: 80,
     type: 'movie',
     ...overrides,
   };

@@ -3,9 +3,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from jose import JWTError, jwt
+from jose import JWTError
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from wildframe_auth import JWKSUnavailableError, verify_token_with_jwks
+
 from app.core.database import get_db
 from app.core.settings import settings
 from app.models import CreatorSuspendedError
@@ -37,39 +39,52 @@ router = APIRouter(prefix="/api/v1/creators", tags=["creators"])
 admin_router = APIRouter(prefix="/api/v1/admin/creators", tags=["admin-creators"])
 
 
-async def current_user(
-    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
-) -> UUID:
-    """Resolve the authenticated user_id from the validated JWT sub claim.
+async def _decode_token(token: str) -> dict:
+    """Verify an access token against auth-service's published JWKS.
 
-    The API gateway validates the access token at the edge; this verifier
-    re-checks the signature so that direct callers (or a misconfigured gateway)
-    cannot act as a hard-coded identity. Replace this with a shared verifier
-    if the SDK introduces one.
+    Both guards below used to hand-roll their own shared-secret HMAC decode,
+    independently of each other. That made the service a shared-secret verifier
+    (#941): ``JWT_SECRET_KEY`` is a committed development value and
+    ``DEV_ENVIRONMENTS`` exempts it from the production validator, so a forged
+    HS256 token with any ``sub`` and ``role: "admin"`` was accepted. The HS256
+    path is deleted rather than rotated -- rotating would keep every service on
+    one symmetric key and reject genuine RS256 tokens.
     """
+    # JWKSUnavailableError must be caught *before* JWTError: it is a JWTError
+    # subclass, and it is the branch that keeps a JWKS outage (fetch failure,
+    # or a body that is not a JWKS) a 503 instead of a 401. Everything else the
+    # verifier rejects -- bad signature, expired, wrong audience, unknown kid --
+    # stays a 401.
+    try:
+        return await verify_token_with_jwks(
+            token,
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            url=settings.JWT_JWKS_URL,
+            expected_type="access",
+        )
+    except JWKSUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Token verification is unavailable",
+        ) from exc
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from exc
+
+
+def _bearer_token(authorization: str | None) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid authorization header",
         )
-    token = authorization.removeprefix("Bearer ")
-    try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
-        # Token-type separation (#221): refresh tokens share the audience but
-        # must never be accepted as access tokens.
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-            )
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    return authorization.removeprefix("Bearer ")
+
+
+def _subject(payload: dict) -> UUID:
+    """Resolve the caller's UUID from a verified access-token payload."""
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
         raise HTTPException(
@@ -81,6 +96,22 @@ async def current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
         )
+
+
+async def current_user(
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> UUID:
+    """Resolve the authenticated user_id from the verified access-token subject.
+
+    The API gateway validates the access token at the edge; this dependency
+    re-verifies the signature against the JWKS so that direct callers (or a
+    misconfigured gateway) cannot act as a hard-coded identity. Token-type
+    separation (#221) is now enforced by the shared verifier via
+    ``expected_type="access"``: a refresh token shares the audience but is not
+    accepted here.
+    """
+    payload = await _decode_token(_bearer_token(authorization))
+    return _subject(payload)
 
 
 async def current_admin(
@@ -92,46 +123,15 @@ async def current_admin(
     this dependency must re-verify the token signature, the JWT audience, and
     the admin role claim at the service boundary. Plain user tokens and
     unauthenticated callers are rejected (403 / 401) — UI hiding is not a
-    security boundary.
+    security boundary. Signature verification is delegated to
+    :func:`_decode_token`; only the role claim is decided here.
     """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header",
-        )
-    token = authorization.removeprefix("Bearer ")
-    try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
-        # Token-type separation (#221): refresh tokens share the audience but
-        # must never be accepted as access tokens.
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-            )
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    payload = await _decode_token(_bearer_token(authorization))
     if payload.get("role") != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
         )
-    sub = payload.get("sub") or payload.get("user_id")
-    if not sub:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
-        )
-    try:
-        return UUID(str(sub))
-    except (ValueError, TypeError):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
-        )
+    return _subject(payload)
 
 
 def get_service(db: Annotated[AsyncSession, Depends(get_db)]) -> CreatorService:
@@ -314,37 +314,44 @@ async def get_my_ledger(
     stmt = select(PayoutLedger).where(PayoutLedger.creator_id == acct.id)
     result = await service.ledger_repo.session.execute(stmt)
     rows = result.scalars().all()
-    return [
-        PayoutLedgerResponse(
-            id=r.id,
-            creator_id=r.creator_id,
-            idempotency_key=r.idempotency_key,
-            period_start=r.period_start,
-            period_end=r.period_end,
-            view_minutes=r.view_minutes,
-            floor_cents=r.floor_cents,
-            pool_topup_cents=r.pool_topup_cents,
-            share_cents=r.share_cents,
-            stripe_fee_cents=r.stripe_fee_cents,
-            net_cents=r.net_cents,
-            stripe_transfer_id=r.stripe_transfer_id,
-            status=r.status,
-            created_at=r.created_at,
-        )
-        for r in rows
-    ]
+    return [_to_payout_response(r) for r in rows]
+
+
+def _to_payout_response(r) -> PayoutLedgerResponse:
+    return PayoutLedgerResponse(
+        id=r.id,
+        creator_id=r.creator_id,
+        idempotency_key=r.idempotency_key,
+        period_start=r.period_start,
+        period_end=r.period_end,
+        view_minutes=r.view_minutes,
+        floor_cents=r.floor_cents,
+        pool_topup_cents=r.pool_topup_cents,
+        share_cents=r.share_cents,
+        stripe_fee_cents=r.stripe_fee_cents,
+        net_cents=r.net_cents,
+        stripe_transfer_id=r.stripe_transfer_id,
+        status=r.status,
+        created_at=r.created_at,
+    )
 
 
 # ------------------------------------------------------------------ payouts
-@router.post("/me/payouts", response_model=PayoutLedgerResponse)
-async def accrue_my_payout(
+# Accrual is an internal accounting operation: earned_cents, view_minutes and
+# stripe_fee_cents come from platform records, never from the creator's own
+# client. There is deliberately no /me/payouts self-service write.
+
+
+@admin_router.post("/{creator_id}/payouts", response_model=PayoutLedgerResponse)
+async def admin_accrue_payout(
+    creator_id: UUID,
     payload: PayoutAccrualRequest,
-    user_id: Annotated[UUID, Depends(current_user)],
+    admin_id: Annotated[UUID, Depends(current_admin)],
     service: Annotated[CreatorService, Depends(get_service)],
 ):
     """Accrue a payout period. Idempotent on (creator, period) — re-posting the
     same period returns the existing ledger row unchanged."""
-    acct = await service.get_profile(user_id)
+    acct = await service.acct_repo.get(creator_id)
     if acct is None:
         raise HTTPException(status_code=404, detail="creator not found")
     if not acct.is_active:
@@ -360,22 +367,7 @@ async def accrue_my_payout(
         )
     except CreatorSuspendedError:
         raise HTTPException(status_code=403, detail="creator suspended")
-    return PayoutLedgerResponse(
-        id=row.id,
-        creator_id=row.creator_id,
-        idempotency_key=row.idempotency_key,
-        period_start=row.period_start,
-        period_end=row.period_end,
-        view_minutes=row.view_minutes,
-        floor_cents=row.floor_cents,
-        pool_topup_cents=row.pool_topup_cents,
-        share_cents=row.share_cents,
-        stripe_fee_cents=row.stripe_fee_cents,
-        net_cents=row.net_cents,
-        stripe_transfer_id=row.stripe_transfer_id,
-        status=row.status,
-        created_at=row.created_at,
-    )
+    return _to_payout_response(row)
 
 
 # -------------------------------------------------------------------- admin
@@ -438,7 +430,10 @@ async def admin_release_tranche(
         raise HTTPException(status_code=404, detail="milestone not found")
     t = await service.release_tranche(mid, threshold)
     if t is None:
-        raise HTTPException(status_code=404, detail="tranche not found")
+        raise HTTPException(
+            status_code=404,
+            detail="tranche not releasable (missing, already released/rolled back, or killed)",
+        )
     return _to_t_response(t)
 
 

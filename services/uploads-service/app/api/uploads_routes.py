@@ -13,10 +13,11 @@ Endpoints:
 from typing import Annotated
 from uuid import UUID
 
-from jose import jwt
+from jose import JWTError
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status as http_status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from wildframe_auth import JWKSUnavailableError, verify_token_with_jwks
 
 from app.core.database import get_db
 from app.core.settings import settings
@@ -26,33 +27,56 @@ from app.services import UploadError, UploadService
 router = APIRouter(prefix="/api/v1/uploads", tags=["uploads"])
 
 
+async def _decode_token(token: str) -> dict:
+    """Verify an access token against auth-service's published JWKS.
+
+    This dependency used to hand-roll a shared-secret HMAC decode.
+    ``JWT_SECRET_KEY`` is a committed development value and ``DEV_ENVIRONMENTS``
+    exempts it from the production validator, so a forged HS256 token carrying
+    any ``sub`` was accepted (#941). The HS256 path is deleted rather than
+    rotated -- rotating would keep every service on one symmetric key and reject
+    genuine RS256 tokens.
+
+    This guard fronts the upload write surface, so token-type separation (#221)
+    is no longer hand-checked: the shared verifier enforces
+    ``expected_type="access"``, and a refresh token that shares the audience is
+    refused here too (with the generic message, since the rejection now happens
+    inside the verifier).
+    """
+    # JWKSUnavailableError must be caught *before* JWTError: it is a JWTError
+    # subclass, and it is the branch that keeps a JWKS outage (fetch failure, or
+    # a body that is not a JWKS) a 503 instead of a 401. Everything else the
+    # verifier rejects -- bad signature, expired, wrong audience, unknown kid --
+    # stays a 401.
+    try:
+        return await verify_token_with_jwks(
+            token,
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            url=settings.JWT_JWKS_URL,
+            expected_type="access",
+        )
+    except JWKSUnavailableError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Token verification is unavailable",
+        ) from exc
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from exc
+
+
 async def get_current_user_id(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> UUID:
-    """Resolve the authenticated user id from the JWT sub claim."""
+    """Resolve the authenticated user id from the verified access-token sub."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=http_status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid authorization header",
         )
-    token = authorization.removeprefix("Bearer ")
-    try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
-        # Token-type separation (#221): refresh tokens share the audience but
-        # must never be accepted as access tokens.
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=http_status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-            )
-    except jwt.JWTError:  # type: ignore[attr-defined]
-        raise HTTPException(status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    payload = await _decode_token(authorization.removeprefix("Bearer "))
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
         raise HTTPException(
@@ -154,10 +178,10 @@ async def create_session(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return CreateSessionResponse(
-        session_id=session.id,  # type: ignore[arg-type]
+        session_id=session.id,
         status=session.status.value,
-        chunk_size=session.chunk_size,  # type: ignore[arg-type]
-        total_chunks=session.total_chunks,  # type: ignore[arg-type]
+        chunk_size=session.chunk_size,
+        total_chunks=session.total_chunks,
         expires_at=session.expires_at.isoformat(),
         uploads=[
             PresignedUploadResponse(

@@ -5,7 +5,7 @@ pointer to the file. Files marked **current** describe how the platform is
 actually built today; files marked **historical** are retained for project
 history and are not release declarations (see `STATUS.md`).
 
-**Last updated**: August 17, 2026
+**Last updated**: September 27, 2026
 
 ---
 
@@ -17,7 +17,7 @@ history and are not release declarations (see `STATUS.md`).
 | [`STATUS.md`](STATUS.md) | Current implementation and deployment status, remaining production work, and the Aug 2026 security/QA hardening record (closed audit issues, integration suite, test totals). |
 | [`AGENTS.md`](AGENTS.md) | Agent/developer instructions: source of truth for how the repo is actually built — setup, service list, ports, HTTPS/TLS, code conventions, common patterns, and pitfalls. |
 | [`SECURITY.md`](SECURITY.md) | Vulnerability reporting policy (private reporting process). |
-| [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) | Test commands and current stats: 775 backend unit/route tests, 87 live-stack integration tests, 43 frontend vitest tests. |
+| [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) | Test commands and current stats: 6,217 backend unit/route tests, 694 SDK, 24 contract, 110 live-stack integration tests, 805 frontend vitest tests, 119 Playwright e2e tests. |
 | [`docs/INDEX.md`](docs/INDEX.md) | Curated index of the current operational documentation (superset: this file covers everything, including history). |
 | [`DOCS_INDEX.md`](DOCS_INDEX.md) | This file — every `.md` in the repo with summaries. |
 
@@ -28,7 +28,7 @@ history and are not release declarations (see `STATUS.md`).
 | File | Summary |
 |---|---|
 | [`docs/QUICKSTART.md`](docs/QUICKSTART.md) | **Current** local setup guide: prerequisites, compose stack, frontend, test suite. |
-| [`docs/TEST_GUIDE.md`](docs/TEST_GUIDE.md) | **Current** testing playbook: test stack, layout, fixtures, coverage, and the live-stack integration suite (`tests/integration/`, 87 tests). |
+| [`docs/TEST_GUIDE.md`](docs/TEST_GUIDE.md) | **Current** testing playbook: test stack, layout, fixtures, coverage, and the live-stack integration suite (`tests/integration/`, 110 tests). |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | **Current** development workflow: setup, conventions, roadmap, technical glossary. |
 | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Contribution conventions and expected service layout. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Architecture overview (service structure, patterns, DB schema notes). Partly aspirational — header flags that `AGENTS.md`/`README.md` are authoritative for current facts (15 services, JWT audience, no Alembic). |
@@ -61,7 +61,7 @@ history and are not release declarations (see `STATUS.md`).
 | [`IMPLEMENTATION_COMPLETE.md`](IMPLEMENTATION_COMPLETE.md) | Aug 1, 2026 implementation status (~35% complete). |
 | [`FRONTEND_COMPLETE.md`](FRONTEND_COMPLETE.md) | Aug 1, 2026 frontend status (scaffold only at the time). |
 | [`README_COMPLETE.md`](README_COMPLETE.md) | Aug 1, 2026 honest-status README variant. |
-| [`INDEX.md`](INDEX.md) | Aug 4, 2026 documentation index (superseded by `docs/INDEX.md` and this file). |
+| *(removed)* | Aug 4, 2026 documentation index, previously at the repo root. Deleted 2026-09-27: it claimed to be the entry point while duplicating `docs/INDEX.md` and this file, and its numbers and commands were stale. Superseded by `docs/INDEX.md` and this file. |
 | [`QUICK_START.md`](QUICK_START.md) | Aug 1, 2026 quick reference (6-service era). |
 | [`QUICKSTART.md`](QUICKSTART.md) | Older quickstart (6-service era, direct-port curl examples). |
 | [`START_HERE.md`](START_HERE.md) | Early "work completed — 12 microservices" claim document (predates the current layout). |

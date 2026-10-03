@@ -43,12 +43,23 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     ENVIRONMENT: str = "development"
     DATABASE_URL: str | None = None
     JWT_SECRET_KEY: str | None = None
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
+    JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
     JWT_EXPIRATION_MINUTES: int = 15
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
     AUTH_SERVICE_URL: str = "http://auth-service:8000"
+
+    # Redis
     REDIS_URL: str | None = None
+    # content-service is the authority for who owns a piece of content. Strikes
+    # are issued against that resolved identity, never a request-body field.
+    # Set to http://content-service:8003 inside the docker network.
+    CONTENT_SERVICE_URL: str = "http://content-service:8003"
+    CONTENT_SERVICE_TIMEOUT_SECONDS: float = 3.0
+    CONTENT_SERVICE_MAX_CONNECTIONS: int = 10
+
+    # Logging
     LOG_LEVEL: str = "INFO"
     CORS_ALLOWED_ORIGINS: list[str] = [
         "http://localhost:3000",
@@ -72,6 +83,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str | None = None
     OUTBOX_BATCH_SIZE: int = 100
     OUTBOX_POLL_INTERVAL_SECONDS: int = 5
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod

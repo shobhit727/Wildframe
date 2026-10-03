@@ -18,13 +18,19 @@ packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.16"
+wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 fastapi = "^0.141.0"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}
 pydantic = "^2.4.0"
 pydantic-settings = "^2.0.0"
-sqlalchemy = "^2.0.0"
+sqlalchemy = { version = "^2.0.0", extras = ["asyncio"] }
 asyncpg = "^0.30.0"
 redis = "^5.0.0"
+# Trivy: PyJWT 2.13.0 carries CVE-2026-102266/102267/102268/102271/102272/102273,
+# including a CRITICAL authentication bypass via an empty HMAC key. It arrives here
+# transitively through redis, so without an explicit floor the lock drifts back to the
+# vulnerable line on any re-resolve. The Redis client itself never calls PyJWT.
+pyjwt = ">=2.14.0,<3.0.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 httpx = "^0.25.0"
 wildframe-observability = {path = "../../packages/sdk/wildframe_observability", develop = true}
@@ -51,6 +57,23 @@ line_length = 100
 
 [tool.mypy]
 python_version = "3.11"
+warn_unused_ignores = true
+warn_return_any = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unreachable = true
+strict_optional = true
+
+# `deprecated` 3.0.0 is pulled in transitively by the OpenTelemetry exporters and
+# declares its type aliases with PEP 695 `type X = ...`, which is 3.12+ syntax. With
+# python_version pinned to 3.11 above, mypy parses that dependency's source with the
+# 3.11 grammar and fails on a file this service does not own. Raising python_version
+# to 3.13 would also silence it, but that gives up checking against the 3.11 floor
+# we actually declare in requires-python. Skipping the import is the accurate fix.
+[[tool.mypy.overrides]]
+module = ["deprecated.*"]
+follow_imports = "skip"
+ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = "jose.*"

@@ -9,10 +9,27 @@ from jose import jwt
 
 from app.api.moderation_routes import _verify_token, get_current_admin_id, get_current_user_id
 from app.core.settings import settings
+from tests._test_jwks import JWKS
+from tests._test_jwks import PRIVATE_PEM as PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
+
+
+@pytest.fixture(autouse=True)
+def _stub_jwks(monkeypatch):
+    """Replace the JWKS *fetch* seam only; verification itself stays real."""
+
+    async def fetch(_url):
+        return JWKS
+
+    monkeypatch.setattr("wildframe_auth.verifier.fetch_jwks", fetch)
+    clear_jwks_cache()
+    yield
+    clear_jwks_cache()
 
 
 def _token(av=2, arv=0, role="user", token_type="access", sub=None):
     sub = sub or str(uuid4())
+    now = datetime.now(UTC)
     payload = {
         "sub": sub,
         "role": role,
@@ -21,10 +38,13 @@ def _token(av=2, arv=0, role="user", token_type="access", sub=None):
         "arv": arv,
         "aud": settings.JWT_AUDIENCE,
         "iss": settings.JWT_ISSUER,
-        "exp": datetime.now(UTC) + timedelta(minutes=15),
-        "iat": datetime.now(UTC),
+        "exp": now + timedelta(minutes=15),
+        "iat": now,
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM), sub
+    return (
+        jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"}),
+        sub,
+    )
 
 
 def _mock_client(resp=None, exc=None):

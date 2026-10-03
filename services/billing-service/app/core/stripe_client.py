@@ -52,6 +52,11 @@ class StripeError(Exception):
 class StripeClient:
     """Low-level Stripe Connect integration.
 
+    Methods annotated ``-> Any`` return the Stripe SDK's own object types
+    (``Session``, ``Account``, ``Transfer``), which expose attributes such as
+    ``.url``. They were annotated ``dict[str, Any]``, which was false and made
+    every attribute access on them a type error at the call site.
+
     Each method corresponds to a single Stripe API interaction and
     handles the most common Stripe errors, logging them and raising
     a domain-friendly StripeError.
@@ -68,7 +73,7 @@ class StripeClient:
         tier: str,
         success_url: str,
         cancel_url: str,
-    ) -> dict[str, Any]:
+    ) -> Any:
         """Create a Stripe Checkout Session for an SVOD subscription.
 
         The session is created in ``subscription`` mode so Stripe
@@ -113,7 +118,7 @@ class StripeClient:
         price: Decimal,
         success_url: str,
         cancel_url: str,
-    ) -> dict[str, Any]:
+    ) -> Any:
         """Create a Stripe Checkout Session for a one-off TVOD purchase.
 
         The session is created in ``payment`` mode. The price is passed
@@ -202,7 +207,7 @@ class StripeClient:
         creator_id: UUID,
         country: str,
         email: str,
-    ) -> dict[str, Any]:
+    ) -> Any:
         """Onboard a creator to Stripe Connect (Express account type).
 
         Express accounts are the recommended type for marketplaces —
@@ -245,7 +250,7 @@ class StripeClient:
         creator_stripe_account_id: str,
         amount: Decimal,
         idempotency_key: str,
-    ) -> dict[str, Any]:
+    ) -> Any:
         """Transfer funds to a creator's Stripe Connect account.
 
         The amount is in the major currency unit (e.g. dollars) and

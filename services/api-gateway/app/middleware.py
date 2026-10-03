@@ -3,15 +3,19 @@
 import asyncio
 import ipaddress
 import logging
+import time
+import uuid
 import zlib
+from collections.abc import Awaitable
 from contextlib import asynccontextmanager
 from types import MappingProxyType
+from typing import Any, cast
 
 import httpx
 import redis.asyncio as redis
 from fastapi import HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
-from jose import JWTError, jwt
+from wildframe_auth import JWKSUnavailableError, JWTError, verify_token_with_jwks
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
@@ -194,6 +198,18 @@ def get_shared_client() -> httpx.AsyncClient:
     return _shared_client
 
 
+async def _eval_script(client: redis.Redis, script: str, numkeys: int, *args: str) -> Any:
+    """Run a Lua script on an async Redis client and return its reply.
+
+    redis-py types ``eval`` as ``Awaitable[str] | str`` because a single command
+    mixin backs both the sync and the asyncio client; on ``redis.asyncio.Redis``
+    the call always returns a coroutine, so the union is narrowed once here
+    instead of at every call site. Values are passed as strings because that is
+    the contract redis-py encodes them to anyway (its encoder stringifies ints).
+    """
+    return await cast("Awaitable[Any]", client.eval(script, numkeys, *args))
+
+
 class RateLimiter:
     """Independent IP and account limits with burst and concurrency.
 
@@ -236,6 +252,20 @@ class RateLimiter:
         self._concurrency_upload_finalize = settings.RATE_LIMIT_CONCURRENCY_UPLOAD_FINALIZE
         self._concurrency_window = settings.RATE_LIMIT_CONCURRENCY_WINDOW
         self._window = 60
+
+    _ACQUIRE_LEASE_SCRIPT = """
+local key = KEYS[1]
+local member = ARGV[1]
+local now = tonumber(ARGV[2])
+local expiry = tonumber(ARGV[3])
+local limit = tonumber(ARGV[4])
+redis.call('ZREMRANGEBYSCORE', key, '-inf', now)
+if redis.call('ZCARD', key) >= limit then return 0 end
+redis.call('ZADD', key, expiry, member)
+redis.call('PEXPIRE', key, math.max(1, (expiry - now) * 1000))
+return 1
+"""
+    _RELEASE_LEASE_SCRIPT = "return redis.call('ZREM', KEYS[1], ARGV[1])"
 
     def _get_limit(self, service: str, path: str = "") -> int:
         if service == "uploads" and path.endswith(("/complete", "/abort")):
@@ -322,30 +352,87 @@ class RateLimiter:
                 service,
             ):
                 return False
-        conc_limit = self._get_concurrency_limit(service, path)
-        if conc_limit is not None:
-            if not await self._check_key(
-                f"rate_limit:concurrent:ip:{ip}:{service}",
-                conc_limit,
-                self._concurrency_window,
-                service,
-            ):
-                return False
-            if account_id and not await self._check_key(
-                f"rate_limit:concurrent:account:{account_id}:{service}",
-                conc_limit,
-                self._concurrency_window,
-                service,
-            ):
-                return False
-            if device_id and not await self._check_key(
-                f"rate_limit:concurrent:device:{device_id}:{service}",
-                conc_limit,
-                self._concurrency_window,
-                service,
-            ):
-                return False
         return True
+
+    def _concurrency_keys(
+        self,
+        ip: str,
+        service: str,
+        path: str,
+        account_id: str | None,
+        device_id: str | None,
+    ) -> tuple[int | None, list[str]]:
+        limit = self._get_concurrency_limit(service, path)
+        if limit is None:
+            return None, []
+        keys = [f"rate_limit:inflight:ip:{ip}:{service}"]
+        if account_id:
+            keys.append(f"rate_limit:inflight:account:{account_id}:{service}")
+        if device_id:
+            keys.append(f"rate_limit:inflight:device:{device_id}:{service}")
+        return limit, keys
+
+    async def acquire_rate_limits(
+        self,
+        ip: str,
+        service: str,
+        path: str = "",
+        account_id: str | None = None,
+        device_id: str | None = None,
+    ) -> tuple[bool, str | None]:
+        if not await self._check_dual(ip, service, path, account_id, device_id):
+            return False, None
+        limit, keys = self._concurrency_keys(ip, service, path, account_id, device_id)
+        if limit is None:
+            return True, None
+        lease_id = uuid.uuid4().hex
+        now = int(time.time())
+        lease_seconds = max(60, self._concurrency_window * 12)
+        expiry = now + lease_seconds
+        acquired: list[str] = []
+        try:
+            for key in keys:
+                result = await _eval_script(
+                    self.redis,
+                    self._ACQUIRE_LEASE_SCRIPT,
+                    1,
+                    key,
+                    lease_id,
+                    str(now),
+                    str(expiry),
+                    str(limit),
+                )
+                if not result:
+                    await self.release_concurrency_lease(lease_id, acquired)
+                    return False, None
+                acquired.append(key)
+        except Exception:  # noqa: BLE001
+            await self.release_concurrency_lease(lease_id, acquired)
+            if service == "auth":
+                logger.warning("Rate limiter Redis lease error for %s; denying request", service)
+                return False, None
+            logger.warning("Rate limiter Redis lease error for %s; allowing request", service)
+            return True, None
+        return True, lease_id
+
+    async def release_concurrency_lease(self, lease_id: str, keys: list[str]) -> None:
+        for key in keys:
+            try:
+                await _eval_script(self.redis, self._RELEASE_LEASE_SCRIPT, 1, key, lease_id)
+            except Exception:  # noqa: BLE001
+                logger.warning("Failed to release in-flight rate-limit lease")
+
+    async def release_rate_limits(
+        self,
+        lease_id: str,
+        ip: str,
+        service: str,
+        path: str = "",
+        account_id: str | None = None,
+        device_id: str | None = None,
+    ) -> None:
+        _, keys = self._concurrency_keys(ip, service, path, account_id, device_id)
+        await self.release_concurrency_lease(lease_id, keys)
 
     async def check_rate_limits(
         self,
@@ -504,15 +591,33 @@ class _DeflateDecompressor:
         self._obj = zlib.decompressobj()
         self._tried_raw = False
 
-    def decompress(self, data: bytes) -> bytes:
+    def decompress(self, data: bytes, max_length: int = 2**31 - 1) -> bytes:
+        if self._obj.eof:
+            raise ValueError("Trailing data after compressed stream")
         try:
-            return self._obj.decompress(data)
+            result = self._obj.decompress(data, max_length)
         except zlib.error as exc:
             if not self._tried_raw and "incorrect header" in str(exc).lower():
                 self._tried_raw = True
                 self._obj = zlib.decompressobj(-15)
-                return self._obj.decompress(data)
-            raise
+                result = self._obj.decompress(data, max_length)
+            else:
+                raise
+        if self._obj.unused_data:
+            raise ValueError("Trailing data after compressed stream")
+        return result
+
+    @property
+    def unconsumed_tail(self) -> bytes:
+        return self._obj.unconsumed_tail
+
+    @property
+    def unused_data(self) -> bytes:
+        return self._obj.unused_data
+
+    @property
+    def eof(self) -> bool:
+        return self._obj.eof
 
     def flush(self) -> bytes:
         try:
@@ -528,30 +633,48 @@ def _create_decompressor(encoding: str):
     if enc == "deflate":
         return _DeflateDecompressor()
     if enc == "br":
-        try:
-            import brotli
-
-            return brotli.Decompressor()
-        except ImportError:
-            try:
-                import brotlicffi as brotli  # type: ignore
-
-                return brotli.Decompressor()
-            except ImportError:
-                return None
-        except Exception:
-            return None
+        return None
     return None
 
 
-def _decompress_chunk(decompressor, chunk: bytes) -> bytes:
+def _decompress_chunk(decompressor, chunk: bytes, max_output_bytes: int | None = None) -> bytes:
     if decompressor is None:
         return b""
-    if hasattr(decompressor, "decompress"):
-        return decompressor.decompress(chunk)
-    if hasattr(decompressor, "process"):
-        return decompressor.process(chunk)
-    return b""
+    if max_output_bytes is None:
+        if hasattr(decompressor, "decompress"):
+            return cast(bytes, decompressor.decompress(chunk))
+        if hasattr(decompressor, "process"):
+            return cast(bytes, decompressor.process(chunk))
+        return b""
+    if not hasattr(decompressor, "unconsumed_tail") or not hasattr(decompressor, "eof"):
+        raise ValueError("Compressed encoding does not support bounded decompression")
+    if decompressor.eof:
+        raise ValueError("Trailing data after compressed stream")
+
+    output: list[bytes] = []
+    produced = 0
+    pending = chunk
+    while pending:
+        remaining = max_output_bytes - produced
+        decoded = decompressor.decompress(pending, max(1, remaining + 1))
+        if len(decoded) > remaining:
+            raise ValueError("Decompressed body exceeds limit")
+        output.append(decoded)
+        produced += len(decoded)
+        next_pending = decompressor.unconsumed_tail
+        if not next_pending:
+            break
+        if next_pending == pending and not decoded:
+            raise ValueError("Compressed stream made no progress")
+        pending = next_pending
+    if getattr(decompressor, "unused_data", b""):
+        raise ValueError("Trailing data after compressed stream")
+    return b"".join(output)
+
+
+def _validate_decompressor_complete(decompressor) -> None:
+    if decompressor is not None and not decompressor.eof:
+        raise ValueError("Incomplete compressed stream")
 
 
 def _flush_decompressor(decompressor) -> bytes:
@@ -559,7 +682,7 @@ def _flush_decompressor(decompressor) -> bytes:
         return b""
     if hasattr(decompressor, "flush"):
         try:
-            return decompressor.flush()
+            return cast(bytes, decompressor.flush())
         except Exception:
             return b""
     return b""
@@ -639,16 +762,12 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
         is_compressed = False
         if raw_enc:
             low = raw_enc.strip().lower()
-            if "," in low:
-                parts = [p.strip() for p in low.split(",") if p.strip()]
-                for p in reversed(parts):
-                    if p in ("gzip", "deflate", "br"):
-                        enc = p
-                        break
-                else:
-                    enc = low
-            else:
-                enc = low
+            parts = [part.strip() for part in low.split(",") if part.strip()]
+            if len(parts) != 1:
+                return Response("Stacked content encodings are not supported", status_code=415)
+            enc = parts[0]
+            if enc not in ("identity", "gzip", "deflate"):
+                return Response("Content encoding is not supported", status_code=415)
             is_compressed = enc in ("gzip", "deflate", "br")
         method = request.method
         has_body = method in ("POST", "PUT", "PATCH", "DELETE") or cl is not None
@@ -673,7 +792,6 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
         try:
             original_stream = request.stream
             limit = body_limit
-            max_ratio = self.max_decompression_ratio
             decompressor = _create_decompressor(enc) if is_compressed else None
             decompressed_total = 0
 
@@ -689,7 +807,9 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                     if is_compressed:
                         if decompressor is not None:
                             try:
-                                out = _decompress_chunk(decompressor, chunk)
+                                out = _decompress_chunk(
+                                    decompressor, chunk, limit - decompressed_total
+                                )
                             except Exception as exc:
                                 raise ValueError(f"Invalid compressed body: {exc}") from exc
                             decompressed_total += len(out)
@@ -698,22 +818,15 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                                     f"Decompressed body exceeds limit: {decompressed_total} > {limit}"
                                 )
                         else:
-                            if total * max_ratio > limit:
-                                raise ValueError(
-                                    f"Potential decompression bomb: {total} * {max_ratio} > {limit}"
-                                )
+                            raise ValueError(
+                                "Compressed encoding does not support bounded decompression"
+                            )
                     yield chunk
                 if is_compressed and decompressor is not None:
                     try:
-                        out = _flush_decompressor(decompressor)
+                        _validate_decompressor_complete(decompressor)
                     except Exception as exc:
                         raise ValueError(f"Invalid compressed body: {exc}") from exc
-                    if out:
-                        decompressed_total += len(out)
-                        if decompressed_total > limit:
-                            raise ValueError(
-                                f"Decompressed body exceeds limit: {decompressed_total} > {limit}"
-                            )
 
             request.stream = bounded_stream  # type: ignore[method-assign]
 
@@ -854,11 +967,13 @@ class AuthenticationMiddleware:
         }
     )
 
-    def __init__(self, jwt_secret: str):
-        self.jwt_secret = jwt_secret
+    def __init__(self, *, jwks_url: str, audience: str, issuer: str):
+        self.jwks_url = jwks_url
+        self.audience = audience
+        self.issuer = issuer
 
     async def verify_token(self, request: Request) -> dict | None:
-        """Verify a JWT token from the Authorization header."""
+        """Verify a bearer JWT with the shared RS256/JWKS verifier."""
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             return None
@@ -868,18 +983,20 @@ class AuthenticationMiddleware:
             if scheme.lower() != "bearer":
                 return None
 
-            # Optional identity extraction only; upstream services enforce audience.
-            # Expiry remains mandatory even at this transparent proxy boundary
-            # (python-jose spells "exp is required" as require_exp, not a
-            # `require` list).
-            payload = jwt.decode(
+            # The gateway only extracts optional identity for rate limiting and
+            # routing context. The shared verifier enforces RS256, required claims,
+            # and bounded JWKS rotation refreshes.
+            return await verify_token_with_jwks(
                 token,
-                self.jwt_secret,
-                algorithms=["HS256"],
-                options={"verify_aud": False, "require_exp": True},
+                audience=self.audience,
+                issuer=self.issuer,
+                url=self.jwks_url,
+                leeway=60,
             )
-            return payload
-        except (JWTError, ValueError):  # ValueError: malformed auth header
+        except (JWTError, JWKSUnavailableError, ValueError, TypeError):
+            # Invalid/expired tokens and temporary JWKS failures must not make the
+            # transparent proxy itself reject downstream requests; upstream services
+            # remain the authorization boundary.
             logger.warning("Token verification failed", exc_info=True)
             return None
 

@@ -18,7 +18,13 @@ packages = [{include = "wildframe_auth"}]
 [tool.poetry.dependencies]
 python = ">=3.11,<3.16"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
-cryptography = "^42.0.0"
+# Floor is 49.0.0, not the old ^42.0.0 (<43), which pinned every dependent service
+# to a cryptography with three open advisories: CVE-2026-26007 (subgroup
+# validation, fixed 46.0.5), CVE-2026-69249 (duplicate self-signed intermediate,
+# fixed 49.0.0) and GHSA-537c-gmf6-5ccf (vulnerable OpenSSL in the wheels, fixed
+# 48.0.1). The upper bound matches the existing convention in the services that
+# declare this directly, and admits the 50.0.0 the root lock already resolves.
+cryptography = ">=49.0.0,<51.0.0"
 httpx = "^0.25.0"
 
 [tool.poetry.group.dev.dependencies]

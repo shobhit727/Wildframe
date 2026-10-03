@@ -71,7 +71,7 @@ bandit -r services/
 ### PostgreSQL Migrations
 
 ```bash
-# Apply a schema change by hand to the dev stack (16 DBs, see
+# Apply a schema change by hand to the dev stack (14 service + 2 generic DBs, see
 # infrastructure/database/init-databases.sql)
 docker compose -f deployments/docker-compose.dev.yml exec postgres \
   psql -U wildframe -d <db_name> -c "ALTER TABLE ..."
@@ -114,6 +114,10 @@ pg_dump -U postgres postgres_db > backup_$(date +%Y%m%d_%H%M%S).sql
 ## Backend Deployment
 
 ### Docker Build
+
+The build context is the repository root and `.dockerignore` is tracked, which
+holds the context to roughly **17 MB** rather than **2.7 GB**. Keep the context
+argument as `.` so the ignore rules apply.
 
 ```bash
 # Build image

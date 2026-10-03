@@ -55,6 +55,11 @@ jobs:
       - name: Verify action pinning and scanner suppressions
         run: python .github/scripts/verify-supply-chain.py
 
+      - name: Test supply chain guard validations
+        run: |
+          python -m pip install --quiet "pytest<8" "pytest-cov<5"
+          python -m pytest tests/test_supply_chain_guard.py -q
+
       - name: Report active scanner suppressions
         if: always()
         run: |
@@ -217,7 +222,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -245,9 +249,20 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: services/${{ matrix.service }}/.venv
-          key: venv-v4-${{ env.PYTHON_VERSION }}-${{ runner.os }}-${{ matrix.service }}-${{ hashFiles(format('services/{0}/poetry.lock', matrix.service), format('services/{0}/pyproject.toml', matrix.service)) }}
+          # packages/sdk is hashed in deliberately. Every service depends on the
+          # SDK by path, and Poetry installs a path dependency keyed on its
+          # declared version -- so when an SDK module changes shape without a
+          # version bump (wire_observability gained the register_metrics
+          # keyword-only argument, while the package stayed at 1.0.0), a
+          # restored venv keeps the OLD copy and the service fails at import
+          # with a TypeError that no local run reproduces, because a local run
+          # either reinstalls or has its own stale venv.
+          # v4 -> v5 forces a one-time invalidation; without the bump the
+          # existing poisoned cache entries would be restored by restore-keys
+          # and this fix would appear to do nothing.
+          key: venv-v5-${{ env.PYTHON_VERSION }}-${{ runner.os }}-${{ matrix.service }}-${{ hashFiles(format('services/{0}/poetry.lock', matrix.service), format('services/{0}/pyproject.toml', matrix.service), 'packages/sdk/**') }}
           restore-keys: |
-            venv-v4-${{ env.PYTHON_VERSION }}-${{ runner.os }}-${{ matrix.service }}-
+            venv-v5-${{ env.PYTHON_VERSION }}-${{ runner.os }}-${{ matrix.service }}-
 
       - name: Install service dependencies
         # Always install: the venv cache is a speed hint, not a correctness
@@ -261,7 +276,7 @@ jobs:
           TEST_DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/test_db
         run: |
           set -euo pipefail
-          PYTHONPATH="$PWD:${PYTHONPATH:-}" poetry run pytest tests --asyncio-mode=auto -q --cov=app --cov-report=term-missing:skip-covered
+          PYTHONPATH="$PWD:${PYTHONPATH:-}" poetry run pytest tests --asyncio-mode=auto -q --cov=app --cov-report=term-missing:skip-covered --cov-fail-under="${COVERAGE_FLOOR:-85}"
 
       - name: Print slowest tests
         if: always()
@@ -291,7 +306,7 @@ jobs:
 
       - name: Run SDK tests
         run: |
-          pip install -e packages/sdk/wildframe_events -e packages/sdk/wildframe_observability -e packages/sdk/wildframe_compliance
+          pip install -e packages/sdk/wildframe_auth -e packages/sdk/wildframe_events -e packages/sdk/wildframe_observability -e packages/sdk/wildframe_compliance aiokafka redis
           PYTHONPATH="$PWD/packages/sdk:${PYTHONPATH:-}" python -m pytest -c pyproject.toml packages/sdk/wildframe_compliance/tests/ packages/sdk/wildframe_events/tests/ packages/sdk/wildframe_observability/tests/ --asyncio-mode=auto -q --cov=packages/sdk --cov-report=term-missing:skip-covered
 
       - name: Print slowest tests
@@ -313,10 +328,49 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install pytest
-        run: python -m pip install --quiet "pytest<8" "pytest-cov<5"
+        # test_no_shared_secret_jwt_verification shells out to a probe that
+        # generates an RSA key and signs with python-jose, so those two must
+        # be present. Without them the probe dies at import and the test
+        # reports "probe produced no output", which reads like a product
+        # failure rather than a missing dependency.
+        run: >-
+          python -m pip install --quiet
+          "pytest<8" "pytest-cov<5"
+          "cryptography" "python-jose[cryptography]" "PyYAML>=6.0,<7"
+
+      - name: Install shared compliance package
+        run: python -m pip install --quiet -e packages/sdk/wildframe_compliance
 
       - name: Detect frontend/backend route drift
         run: python -m pytest tests/contract -q
+
+  compose-smoke:
+    name: Compose Runtime Smoke (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run Compose runtime smoke
+        env:
+          COMPOSE_PROJECT_NAME: wildframe-ci-${{ github.run_id }}
+        run: bash scripts/compose-smoke.sh
+
+      - name: Upload Compose smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: compose-smoke-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/wildframe-compose-smoke.log
+            ${{ runner.temp }}/wildframe-compose-config.json
+            ${{ runner.temp }}/wildframe-compose-ps.json
+          if-no-files-found: warn
+          retention-days: 7
 
   frontend-ci:
     name: Frontend CI
@@ -382,6 +436,13 @@ jobs:
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
+
+      # Generate the ignored HTTPS dev cert before Next.js build/instrumentation
+      # touches the certificate path; the Playwright webServer repeats this
+      # idempotently at runtime.
+      - name: Generate dev TLS certificates
+        working-directory: .
+        run: bash scripts/generate-dev-certs.sh
 
       - name: Build
         run: npm run build
@@ -472,8 +533,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Generate dev TLS certificates (if missing)
-        run: bash scripts/generate-dev-certs.sh
+      # No certificate generation here. Nothing in this job needs one -- Trivy,
+      # the SARIF upload and Semgrep never read a cert, and each job gets a
+      # fresh runner so no later job can inherit files from this one. Generating
+      # them here meant scanning them a step later, which failed on keys the job
+      # had just written.
+      #
+      # This is deliberately NOT solved with a skip-dirs entry for
+      # apps/web/certificates. That suppresses the scanner over a path that holds
+      # private keys, which .github/scripts/verify-supply-chain.py rejects on
+      # purpose, and it also walks back a real control: a suppression there
+      # could hide a key that someone committed by force. Removing the
+      # unnecessary step keeps both the scan and the guard intact.
+      #
+      # Jobs that genuinely need certificates must generate their own. Tracked
+      # separately as #916 (frontend-e2e has no cert step).
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -647,12 +721,24 @@ jobs:
           for svc in $SERVICES; do
             kubectl rollout status "deployment/$svc" -n wildframe-staging --timeout=5m
           done
-      - name: Verify service health endpoints
+      - name: Verify every Service has ready endpoints
         run: |
           set -euo pipefail
-          kubectl -n wildframe-staging run wildframe-smoke --rm --attach=true --restart=Never \
-            --image=curlimages/curl:8.16.0 -- \
-            sh -ec 'for svc in api-gateway auth-service user-service content-service streaming-service admin-service media-pipeline creators-service moderation-service uploads-service search-service analytics-service billing-service recommendation-service notification-service; do curl --fail --silent --show-error --max-time 10 "http://$svc/health" >/dev/null; done'
+          # No probe pod: the chart installs a namespace-wide default-deny
+          # NetworkPolicy, so a bare pod is denied egress to every service, and
+          # `kubectl run --attach` never propagated the container exit code —
+          # the old curl loop could not fail this job. Each app's health path is
+          # already gated by its readiness probe + rollout status above; this
+          # proves every Service selects ready pods behind the declared port.
+          for svc in $SERVICES; do
+            endpoints=$(kubectl -n wildframe-staging get endpoints "$svc" \
+              -o jsonpath='{.subsets[*].addresses[*].ip}')
+            if [ -z "$endpoints" ]; then
+              echo "no ready endpoints for $svc"
+              kubectl -n wildframe-staging get svc "$svc" -o yaml
+              exit 1
+            fi
+          done
 
   deploy-production:
     name: Deploy Production
@@ -710,12 +796,24 @@ jobs:
           for svc in $SERVICES; do
             kubectl rollout status "deployment/$svc" -n wildframe-production --timeout=10m
           done
-      - name: Verify service health endpoints
+      - name: Verify every Service has ready endpoints
         run: |
           set -euo pipefail
-          kubectl -n wildframe-production run wildframe-smoke --rm --attach=true --restart=Never \
-            --image=curlimages/curl:8.16.0 -- \
-            sh -ec 'for svc in api-gateway auth-service user-service content-service streaming-service admin-service media-pipeline creators-service moderation-service uploads-service search-service analytics-service billing-service recommendation-service notification-service; do curl --fail --silent --show-error --max-time 10 "http://$svc/health" >/dev/null; done'
+          # No probe pod: the chart installs a namespace-wide default-deny
+          # NetworkPolicy, so a bare pod is denied egress to every service, and
+          # `kubectl run --attach` never propagated the container exit code —
+          # the old curl loop could not fail this job. Each app's health path is
+          # already gated by its readiness probe + rollout status above; this
+          # proves every Service selects ready pods behind the declared port.
+          for svc in $SERVICES; do
+            endpoints=$(kubectl -n wildframe-production get endpoints "$svc" \
+              -o jsonpath='{.subsets[*].addresses[*].ip}')
+            if [ -z "$endpoints" ]; then
+              echo "no ready endpoints for $svc"
+              kubectl -n wildframe-production get svc "$svc" -o yaml
+              exit 1
+            fi
+          done
       - name: Deployment summary
         run: |
           echo "Production deployment verified for commit $GITHUB_SHA"

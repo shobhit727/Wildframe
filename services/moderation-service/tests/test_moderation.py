@@ -118,6 +118,13 @@ class FakeStrikeRepo:
     def __init__(self) -> None:
         self.strikes: list[CreatorStrike] = []
 
+        # Per-creator advisory lock the real repository takes before inserting a
+        # strike; recorded so a test can assert it happens before the insert.
+        self.locked: list[UUID] = []
+
+    async def lock_creator(self, creator_id: UUID) -> None:
+        self.locked.append(creator_id)
+
     async def create(self, strike: CreatorStrike) -> CreatorStrike:
         self.strikes.append(strike)
         return strike

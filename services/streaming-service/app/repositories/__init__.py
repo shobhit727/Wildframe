@@ -309,7 +309,7 @@ class QualityProfileRepository(BaseRepository):
     async def get_all_active(self) -> Sequence[StreamingQualityProfile]:
         """Get all active quality profiles."""
         result = await self.session.execute(
-            select(StreamingQualityProfile).where(StreamingQualityProfile.is_active == True)
+            select(StreamingQualityProfile).where(StreamingQualityProfile.is_active.is_(True))
         )
         return result.scalars().all()
 
@@ -345,7 +345,7 @@ class CDNRegionRepository(BaseRepository):
 
     async def get_all_active(self) -> Sequence[CDNRegion]:
         """Get all active CDN regions."""
-        result = await self.session.execute(select(CDNRegion).where(CDNRegion.is_active == True))
+        result = await self.session.execute(select(CDNRegion).where(CDNRegion.is_active.is_(True)))
         return result.scalars().all()
 
 

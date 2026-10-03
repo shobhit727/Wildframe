@@ -28,6 +28,7 @@ from app.models import (
 from app.repositories import (
     ContentFlagRepository,
     CreatorStrikeRepository,
+    DuplicateContentFlag,
     ModerationDecisionRepository,
 )
 
@@ -36,6 +37,10 @@ logger = logging.getLogger(__name__)
 
 class ModerationError(Exception):
     """Domain error for the moderation workflow."""
+
+
+class DuplicateFlagError(ModerationError):
+    """This reporter already flagged this content (HTTP 409)."""
 
 
 class ModerationService:
@@ -71,12 +76,13 @@ class ModerationService:
         ``content.flagged`` event so the notification service can alert
         moderators and the analytics service can track flag volume.
 
-        ``content_creator_id`` is the authoritative UUID of the creator who
-        owns ``content_id``. Callers (api-gateway / admin) resolve it from
-        content-service before flagging so that downstream strike issuance
-        never confuses a content UUID for a creator UUID. ``None`` means the
-        creator could not be resolved; the flag is still recorded but a
-        rejection cannot issue a strike until the field is backfilled.
+        ``content_creator_id`` MUST be the authoritative UUID of the creator
+        who owns ``content_id``, resolved server-side from content-service by
+        the API layer. A caller-supplied value is never accepted: it would let
+        any reporter aim a strike (and an automatic suspension) at a creator of
+        their choosing. ``None`` means the creator genuinely could not be
+        resolved; the flag is still recorded, but a rejection cannot issue a
+        strike until the field is backfilled.
         """
         flag = ContentFlag(
             content_id=content_id,
@@ -85,8 +91,14 @@ class ModerationService:
             reported_by=reporter_id,
             status=FlagStatus.PENDING,
         )
-        await self.flag_repo.create(flag)
-
+        try:
+            # Keep the persisted row: the INSERT assigns the id, the enum
+            # defaults and the DB timestamps that the outbox payload and the
+            # HTTP response both need.
+            flag = await self.flag_repo.create(flag)
+        except DuplicateContentFlag as exc:
+            await self.flag_repo.session.rollback()
+            raise DuplicateFlagError("this content was already flagged by you") from exc
         # Transactional outbox: the event row is written in the same DB
         # transaction as the flag. A background worker publishes PENDING
         # rows (at-least-once; consumers dedupe on event_key), so the event
@@ -241,6 +253,11 @@ class ModerationService:
         else:
             strike_reason = StrikeReason.CONTENT_VIOLATION
 
+        # Serialize per creator BEFORE inserting: concurrent first strikes would
+        # otherwise each insert uncommitted, count only their own row (the
+        # other is invisible at READ COMMITTED) and both miss the suspension
+        # threshold. The advisory lock is held to commit/rollback.
+        await self.strike_repo.lock_creator(creator_id)
         strike = CreatorStrike(
             creator_id=creator_id,
             strike_reason=strike_reason,
@@ -260,7 +277,7 @@ class ModerationService:
                 payload={
                     "creator_id": str(creator_id),
                     "active_strikes": active_count,
-                    "reason": "auto-suspended after " f"{active_count} strikes",
+                    "reason": f"auto-suspended after {active_count} strikes",
                     "triggering_flag_id": str(flag.id),
                 },
             )
