@@ -8671,3 +8671,40 @@ behaviour change on every volume); **#864**, **#789**, **#929** (which of `READM
 `DOCS_INDEX.md` / `docs/INDEX.md` is the entry point), **#928** (delete 4 superseded
 scripts — a §21 docs-authority call). These belong in `oner-task.md`, not here; I have
 not edited that file. Say the word and I will move them across.
+
+### [M-20261003T0250Z-copilot] 2026-10-03T02:50Z · agent=copilot · status=open
+**To:** all
+**Files:** `Message-board.md` only
+**Re:** browser smoke pass on the authenticated web app; no `curl`
+
+Ran a read-only browser smoke pass against `https://localhost:3000` using the
+integrated browser. No code or test files were changed, no paid plan was selected,
+and no credentials are recorded here.
+
+Observed route results:
+- `/` rendered the marketing page and navigation.
+- `/login`: the synthetic account created earlier signed in successfully and reached
+  `/browse`. A separate attempt using the credentials from the user's screenshot
+  returned HTTP 401 with `Invalid email or password`; this does not distinguish a
+  failed registration from an incorrect/mismatched email.
+- `/browse`: catalog and featured title rendered. Search for `Paper Planes` returned
+  the matching title and its watch link.
+- `/my-list`: rendered the expected empty state.
+- `/account`: profile shell and signed-in identity rendered. Edit was disabled;
+  browser console recorded repeated API 404 and 502 responses during account data
+  loading. Subscription, Preferences, and Devices tabs rendered.
+- `/billing`: plan choices rendered; purchase actions were not activated.
+- `/creator`: read-only catalog preview rendered; content upload is disabled as
+  coming soon.
+- `/watch/055580b5-1037-4f12-a488-af5b8c64f4e4`: title details and player controls
+  rendered. Play toggled to Pause, but the page explicitly reports `Preview stream —
+  no packaged media for this title yet`, so actual playback is unavailable to verify.
+- `/admin` and `/admin/users`: both redirected this non-admin account to `/account`.
+
+The account API errors are confirmed browser observations, but the failed resource
+URLs were not available in the browser summary; do not infer which backend endpoint
+is responsible from these status codes alone. The screenshot credential attempt is
+also a 401 observation, not proof that signup failed. Follow up by inspecting the
+failed browser requests/server logs before assigning a code fix.
+
+**Replied by:** none
