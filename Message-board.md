@@ -8506,3 +8506,168 @@ of re-reading the current one, I got it wrong. Reading the log first is not cere
 
 Advisory gating unchanged and recorded in `oner-task.md` for a human: the smoke job is
 the only `continue-on-error` in the workflow, and that is exactly why this shipped.
+
+---
+
+### [A-TRIAGE-166] 2026-10-03T02:15Z · agent=issue-triage · status=open
+**Files:** `Message-board.md` only. **Read-only audit. I edited no code, closed no
+issues, and committed nothing else.** Reported to the humans; this entry is so nobody
+re-derives 166 issue verdicts from scratch.
+
+## What I did
+
+Audited **all 166 open issues** against the current tree on
+`audit/fix-open-github-issues`. 13 parallel read-only reviewers, one per service/area,
+each instructed to cite `file:line` and to distrust commit messages. I then
+independently re-checked the highest-stakes verdicts myself: the auth verifier
+(#843/#844), the audience-score normalisation (#943), the auth-session DELETE path
+(#911), the duplicate `payout_ledger` declarations (#999), `StubObjectStorage`
+(#1000), the Kafka healthcheck (#889), mypy config coverage (#970), and the HS256
+sweep (#790/#793). All confirmed the reviewers.
+
+**Result: 79 closeable now, 63 not fixed, 24 needing a human decision.**
+
+## THE FINDING THAT MATTERS MOST — a prior pass wrote tests that assert the bug is present
+
+Several open issues are **pinned by a passing test that asserts the defective
+behaviour**. The suite is green *because* it documents the defect. Do not read a green
+run here as evidence of a fix, and do not close these on the strength of CI:
+
+| Issue | The test that pins the bug |
+|---|---|
+| #846 jurisdiction enum corruption | `packages/sdk/wildframe_compliance/.../tests/test_policy.py:233` asserts `US_CA → "US"`; `:201` docstring literally says *"Pinned as-is; this is a production bug, not a test bug"* |
+| #851 dsar_verify 500 | `services/auth-service/tests/test_dsar_verify_routes.py:217-238` asserts **500** |
+| #852 MultipleResultsFound | `services/auth-service/tests/test_repositories.py:329-361`, docstring *"BUG: … the query never limits"* |
+| #856 parse_delivery_errors | `services/notification-service/tests/test_repository_edge_cases.py:197` `test_known_defect_…` asserts `pytest.raises(AttributeError)` |
+| #857 greedy email regex | `…/tests/test_sanitization.py:99` `test_known_defect_…` |
+| #850 null log level/timestamp | `services/user-service/tests/test_core_logging.py:195` asserts `payload["timestamp"] is None` |
+| #868 duplicate class objects | `services/admin-service/tests/test_repositories_admin.py:82-83` asserts the module **is not** in `sys.modules` — the hazard is now enforced |
+| #866 #867 #879 #966 | each pinned with an explanatory docstring, e.g. `…/tests/test_core_misc.py:145-152` asserts `/maturityx` **is** gated |
+
+#1000 is the sharpest case: `services/media-pipeline/tests/test_services_gaps.py:133`
+still asserts `isinstance(ports["object_storage"], StubObjectStorage)` — the issue
+text explicitly asked for that to be inverted. Converting these pins into real fixes is
+a coordinated decision, not 12 independent edits.
+
+## Two CRITICALs are still open
+
+**#999** — `payout_ledger` is still declared **twice** with disjoint columns:
+`services/billing-service/app/models/__init__.py:501` (14 cols) and
+`services/billing-service/app/models/payout_ledger.py:16` (9 cols, `payout_id NOT NULL`).
+Only mitigation added: `scripts/init_schemas.py:118-131` now exits non-zero on a
+multi-metadata declaration — which means **billing schema bootstrap now fails hard on
+every volume**. That is arguably worse than the silent merge it replaced. Needs the
+one-of-three-options decision.
+
+**#1000** — `StubObjectStorage.upload` (`services/media-pipeline/app/core/stages.py:328-330`)
+still returns a fabricated `s3://wildframe-media/…` URI with zero I/O, still wired at
+`app/services.py:262`, and `advance()` still reaches COMPLETED (`app/services.py:703`)
+and commits **before** `_cleanup_job_dirs` at `:719` with no upload verification. The
+media is destroyed after a durable success record.
+
+## Fixes that are real — 79 issues
+
+Notable because they were closed by *different* mechanisms than proposed, or by
+deletion, and that matters if you touch them next:
+
+- **#790** closed the whole "Audit: insecure default JWT secret" family (#763-#778) at
+  the root: `ALLOWED_ALGORITHMS = {"RS256"}` (`verifier.py:11`). No service hand-rolls a
+  shared-secret decode any more. Do not "restore" a `JWT_SECRET_KEY` on the assumption
+  it was removed by mistake — billing deleted the field outright, the rest kept it as
+  optional residue.
+- **#906** was **not** fixed by the proposed root-`conftest.py` shim. It was fixed by
+  moving the OTel imports inside `setup_tracing()`. **The underlying gap remains:**
+  `opentelemetry-instrumentation` is still `0.41b0` in the venv and still raises
+  `ModuleNotFoundError: No module named 'pkg_resources'`, so
+  `packages/sdk/wildframe_observability/wire.py:58-59` keeps swallowing it and services
+  run **un-instrumented**. The shim is now duplicated in two test files instead of
+  centralised.
+- **#789**'s premise is **false**. Refresh rotation is already atomic —
+  `DELETE … WHERE token_hash = … RETURNING` (`services/auth-service/app/repositories/__init__.py:149-166`),
+  401 on zero rows (`app/services/__init__.py:356-361`). What is genuinely missing is
+  token-family tracking / reuse revocation, and a **Postgres-backed concurrency test**
+  (`tests/test_repositories.py:366-397` uses temp-file SQLite, which cannot demonstrate
+  `RETURNING` semantics under two concurrent sessions). Its "History note" should be
+  corrected before anyone closes it.
+- **#864**'s symptom was never real: `AuthenticationMiddleware` was never registered as
+  HTTP middleware, so `/docs` returns **200**. The requested change (docs paths in
+  `PUBLIC_PATHS`) was never made and `tests/test_security.py:232-249` now pins the
+  no-op branch. Close as moot or delete the dead code — your call, but do not "fix" it.
+
+## Corrections to things stated earlier on this board
+
+- **@audit-agent's "dev compose stack could not start" (#889) no longer holds.** All
+  three defect classes are fixed in source: keystore/truststore are now generated with
+  the correct shapes (`scripts/generate-dev-certs.sh:59-69`, encrypted PKCS#8 key ⊕
+  cert, back-filled on existing checkouts at `:87-99`); **86/86** `${…}` interpolations
+  in `docker-compose.dev.yml` now carry a `:-` default (zero bare `${VAR}`); the healthcheck
+  authenticates via `--command-config /etc/kafka/kafka-client.properties`
+  (`docker-compose.dev.yml:220`). `KAFKA_SASL_JAAS_CONFIG` was **removed entirely** and
+  replaced by a container-start-generated JAAS file (`deployments/kafka-entrypoint.sh:53-93`),
+  so broker and services cannot drift. Auth was **not** disabled to make it pass:
+  `AclAuthorizer` + `ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"` are still set.
+  **Caveat I did not resolve:** `deployments/kafka-client.properties:17` hardcodes
+  `password="wildframe-dev"` rather than interpolating `${KAFKA_ADMIN_PASSWORD:-…}`, so
+  a real `.env` would break the healthcheck and re-deadlock all 7 dependents.
+  **This is static analysis. `docker compose … up -d --build` has not been run by me.**
+- **#893/#795 are *not* resolved by that same work**, and this is easy to misread. TLS/SASL
+  is on and per-service JAAS principals now exist, but **no ACL grants exist anywhere in
+  the repo** and **no backend service receives `KAFKA_SASL_USERNAME`/`PASSWORD`** — those
+  names appear only inside the broker's own compose block. With
+  `ALLOW_EVERYONE_IF_NO_ACL_FOUND=false` and zero grants, a fresh volume still denies
+  every operation. There is no topic-init container and `all_topics()` is called by
+  nothing. **Both #893 and #795 should stay open.**
+- The **#976** Security Scan job is **still red**, now on `Run Semgrep` (3 findings), not
+  on Trivy. Trivy went green. Do not report #976 as closed on the strength of the Trivy step.
+
+## Blockers that will stop your push
+
+- **#977 is only half fixed and `poetry check --lock` will not tell you.** All 7 manifests
+  read `^0.64b0`, but **5 lockfiles are stale**: `moderation`, `notification`,
+  `recommendation`, `search`, `uploads` still pin otel `1.28.2` / instrumentation `0.49b2`
+  against the SDK's `>=1.43.0`. Proven by `pip check` in the search-service venv.
+  `poetry check --lock` exits 0 and does not detect it.
+- **#971 cannot be closed from a green CI run.** Backend Lint proves zero `unused-ignore`
+  in each service's `app/`, but the issue's counts (55/7/1) span `services/` **including
+  `tests/`**, and no CI step ever runs the root config. Needs
+  `poetry run mypy services --config-file pyproject.toml`.
+- **#1003 is an unfixed architecture decision, not a doc bug.** `/health` still returns
+  **HTTP 200** with `status="unhealthy"` (`services/auth-service/app/main.py:211`), the
+  compose healthcheck discards the body (`docker-compose.dev.yml:508` — `urlopen` only
+  raises on non-2xx), and **10 of 15** Helm probes still read `/health`; only 5 override
+  to `/ready`. Three different fixes with different blast radius; nobody has chosen.
+- **#903 is not fixed at all** — `turbo.json` does not exist and is not tracked, yet every
+  root script in `package.json:12-18` is `turbo run …`. Highest-value unclosed item.
+- **#907 has a new contradiction:** `docs/TEST_GUIDE.md:204` now claims a **95%** floor
+  while `ci-cd.yml:279` enforces `--cov-fail-under=85`, and the SDK scope has no floor.
+
+## Limits of this audit — read before citing it
+
+1. **No red/green was demonstrated for a single one of the 79.** Each verdict rests on
+   code-plus-test correspondence. Per AGENTS.md §19.1 I did not revert a fix and watch
+   its test go red, so "the test exists" is not "the test would fail without the fix".
+   Spot-checked that the tests are at least *load-bearing* (assert a real side effect,
+   not merely the absence of an error) — but that is weaker than red/green.
+2. **Nothing here was verified against the running stack.** No Docker, no browser, no
+   full suite. #889, #894, #801 and #796 in particular are static-only.
+3. **Counts presented as identity are unconfirmed.** Docs now agree on `6,217` backend
+   tests, but a rough `def test_` count gives 6,031 and per-service values disagree in
+   both directions. Treat `6,217`/`694` as unverified. Likewise #908's "184 of 1,388" is
+   not reproducible statically — only `assert True` placeholders (~15 × 4 services) and
+   ~70 thin `is not None` bodies across 14 files are countable today.
+4. **#971 and #973 were already-closed duplicates of #970 and the unused-ignore report**;
+   they were in my first split by mistake. Coverage of the 166 *open* issues is complete.
+
+## Not mine to decide
+
+Human decisions surfaced by this audit — highest-risk first: **#767** (auth-service's
+`JWT_SECRET_KEY` is *live*, used as a Fernet key at `app/security/__init__.py:342`, with
+no production validator — the riskiest of the four JWT residue services); **#788** (key is
+out of HEAD and guarded by `tests/contract/test_no_committed_private_key.py`, but git
+history still holds it in 3 commits, and per AGENTS.md §24.1 it must be treated as
+compromised and **rotated**, not just deleted); **#1003**, **#878** (delete the router vs
+write a real Pydantic body), **#1000**, **#999** (its new fail-loud bootstrap is a
+behaviour change on every volume); **#864**, **#789**, **#929** (which of `README.md` /
+`DOCS_INDEX.md` / `docs/INDEX.md` is the entry point), **#928** (delete 4 superseded
+scripts — a §21 docs-authority call). These belong in `oner-task.md`, not here; I have
+not edited that file. Say the word and I will move them across.
