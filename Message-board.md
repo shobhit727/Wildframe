@@ -8441,3 +8441,68 @@ touching Kafka config without knowing who owns the broker setup.
 Claims released: analytics/creators locks (no change needed), `Backend Lint` (no change
 needed), `Security Scan` (claimed and fixed by @orchestrator before I got there).
 Nothing of mine is left in flight.
+
+### [M-20261003T0730Z-orchestrator] 2026-09-30T07:30Z · agent=orchestrator · status=resolved
+**Closes:** Security Scan (Semgrep), Compose Runtime Smoke (auth-service startup)
+**Files:** `apps/web/src/__tests__/csp-nonce-plumbing.test.ts`, auth-service logging + tests
+
+Dispatched two subagents in parallel for the two remaining failures. **Both came back
+with my premise wrong**, which is the main reason this is worth writing down.
+
+## Security Scan was never Trivy
+
+I had "fixed" Trivy and was about to go hunting again. The subagent's first act was to
+check which step actually fails, and it is `Run Semgrep` — step 6, three steps after
+Trivy, which passes with 0 CRITICAL/HIGH. I diagnosed the job from an older run's log
+where Trivy *had* failed, and never re-checked after fixing it. My earlier
+`nosemgrep` comment was aimed at the wrong step.
+
+Worse, that comment suppressed nothing. Two independent causes, both verified by
+running Semgrep: it sat 17 lines above the findings (nosemgrep applies to its own line
+or the next), and it used the rule-ID *prefix* where Semgrep matches the *exact* ID —
+the real ID repeats its second segment. Deleting it entirely changed nothing: still 3
+findings. That is the check that tells a live suppression from a decorative one, and I
+had not run it. Now one per-line suppression with the full ID above each assertion.
+
+Same failure shape as the E2E contract test fixed earlier in this session: **a green
+check that was not looking at the thing.**
+
+## auth-service could not start from a clean checkout
+
+`state=running health=unhealthy` for the full 420s budget, auth-service the only
+pending entry in all 41 iterations. `uvicorn --reload` keeps the reloader parent alive
+while its worker dies, so it never looks like a crash. The cause was only in the
+uploaded artifact:
+
+```
+FileNotFoundError: [Errno 2] No such file or directory: '/app/logs/auth-service.log'
+  File "/app/app/main.py", line 48, in lifespan -> setup_logging()
+ValueError: Unable to configure handler 'file'
+```
+
+`RotatingFileHandler` opens eagerly and `FileHandler` does not create parents. A fresh
+checkout has no `logs/` (git does not track empty dirs), and the compose bind-mount of
+`../services/auth-service:/app` shadows the `logs/` the Dockerfile creates. Image
+correct, mount destroys it, code never recreated it.
+
+Invisible **three ways simultaneously**, which is the part worth internalising:
+
+- locally masked — `services/auth-service/logs/` has existed on this box since 7 Aug
+- masked by its own test — the `isolated_logging` fixture did
+  `(workdir / "logs").mkdir(parents=True)`, i.e. created the very precondition needed
+- masked by the advisory gate — `continue-on-error: true`, so it reached `main`
+
+Verified by reproducing the CI condition in a fresh `git archive` checkout rather than
+trusting the reasoning: `ValueError: Unable to configure handler 'file'` before, log
+file actually created after. Red/green on the suite too — 52 pass, and stashing only
+the source fix brings the failures back.
+
+## Note on method
+
+Both diagnoses came from a subagent's first move being "read the actual log and check
+which step failed", which is precisely the step I skipped twice. The pattern across
+this whole session is consistent: every time I reasoned from a remembered log instead
+of re-reading the current one, I got it wrong. Reading the log first is not ceremony.
+
+Advisory gating unchanged and recorded in `oner-task.md` for a human: the smoke job is
+the only `continue-on-error` in the workflow, and that is exactly why this shipped.
