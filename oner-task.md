@@ -399,3 +399,42 @@ No code was harmed and nothing was suppressed on the basis of it, but the failur
 mode is the one named in `AGENT_COORDINATION.md` §23.2: reporting a lead as a
 finding. If a future agent sees those diagnostics in an old board entry, they are
 retracted.
+
+## Should `Compose Runtime Smoke` stay advisory? (2026-10-03)
+
+Answering a question raised while fixing the auth-service startup bug, because the
+answer is a human decision rather than an engineering one.
+
+The job carries `continue-on-error: true` (`.github/workflows/ci-cd.yml:350`) — the
+only job in the workflow that does — and nothing `needs:` it, so it is genuinely
+advisory and the label is accurate. I changed no failure semantics.
+
+The cost is now concrete rather than theoretical. auth-service could not start from a
+clean checkout: its logging config writes to `logs/auth-service.log`,
+`docker-compose.dev.yml` bind-mounts the service directory over `/app` and so shadows
+the `logs/` directory the Dockerfile creates, and `RotatingFileHandler` opens the file
+eagerly without creating parents. The container sat at `state=running
+health=unhealthy` for the full 420s budget on every CI run, and because the job is
+advisory, that reached `main` without failing anything.
+
+It stayed invisible in three separate ways at once, which is the part worth weighing:
+
+- **Locally masked** — `services/auth-service/logs/` had existed on developer machines
+  since 7 August, so the bug only reproduced on a fresh CI checkout.
+- **Masked by its own test** — the `isolated_logging` fixture did
+  `(workdir / "logs").mkdir(parents=True)`, creating the very precondition the code
+  needed, so a test that pre-creates its own precondition cannot fail on it.
+- **Masked by the advisory gate** — even a hard failure would not have blocked a merge.
+
+So the question is whether the runtime smoke should keep `continue-on-error: true`.
+The case for removing it: this is precisely the class of defect it exists to catch, it
+was fully diagnosable from the artifact it uploaded, and it shipped anyway. The case
+for keeping it: the stack is slow and flaky enough on CI that a hard gate invites
+`|| true` and blanket skips, which `AGENTS.md` §18 forbids and which would be worse
+than the advisory status quo.
+
+If it stays advisory, a cheaper middle path is worth considering: keep the job
+non-blocking but make it post a visible warning when a service reaches the budget
+still unhealthy, and require the artifact to be read. A red job nobody must act on is
+close to the same as no job. I have not implemented any of this — it changes gating
+semantics and that is your call.
