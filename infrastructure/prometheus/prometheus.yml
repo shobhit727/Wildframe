@@ -21,8 +21,8 @@ scrape_configs:
           - api-gateway:8000
           - auth-service:8000
           - user-service:8000
-          - content-service:8003
-          - streaming-service:8004
+          - content-service:8000
+          - streaming-service:8000
           - search-service:8000
           - recommendation-service:8000
           - billing-service:8000
