@@ -48,7 +48,7 @@ class PasswordManager:
                 _encode_password(password),
                 password_hash.encode("utf-8"),
             )
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, AttributeError):
             return False
 
 
