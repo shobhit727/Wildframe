@@ -358,33 +358,27 @@ def test_get_logger_returns_named_logger():
 
 
 @pytest.fixture
-def isolated_logging(tmp_path, monkeypatch):
-    """Run setup_logging in a throwaway cwd and restore global logging state.
+def restore_global_logging():
+    """Undo the global logging reconfiguration ``setup_logging`` performs.
 
     ``setup_logging`` calls ``logging.config.dictConfig`` with
     ``disable_existing_loggers=False``, which re-points the *root* logger and
     the sqlalchemy/asyncio loggers at handlers writing to
-    ``logs/auth-service.log``. Without this fixture every other test in the
-    suite would inherit those handlers.
+    ``logs/auth-service.log``. Without this every other test in the suite
+    would inherit those handlers. Restoration is also needed when
+    ``setup_logging`` raises partway through, which is itself a case under
+    test.
     """
-    workdir = tmp_path / "logsdir"
-    (workdir / "logs").mkdir(parents=True)
-    monkeypatch.chdir(workdir)
-
     root = logging.getLogger()
-    saved = {
-        "root_handlers": root.handlers[:],
-        "root_level": root.level,
-        "sqlalchemy": logging.getLogger("sqlalchemy"),
-        "asyncio": logging.getLogger("asyncio"),
-    }
+    saved_handlers = root.handlers[:]
+    saved_level = root.level
     named = {name: logging.getLogger(name) for name in ("sqlalchemy", "asyncio")}
     named_state = {name: (lg.handlers[:], lg.level, lg.propagate) for name, lg in named.items()}
 
-    yield workdir
+    yield
 
-    root.handlers[:] = saved["root_handlers"]
-    root.setLevel(saved["root_level"])
+    root.handlers[:] = saved_handlers
+    root.setLevel(saved_level)
     for name, lg in named.items():
         handlers, level, propagate = named_state[name]
         lg.handlers[:] = handlers
@@ -394,6 +388,33 @@ def isolated_logging(tmp_path, monkeypatch):
     for handler in list(root.handlers):
         if isinstance(handler, logging.FileHandler):
             handler.close()
+
+
+@pytest.fixture
+def isolated_logging(tmp_path, monkeypatch, restore_global_logging):
+    """A throwaway cwd that *already* contains ``logs/``."""
+    workdir = tmp_path / "logsdir"
+    (workdir / "logs").mkdir(parents=True)
+    monkeypatch.chdir(workdir)
+
+    yield workdir
+
+
+@pytest.fixture
+def cwd_without_log_dir(tmp_path, monkeypatch, restore_global_logging):
+    """A throwaway cwd that deliberately *lacks* ``logs/``.
+
+    ``isolated_logging`` pre-creates the directory, which is exactly the
+    condition ``setup_logging`` must not depend on. A fresh checkout has no
+    ``logs/`` directory (git does not track empty directories), and
+    ``docker-compose.dev.yml`` bind-mounts ``services/auth-service`` over
+    ``/app``, shadowing the ``logs/`` directory the Dockerfile creates.
+    """
+    workdir = tmp_path / "bare"
+    workdir.mkdir()
+    monkeypatch.chdir(workdir)
+
+    yield workdir
 
 
 class TestSetupLogging:
@@ -473,6 +494,63 @@ class TestSetupLogging:
         # The dictConfig uses the dotted path "app.core.logging.CorrelationIdJsonFormatter";
         # logging.config resolves it through importlib, so keep that path valid.
         assert core_logging.CorrelationIdJsonFormatter is CorrelationIdJsonFormatter
+
+
+class TestMissingLogDirectory:
+    """``setup_logging`` must not depend on ``logs/`` pre-existing.
+
+    ``RotatingFileHandler`` inherits ``FileHandler``'s ``delay=False``, so
+    ``dictConfig`` opens the file eagerly. When the parent directory is
+    missing that open raises ``FileNotFoundError`` inside ``dictConfig``,
+    which surfaces as ``ValueError: Unable to configure handler 'file'`` and
+    aborts application startup — leaving the container ``running`` but
+    permanently ``unhealthy`` under ``uvicorn --reload``.
+    """
+
+    def test_setup_logging_creates_the_missing_log_directory(self, cwd_without_log_dir):
+        setup_logging()
+
+        assert (cwd_without_log_dir / "logs").is_dir()
+
+    def test_writes_a_record_when_log_directory_did_not_exist(self, cwd_without_log_dir):
+        # Assert the side effect, not merely the absence of an exception: a
+        # test that only asserts "setup_logging did not raise" would also pass
+        # against a build that silently disabled file logging.
+        setup_logging()
+        set_correlation_id("mkdir-correlation")
+        logging.getLogger("probe").info("created-dir-check")
+
+        written = (cwd_without_log_dir / "logs" / "auth-service.log").read_text()
+        record = json.loads(written.strip().splitlines()[-1])
+
+        assert record["message"] == "created-dir-check"
+        assert record["correlation_id"] == "mkdir-correlation"
+
+    def test_file_handler_is_installed_when_log_directory_is_created(self, cwd_without_log_dir):
+        setup_logging()
+
+        file_handlers = [
+            h for h in logging.getLogger().handlers if isinstance(h, logging.FileHandler)
+        ]
+        assert len(file_handlers) == 1
+        assert Path(file_handlers[0].baseFilename).name == "auth-service.log"
+
+    def test_creates_nested_log_directories(self, tmp_path, monkeypatch, restore_global_logging):
+        # The invariant must follow the configured filename, not assume one
+        # level of nesting, so a deeper path is created too.
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(core_logging, "_LOG_FILENAME", "nested/deeper/service.log")
+
+        setup_logging()
+
+        assert (tmp_path / "nested" / "deeper").is_dir()
+
+    def test_existing_log_directory_is_reused_without_error(self, cwd_without_log_dir):
+        (cwd_without_log_dir / "logs").mkdir()
+
+        setup_logging()
+
+        assert (cwd_without_log_dir / "logs").is_dir()
 
 
 def test_json_formatter_uses_stdlib_json_serialisation():
