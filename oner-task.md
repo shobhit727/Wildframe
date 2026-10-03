@@ -438,3 +438,52 @@ non-blocking but make it post a visible warning when a service reaches the budge
 still unhealthy, and require the artifact to be read. A red job nobody must act on is
 close to the same as no job. I have not implemented any of this — it changes gating
 semantics and that is your call.
+
+## `npm audit --audit-level=high` fails on `braces` with no fix available (2026-10-03)
+
+`Frontend CI` fails at the `Frontend dependency audit (SCA gate)` step. Five high
+severity findings, all the same package.
+
+**There is no fix.** `braces@3.0.3` is the latest release on npm — the dist-tag is
+literally `latest: 3.0.3`, the advisory range is `*`, and no 3.x or 4.x release exists
+to upgrade to. Its only dependent, `micromatch@4.0.8`, declares `braces: "^3.0.3"`, so
+there is no permitted upgrade path either. npm's own suggestion is
+`npm audit fix --force`, which resolves it by installing
+**`@next/eslint-plugin-next@14.2.35`** — a downgrade from the current 16.3.8, flagged
+`isSemVerMajor: true`.
+
+**Why this is not urgent, stated with evidence rather than assertion:**
+
+The whole chain is `dev=true` and build-time only:
+
+```
+@next/eslint-plugin-next 16.3.8 -> fast-glob 3.3.1 -> micromatch 4.0.8 -> braces 3.0.3
+```
+
+None of it is imported by `apps/web/src/`, so none of it reaches the browser bundle.
+It runs only during `eslint`. The advisory is a stack-exhaustion DoS via deeply nested
+glob patterns — which requires an attacker to control the patterns passed to a glob
+call inside a linter that is invoked by us, on our own repository files.
+
+**The decision, which I am deliberately not making:**
+
+Options, in the order I would rank them:
+
+1. **Accept and document.** The finding is real but not exploitable in this project's
+   threat model, and no upstream fix exists. Record the reason here and move on.
+2. **Scope the gate to production dependencies** — `npm audit --omit=dev`. This is the
+   principled version of option 1: it stops the gate reporting vulnerabilities that
+   cannot ship, which is what a *dependency* gate is for. It does weaken the gate,
+   though, and would hide a genuinely dev-reachable issue in future.
+3. **Drop `@next/eslint-plugin-next`** in favour of the ESLint flat config already in
+   `apps/web/eslint.config.mjs`, removing the chain rather than suppressing it. Real
+   work, and it loses Next-specific lint rules.
+
+What I did **not** do: add `--force` (downgrades Next by two majors), add a
+`braces` override (there is nothing to override to), or lower `--audit-level` to make
+the count disappear. All three would make the gate green without changing the
+exposure, which is the pattern AGENTS.md §18 forbids.
+
+Whichever way this goes, the gate should stop reporting a count without saying whether
+the vulnerable code ships — that ambiguity is what made this take a full investigation
+to classify as low-risk.
