@@ -9,7 +9,7 @@ ports are where the trust boundary lives. This module pins:
 * ``ClamavScanner`` and ``CloudFrontCDN`` — the two real adapters, driven with
   injected fake ``clamd`` / ``boto3`` modules (neither is installed here, and
   both are imported lazily inside the adapter on purpose).
-* the context helpers (``_work_dir`` / ``_quarantine_path`` / ``_cleanup_job``)
+* the context helpers (``_work_dir`` / ``_quarantine_path``)
   and the manifest re-validation the packaging stages perform.
 """
 
@@ -43,7 +43,6 @@ from app.core.stages import (
     VirusScanner,
     ClamavScanner,
     CloudFrontCDN,
-    _cleanup_job,
     _quarantine_path,
     _work_dir,
     as_stage,
@@ -396,31 +395,6 @@ def test_quarantine_path_falls_back_when_the_key_has_no_basename():
     ctx = {"job_id": "job-1"}
     assert _quarantine_path(ctx, "") == "/tmp/wildframe/quarantine/job-1/source"
     assert _quarantine_path(ctx, "/") == "/tmp/wildframe/quarantine/job-1/source"
-
-
-def test_cleanup_job_removes_the_work_and_quarantine_directories(tmp_path):
-    work = tmp_path / "work" / "job-1"
-    quarantine = tmp_path / "quarantine" / "job-1"
-    work.mkdir(parents=True)
-    quarantine.mkdir(parents=True)
-    (work / "partial.mp4").write_bytes(b"x")
-    (quarantine / "source.mp4").write_bytes(b"x")
-
-    _cleanup_job(
-        {
-            "job_id": "job-1",
-            "work_root": str(tmp_path / "work"),
-            "quarantine_root": str(tmp_path / "quarantine"),
-        }
-    )
-
-    assert not work.exists()
-    assert not quarantine.exists()
-
-
-def test_cleanup_job_is_a_noop_without_a_job_id(tmp_path):
-    _cleanup_job({"work_root": str(tmp_path)})  # no job_id -> nothing removed
-    _cleanup_job({"job_id": "", "work_root": str(tmp_path)})
 
 
 # ---------------------------------------------------------------------------

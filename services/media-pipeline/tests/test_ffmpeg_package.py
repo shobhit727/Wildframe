@@ -416,14 +416,18 @@ async def test_read_capped_returns_short_streams_untouched():
 
 
 async def test_read_capped_counts_every_byte_of_an_over_limit_stream():
-    """The reported total is the true volume, not the retained volume."""
+    """The reported total is the true volume, and retention still fills the cap.
+
+    Regression test for #862. When one read already exceeded the cap, the old
+    code replaced ``chunks`` with the join of the *previous* chunks only, so
+    nothing was retained at all -- the diagnostics were lost exactly when the
+    output was chatty enough to overflow. Retention must now reach the cap even
+    when a single read trips it.
+    """
     captured, total = await _read_capped(ByteStream(b"abcdefghij" * 10), limit=8)
     assert total == 100
-    # BUG (app/core/ffmpeg.py:78-82): the read that trips the cap is dropped on
-    # the floor. `chunks` is replaced by the join of the *previous* chunks only,
-    # so when a single read already exceeds the limit nothing is retained at
-    # all. Documented here as-is; production code is not modified.
-    assert captured == b""
+    assert captured == b"abcdefgh"
+    assert len(captured) == 8
 
 
 async def test_read_capped_retains_the_cap_only_for_granular_reads():
@@ -435,15 +439,30 @@ async def test_read_capped_retains_the_cap_only_for_granular_reads():
     assert stream.reads > 1, "exercised the multi-chunk collapse path"
 
 
-async def test_read_capped_under_retains_when_a_read_straddles_the_cap():
-    """BUG (app/core/ffmpeg.py:78-82): retention stops short of the cap.
+async def test_read_capped_retains_the_cap_when_a_read_straddles_it():
+    """Retention must reach the cap when a read straddles it.
 
-    The first 100 bytes are available, but 60 are kept: after the collapse the
-    stream is never appended to again, so the retained tail is frozen.
+    Regression test for #862. With 60-byte reads against a 100-byte cap the old
+    code kept only 60 bytes: the chunk that tripped the cap was discarded and
+    ``chunks`` was never appended to again, so retention froze permanently short
+    of the cap.
     """
     captured, total = await _read_capped(ChunkedStream(b"y" * 200, chunk=60), limit=100)
     assert total == 200
-    assert len(captured) == 60
+    assert len(captured) == 100
+    assert captured == b"y" * 100
+
+
+async def test_read_capped_bounds_retained_memory_to_the_cap():
+    """A huge stream must not be buffered beyond ``limit``.
+
+    The cap exists to bound memory, so a fix for #862 that simply accumulated
+    everything would trade a diagnostics bug for a denial-of-service vector.
+    """
+    stream = ChunkedStream(b"z" * (1024 * 1024), chunk=64 * 1024)
+    captured, total = await _read_capped(stream, limit=1000)
+    assert total == 1024 * 1024
+    assert len(captured) == 1000
 
 
 @pytest.mark.parametrize("exc", [BrokenPipeError("gone"), ConnectionResetError("reset")])

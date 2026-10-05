@@ -31,7 +31,6 @@ from typing import Any
 import asyncio
 import logging
 import os
-import shutil
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -414,16 +413,6 @@ def _quarantine_path(ctx: dict[str, Any], storage_key: str) -> str:
     # basename as the local filename (no directories in the key).
     safe_name = os.path.basename(storage_key) or "source"
     return os.path.join(root, str(ctx["job_id"]), safe_name)
-
-
-def _cleanup_job(ctx: dict[str, Any]) -> None:
-    """Best-effort removal of per-job work and quarantine directories."""
-    work_root = ctx.get("work_root", "/tmp/wildframe/work")
-    quarantine_root = ctx.get("quarantine_root", "/tmp/wildframe/quarantine")
-    job_id = str(ctx.get("job_id", ""))
-    if job_id:
-        shutil.rmtree(os.path.join(work_root, job_id), ignore_errors=True)
-        shutil.rmtree(os.path.join(quarantine_root, job_id), ignore_errors=True)
 
 
 @as_stage(name="quarantine_store", success_event="content.quarantined")

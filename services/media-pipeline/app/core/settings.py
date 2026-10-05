@@ -130,8 +130,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
                 "KAFKA_BOOTSTRAP_SERVERS must be set explicitly when ENVIRONMENT is not development."
             )
         if (
-            not self.MEDIA_PIPELINE_ADAPTERS
-            or self.MEDIA_PIPELINE_ADAPTERS.strip() == ""
+            self.MEDIA_PIPELINE_ADAPTERS.strip() == ""
             or self.MEDIA_PIPELINE_ADAPTERS.strip() == "stub"
         ):
             raise ValueError(
