@@ -322,19 +322,35 @@ class TestTopicMetadataInvariants:
 
 
 class TestServiceAclInvariants:
-    def test_produce_rights_cover_every_declared_producer_but_two(self):
+    def test_every_declared_producer_has_produce_rights(self):
+        """Every producer named in TOPIC_METADATA can actually write its topic.
+
+        This is the invariant issue #893 turned on. auth-service and
+        admin-service were named producers here but had no ``_SERVICE_ACL``
+        entry at all, so the ACL bootstrap walked this table, granted them
+        nothing, and both services -- which run with EVENT_PUBLISHER=kafka --
+        failed their first publish with TOPIC_AUTHORIZATION_FAILED.
+        """
         acl_producers = {role for role, table in _SERVICE_ACL.items() if table["produce"]}
         declared = {m["producer"] for m in TOPIC_METADATA.values()}
-        assert declared - acl_producers == {"auth-service", "admin-service"}
+        assert declared - acl_producers == set()
 
-    def test_every_declared_consumer_except_auth_has_an_acl_role(self):
+    def test_every_declared_producer_can_write_its_own_topic(self):
+        for topic, meta in TOPIC_METADATA.items():
+            producer = meta["producer"]
+            assert topic in topic_acl(producer, include_dlq=False)["produce"], (
+                f"{producer} is the declared producer of {topic} but "
+                "topic_acl() does not grant it"
+            )
+
+    def test_every_declared_consumer_has_an_acl_role(self):
         acl_roles = set(_SERVICE_ACL)
         missing: set[str] = set()
         for topic, meta in TOPIC_METADATA.items():
             for consumer in meta["consumers"]:
                 if consumer not in acl_roles:
                     missing.add(consumer)
-        assert missing == {"auth-service"}
+        assert missing == set()
 
     def test_no_duplicate_entries_within_a_list(self):
         for role, table in _SERVICE_ACL.items():
@@ -406,28 +422,31 @@ class TestCrossTableConsistency:
             for topic in table["produce"]:
                 assert TOPIC_METADATA[topic]["producer"] == role, f"{role} produces {topic}"
 
-    def test_known_drift_roles_that_produce_without_an_acl_entry(self):
-        """KNOWN DRIFT: auth-service and admin-service are named as producers in
-        TOPIC_METADATA but have no entry in ``_SERVICE_ACL`` at all, so
-        ``topic_acl("auth-service")`` returns empty produce rights.
+    def test_no_declared_producer_is_missing_acl_rights(self):
+        """Was KNOWN DRIFT (#893): auth-service and admin-service were named as
+        producers in TOPIC_METADATA but had no entry in ``_SERVICE_ACL``, so
+        ``topic_acl()`` returned empty produce rights for both and the ACL
+        bootstrap granted them nothing. Kept as an invariant rather than deleted
+        so removing either entry fails here instead of in production.
         """
-        producers_without_acl = {
-            meta["producer"] for meta in TOPIC_METADATA.values()
-        } - set(_SERVICE_ACL)
-        assert producers_without_acl == {"auth-service", "admin-service"}
-        for role in producers_without_acl:
-            assert topic_acl(role) == {"produce": [], "consume": []}
+        producers_without_acl = {meta["producer"] for meta in TOPIC_METADATA.values()} - set(
+            _SERVICE_ACL
+        )
+        assert producers_without_acl == set()
+        # An unknown role must still degrade to empty rather than raising, so
+        # the helper stays safe for a principal that is not in the matrix.
+        assert topic_acl("no-such-service") == {"produce": [], "consume": []}
 
-    def test_known_drift_metadata_consumers_missing_an_acl_grant(self):
-        """KNOWN DRIFT: 4 declared consume relationships are absent from the ACL.
-        A least-privilege ACL built from ``_SERVICE_ACL`` would therefore leave
-        these services without the grant the metadata promises.
+    def test_declared_consumers_without_an_implementation(self):
+        """The two remaining metadata->ACL gaps are deliberate: nothing in the
+        services consumes these topics yet, and granting an ACL no code path can
+        use is exactly the over-grant least-privilege forbids. Listing them
+        keeps a *new* gap from slipping in unnoticed. If a consumer is
+        implemented, add the grant here in the same change.
         """
         assert _metadata_gaps() == {
             "creators-service": ["moderation.decision_made"],
-            "user-service": ["user.registered"],
             "notification-service": ["user.registered"],
-            "auth-service": ["user.moderated"],
         }
 
     def test_known_drift_acl_consumers_absent_from_the_metadata(self):
@@ -453,7 +472,9 @@ class TestCrossTableConsistency:
             assert not [t for t in flat if t.endswith(Topic.DLQ_SUFFIX)], role
 
     def test_acl_table_is_materially_populated(self):
-        assert len(_SERVICE_ACL) == 12
+        # 14 = the 12 roles that predate #893 plus auth-service and admin-service,
+        # which were missing entirely and denied their own publishes.
+        assert len(_SERVICE_ACL) == 14
         assert sum(len(t["consume"]) for t in _SERVICE_ACL.values()) > 30
 
 

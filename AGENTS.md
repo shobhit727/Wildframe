@@ -269,6 +269,8 @@ The SDK implements in-memory and Kafka publishers, payload validation, size limi
 
 Event handlers must be idempotent. A message may be delivered more than once.
 
+The dev stack's topics and ACLs are created by the one-shot `kafka-init` compose service (`scripts/kafka_init.py`), which walks `_SERVICE_ACL` in `packages/sdk/wildframe_events/topics.py` — that dict is the source of truth for the permission matrix, so change it there and re-run `docker compose -f deployments/docker-compose.dev.yml up kafka-init` rather than granting anything by hand.
+
 aiokafka compatibility matters. Before changing topic/admin behavior, inspect the installed dependency range, the implementation, and its tests. In particular inspect packages/sdk/wildframe_events/dlq_retention.py before changing DLQ retention.
 
 ## 10. Redis
@@ -626,8 +628,9 @@ Reach for the logs before theorising. Every row here cost real time to derive.
 | `up -d` did not pick up a new image | container was reused, not recreated | `up -d --no-deps --force-recreate` |
 | Register returns 201 but UI says it failed | session rejected after the account was created | `node scripts/auth-flow-check.mjs` |
 | Hard reload bounces to /login | server-side session read failing | `curl -sk https://localhost:3000/auth-session` |
-| Services healthy but Kafka operations fail | ACLs never created; `ALLOW_EVERYONE_IF_NO_ACL_FOUND=false` | see issue #893 |
+| Services healthy but Kafka operations fail | `kafka-init` has not completed, or an ACL is missing from `_SERVICE_ACL` | `logs kafka-init`; `kafka-acls --list` inside the broker; `python scripts/kafka_init.py --print-plan` |
 | Kafka healthy but `listTopics` times out | healthcheck only proves TLS/SASL, not metadata | `logs kafka \| tail` |
+| `TOPIC_AUTHORIZATION_FAILED` on a topic that exists | no ACL — the authorizer denies everything, and `auto.create.topics.enable=false` means a missing topic is masked by the same error | `docker compose -f deployments/docker-compose.dev.yml up kafka-init`, then re-check |
 | `pip check` reports a transitive conflict | partial upgrade; the family pins each other | `pip check` then align the whole family |
 | Thousands of `import-untyped` errors | deps not installed in this venv | `poetry install --with dev` |
 | A test passes but the app is broken | the test mocks the layer where the value should arrive | run it against the running stack |

@@ -60,6 +60,17 @@ jobs:
           python -m pip install --quiet "pytest<8" "pytest-cov<5"
           python -m pytest tests/test_supply_chain_guard.py -q
 
+      - name: Test Kafka topic/ACL bootstrap (#893)
+        # Needs PyYAML to read deployments/docker-compose.dev.yml, the same
+        # range the contract step installs. This test is the only thing that
+        # fails if the kafka-init service, its ordering, or the per-service ACL
+        # matrix is removed -- without a broker, so it is cheap enough to always
+        # run. See issue #893: the ACL authorizer denied every publish because
+        # nothing ever created a topic or an ACL.
+        run: |
+          python -m pip install --quiet "pytest<8" "PyYAML>=6.0,<7"
+          python -m pytest tests/test_kafka_init.py -q
+
       - name: Report active scanner suppressions
         if: always()
         run: |

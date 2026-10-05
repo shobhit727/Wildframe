@@ -225,6 +225,76 @@ services:
       start_period: 90s
     networks:
     - wildframe-network
+  # One-shot bootstrap: creates every topic in the SDK's registry and every
+  # per-service ACL in its _SERVICE_ACL matrix (issue #893).
+  #
+  # It has to be a separate container, not part of kafka-entrypoint.sh:
+  # kafka-topics and kafka-acls are clients and need a broker that is already
+  # listening, while the entrypoint runs before the broker launches. Depending on
+  # kafka: service_healthy gives the ordering, and the applications depend on
+  # kafka-init: service_completed_successfully so nothing publishes into a broker
+  # that will deny it.
+  #
+  # Same image as the broker: it already ships both CLIs and a python3, so this
+  # adds no image and no dependency. Authenticated as the broker's `admin` super
+  # user over the same SASL_SSL listener the services use.
+  kafka-init:
+    restart: "no"
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint:
+    - python3
+    - /opt/wildframe/kafka_init.py
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      # The broker's admin super user, same variable kafka-entrypoint.sh reads.
+      WF_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD:-wildframe-dev}
+      # The same ${VAR:-default} expressions the kafka service block uses, for
+      # the same reason: one .env override has to move the broker's JAAS file,
+      # the service, and the ACL this script creates, together. If a username
+      # here drifted from the broker's, the ACL would be granted to a principal
+      # that cannot authenticate and the real one would still be denied --
+      # tests/test_kafka_init.py asserts these blocks stay identical.
+      API_GATEWAY_KAFKA_USERNAME: ${API_GATEWAY_KAFKA_USERNAME:-api-gateway}
+      API_GATEWAY_KAFKA_PASSWORD: ${API_GATEWAY_KAFKA_PASSWORD:-wildframe-dev}
+      AUTH_SERVICE_KAFKA_USERNAME: ${AUTH_SERVICE_KAFKA_USERNAME:-auth-service}
+      AUTH_SERVICE_KAFKA_PASSWORD: ${AUTH_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      USER_SERVICE_KAFKA_USERNAME: ${USER_SERVICE_KAFKA_USERNAME:-user-service}
+      USER_SERVICE_KAFKA_PASSWORD: ${USER_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      CONTENT_SERVICE_KAFKA_USERNAME: ${CONTENT_SERVICE_KAFKA_USERNAME:-content-service}
+      CONTENT_SERVICE_KAFKA_PASSWORD: ${CONTENT_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      STREAMING_SERVICE_KAFKA_USERNAME: ${STREAMING_SERVICE_KAFKA_USERNAME:-streaming-service}
+      STREAMING_SERVICE_KAFKA_PASSWORD: ${STREAMING_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      SEARCH_SERVICE_KAFKA_USERNAME: ${SEARCH_SERVICE_KAFKA_USERNAME:-search-service}
+      SEARCH_SERVICE_KAFKA_PASSWORD: ${SEARCH_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      RECOMMENDATION_SERVICE_KAFKA_USERNAME: ${RECOMMENDATION_SERVICE_KAFKA_USERNAME:-recommendation-service}
+      RECOMMENDATION_SERVICE_KAFKA_PASSWORD: ${RECOMMENDATION_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      BILLING_SERVICE_KAFKA_USERNAME: ${BILLING_SERVICE_KAFKA_USERNAME:-billing-service}
+      BILLING_SERVICE_KAFKA_PASSWORD: ${BILLING_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      ANALYTICS_SERVICE_KAFKA_USERNAME: ${ANALYTICS_SERVICE_KAFKA_USERNAME:-analytics-service}
+      ANALYTICS_SERVICE_KAFKA_PASSWORD: ${ANALYTICS_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      NOTIFICATION_SERVICE_KAFKA_USERNAME: ${NOTIFICATION_SERVICE_KAFKA_USERNAME:-notification-service}
+      NOTIFICATION_SERVICE_KAFKA_PASSWORD: ${NOTIFICATION_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      CREATORS_SERVICE_KAFKA_USERNAME: ${CREATORS_SERVICE_KAFKA_USERNAME:-creators-service}
+      CREATORS_SERVICE_KAFKA_PASSWORD: ${CREATORS_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      MODERATION_SERVICE_KAFKA_USERNAME: ${MODERATION_SERVICE_KAFKA_USERNAME:-moderation-service}
+      MODERATION_SERVICE_KAFKA_PASSWORD: ${MODERATION_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      UPLOADS_SERVICE_KAFKA_USERNAME: ${UPLOADS_SERVICE_KAFKA_USERNAME:-uploads-service}
+      UPLOADS_SERVICE_KAFKA_PASSWORD: ${UPLOADS_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      MEDIA_PIPELINE_KAFKA_USERNAME: ${MEDIA_PIPELINE_KAFKA_USERNAME:-media-pipeline}
+      MEDIA_PIPELINE_KAFKA_PASSWORD: ${MEDIA_PIPELINE_KAFKA_PASSWORD:-wildframe-dev}
+      ADMIN_SERVICE_KAFKA_USERNAME: ${ADMIN_SERVICE_KAFKA_USERNAME:-admin-service}
+      ADMIN_SERVICE_KAFKA_PASSWORD: ${ADMIN_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+    volumes:
+    - ../scripts/kafka_init.py:/opt/wildframe/kafka_init.py:ro
+    # Only topics.py, not the whole SDK: the package __init__ imports the
+    # publisher, which needs aiokafka, which this image does not carry.
+    - ../packages/sdk/wildframe_events/topics.py:/opt/wildframe/topics.py:ro
+    - ../apps/web/certificates:/etc/kafka/secrets:ro
+    networks:
+    - wildframe-network
   zookeeper:
     restart: unless-stopped
     image: confluentinc/cp-zookeeper:7.5.0
@@ -497,6 +567,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/auth-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
@@ -551,6 +623,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/user-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
@@ -602,6 +676,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/admin-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
@@ -653,6 +729,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/content-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
@@ -724,11 +802,20 @@ services:
       KAFKA_CLIENT_ID: api-gateway
       KAFKA_GROUP_ID: api-gateway
       KAFKA_SSL_INSECURE: "true"
+    # Long form, not the list form, so kafka-init can be gated on having
+    # COMPLETED: the gateway must not accept traffic before the topics and ACLs
+    # it will publish through exist. The other four keep their previous ordering.
     depends_on:
-    - auth-service
-    - user-service
-    - content-service
-    - redis
+      auth-service:
+        condition: service_started
+      user-service:
+        condition: service_started
+      content-service:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/api-gateway:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
@@ -768,6 +855,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/streaming-service:/app
     - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
@@ -813,6 +902,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/search-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
@@ -855,6 +946,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/recommendation-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
@@ -925,6 +1018,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/billing-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
@@ -965,6 +1060,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/analytics-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
@@ -1004,6 +1101,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/notification-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
@@ -1045,6 +1144,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/creators-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
@@ -1086,6 +1187,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/moderation-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
@@ -1127,6 +1230,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/uploads-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
@@ -1166,6 +1271,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/media-pipeline:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events

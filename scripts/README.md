@@ -15,6 +15,7 @@ Run these from the **repo root** (they resolve `playwright-core` from there or f
 | `auth-flow-check.mjs` | Can a real user register and stay signed in? |
 | `verify-csp-nonce.mjs` | Do the CSP nonces actually reach the rendered scripts? |
 | `compose-smoke.sh` | Does the whole stack come up, and do real routes answer? |
+| `kafka_init.py --print-plan` | Which topics and per-service ACLs should the broker have? |
 
 All are read-only against the API except `auth-flow-check.mjs`, which creates two
 throwaway accounts per run (`agent-api-*` and `agent-ui-*` at `example.com`).
@@ -132,6 +133,42 @@ Notes on two things that make it correct rather than merely plausible:
 - It uses two different addresses. The API probe registers one; the form step
   registers another. Reusing one address returns `409`, which is the service behaving
   correctly but looks like a script failure.
+
+---
+
+## `kafka_init.py`
+
+Creates the dev stack's Kafka topics and per-service ACLs. Normally you do not run
+it by hand — it runs as the one-shot `kafka-init` compose service, and every
+Kafka-using service waits on `service_completed_successfully`. Run it directly
+when you want to inspect the plan, or to re-apply it after changing
+`_SERVICE_ACL` in `packages/sdk/wildframe_events/topics.py`.
+
+```bash
+# what it would do, with no broker and no credentials needed
+python scripts/kafka_init.py --topics-registry packages/sdk/wildframe_events/topics.py --print-plan
+
+# apply it (must run inside the cp-kafka image, which has the CLIs)
+docker compose -f deployments/docker-compose.dev.yml up kafka-init
+
+# what the broker actually has now
+docker compose -f deployments/docker-compose.dev.yml exec kafka \
+  kafka-acls --bootstrap-server localhost:29092 \
+             --command-config /etc/kafka/kafka-client.properties --list
+```
+
+It exists because the broker runs `AclAuthorizer` with
+`allow.everyone.if.no.acl.found=false` and `auto.create.topics.enable=false`, and
+nothing created a topic or an ACL until now — so every publish failed with
+`TOPIC_AUTHORIZATION_FAILED` (issue #893). The ACLs are derived from
+`_SERVICE_ACL`, which is the source of truth for the matrix, and are per
+`(principal, topic, operation)`: no wildcard principals, no wildcard topics.
+
+Two errors that look identical and are not: with no ACL, `kafka-topics
+--describe` reports a topic that really exists as `does not exist as expected`,
+and a producer gets `TOPIC_AUTHORIZATION_FAILED` whether or not the topic
+exists. The authorization check runs before the topic lookup, so "denied" masks
+"missing". `tests/test_kafka_init.py` guards both halves.
 
 ---
 
