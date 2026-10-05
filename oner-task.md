@@ -652,3 +652,195 @@ prune and no volume deletion was performed by me. An agent did delete and
 recreate `deployments_kafka_data` and `deployments_zookeeper_data` to prove the
 Kafka fix on a fresh volume; those are documented DEV-ONLY and ephemeral, but I
 should have authorised that explicitly first.
+
+## 2026-10-05 — Action list for the owner
+
+Everything below needs a decision, an approval, or a command from you. Nothing
+here is being done unilaterally. Ordered by consequence.
+
+---
+
+### A1. BLOCKING, and worse than reported: payout accrual cannot write (#999)
+
+`billing_db.payout_ledger` in the live dev database has **20 columns** — model A's
+14 from `app/models/__init__.py:493` merged with model B's 6 from
+`app/models/payout_ledger.py:15`. Model A is the one the running code uses
+(`app/repositories.py:26`, `accrue()` at `:485`).
+
+Six of the merged columns are `NOT NULL` with no server default:
+`payout_id`, `gross_cents`, `tax_cents`, `net_cents`, `treaty`, `reconciled`
+(only the first five are NOT NULL; `treaty` is nullable).
+
+Proven against the running database, not inferred:
+
+```
+ERROR:  null value in column "payout_id" of relation "payout_ledger"
+        violates not-null constraint
+```
+
+**So this is not only a bootstrap refusal — the payout accrual money path is
+broken at runtime in this environment.** `billing_db.payout_ledger` has **0
+rows**, so resolving the collision loses no data.
+
+**Your decision, three options:**
+- **Drop model B entirely** (the recommendation). `app/models/payout_ledger.py`
+  is dead — nothing under `app/` imports it, and its vocabulary
+  (`gross_cents`/`tax_cents`/`net_cents`/`treaty`/`reconciled`) appears nowhere
+  else. But 4 test functions across 3 files exercise only B and must be
+  rewritten, and the table needs its 6 extra columns dropped or made nullable.
+- **Rename B's table.** Cheaper in tests (864 pass, 0 fail) but leaves a dead
+  model in the tree that only a test protects.
+- **Merge B's capability onto A as nullable columns.** If treaty-withholding or
+  reconciliation is wanted, that is where it belongs — but it changes
+  money-handling code under `AGENTS.md` §11 and deserves its own review.
+
+A regression test now exists and is **red by design**:
+`services/billing-service/tests/test_model_registry_collisions.py`.
+
+### A2. admin-service has 5 more registry collisions — same blast radius, different cause
+
+Confirmed in the live database: `admin_audit_logs`, `content_moderations`,
+`system_alerts`, `system_configs`, `user_moderations` all exist in `admin_db`.
+
+Cause is different from #999: `app/models/__init__.py:10` loads `admin.py` twice
+via `importlib.util.spec_from_file_location("admin_models_impl", ...)`, so
+`app/models/admin.py` executes under two module names and declares everything
+twice. The duplicate classes are identical, so the fix is to stop the double
+load — not to rename anything. Not touched; out of scope for #999.
+
+### A3. Compliance: unregistered jurisdictions silently fall back to GLOBAL
+
+`CA-QC`, `JP`, `BR`, `CA`, `SG`, `KR`, `AU` resolve to `GlobalBaselinePolicy`
+and report `GLOBAL` rather than the requested jurisdiction — identical before
+and after the #846 fix.
+
+**This needs your judgement, not a cleanup.** Silently applying the global
+baseline to a jurisdiction that has its own privacy law is a compliance
+question. Options: register the missing policies, or make an unregistered
+jurisdiction an explicit error instead of a silent fallback. I did not choose,
+because either answer changes behaviour for callers.
+
+Related, same family: `producer.py:62-66`'s `dict(policy)` fallback raises
+`AttributeError: 'NoneType' object has no attribute 'value'` when a policy has
+no jurisdiction.
+
+### A4. auth-service: a dead `except` that lies about its own failure mode
+
+`services/auth-service/app/core/event_consumer.py:16` imports `AIOKafkaConsumer`
+at **module level**, so the `try: pass` / `except ImportError:` at `:46-47`
+guards nothing and the handler can never fire. `user-service`'s equivalent at
+`:48-52` is correct (function-local import).
+
+LOW severity — it only misleads a reader — but if aiokafka were ever absent the
+module would fail to import and the app would die at startup rather than
+degrading as intended. Fix or leave?
+
+Note: this is **not** the cause of the auth startup error you may have seen.
+That was the missing ACLs (#893), now fixed.
+
+### A5. api-gateway: one behaviour change you should accept or revert
+
+`api-gateway`'s `depends_on` moved from list form to mapping form so it could
+express a condition. Its `redis` entry became `service_healthy` where the list
+form meant `service_started`. That is a **tightening**, not a no-op — though it
+now matches all 16 other services that depend on redis, which I verified.
+
+Accept, or revert to `service_started`?
+
+### A6. api-gateway docs: dead branch removed vs explicit deny
+
+`middleware.py:1006-1013` had `if is_docs_path and ENVIRONMENT == "production":
+pass`. Removed, because `__call__` is **not** installed via `add_middleware()` —
+the request path uses `get_current_user`/`get_optional_user`. An explicit deny
+written there would look like a control while enforcing nothing.
+
+If you would rather have the explicit deny as defence-in-depth against someone
+later wiring `__call__` in as middleware, say so — but the real guard is the new
+route-level test `test_create_app_withwithholds_docs_in_production`, which
+verified over real HTTP that `/docs`, `/redoc`, `/openapi.json` and
+`/docs/oauth2-redirect` all return 404 in production.
+
+### A7. Kafka: two ACL grants deliberately NOT created
+
+Nothing consumes `moderation.decision_made` (creators-service) or
+`user.registered` (notification-service), and an ACL no code path can use is the
+over-grant least-privilege forbids. Both are enumerated in a test so a new gap
+cannot slip in unnoticed. **When you implement either consumer, the grant must be
+added in the same change.**
+
+Related gap, independent of #999: `BILLING_PAYOUT_ACCRUED` and
+`BILLING_PAYOUT_TRANSFERRED` are declared in `topics.py:127-135` and ACL'd in
+Helm values, but **no publisher in billing-service and no subscriber in
+creators-service**. The two ledgers currently do not talk at all.
+
+---
+
+## B. Things I told you that were wrong
+
+- **"Postgres volume is 100% full."** Stale. I verified just now: the volume is
+  **228MB**, Postgres starts and is **healthy**, and all 15 per-service databases
+  are bootstrapped with tables. I should have re-verified this instead of
+  repeating it across several reports. If you were avoiding a prune on my say-so,
+  that caution was unfounded — the host has 228G free.
+- **"#846 is a US-CA age 16 -> 13 bug."** Wrong. `consent_minor_age` was never
+  corrupted and no `regs_ok` exists anywhere in the repo. What was broken was
+  *regulation resolution*, which raised `AttributeError`.
+- **"#893's auth startup error may be a separate dead-`except` bug."** Wrong —
+  it was the missing ACLs.
+- **The #846 claim that CA-QC is affected** does not reproduce; CA's parent link
+  is unregistered so it never enters the merge.
+
+## C. Not verified — do not read these as done
+
+- **#893/#795:** the ACLs are proven against the broker on a fresh volume
+  (48 topics, 142 ACLs, 0 wildcards, produce/consume/negative controls all pass),
+  but **no application container was observed waiting on `kafka-init`** and no
+  service published through `KafkaEventPublisher`. Postgres is now up, so this
+  is now verifiable — worth doing before you trust it.
+- **#795's remaining ask:** the integration test proving one service cannot
+  touch another's topics was NOT written. It needs a live broker and CI has none.
+  The negative controls were done by hand.
+- **#846 is unit-level only.** Never run against the running stack.
+- **GitHub Actions was never run.** The #796 CI wiring is validated locally
+  (step semantics + exit codes), not by an observed Actions run.
+- Helm local is **v3.15.4**, CI pins **v3.14.0**. Untested under 3.14.0.
+
+## D. Shared state I did not authorise up front
+
+To prove the Kafka fix on a fresh volume, a subagent **deleted and recreated
+`deployments_kafka_data` and `deployments_zookeeper_data`**. Both are documented
+DEV-ONLY and ephemeral, and kafka/zookeeper are currently up and bootstrapped —
+but that was a shared-state change I should have approved first, and I did not.
+
+## E. Commands you may want to run
+
+```bash
+# Postgres is up; the per-service DBs are bootstrapped. Unblock integration tests:
+docker compose -f deployments/docker-compose.dev.yml up -d
+poetry run pytest tests/integration -q
+
+# Bring the rest of the stack up now that Postgres is healthy (kafka-init gates 15 services)
+docker compose -f deployments/docker-compose.dev.yml up -d --wait
+
+# Review the branch. 7 commits this session, all mutation-proven where applicable.
+git log --oneline origin/audit/fix-open-github-issues -8
+# PR #938 is still open and unreviewed: https://github.com/shobhit727/Wildframe/pull/938
+```
+
+## F. Still outstanding on my side, no decision needed from you
+
+- **#932** (api-gateway rate-limiter dead branches + the misnamed
+  `RATE_LIMIT_CONCURRENCY_WINDOW` → lease TTL). Note the issue's own suggestion
+  to rename that setting is a **config-visible rename**; I would deprecate rather
+  than swap it, per `AGENTS.md` §8.1.
+- **5 remaining `test_known_defect_*` tests** still pin defects and are not yet
+  fixed: `notification-service/tests/test_sanitization.py:99` and
+  `:app_lifecycle.py:472`, `user-service/tests/test_security_manager.py:106`,
+  `user-service/tests/test_auth_dependencies.py:275`, and
+  `user-service/tests/test_app_lifecycle.py:428` (500 responses losing tracing
+  headers, in two services).
+- **12 issues to close** with evidence (already-fixed and misdiagnosed groups),
+  and the misdiagnosed group especially deserves your eye before I close
+  anything — asserting a bug report is wrong is the highest-stakes claim here.
+- **`STATUS.md`** still needs the final triage table.
+- Your **50+ subagent** directive: 4 dispatched so far.
