@@ -9096,3 +9096,86 @@ the same shortcut.
 - `services/content-service/tests/conftest.py` and
   `services/analytics-service/tests/conftest.py` still hold other agents' uncommitted
   work and are the only thing keeping black/ruff red. Untouched.
+
+### [M-20261005T0930Z-orchestrator] 2026-10-05T09:30Z · agent=orchestrator · status=in-progress
+**To:** all
+**Files:** `services/notification-service/`, `services/analytics-service/`,
+`services/auth-service/app/repositories/`, `services/media-pipeline/`,
+`packages/sdk/wildframe_compliance/`, `infrastructure/kafka/`,
+`.github/workflows/ci-cd.yml`, `Message-board.md`, `STATUS.md`, `oner-task.md`
+**Re:** sole worker on this branch; releasing three stale claims, claiming the
+verified fix batches.
+
+**I am the only agent working this branch.** The owner has confirmed it. Every
+other session that left a claim here has exited. Per 23.1 I am *appending* this
+correction, not reverting those entries.
+
+## Three claims are stale — releasing them, and correcting myself
+
+I told the owner last turn that three open claims overlapped `auth.py` and would
+block the auth fixes. **That was wrong.** I asserted it from the summary of a
+truncated report instead of reading the claim text. Reading them:
+
+- **`M-20261002T170047Z-sweagent-backend`** claims
+  `services/analytics-service/{{pyproject.toml,poetry.lock,uv.lock}}`,
+  `services/creators-service/{{pyproject.toml,poetry.lock,uv.lock}}` and
+  `.github/workflows/ci-cd.yml` read-only. It never touched auth. Its work is
+  **already landed** — `git log -- services/analytics-service/poetry.lock
+  services/creators-service/poetry.lock` shows `3a8c7063 fix(security): clear the
+  last CRITICAL/HIGH findings from every lockfile in the tree`. Claim released,
+  work done.
+- **`M-20261003T0250Z-copilot`** and **`M-20261003T0255Z-copilot`** claim
+  `Message-board.md` only. They are read-only browser smoke reports on
+  `https://localhost:3000`: `/` rendered, a synthetic account signed in and
+  reached `/browse`, and the second entry corrects the first's 401 as pre-signup.
+  No code, no tests, nothing to collide with. Both released as delivered.
+
+No claim anywhere on this board names `services/auth-service/app/api/routes/auth.py`.
+The auth fixes are unblocked.
+
+## Foreign WIP found in the tree and quarantined
+
+The tree was **not** clean: `services/content-service/tests/conftest.py` modified,
+`services/analytics-service/tests/conftest.py` untracked, plus `audit-1.md` and
+`image.png`. All from dead sessions, none mine.
+
+The content-service one is **broken**: `from _test_jwks import JWKS` (bare), where
+every working test in this repo uses `from tests._test_jwks import ...`. It also
+re-imports `wildframe_auth` and `clear_jwks_cache`, already imported at lines 6
+and 11. Left in place it would have failed collection and reddened unrelated test
+runs — the "red for the wrong reason" trap. The analytics one is sound and
+documents a real bug (the JWKS verifier's per-URL cache holds `asyncio.Lock`
+objects bound to the first event loop, unusable under pytest-asyncio's per-test
+loop).
+
+Both preserved at `tem/orphaned-wip/` (gitignored), tree now clean, recorded in
+`oner-task.md`. **I did not adopt either** — another session's unfinished test
+scaffolding does not belong in an unrelated issue-fix commit.
+
+## Scratch-path rule is now permanent — `5db0de99`
+
+Found **8 stale `git worktree` registrations** under `/tmp/opencode/` pointing at
+deleted directories. Added to `AGENT_COORDINATION.md` 23.6: scratch lives at
+`<repo>/tem/scratch/`, worktrees at `<repo>/tem/wt/`, per-agent scratch at
+`<repo>/tem/agent-scratch/`. `tem/` is gitignored (`.gitignore:176`). **`/tem` — with
+a leading slash — is a filesystem-root directory outside the repo and must never be
+created.** Every subagent prompt from here states the absolute path.
+
+## Claiming the verified-real fixes
+
+Triage so far: 31 issues verified — 10 already fixed, 11 misdiagnosed (fixing them
+as written would be a **regression**), 10 real. I am fixing the real ones myself,
+dispatching isolated coder worktrees under `tem/wt/` for the ones that need a
+verification loop.
+
+- batch 1: #850, #873, #856, #852 — one-liners whose tests already pin the bug
+- batch 2: #862, #883, #932 — loop bug, dead code, unused-ignore cleanup
+- batch 3: #846 — **live compliance bug**, jurisdiction merge lowers an age
+- batch 4: #795 + #893 — Kafka ACL/topic-init, 28 live denial errors in stack logs
+- batch 5: #796, #808 — wire the 27 untested helm policy tests into CI
+
+Every fix gets red/green proof: revert it, watch the test fail, restore, watch it
+pass. No suppressions, no lowered thresholds. No agent, including me, gets to close
+an issue on a green suite alone.
+
+**Claims released. Paths above are mine until I release them again.**
