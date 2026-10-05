@@ -1,7 +1,11 @@
 """Tests for compliance policies."""
 
+import json
+from uuid import uuid4
+
 import pytest
 
+from wildframe_compliance.events import ComplianceEventType, CompliancePolicyEvent
 from wildframe_compliance.jurisdiction import Jurisdiction
 from wildframe_compliance.policy import (
     GDPRPolicy,
@@ -198,59 +202,67 @@ class TestApplicableRegulations:
             assert isinstance(regs, list) and regs, cls
             assert all(isinstance(r, str) and r for r in regs), cls
 
-    def test_known_bug_resolved_policies_with_a_registered_parent_crash(self):
-        """BUG (policy.py:299-307): the parent-merge rebuilds the policy from
-        ``parent_policy.model_dump()``. In python mode ``model_dump()``
-        serialises the ``Jurisdiction`` str-Enum to a plain ``str``, and
-        pydantic does NOT re-coerce it back to the enum on re-construction.
-        The result is that for EVERY jurisdiction whose parent is registered
-        (all 16 US states + CA-QC) the resolved policy's ``jurisdiction`` is a
-        plain ``str``, so ``get_applicable_regulations()`` — which does
-        ``self.jurisdiction.regulations`` — raises AttributeError.
+    def test_resolved_policies_with_a_registered_parent_report_regulations(self):
+        """ISSUE #846 (was: `test_known_bug_...`).
 
-        Pinned as-is; this is a production bug, not a test bug.
+        The parent-merge rebuilds the policy from
+        ``parent_policy.model_dump()``, so the child's ``jurisdiction`` is
+        re-validated as an explicit argument. With ``use_enum_values = True`` on
+        ``CompliancePolicy.Config`` that argument was stored as a plain ``str``,
+        and ``get_applicable_regulations()`` — which does
+        ``self.jurisdiction.regulations`` — raised AttributeError for every
+        jurisdiction whose parent is registered (all 16 US states).
+
+        Full table, including the expected regulation names, lives in
+        ``TestJurisdictionIdentityIsPreserved``.
         """
         affected = [
-            j
-            for j in Jurisdiction
-            if j.parent is not None and j.parent in _POLICY_REGISTRY
+            j for j in Jurisdiction if j.parent is not None and j.parent in _POLICY_REGISTRY
         ]
         assert len(affected) == 16  # the 16 US states; CA-QC's parent (CA) is unregistered
         for jurisdiction in affected:
             policy = get_policy_for_jurisdiction(jurisdiction)
-            assert not isinstance(policy.jurisdiction, Jurisdiction), jurisdiction
-            with pytest.raises(AttributeError, match="has no attribute 'regulations'"):
-                policy.get_applicable_regulations()
+            assert isinstance(policy.jurisdiction, Jurisdiction), jurisdiction
+            assert policy.jurisdiction is jurisdiction
+            assert policy.get_applicable_regulations() == jurisdiction.regulations
 
-    def test_known_bug_resolved_policy_reports_the_parent_jurisdiction(self):
-        """Same root cause, second symptom: the requested jurisdiction is lost.
+    def test_resolved_policy_keeps_the_requested_jurisdiction(self):
+        """ISSUE #846, second symptom (was: `test_known_bug_...`).
 
-        ``get_policy_for_jurisdiction(US_CA)`` yields a CCPA_CPRAPolicy whose
-        ``jurisdiction`` is 'US', not 'US-CA', because the child's jurisdiction
-        is a class default and therefore absent from ``exclude_unset=True()``,
-        so the parent's serialised value wins.
+        ``get_policy_for_jurisdiction(US_CA)`` used to yield a CCPA_CPRAPolicy
+        whose ``jurisdiction`` was 'US', because the child's jurisdiction is a
+        class default and therefore absent from ``exclude_unset=True()``, so the
+        parent's serialised value won — and with it the parent's regulations.
         """
-        assert get_policy_for_jurisdiction(Jurisdiction.US_CA).jurisdiction == "US"
-        assert get_policy_for_jurisdiction(Jurisdiction.US_VA).jurisdiction == "US"
+        assert get_policy_for_jurisdiction(Jurisdiction.US_CA).jurisdiction is Jurisdiction.US_CA
+        assert get_policy_for_jurisdiction(Jurisdiction.US_VA).jurisdiction is Jurisdiction.US_VA
         # Jurisdictions WITHOUT a registered parent keep their own value.
         assert get_policy_for_jurisdiction(Jurisdiction.EU).jurisdiction == Jurisdiction.EU
         assert get_policy_for_jurisdiction(Jurisdiction.IN).jurisdiction == Jurisdiction.IN
 
-    def test_known_bug_str_enum_is_not_recoerced_on_reconstruction(self):
-        """The mechanism behind the crash, isolated."""
+    def test_str_enum_is_recoerced_on_reconstruction(self):
+        """The mechanism behind the crash, isolated (was: `test_known_bug_...`)."""
         policy = USPrivacyPolicy()
         assert policy.jurisdiction is Jurisdiction.US
         round_tripped = USPrivacyPolicy(**policy.model_dump())
-        assert round_tripped.jurisdiction == "US"
-        assert not isinstance(round_tripped.jurisdiction, Jurisdiction)
+        assert round_tripped.jurisdiction is Jurisdiction.US
+        assert isinstance(round_tripped.jurisdiction, Jurisdiction)
 
     def test_jurisdictions_without_a_registered_parent_are_unaffected(self):
         """The safe subset: registry hits whose parent is absent (or None) keep
         the enum, so get_applicable_regulations() works."""
-        for jurisdiction in (Jurisdiction.EU, Jurisdiction.IN, Jurisdiction.US,
-                            Jurisdiction.GLOBAL, Jurisdiction.JP, Jurisdiction.BR,
-                            Jurisdiction.SG, Jurisdiction.KR, Jurisdiction.AU,
-                            Jurisdiction.CA):
+        for jurisdiction in (
+            Jurisdiction.EU,
+            Jurisdiction.IN,
+            Jurisdiction.US,
+            Jurisdiction.GLOBAL,
+            Jurisdiction.JP,
+            Jurisdiction.BR,
+            Jurisdiction.SG,
+            Jurisdiction.KR,
+            Jurisdiction.AU,
+            Jurisdiction.CA,
+        ):
             policy = get_policy_for_jurisdiction(jurisdiction)
             assert isinstance(policy.jurisdiction, Jurisdiction), jurisdiction
             assert policy.get_applicable_regulations()
@@ -309,9 +321,9 @@ class TestPolicyRegistryResolution:
         assert Jurisdiction.US_VA.parent is Jurisdiction.US
         policy = get_policy_for_jurisdiction(Jurisdiction.US_VA)
         assert type(policy) is USPrivacyPolicy
-        # NB: the jurisdiction VALUE is wrong here (see
-        # test_known_bug_resolved_policy_reports_the_parent_jurisdiction).
-        assert policy.jurisdiction == Jurisdiction.US
+        # Issue #846: the policy identifies the jurisdiction that was ASKED for,
+        # not the one it inherited its field defaults from.
+        assert policy.jurisdiction == Jurisdiction.US_VA
 
     def test_unregistered_child_states_resolve_to_their_parent_class(self):
         """Every US state that is not itself registered resolves to the same
@@ -345,9 +357,7 @@ class TestPolicyRegistryResolution:
         assert policy.consent_minor_age == 21
 
     def test_overrides_reach_a_parent_fallback_policy(self):
-        policy = get_policy_for_jurisdiction(
-            Jurisdiction.US_VA, breach_notification_hours=1
-        )
+        policy = get_policy_for_jurisdiction(Jurisdiction.US_VA, breach_notification_hours=1)
         assert policy.breach_notification_hours == 1
 
     def test_parent_merge_preserves_inherited_defaults(self):
@@ -360,3 +370,124 @@ class TestPolicyRegistryResolution:
 
         policies = get_all_policies()
         assert set(policies) == set(_POLICY_REGISTRY)
+
+
+# ---------------------------------------------------------------------------
+# REGRESSION (issue #846): a resolved policy must carry its own `Jurisdiction`
+# enum member, and must therefore answer `get_applicable_regulations()`.
+#
+# Root cause: `CompliancePolicy.Config.use_enum_values = True` made pydantic
+# store the RAW VALUE, so every policy that was re-constructed with an explicit
+# `jurisdiction=` argument (which is what the hierarchical parent-merge does)
+# ended up holding a plain `str`. `self.jurisdiction.regulations` then raised
+# AttributeError for all 16 US variants, and the requested jurisdiction was
+# silently replaced by its parent's value ('US-CA' reported as 'US').
+#
+# The expected regulations below are the ones written in
+# `Jurisdiction.regulations`; the expected classes are the registry's.
+# ---------------------------------------------------------------------------
+
+# The 16 US variants, each with the regulations its jurisdiction declares.
+US_VARIANT_EXPECTATIONS = [
+    (Jurisdiction.US_CA, CCPA_CPRAPolicy, ["CCPA", "CPRA"]),
+    (Jurisdiction.US_VA, USPrivacyPolicy, ["VCDPA"]),
+    (Jurisdiction.US_CO, USPrivacyPolicy, ["CPA"]),
+    (Jurisdiction.US_CT, USPrivacyPolicy, ["CTDPA"]),
+    (Jurisdiction.US_UT, USPrivacyPolicy, ["UCPA"]),
+    (Jurisdiction.US_TX, USPrivacyPolicy, ["TDPSA"]),
+    (Jurisdiction.US_OR, USPrivacyPolicy, ["OCPA"]),
+    (Jurisdiction.US_MT, USPrivacyPolicy, ["MTCDPA"]),
+    (Jurisdiction.US_DE, USPrivacyPolicy, ["DPDPA"]),
+    (Jurisdiction.US_NH, USPrivacyPolicy, ["NHPPA"]),
+    (Jurisdiction.US_NJ, USPrivacyPolicy, ["NJDPA"]),
+    (Jurisdiction.US_MN, USPrivacyPolicy, ["MCDPA"]),
+    (Jurisdiction.US_MD, USPrivacyPolicy, ["MODPA"]),
+    (Jurisdiction.US_NE, USPrivacyPolicy, ["NEDPA"]),
+    (Jurisdiction.US_RI, USPrivacyPolicy, ["RIDTPPA"]),
+    (Jurisdiction.US_KY, USPrivacyPolicy, ["KCDPA"]),
+]
+
+
+class TestJurisdictionIdentityIsPreserved:
+    @pytest.mark.parametrize("jurisdiction,expected_class,expected_regs", US_VARIANT_EXPECTATIONS)
+    def test_us_variant_reports_its_own_jurisdiction_and_regulations(
+        self, jurisdiction, expected_class, expected_regs
+    ):
+        """The whole affected set, in one table: stored type, stored value, regs.
+
+        `type(policy.jurisdiction) is Jurisdiction` and the exact `regs` list are
+        both asserted, so this fails on a plain-str jurisdiction even though a
+        str-enum compares equal to its own value.
+        """
+        policy = get_policy_for_jurisdiction(jurisdiction)
+
+        assert type(policy) is expected_class
+        assert type(policy.jurisdiction) is Jurisdiction
+        assert policy.jurisdiction is jurisdiction
+        assert policy.get_applicable_regulations() == expected_regs
+
+    @pytest.mark.parametrize("jurisdiction,expected_class,expected_regs", US_VARIANT_EXPECTATIONS)
+    def test_us_variant_consent_gate_uses_the_coppa_boundary(
+        self, jurisdiction, expected_class, expected_regs
+    ):
+        """No US variant overrides `consent_minor_age`, so all 16 inherit COPPA's
+        13 from USPrivacyPolicy. auth-service derives the minor flag as
+        `declared_age < policy.consent_minor_age` (app/api/routes/age.py), so the
+        boundary is pinned at 12/13 and the EU threshold at 16 is asserted to
+        NOT apply to a US variant.
+        """
+        policy = get_policy_for_jurisdiction(jurisdiction)
+
+        assert policy.consent_minor_age == 13  # COPPA, inherited from US federal
+        assert (12 < policy.consent_minor_age) is True  # 12 is a minor
+        assert (13 < policy.consent_minor_age) is False  # 13 is the boundary
+        assert (16 < policy.consent_minor_age) is False  # EU's 16 does not apply
+
+    @pytest.mark.parametrize("jurisdiction", [j for j, _, _ in US_VARIANT_EXPECTATIONS])
+    def test_us_variant_inherits_the_us_federal_parent_defaults(self, jurisdiction):
+        """The merge still has to do its job: parent fields, not just identity."""
+        policy = get_policy_for_jurisdiction(jurisdiction)
+        federal = USPrivacyPolicy()
+        assert policy.breach_notification_hours == federal.breach_notification_hours == 720
+        assert policy.dpo_required is federal.dpo_required is False
+        assert policy.audit_log_required is federal.audit_log_required is True
+
+    def test_explicit_jurisdiction_argument_is_stored_as_the_enum(self):
+        """The coercion itself, isolated from the registry: passing a
+        `Jurisdiction` must store a `Jurisdiction`, not its `.value`."""
+        policy = USPrivacyPolicy(jurisdiction=Jurisdiction.US_CA)
+        assert type(policy.jurisdiction) is Jurisdiction
+        assert policy.jurisdiction is Jurisdiction.US_CA
+
+    def test_reconstruction_from_model_dump_keeps_the_enum(self):
+        """`model_dump()` returns the enum member in python mode, so the
+        parent-merge's re-construction re-validates it back into the enum."""
+        round_tripped = USPrivacyPolicy(**USPrivacyPolicy().model_dump())
+        assert type(round_tripped.jurisdiction) is Jurisdiction
+        assert round_tripped.jurisdiction is Jurisdiction.US
+
+    def test_requested_jurisdiction_survives_the_parent_merge(self):
+        """The requested jurisdiction is the child's identity; it is not an
+        inherited field and must not be replaced by the parent's value."""
+        assert get_policy_for_jurisdiction(Jurisdiction.US_CA).jurisdiction is (Jurisdiction.US_CA)
+        assert get_policy_for_jurisdiction(Jurisdiction.US_VA).jurisdiction is Jurisdiction.US_VA
+        # Jurisdictions without a registered parent keep their own value too.
+        assert get_policy_for_jurisdiction(Jurisdiction.EU).jurisdiction is Jurisdiction.EU
+        assert get_policy_for_jurisdiction(Jurisdiction.IN).jurisdiction is Jurisdiction.IN
+        assert get_policy_for_jurisdiction(Jurisdiction.GLOBAL).jurisdiction is Jurisdiction.GLOBAL
+
+    def test_event_payload_still_serialises_the_jurisdiction_as_a_plain_string(self):
+        """Blast-radius guard: the Kafka payload is built from
+        `policy.model_dump()`, so removing the coercion changes the in-memory
+        type inside `policy_data`. The serialised wire form must not change.
+        `wildframe_events.publisher` emits it with `json.dumps(..., default=str)`.
+        """
+        event = CompliancePolicyEvent.from_policy(
+            event_type=ComplianceEventType.POLICY_UPDATED,
+            policy=get_policy_for_jurisdiction(Jurisdiction.US_CA),
+            event_id=uuid4(),
+        )
+
+        wire = json.loads(json.dumps(event.to_dict(), default=str))
+        assert wire["jurisdiction"] == "US-CA"
+        assert wire["policy_data"]["jurisdiction"] == "US-CA"

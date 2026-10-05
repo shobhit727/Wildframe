@@ -304,6 +304,8 @@ Content, user, auth, admin, creators, moderation, and analytics code contains pr
 
 Preserve explicit authorization, consent, jurisdiction, audit, and error/status semantics. Do not weaken a policy check simply to satisfy a happy-path test.
 
+Never set `use_enum_values` on a compliance model. It stores the raw value, so a policy re-constructed with an explicit `jurisdiction=` holds a `str` and `self.jurisdiction.regulations` raises `AttributeError` — and because pydantic does not validate defaults, the bug hides until the first re-construction, so a direct `USPrivacyPolicy()` looks fine. Serialize at the boundary (`model_dump(mode="json")` / `json.dumps`).
+
 ## 14. Observability
 
 Shared observability code is in packages/sdk/wildframe_observability. The platform uses OpenTelemetry, Prometheus, Grafana, Loki, and Jaeger.
