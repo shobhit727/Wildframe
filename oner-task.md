@@ -844,3 +844,96 @@ git log --oneline origin/audit/fix-open-github-issues -8
   anything — asserting a bug report is wrong is the highest-stakes claim here.
 - **`STATUS.md`** still needs the final triage table.
 - Your **50+ subagent** directive: 4 dispatched so far.
+
+## 2026-10-05 — LIVE verification found a GAP in the #893 fix (not yet fixed)
+
+Bringing the stack up with a healthy Postgres finally let me test #893 against
+running services instead of the console tools. The ACL fix works — **zero
+`TopicAuthorizationFailed`** — but it is **not complete**, and the residual is a
+third source of truth nobody reconciled.
+
+### The gap: service code subscribes to topics no ACL grants
+
+`TOPIC_METADATA` and `_SERVICE_ACL` are reconciled by the bootstrap, and
+`tests/test_kafka_init.py` asserts that every *declared* consumer has a grant.
+But nothing checks the third list: **the topics a service hardcodes in its own
+`core/events.py`**. Two services subscribe to topics they are not a declared
+consumer of, so the bootstrap never creates their ACL and their consumer fails
+closed at startup:
+
+| Service | Subscribes to | Declared consumers of it |
+|---|---|---|
+| `recommendation-service` | `billing.subscription.created`, `.updated`, `.cancelled` (`app/core/events.py:148,151,154`) | user-service, notification-service, analytics-service, creators-service |
+| `media-pipeline` | `content.published` | search-service, recommendation-service |
+
+Live evidence, after the broker was free and with `kafka-init` stopped:
+
+```
+recommendation-service | "Topic billing.subscription.created is not authorized for this client"
+recommendation-service | "Topic billing.subscription.updated is not authorized for this client"
+recommendation-service | "Topic billing.subscription.cancelled is not authorized for this client"
+recommendation-service | "event subscriber failed to start; rows stay fresh via regeneration"
+```
+
+**Decision needed:** either add these services to `_SERVICE_ACL`/`TOPIC_METADATA`
+as consumers (granting them read on topics they demonstrably read), or remove the
+subscriptions. I did not choose — granting an ACL is a least-privilege decision,
+and deleting a handler is a product decision.
+
+**The durable fix** is a test that fails when any service's `core/events.py`
+subscribes to a topic it has no ACL role for. That closes the whole class, not
+just these two instances. Worth doing whichever way you decide above.
+
+### kafka-init is not robust on re-run (the agent claimed it was)
+
+The agent reported "a second `up kafka-init` exited 0 with counts unchanged —
+idempotent". **That is contradicted by observation.** A second run issued **461
+commands** instead of 190 and entered a retry loop:
+
+```
+attempt 1/5 failed: kafka-acls exited 1
+Error while executing ACL command: org.apache.kafka.common.errors.TimeoutException:
+  Timed out waiting for a node assignment. Call: createAcls
+```
+
+Cause: the bootstrap shells out to `kafka-acls`/`kafka-topics` **once per
+command** — ~190 separate JVM launches — against a single broker on a 4 vCPU VM.
+It overloads the broker it is configuring, then its own calls time out, then it
+retries into the same overloaded condition. `listConsumerGroups` also timed out
+while it was running.
+
+Consequences worth knowing:
+- **Cold start now blocks all 15 services on a bootstrap that takes minutes.**
+  Correct in principle (services should not start unauthorised) but slow.
+- A re-run is not safe or fast. It needs batching (one `kafka-acls` call with
+  many `--add` flags, or fewer JVM launches), a raised `request.timeout.ms`, and
+  genuinely idempotent handling.
+
+### My own errors during this verification, for the record
+
+Three, all the same shape — a check that could pass while the defect was present:
+
+1. **Grepped the wrong string.** I searched for
+   `TOPIC_AUTHORIZATION_FAILED|TopicAuthorizationException` and reported **0
+   denials, "#893 verified"**. The real message is `"Topic X is not authorized
+   for this client"`. My check would have reported 0 with the bug fully present.
+2. **Suppressed the error I needed.** `kafka-topics --list 2>/dev/null` returned
+   empty because the command threw `NoSuchFileException` (that config file only
+   exists in the kafka-init container). I read empty output as "0 topics on the
+   broker" and nearly reported the topics as vanished. There are 49.
+3. **Bypassed the ordering gate.** After `up -d` timed out, I used
+   `docker start` to bring the app services up — which does **not** evaluate
+   `depends_on`. They raced a still-running bootstrap, which produced the three
+   denials above. My recovery procedure caused the failure it was meant to clear.
+
+The lesson is the one already in `AGENTS.md` §19.3 and §28b: a check has to be
+asked what it would report if the bug were still there. Twice tonight mine would
+have reported success.
+
+### Stack state right now
+
+- postgres healthy, all 15 service databases bootstrapped
+- kafka, zookeeper and all 15 services + web + caddy running
+- **`kafka-init` stopped by me** after it entered the retry loop above
+- `recommendation-service` and `media-pipeline` consumers are **failing closed**
+  on the two topic sets in the table — expected, not yet resolved
