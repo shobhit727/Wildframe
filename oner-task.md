@@ -554,3 +554,30 @@ but gated. Two things argue for waiting rather than flipping it now:
 Also note `docs/GO_LIVE.md:53-54` points production operators at `init_schemas.py` and
 the concern raised above about it being able to refuse still stands; this change does not
 alter that script's behaviour, only where else it is run.
+
+## 2026-10-05 — Orphaned JWKS test fixtures recovered from a dead session
+
+Found uncommitted in the shared tree, authored by a session that is no longer
+running. Preserved at `tem/orphaned-wip/` (gitignored, nothing committed).
+
+- `content-service-tests-conftest.py` — 48 lines added to
+  `services/content-service/tests/conftest.py`. **Contains a broken import** at
+  what became line 38: `from _test_jwks import JWKS`. Every working test in the
+  repo imports `from tests._test_jwks import ...`; a bare `_test_jwks` is not
+  importable and would fail at collection. It also re-imports `wildframe_auth`
+  and `clear_jwks_cache`, which the file already imports at lines 6 and 11. The
+  added `FakeJwksEndpoint` class appears unused — the JWKS tests
+  (`test_content_jwks_verification.py`, `test_routes.py`, `test_auth_version.py`)
+  import the keypair directly from `tests._test_jwks`.
+- `analytics-service-tests-conftest.py` — new untracked
+  `services/analytics-service/tests/conftest.py`. This one is *clean*: correct
+  `from tests._test_jwks import JWKS`, and the docstring explains a real problem
+  (the verifier's per-URL cache holds `asyncio.Lock` objects bound to the first
+  event loop, so pytest-asyncio's fresh loop per test makes a cached lock
+  unusable). 10 of 15 services have a tracked `tests/conftest.py`; analytics does
+  not, so this would be a net-new file.
+
+**Decision needed:** someone should finish the analytics fixture (it looks worth
+adopting — it is a real cross-loop cache bug) and throw away or repair the
+content-service one. I did not adopt either, because doing so would put another
+session's unfinished test scaffolding into an unrelated issue-fix commit.
