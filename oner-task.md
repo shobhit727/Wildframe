@@ -487,3 +487,70 @@ exposure, which is the pattern AGENTS.md §18 forbids.
 Whichever way this goes, the gate should stop reporting a count without saying whether
 the vulnerable code ships — that ambiguity is what made this take a full investigation
 to classify as low-risk.
+
+---
+
+## Compose Runtime Smoke was not a timeout — the fix was a missing schema (2026-10-05)
+
+**The correction, because the wrong explanation is the expensive part.** The advisory
+`Compose Runtime Smoke` job on PR #938 was reported as failing because it "runs out of
+time" at its 420s budget, with services stuck in `health=starting`. That was a
+hypothesis read off one `PENDING:` block, and it is wrong. From the artifacts of run
+`37129259447`, the `PENDING:` block is the **first** poll, not the last:
+
+```
+14:23:40Z  Waiting up to 420s for every Compose service
+           (table: 8 services still `starting`)
+14:23:51Z  All Compose services are ready        <-- 11s into a 420s budget
+14:23:52Z  PASS web homepage / gateway health / auth JWKS
+14:23:52Z  FAILED content genres: expected HTTP 200, got 500
+```
+
+Both halves of "is it a timeout?" were disproved. The loop does **not** count the nine
+healthcheck-less infra containers as pending: it reads each service's `healthcheck` out
+of the Compose *config*, and for a service without one only requires `state == running`.
+Replaying the loop's own python against the job's own `wildframe-compose-ps.json` yields
+an empty `PENDING`. And the budget was never close to binding — 11s of 420s, with
+`compose up --build` accounting for the preceding 3 minutes. **Raising the timeout would
+have changed nothing**, and the `PENDING:` excerpt that motivated it is simply an earlier
+poll.
+
+**The actual defect.** `infrastructure/database/init-databases.sql` creates databases,
+users and extensions and stops there, and no service calls `create_all` at startup
+(verified: 0 of 15). So a fresh CI volume has `content_db` with **0 tables**, while
+`/health` stays green because it is a bare `SELECT 1`. The first table-backed probe then
+failed:
+
+```
+asyncpg.exceptions.UndefinedTableError: relation "genre" does not exist
+[SQL: SELECT genre.id, genre.name, genre.slug, genre.description, genre.icon_url,
+      genre.created_at FROM genre]
+```
+
+Reproduced on a fresh volume: 0 tables before `init_schemas.py`, 20 after, and the exact
+failing `SELECT` goes from `UndefinedTableError` to returning 0 rows.
+
+`scripts/compose-smoke.sh` now bootstraps schemas inside each service container before
+probing. It cannot run `init_schemas.py` on the host — the job installs no Python
+packages on purpose — and a `pip install sqlalchemy asyncpg` in the job would resolve
+independently of the service locks (AGENTS.md §20), so the bootstrap runs in the service
+image that already carries the pinned version. The per-service half of the script moved
+to `scripts/schema_bootstrap.py` so both callers execute one implementation.
+
+**The decision for a human: should this job still be advisory?** I did not change it,
+and my recommendation is **no — make it a required check once this is green**, because it
+is the only check in the repo that stands the whole stack up and drives real routes. The
+reason it was advisory is visible in the run above: it failed *correctly*, on a real
+defect, while carrying `continue-on-error: true`, which means the failure was reported
+but gated. Two things argue for waiting rather than flipping it now:
+
+1. `admin-service` and billing-service fail bootstrap (the duplicate-`Base` model bug
+   recorded above). Their tables are created before the refusal, and the smoke script
+   reports rather than gates on it — but that is a deliberate choice worth a human
+   confirming, since it means the job's verdict comes from the probes alone.
+2. The job runs `compose up -d --build` for 29 containers, ~3 minutes of build on a
+   runner. As a required check it becomes a recurring cost and a recurring flake source.
+
+Also note `docs/GO_LIVE.md:53-54` points production operators at `init_schemas.py` and
+the concern raised above about it being able to refuse still stands; this change does not
+alter that script's behaviour, only where else it is run.

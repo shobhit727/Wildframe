@@ -14,10 +14,51 @@ Run these from the **repo root** (they resolve `playwright-core` from there or f
 | `causation-check.mjs` | *Why* does it break — which header or setting is the cause? |
 | `auth-flow-check.mjs` | Can a real user register and stay signed in? |
 | `verify-csp-nonce.mjs` | Do the CSP nonces actually reach the rendered scripts? |
-| `compose-smoke.sh` | Does the whole stack come up? |
+| `compose-smoke.sh` | Does the whole stack come up, and do real routes answer? |
 
 All are read-only against the API except `auth-flow-check.mjs`, which creates two
 throwaway accounts per run (`agent-api-*` and `agent-ui-*` at `example.com`).
+
+---
+
+## `compose-smoke.sh`
+
+Brings the full dev stack up and probes it. Three things about it are worth knowing
+before changing it.
+
+**It bootstraps schemas inside the containers, not on the host.** A fresh volume has
+databases and no tables — `infrastructure/database/init-databases.sql` stops at
+databases/users/extensions and no service calls `create_all` at startup — so every
+table-backed route 500s while `/health` stays green, because health is a bare
+`SELECT 1` and passes against an empty database. `scripts/schema_bootstrap.py` is the
+per-service half of `init_schemas.py`, piped into each service's own container with
+`compose exec -T -w /app <svc> python -`, for the services that declare a
+`DATABASE_URL`. That indirection exists because the CI job installs no Python
+packages on purpose, and installing SQLAlchemy in the job would resolve independently
+of the service locks. Bootstrap failures are reported and logged, not fatal: the probes
+are the verdict, and two services refuse to bootstrap for an unrelated model bug.
+
+**The wait loop reads healthchecks from the Compose config, not from `docker compose
+ps`.** 15 of the 29 services have no healthcheck and report `Health: ""` forever, so a
+loop that demanded `healthy` from every container could never succeed. A service with no
+`healthcheck` only has to be `running`; one with a disabled healthcheck counts as having
+none; `exited`/`dead` is a terminal failure whatever its health.
+
+**It times out far later than it looks like it should.** `compose up -d --build` for 29
+containers is most of the wall clock; the observed time from "stack started" to "all
+services ready" was 11s of a 420s budget. Raising `COMPOSE_SMOKE_WAIT_SECONDS` is
+therefore very unlikely to fix anything — read the `PENDING:`/`READY:` line in the log
+first, and note that the table printed *before* it is the previous poll, not the last.
+
+```bash
+bash scripts/compose-smoke.sh                       # against deployments/docker-compose.dev.yml
+COMPOSE_SMOKE_WAIT_SECONDS=900 bash scripts/compose-smoke.sh
+COMPOSE_SMOKE_LOG=/tmp/smoke.log bash scripts/compose-smoke.sh
+```
+
+`COMPOSE_SMOKE_LOG` holds the full `compose logs` dump, which is the artifact to read
+first — it names the exception behind any probe failure, where the script's own output
+only says which route failed.
 
 ---
 

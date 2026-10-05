@@ -351,3 +351,4 @@ test_frontend_paths_resolve_to_backend_routes` fails because it globs all of
 `apps/web/src` without excluding `__tests__` and therefore reads mock URL
 literals from the frontend test files. Excluding fixtures, the scan finds **0**
 unresolved paths, so there is no real frontend↔backend route drift.
+ 

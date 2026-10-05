@@ -131,6 +131,75 @@ if (( SECONDS >= deadline )); then
   exit 1
 fi
 
+# --- Schema bootstrap ---------------------------------------------------------
+# A fresh Compose volume has databases but no tables. The init SQL
+# (infrastructure/database/init-databases.sql) creates databases, users and
+# extensions and stops there, and no service calls create_all at startup. So on
+# CI every table-backed route 500s while /health stays green -- health is a bare
+# SELECT 1, which passes against an empty database. That is exactly what run
+# 37129259447 reported: 20 healthy containers, then
+#   probe "content genres" -> HTTP 500
+#   asyncpg.exceptions.UndefinedTableError: relation "genre" does not exist
+# The probes below assert real routes, so without this step the job could never
+# pass, on a correct stack as much as on a broken one.
+#
+# scripts/init_schemas.py is the schema authority, but this job installs no Python
+# packages on purpose and ubuntu-latest has no SQLAlchemy, so it cannot run here.
+# Every service image already carries the pinned SQLAlchemy and asyncpg, so run
+# the identical bootstrap inside the container instead. That is not a
+# convenience: `pip install sqlalchemy asyncpg` in the job would resolve
+# independently of the service locks and could pick a floor the services do not
+# support (AGENTS.md 20).
+log "Bootstrapping service schemas inside their own containers"
+
+# The services that own a database are the ones declaring DATABASE_URL, so this
+# stays correct when a service is added instead of duplicating the service->db
+# map that init_schemas.py already keeps.
+mapfile -t DB_SERVICES < <(
+  compose config --format json | python -c '
+import json, sys
+
+config = json.load(sys.stdin)
+for name, spec in sorted(config.get("services", {}).items()):
+    env = spec.get("environment") or {}
+    if isinstance(env, list):  # compose accepts both list and mapping form
+        env = {item.split("=", 1)[0]: item for item in env}
+    if "DATABASE_URL" in env:
+        print(name)
+'
+)
+
+schema_failures=()
+if (( ${#DB_SERVICES[@]} == 0 )); then
+  # Silently skipping the bootstrap here would surface later as a confusing
+  # UndefinedTableError from whichever probe touched a table first, so fail at
+  # the actual cause instead.
+  log "Could not determine which services own a database; refusing to probe an unbootstrapped schema"
+  exit 1
+fi
+
+for svc in "${DB_SERVICES[@]}"; do
+  # DATABASE_URL is read from the container environment, so the docker-internal
+  # hostname is used rather than the runner's localhost. -w /app makes `app`
+  # importable explicitly instead of relying on the image WORKDIR.
+  if compose exec -T -w /app "$svc" python - <scripts/schema_bootstrap.py >>"$LOG_FILE" 2>&1; then
+    log "  schema ok: $svc"
+  else
+    # Reported, not fatal. The probes are the verdict: admin-service and
+    # billing-service refuse to reconcile because two of their models declare the
+    # same table in separate metadata sets (a model bug, tracked separately), and
+    # create_all has already made their tables by that point. Gating here would
+    # fail an advisory smoke test over services it never probes.
+    log "  SCHEMA FAILED: $svc (see $LOG_FILE)"
+    schema_failures+=("$svc")
+  fi
+done
+
+log "Bootstrapped ${#DB_SERVICES[@]} service schemas, ${#schema_failures[@]} failed"
+if (( ${#schema_failures[@]} )); then
+  log "Services with an incomplete schema: ${schema_failures[*]}"
+fi
+
 probe() {
   local name="$1"
   local url="$2"
