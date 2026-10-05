@@ -8999,3 +8999,100 @@ reading `ci-cd.yml`, `docker-compose.dev.yml`, `Caddyfile`, `pyproject.toml`,
 6,217 / 694 / 805 / 119 figures remain **unverified against disk**; they agree across
 four documents, which is not the same as being correct, and I found three counts that
 *did* drift exactly that way. The 71 contract figure **is** verified (collected).
+
+### [M-20261003T0815Z-orchestrator] 2026-10-03T08:15Z · agent=orchestrator · status=resolved
+**Closes:** Compose Runtime Smoke. **Site URL:** https://localhost:3000 (self-signed, use `curl -sk`)
+**Files:** `scripts/compose-smoke.sh`, `scripts/schema_bootstrap.py` (new), `scripts/init_schemas.py`, `tests/contract/test_compose_smoke_contract.py` (new)
+
+## For anyone picking this up: the smoke test was asserting against empty databases
+
+`Compose Runtime Smoke` failed on the fourth probe, on a stack that was **completely
+healthy**:
+
+```
+14:23:51Z  All Compose services are ready          <- 11s of a 420s budget
+14:23:52Z  PASS web homepage / gateway health / auth JWKS
+14:23:52Z  FAILED content genres: expected HTTP 200, got 500
+           asyncpg.exceptions.UndefinedTableError: relation "genre" does not exist
+```
+
+`infrastructure/database/init-databases.sql` creates databases, users and extensions
+and **stops there — it contains zero `CREATE TABLE` statements** — and no service calls
+`create_all` at startup (I checked all fifteen). So a fresh CI volume has empty
+databases, `/health` stays green because it is a bare `SELECT 1`, and the first
+table-backed probe 500s.
+
+**This job could never have passed against a fresh volume.** The probes were right; the
+stack was unbootstrapped. The script now bootstraps schemas inside each service
+container before probing — in-container because the CI job installs no host Python
+packages by design, and a host-side pip install would resolve outside the service locks
+(AGENTS.md §20). Bootstrap failures are reported rather than fatal, because
+admin-service and billing-service refuse to reconcile (the duplicate-`Base` bug in
+oner-task.md) *after* create_all has made their tables, and gating on exit code would
+trade one unsatisfiable assertion for another.
+
+New contract test `test_wait_budget_is_not_the_fix` asserts the 420s budget stays put,
+so nobody re-"fixes" this by raising a number. Suite is 84 passed.
+
+## I got this diagnosis wrong twice before getting it right — worth recording
+
+Both wrong turns were mine, and both came from the same move: **reading a remembered
+log instead of re-reading the current one, and trusting a log line without checking
+what produced it.**
+
+1. I concluded "timeout" from a `PENDING:` block in the log. But that table is printed
+   at `compose-smoke.sh:125`, *before* the loop re-polls — so it always lags and shows
+   the previous poll's state. It was the first poll, not the last.
+2. I then concluded the loop counted healthcheck-less containers as pending forever,
+   and briefed a subagent to check it. The loop actually reads `healthcheck` from the
+   Compose **config**, not from `docker compose ps`, and is satisfied by `running` alone
+   when no healthcheck exists. Replaying the loop's own logic on this run's ps output
+   gives an empty pending set.
+
+The subagent's first move in both cases was to read the artifact and quote the decisive
+line. That is the step I skipped. Across this session every wrong diagnosis came from
+the same shortcut.
+
+## Also this session, for the record
+
+- **auth-service could not start from a clean checkout** (fixed). Its logging wrote to
+  `logs/auth-service.log`; the compose bind-mount shadows the Dockerfile's `logs/`;
+  `RotatingFileHandler` opens eagerly without creating parents. Masked three ways at
+  once — a stale local `logs/` dir from 7 August, a test fixture that pre-created the
+  directory, and the advisory gate. Evidence the fix worked: auth-service now serves
+  JWKS 200 in the smoke log above.
+- **My Semgrep suppression suppressed nothing** (fixed). Wrong line and wrong rule ID;
+  Semgrep matches by exact ID. Deleting it changed nothing, which is the check that
+  distinguishes a live suppression from a decorative one. I had not run it.
+- **A root `overrides` entry broke ESLint outright** (removed). Hoisting
+  `brace-expansion` to 5.x was an ABI break: `minimatch@3` calls it as a function, v5
+  exports `{expand}`. A reasonable fix for the right diagnosis that still broke
+  everything — hoisting a patched transitive is only safe when every consumer shares
+  its calling convention, and two incompatible minimatch majors do not.
+- **Nine service venvs were shadowing the SDK** with stale Aug-31 directories over
+  their `develop = true` path deps. `poetry install` does not clear an orphan left by a
+  path dependency. This surfaced as an 8-failure cluster in billing that looked like a
+  type error and was not.
+- **PyJWT 2.13.0, six CVEs including a CRITICAL auth bypass**, fixed. It survived in
+  four separate places; the instructive one is that content-service and media-pipeline
+  declared pyjwt nowhere in `pyproject.toml`, so poetry locked 2.13.0 as an orphan with
+  no dependent while their Dockerfiles installed a *fixed* `requirements.txt`. Runtime
+  protected, lock not — which is why Trivy kept failing after the first fix.
+
+## Still open, needs a human
+
+- **`Frontend CI` SCA gate**: `braces@3.0.3`, high. **No fix exists** — it is the
+  latest release, its only dependent pins `^3.0.3`, and npm's suggestion downgrades
+  `@next/eslint-plugin-next` two majors. Chain is `dev=true` and never reaches the
+  browser bundle. Options and my ranking are in `oner-task.md`; I did not use `--force`,
+  an override, or a lowered `--audit-level`.
+- **The advisory gating itself.** `Compose Runtime Smoke` is the only
+  `continue-on-error: true` in the workflow (ci-cd.yml:350) and nothing `needs:` it.
+  That is precisely why a service that could not start from a clean checkout reached
+  `main`. My view is that it should become required once green, but that costs ~3 min of
+  `compose up --build` per run for 29 containers, so it is a human call.
+- **286 legacy `Column()` attributes** remain across five services, each a latent
+  `Never`. Needs a schema-level conversion or the mypy SQLAlchemy plugin.
+- `services/content-service/tests/conftest.py` and
+  `services/analytics-service/tests/conftest.py` still hold other agents' uncommitted
+  work and are the only thing keeping black/ruff red. Untouched.
