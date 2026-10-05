@@ -10,6 +10,8 @@ These are deliberately adversarial: script tags, attribute-breaking quotes,
 control bytes and multi-byte characters.
 """
 
+import pytest
+
 from app.templates import (
     _TEMPLATES,
     render_template,
@@ -96,19 +98,48 @@ def test_a_lone_angle_bracket_is_left_alone():
     assert sanitize_plain("a < b") == "a < b"
 
 
-def test_known_defect_sanitize_plain_eats_a_bare_comparison():
-    """Characterisation test for a reported defect (NOT an assertion of intent).
+def test_sanitize_plain_keeps_a_bare_comparison():
+    """A plain-text quantity comparison must survive the tag stripper.
 
-    `app/templates.py:11` uses the greedy ``<[^>]+>`` tag pattern, so any pair of
-    angle brackets in a message is removed as if it were markup. A plain-text
-    notification containing "5 < 6 & 7 > 2" silently loses " < 6 & 7 >" from the
-    text/plain part of the email (the HTML part is unaffected, because
-    `sanitize_text` only escapes). Users comparing quantities in a notification
-    would receive a corrupted message.
+    ``app/templates.py`` used the pattern ``<[^>]+>``, so any pair of angle
+    brackets was removed as if it were markup: a notification reading
+    "5 < 6 & 7 > 2" silently lost " < 6 & 7 >" from the text/plain part of the
+    email. Users comparing quantities received a corrupted message.
+
+    This is content corruption, not an injection hole: ``sanitize_plain`` feeds
+    only the text/plain MIME part. ``html_body`` and ``subject`` are built from
+    ``sanitize_text``, which escapes.
+
+    Regression test for the reported defect.
     """
-    assert sanitize_plain("5 < 6 & 7 > 2") == "5  2"
-    # The HTML part is not affected - only the tag-stripped plain part is.
+    assert sanitize_plain("5 < 6 & 7 > 2") == "5 < 6 & 7 > 2"
+    # The HTML part is escaped, not stripped, and was never affected.
     assert sanitize_text("5 < 6 & 7 > 2") == "5 &lt; 6 &amp; 7 &gt; 2"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("a < b and c > d", "a < b and c > d"),
+        ("if x <10 then", "if x <10 then"),
+        ("I <3 you > ok", "I <3 you > ok"),
+        ("<b>bold</b>", "bold"),
+        ("</b>closing only", "closing only"),
+        ('<a href="/x">link</a>', "link"),
+        ('<a href="/a>b">link</a>', 'b">link'),
+        ("no markup at all", "no markup at all"),
+    ],
+)
+def test_sanitize_plain_only_strips_real_tags(raw, expected):
+    """The stripper keys on a letter after "<", not on angle brackets generally.
+
+    The ``<a href="/a>b">`` case documents a limit that predates this fix and is
+    unchanged by it: the character class stops at the first ">", so a ">" inside
+    an attribute value truncates the match and leaves ``b">link``. Pinned here so
+    it is a known property rather than a surprise. It is harmless for the only
+    caller -- this output goes to the text/plain MIME part, never to HTML.
+    """
+    assert sanitize_plain(raw) == expected
 
 
 def test_script_content_survives_as_plain_text():
