@@ -192,20 +192,27 @@ def test_context_filter_runs_before_the_json_formatter_formats_the_line():
     assert payload["name"].startswith("app.core.logging.test")
 
 
-def test_known_defect_json_lines_carry_a_null_level_and_timestamp():
-    """Characterisation test for a reported defect (NOT an assertion of intent).
+def test_json_lines_carry_a_real_level_and_timestamp():
+    """Every JSON line must carry the level and a parseable timestamp.
 
-    `app/core/logging.py:58` configures the JSON formatter with
-    ``%(timestamp)s`` and ``%(level)s``, neither of which exists on a
-    ``logging.LogRecord``. The installed python-json-logger (4.x) resolves them
-    to ``None``, so every structured log line in this service is emitted with
-    ``"level": null`` and ``"timestamp": null``. Log-level based alerting and
-    ordering by timestamp therefore cannot work on user-service JSON logs.
+    ``app/core/logging.py`` configured the JSON formatter with ``%(timestamp)s``
+    and ``%(level)s``, neither of which exists on a ``logging.LogRecord`` -- the
+    real names are ``%(asctime)s`` and ``%(levelname)s``. python-json-logger
+    resolved the unknown names to ``None``, so *every* structured line from this
+    service shipped ``"level": null, "timestamp": null``. Log-level alerting
+    cannot fire on those lines and downstream consumers cannot time-order them.
 
-    This test pins the current (broken) output so the defect is visible; it is
-    expected to be replaced when production code is fixed.
+    The keys are asserted as ``levelname``/``asctime`` because that is the
+    established convention for this exact formatter shape in
+    ``content-service/app/core/logging.py:57`` and
+    ``streaming-service/app/core/logging.py:31``, and no service in the tree
+    remaps them via ``rename_fields``. Emitting ``level``/``timestamp`` here
+    would make user-service the only service with a different log schema.
+
+    Regression test for #850.
     """
     import io
+    from datetime import datetime
 
     setup_logging("INFO")
     stream = io.StringIO()
@@ -216,5 +223,13 @@ def test_known_defect_json_lines_carry_a_null_level_and_timestamp():
     logging.getLogger("app.core.logging.test").warning("level check")
 
     payload = json.loads(stream.getvalue().strip())
-    assert payload["level"] is None
-    assert payload["timestamp"] is None
+    assert payload["levelname"] == "WARNING"
+    # asctime is emitted as "YYYY-MM-DD HH:MM:SS,mmm"; assert it parses rather
+    # than pinning an exact string.
+    assert datetime.strptime(payload["asctime"], "%Y-%m-%d %H:%M:%S,%f")
+    assert payload["correlation_id"] == "c"
+    assert payload["request_id"] == "r"
+    # The defect was these resolving to None; assert they are absent entirely
+    # rather than silently null, so a re-introduction is caught.
+    assert "timestamp" not in payload
+    assert "level" not in payload

@@ -194,19 +194,30 @@ def test_parse_delivery_errors_returns_empty_for_invalid_json():
     assert NotificationRepository.parse_delivery_errors(notif) == {}
 
 
-def test_known_defect_parse_delivery_errors_raises_on_a_json_scalar():
-    """Characterisation test for a reported bug (NOT an assertion of intent).
+@pytest.mark.parametrize(
+    "raw",
+    [
+        pytest.param("[]", id="json-array"),
+        pytest.param('"just a string"', id="json-string"),
+        pytest.param("null", id="json-null"),
+        pytest.param("42", id="json-number"),
+        pytest.param("{not json", id="malformed"),
+    ],
+)
+def test_parse_delivery_errors_treats_non_object_json_as_no_outcomes(raw):
+    """A ``delivery_errors`` value that is not an object must not 500 the read path.
 
-    `app/repositories.py:175-179` wraps `json.loads` in `except ValueError`, but a
-    column holding valid JSON that is *not* an object (e.g. `"[]"`, `"null"`) makes
-    `parsed.items()` raise `AttributeError`, which is not caught. A single
-    corrupt `delivery_errors` value therefore turns every retry/unread read path
-    into a 500 instead of being treated as "no recorded outcomes".
+    ``app/repositories.py`` wraps only ``json.loads`` in ``except ValueError``. A
+    column holding valid JSON that is not an object (``"[]"``, ``"null"``, a bare
+    number) makes ``parsed.items()`` raise ``AttributeError``, which escapes. One
+    corrupt value therefore turned every unread/retry read path into a 500 instead
+    of degrading to "no recorded outcomes", which is what an absent value does.
+
+    Regression test for #856.
     """
-    notif = Notification(delivery_errors=json.dumps("just a string"))
+    notif = Notification(delivery_errors=raw)
 
-    with pytest.raises(AttributeError):
-        NotificationRepository.parse_delivery_errors(notif)
+    assert NotificationRepository.parse_delivery_errors(notif) == {}
 
 
 def test_parse_delivery_errors_stringifies_keys_and_values():

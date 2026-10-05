@@ -326,39 +326,38 @@ class TestRefreshTokenRepositoryRemaining:
 
         assert (await token_repository.get_by_user_id(test_user.id)).id == only.id
 
-    async def test_get_by_user_id_raises_when_the_user_has_several_tokens(
+    async def test_get_by_user_id_returns_the_newest_of_several_tokens(
         self, test_user, token_repository
     ):
-        """BUG: the docstring says "latest", but the query never limits.
+        """A user may legitimately hold several refresh tokens at once.
 
-        ``get_by_user_id`` orders by ``created_at DESC, id DESC`` and then calls
+        ``get_by_user_id`` orders by ``created_at DESC, id DESC`` and then called
         ``scalar_one_or_none()``. Ordering does not limit, so any user holding two
-        or more refresh tokens makes this raise ``MultipleResultsFound`` instead
-        of returning the newest. It needs ``.limit(1)`` (or ``scalars().first()``).
-        No production caller exists yet, so the bug is latent.
-        """
-        from sqlalchemy.exc import MultipleResultsFound
+        or more refresh tokens raised ``MultipleResultsFound`` instead of
+        returning the newest -- while the docstring promised "latest". One token
+        per device is a normal state, not an error.
 
-        token_repository.session.add_all(
-            [
-                RefreshToken(
-                    user_id=test_user.id,
-                    token_hash="older",
-                    expires_at=_dt.now(UTC) - timedelta(days=1),
-                    created_at=_dt.now(UTC) - timedelta(days=2),
-                ),
-                RefreshToken(
-                    user_id=test_user.id,
-                    token_hash="newer",
-                    expires_at=_dt.now(UTC) + timedelta(days=1),
-                    created_at=_dt.now(UTC),
-                ),
-            ]
+        Regression test for #852.
+        """
+        older = RefreshToken(
+            user_id=test_user.id,
+            token_hash="older",
+            expires_at=_dt.now(UTC) - timedelta(days=1),
+            created_at=_dt.now(UTC) - timedelta(days=2),
         )
+        newer = RefreshToken(
+            user_id=test_user.id,
+            token_hash="newer",
+            expires_at=_dt.now(UTC) + timedelta(days=1),
+            created_at=_dt.now(UTC),
+        )
+        token_repository.session.add_all([older, newer])
         await token_repository.commit()
 
-        with pytest.raises(MultipleResultsFound):
-            await token_repository.get_by_user_id(test_user.id)
+        found = await token_repository.get_by_user_id(test_user.id)
+
+        assert found is not None
+        assert found.token_hash == "newer"
 
     async def test_get_by_user_id_is_none_without_tokens(self, test_user, token_repository):
         assert await token_repository.get_by_user_id(test_user.id) is None

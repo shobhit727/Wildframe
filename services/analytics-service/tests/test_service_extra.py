@@ -199,70 +199,78 @@ async def test_resolve_content_owner_raises_unavailable_on_a_non_uuid_creator_id
         await resolve_content_owner(uuid4())
 
 
+# Sentinel for "the body is literally JSON null", which the json_response()
+# helper cannot express because it substitutes {} for None.
+_RAW_NULL = object()
+
+
 @pytest.mark.unit
-async def test_resolve_content_owner_leaks_attribute_error_on_a_scalar_body():
-    """GENUINE BUG -- app/core/content_client.py:72-79.
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param("just a string", id="json-string"),
+        pytest.param(42, id="json-number"),
+        pytest.param(["a", "b"], id="json-array"),
+        pytest.param(_RAW_NULL, id="json-null"),
+    ],
+)
+async def test_resolve_content_owner_raises_unavailable_on_a_scalar_body(payload):
+    """A 200 whose body is valid JSON but not an object must fail closed.
 
     ``payload = response.json()`` followed by ``payload.get("creator_id")``
-    assumes the body is a JSON *object*. A 200 carrying a valid JSON scalar
-    (string, number, list) makes ``payload.get`` raise ``AttributeError``,
-    which is not in the ``except (ValueError, TypeError)`` clause, so it
-    escapes ``resolve_content_owner``.
+    assumed the body was a JSON object. A JSON scalar parses fine and then
+    raises ``AttributeError``, which was not in the ``except (ValueError,
+    TypeError)`` clause, so it escaped ``resolve_content_owner``.
 
-    That breaks the fail-closed guarantee: ``require_content_access`` only
-    catches ``ContentServiceUnavailableError``, so the ``AttributeError``
-    propagates past the authorization gate and the request 500s instead of
-    returning a 503 denial. The docstring at content_client.py:52-56 promises
-    the opposite -- "callers must treat that as denial, never as allow".
+    That broke the fail-closed guarantee: ``require_content_access`` only catches
+    ``ContentServiceUnavailableError``, so the ``AttributeError`` propagated past
+    the authorization gate and the request 500ed instead of returning a 503
+    denial. The docstring at content_client.py:52-56 promises the opposite --
+    "callers must treat that as denial, never as allow".
 
-    Pinned to the current behaviour. Fixing it means adding ``AttributeError``
-    to the except clause; then this test fails and should assert
-    ``ContentServiceUnavailableError``.
+    Regression test for #873.
     """
-    scalar = httpx.Response(
-        200,
-        json="just a string",
-        request=httpx.Request("GET", "http://content-service/api/v1/content/x"),
-    )
-    stub_http(scalar)
+    if payload is _RAW_NULL:
+        # The shared json_response() helper substitutes {} for None, which would
+        # silently test the ownerless case instead. Build the null body directly.
+        stub_http(
+            httpx.Response(
+                200,
+                content=b"null",
+                request=httpx.Request("GET", "http://content-service/api/v1/content/x"),
+            )
+        )
+    else:
+        stub_http(json_response(200, payload))
 
-    with pytest.raises(AttributeError, match="has no attribute 'get'"):
+    with pytest.raises(ContentServiceUnavailableError):
         await resolve_content_owner(uuid4())
 
 
 @pytest.mark.unit
-async def test_scalar_body_escapes_the_authorization_gate():
-    """The leak is not contained: it passes straight through require_content_access.
+async def test_resolve_content_owner_raises_unavailable_on_a_non_string_creator_id():
+    """A numeric ``creator_id`` must fail closed too.
 
-    Demonstrates the user-visible consequence of the bug above -- a 500 rather
-    than the documented 503 "Could not verify content ownership".
+    ``UUID(42)`` raises ``AttributeError``, not ``ValueError``, because the
+    constructor calls ``str.replace`` on its argument -- the same escape as a
+    scalar body, one level down.
     """
-    from fastapi import Request
+    stub_http(json_response(200, {"creator_id": 42}))
 
-    import app.api.analytics_routes as analytics_routes
+    with pytest.raises(ContentServiceUnavailableError):
+        await resolve_content_owner(uuid4())
 
-    scalar = httpx.Response(
-        200,
-        json=["a", "b"],
-        request=httpx.Request("GET", "http://content-service/api/v1/content/x"),
-    )
-    stub_http(scalar)
 
-    request = Request(
-        {
-            "type": "http",
-            "method": "GET",
-            "path": "/api/v1/analytics/content/x",
-            "headers": [],
-            "path_params": {"content_id": str(uuid4())},
-            "query_string": b"",
-        }
-    )
+@pytest.mark.unit
+async def test_resolve_content_owner_still_returns_none_for_absent_owner():
+    """The guard must not turn a legitimately ownerless item into a 503.
 
-    # 503 is what the documented contract requires; the guard below is
-    # currently bypassed.
-    with pytest.raises(AttributeError):
-        await analytics_routes.require_content_access({"user_id": uuid4(), "role": "user"}, request)
+    Guards against over-correction: a well-formed object with a null or empty
+    ``creator_id`` means "no owner", not "malformed".
+    """
+    for payload in ({}, {"creator_id": None}, {"creator_id": ""}):
+        stub_http(json_response(200, payload))
+        assert await resolve_content_owner(uuid4()) is None
 
 
 # ===================== app/schemas/__init__.py nesting ======================
@@ -324,3 +332,38 @@ def test_nesting_depth_accepts_a_flat_payload():
             "event_data": {"a": 1, "b": [1, 2, 3], "c": {"d": "e"}},
         }
     )
+
+
+@pytest.mark.unit
+async def test_scalar_body_no_longer_escapes_the_authorization_gate():
+    """The gate must convert the malformed upstream body into a 503 denial.
+
+    End-to-end through ``require_content_access``, which only catches
+    ``ContentServiceUnavailableError``. Before the #873 fix this reached the
+    caller as ``AttributeError`` -- a 500 -- because the escape passed straight
+    through the authorization gate instead of denying.
+    """
+    from fastapi import HTTPException, Request
+
+    import app.api.analytics_routes as analytics_routes
+
+    for payload in ("just a string", ["a", "b"], 42):
+        stub_http(json_response(200, payload))
+
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/api/v1/analytics/content/x",
+                "headers": [],
+                "path_params": {"content_id": str(uuid4())},
+                "query_string": b"",
+            }
+        )
+
+        with pytest.raises(HTTPException) as caught:
+            await analytics_routes.require_content_access(
+                {"user_id": uuid4(), "role": "user"}, request
+            )
+
+        assert caught.value.status_code == 503

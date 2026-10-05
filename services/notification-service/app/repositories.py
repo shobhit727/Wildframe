@@ -176,4 +176,10 @@ class NotificationRepository:
             parsed = json.loads(notification.delivery_errors)  # type: ignore[arg-type]
         except ValueError:
             return {}
+        # Valid JSON is not necessarily an object. A column holding "[]" or "null"
+        # parses fine and then raises AttributeError on .items(), which turned one
+        # corrupt value into a 500 on every unread/retry read path. Treat any
+        # non-object as "no recorded outcomes", matching the absent-value case.
+        if not isinstance(parsed, dict):
+            return {}
         return {str(key): str(value) for key, value in parsed.items()}
