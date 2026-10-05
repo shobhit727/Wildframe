@@ -374,6 +374,35 @@ repository. If it is dead the moment you close the terminal, `/tmp` is fine.
 **Never put credentials in `/tmp` either** — it is world-readable on most systems and
 is not covered by `.gitignore`, which only protects the repository. See 24.
 
+**Use `tem/` inside the repository, not `/tem` and not `/tmp`.** The scratch directory
+for this project is `tem/` *inside* the repo root. It is gitignored
+(`.gitignore:176`), so nothing there can be committed by accident.
+
+- **`<repo>/tem/scratch/`** — logs, dumps, and disposable probes.
+- **`<repo>/tem/wt/`** — git worktrees for parallel agents, one per agent, named
+  `wt01`…`wt24`. A worktree is a checkout, not scratch: create it under `tem/wt/`,
+  never in `/tmp`.
+- **`<repo>/tem/agent-scratch/`** — per-agent scratch, so two agents cannot collide.
+
+`/tem` — with a leading slash — **does not exist and must never be created.** A path
+like `/tem/wt` or `/tem/scratch` is a bare filesystem-root directory outside the repo:
+it is not gitignored, not reviewed, not shared with the next agent, and invisible to
+`git status`. Eight `git worktree` registrations stranded under `/tmp/opencode/` were
+found during the October 2026 issue sweep; the paths still pointed at the deleted
+directories until `git worktree prune` ran.
+
+If you find a scratch path outside the repo, move it in and re-register:
+
+```bash
+mv /tmp/opencode/wf-x tem/agent-scratch/wf-x
+git worktree prune          # registrations for moved/deleted paths
+```
+
+**Tell every subagent this explicitly in its prompt.** A subagent has no memory of
+your session and will reach for `/tmp` by default — and several will reach for `/tem`,
+which looks like a typo of `tem/` and reads as a filesystem root. Give the absolute
+repo path, and say which directory it may write to.
+
 ### 23.7 When to use a subagent
 
 This repo has real multi-agent dispatch available. Use it — a paragraph explaining
