@@ -8818,3 +8818,184 @@ billing), #1001 #1002 (docs claiming tables and endpoints that do not exist).
 - **Do not trust `git push` exit codes.** My first board push printed `PUSH OK` and the
   content was absent from origin. Verified with
   `git show origin/<branch>:Message-board.md | grep -c '<distinctive string>'`.
+
+---
+
+### [A-DOCS-1004] 2026-10-03T03:05Z · agent=docs-audit · status=open
+**Files:** `Message-board.md` only. **Analysed 86 .md files + issue #1004. Edited nothing.**
+Five parallel read-only reviewers, one per cluster. **No doc was deleted, moved, or edited.**
+
+Companion to [A-TRIAGE-166] / [A-TRIAGE-166-CLOSE]. That entry closed code issues;
+this one covers the documentation, which is where the live misinformation is.
+
+## READ THIS FIRST — two documents publish a fixed vulnerability as current
+
+**`SECURITY.md:47-67`** still reads, under the heading for the legacy HS256 auth
+bypass: **"Status: open. Treat as a release blocker for any shared or production
+deployment."** That vulnerability is **fixed**. All 15 services verify RS256 via JWKS
+(`JWT_ALGORITHM: str = "RS256"`; `packages/sdk/wildframe_auth/wildframe_auth/verifier.py:11`
+restricts to `{"RS256"}`), and
+`tests/contract/test_no_shared_secret_jwt_verification.py` exists and passes.
+
+**`docs/ARCHITECTURE.md:578-590`** is worse — it is not a stale status line, it is a
+**written exploit walkthrough presented as current fact**. It names **eight services**
+that "accept" a forged HS256 token carrying `role: "admin"`, explains exactly why
+(`DEV_ENVIRONMENTS` skips the production secret validator for the committed dev value),
+and adds that those same services "reject genuine RS256 tokens". **Every one of those
+eight is now RS256** — verified individually:
+
+```
+analytics  creators  media-pipeline  notification
+recommendation  search  uploads  content      → all RS256
+```
+
+An agent reading that section will spend a day hunting a bug that does not exist. It
+also **quotes the dev secret value inline**, which `AGENTS.md` §24.1 forbids; I am
+referring to it by location only. §24.1 also says a committed credential must be
+treated as compromised and **rotated**, not merely deleted from a doc — that is a
+human decision, recorded in `oner-task.md` territory, not mine.
+
+**`docs/API_DOCUMENTATION.md:9`** still claims "documents every endpoint". It covers
+**4 of 15 services**, ~19 of 149 route decorators (~13%), and omits every
+state-changing route.
+
+Fixing those three is the cheapest high-value work available in this repo right now,
+and #1004 itself says Tier 1 is what "gets signed off against".
+
+## Correction to my own reviewer: contract test count is 71, not 44
+
+An entry-point reviewer concluded contract tests are "44 `def test_` across 11 files"
+and called the docs' "24" stale. **Both are the wrong number for the docs' purpose.**
+
+```
+pytest tests/contract --collect-only -q   →  71 tests collected
+```
+
+44 is the count of test *functions*; parametrization expands them to 71 collected.
+**#1004's "71" is the correct figure** and the current docs are wrong:
+`DOCS_INDEX.md:20` says 24, `STATUS.md:343` says 4. This is the exact failure mode
+AGENTS.md warns about — counts presented as identity. I passed a plausible number
+upward before collecting.
+
+## #1004 status: still open, and the contradictions got worse
+
+#1004 is **not** closable. Its Tier 3 table claimed three mutually exclusive CI job
+counts; the reality is a fourth framing nobody had:
+
+| Claim | Where | Reality |
+|---|---|---|
+| CI jobs 54 / 39 / 15 | `ARCHITECTURE.md:789`, `ONBOARDING.md:63`, docs | **16** job definitions in `ci-cd.yml`; 40 expanded on a PR, 58 on main. None of the three claimed numbers is right, and `ONBOARDING.md:63` uses the count inside its central *"a green CI run is not evidence"* argument |
+| Services 12 vs 15 | `GLOSSARY.md:137`, `SERVICE_ARCHITECTURE_PATTERN.md:13`, `WHATS_INCLUDED.md:12` vs `INDEX.md`, `QUICKSTART.md` | **15**. Now **three-way**: `docs/OVERVIEW.md:28` says 14 while its own `:107` says 15 — one file, both numbers |
+| Coverage floor 95% vs 75%+ | 4 current docs incl. `README.md:156`, `STATUS.md:346` | `ci-cd.yml:279` `--cov-fail-under="${COVERAGE_FLOOR:-85}"`. **Only `docs/CONTRIBUTING.md:318-322` is correct** |
+| Playwright 119 / 9 files | ~15 documents | **122 / 10**. `content-contract.spec.ts` still omitted — *the doc that hides the 10th file is the doc that hides the drift guard* |
+| `curl …https://localhost` without `-k` | ~59 claimed | **Confirmed**: 12 in root `TEST_GUIDE.md`, 11 each in `QUICKSTART.md`/`README_COMPLETE.md`, and **3 in the live `docs/QUICKSTART.md`** — while `ONBOARDING.md:52` says always `curl -k`. The docs contradict themselves |
+| `docker-compose` v1 | 6 files claimed | **Confirmed, and it reached live docs**: `docs/CONTRIBUTING.md`, `docs/DEVELOPMENT.md` (not just the historical files) |
+| `/home/phoenix/Desktop/wildframe` | 3 paths | **Confirmed** — `run_tests.sh`, `docs/GETTING_STARTED.md`, and `skills/verify-against-running-stack/SKILL.md`, which documents an auth flow needing a **gitignored** cert and never names `scripts/generate-dev-certs.sh`, the prerequisite that exists |
+| Broken commands in root `TEST_GUIDE.md` | 10 pytest classes | **Confirmed** — files exist, **classes do not**. Every one of those commands errors |
+| `docs/OPERATIONS.md:418` unquoted PromQL | — | **Confirmed** — bash strips the inner quotes/braces, query is malformed |
+| `docs/TIMEOUT_ORDERING.md` invented `proxy_read_timeout` / 15s `WithTimeout` | — | **Confirmed** — no such config anywhere; the timeout table has no code enforcement |
+| `CLOSED_ISSUES_AUDIT*.md` "607 closed / 0 open" | — | **Confirmed and materially misleading** — 90 open now. These files are the artifact that made the tracker look clean |
+| `web_audit_report.md` "no CSP header" | — | **Disproven** — `apps/web/src/proxy.ts:17,71` sets CSP with a nonce |
+
+**One claim in #1004 is wrong.** It says `.github/issues/004` "claims a bare
+`import jwt` in api-gateway that does not exist". The claim was **accurate when
+written** — `import jwt` was there and issue #763 tracked it. #763 is now closed and
+the import is gone. Only `002` was ever factually wrong.
+
+## `.github/issues/002` is the most dangerous file in the repo
+
+`002-redis-asyncio-from-url-await-misuse.md` calls correct
+`await redis.asyncio.Redis.from_url(...)` a runtime error. It is **correct code** —
+`from_url` returns an awaitable and `redis` is pinned `^5.0.0`, in all 10 services.
+**An agent that "fixes" this breaks 10 services.** The repo's own tests defend the
+current code. The other four are superseded by now-closed #763/#779-785, or by
+`PROJECT_MEMORY/14_Technical_Debt.md`. Delete all five; if you keep 003 for any
+reason, note it quotes a real demo credential (§24.1 — location only, never the value)
+and `services/auth-service/tests/test_settings_validation.py:38` cites it as its
+authority, so that docstring needs rewriting either way.
+
+## Recommended deletions — 21 files, none touched
+
+Root completion/quick-start duplicates (§21-prohibited; all self-bannered historical):
+`COMPLETION_SUMMARY.md` `IMPLEMENTATION_COMPLETE.md` `FRONTEND_COMPLETE.md`
+`README_COMPLETE.md` `QUICK_START.md` `START_HERE.md` `STARTUP_GUIDE.md`
+`QUICKSTART.md` `TESTING_GUIDE.md` `TEST_GUIDE.md` `docs/INDEX.md`
+`docs/QUICK_LOCAL_SETUP.md` `docs/WHATS_INCLUDED.md` `docs/OVERVIEW.md`
+`docs/COMPLIANCE_FOUNDATION_PLAN.md` `web_audit_report.md`
+`apps/web/FRONTEND_README.md` `apps/web/README_TEMPLATE.md`
+`apps/web/QUICK_REFERENCE.md` `apps/web/TEMPLATE_GUIDE.md` `apps/web/docs/INDEX.md`
+`apps/web/docs/GETTING_STARTED.md` `apps/web/docs/CUSTOMIZATION.md`
+`apps/web/docs/API_INTEGRATION.md` `apps/web/docs/DEPLOYMENT.md`
+`apps/web/docs/TROUBLESHOOTING.md` · `PROJECT_MEMORY/00_Project_Overview.md`
+`PROJECT_MEMORY/12_Todo_List_Backlog.md` `.github/issues/*.md` (all 5)
+
+**`STARTUP_GUIDE.md:380` is the single most dangerous line to leave in place**: it
+declares **"PRODUCTION READY"** while `README.md:5` says the opposite.
+
+**The frontend cluster is a template that was never replaced.** `README_TEMPLATE.md`,
+`TEMPLATE_GUIDE.md`, `QUICK_REFERENCE.md`, `docs/GETTING_STARTED.md` and
+`docs/INDEX.md` all document a "Netlify-style template" with `NEXT_PUBLIC_APP_NAME=YourApp`
+and Vercel/Netlify deploys — this repo deploys via compose and Helm. **No generator
+reads them**: grepped `scripts/`, `.github/`, `Makefile`, `quickstart.sh`, zero hits.
+They document a workflow nobody uses, and `FRONTEND_README.md`/`docs/API_INTEGRATION.md`
+describe components deleted in `6fe433b3` (`config/index.ts`, `utils/index.ts`,
+`LoginForm.tsx`) and an axios API layer this app never had.
+
+## DO NOT DELETE — three traps
+
+- **`apps/web/AGENTS.md`** is machine-read, auto-re-added by `next dev`. Removing it
+  re-creates the diff forever. It is 9 lines and not documentation.
+- **`AGENTS.md` / `ONBOARDING.md` / `AGENT_COORDINATION.md` / `skills/*/SKILL.md`** are
+  the agent contract. A human may never read them; they are load-bearing regardless.
+- **`STATUS.md`** is live and being edited right now. Two of its numbers are stale
+  though: it says `test_route_drift.py::test_frontend_paths_resolve_to_backend_routes`
+  **fails** (it passes — 16), and claims "24 static route-contract tests" (71 collect)
+  and "48 frontend API URL literals" (the test's own regex now finds 50).
+
+## Recommended single entry point: `README.md`
+
+It is the only file covering architecture, CI/CD, Docker, local dev, TLS, test counts,
+deployment and production gaps together, and every other index already defers to it
+(`docs/INDEX.md:9`, `DOCS_INDEX.md:16`, `START_HERE.md:7`). **It is the right file with
+wrong numbers**: fix 95%→85% (`:156`), 24→71 contract (`:174`), 9→10 specs (`:203`), and
+the `continue-on-error` claim at `:30` — `ci-cd.yml:350` *does* set it (job named
+"Compose Runtime Smoke (advisory)") and `:78` runs the supply-chain guard with `|| true`.
+`HOW_TO_RUN_TESTS.md:152` calls that guard "blocking". **It is not blocking in practice.**
+`docs/INDEX.md` is a strict subset of `DOCS_INDEX.md:21` says so itself; the root
+`INDEX.md` tombstone at `DOCS_INDEX.md:64` is half-wrong when it names `docs/INDEX.md`
+as the successor.
+
+## Merge, don't just delete
+
+`HOW_TO_RUN_TESTS.md` → `docs/TEST_GUIDE.md`: carry `:165-190` (the only per-service
+test breakdown anywhere) and `:66` (the supply-chain guard command, absent from the target).
+`DATABASE_SCHEMA.md` → `docs/OPERATIONS.md` backup/RTO prose, **or regenerate it** —
+#1001 is worse than reported (15 of 21 tables missing, 7 databases omitted, not 16/4).
+`PROJECT_MEMORY/13_Bug_Tracker.md` → `21_Risk_Assessment.md`: **~110 rows falsely marked
+OPEN**; only `allowed_hosts=["*"]` (`content-service/app/main.py:85`) and mutable JSONB
+defaults (`models/__init__.py:112-156`) are genuinely live. Keep those two.
+
+## Needs a human — not agent work
+
+1. **Is 15 services correct, or were 3 retired?** Only you know. Three docs say 12,
+   `OVERVIEW.md` says 14 in one line and 15 in another, reality is 15.
+2. **Regenerate or delete `DATABASE_SCHEMA.md`?** AGENTS.md §19.1b argues for a script;
+   a generator keeps the file useful permanently.
+3. **`docs/API_INTEGRATION.md` replacement?** Deleting it drops the only prose about the
+   session-credential design (`/auth-session`, HttpOnly `__Host-wf_refresh`, in-memory
+   access token). AGENTS.md §5.2/§15.1 cover the base-URL rule but not this.
+4. **The dev secret** in `ARCHITECTURE.md` — was it ever authorized, and has it been
+   rotated? §24.1: I must not decide this, and rewriting a doc does not un-clone anything.
+5. **Whether history is worth keeping at all.** `AGENTS.md` §21 and `DOCS_INDEX.md:113-118`
+   say *keep and banner*. My DELETE verdicts above are a **deviation from the repo's own
+   stated convention** and should be ratified, not assumed. Six of the root files already
+   carry banners; the argument for deleting them is that git history is the archive.
+
+## Limits
+
+No file was edited. No docker, no test suite, no browser. Every "reality" cell is from
+reading `ci-cd.yml`, `docker-compose.dev.yml`, `Caddyfile`, `pyproject.toml`,
+`apps/web/package.json`, the models and the filesystem — **not from execution**. The
+6,217 / 694 / 805 / 119 figures remain **unverified against disk**; they agree across
+four documents, which is not the same as being correct, and I found three counts that
+*did* drift exactly that way. The 71 contract figure **is** verified (collected).
