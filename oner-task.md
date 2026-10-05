@@ -581,3 +581,74 @@ running. Preserved at `tem/orphaned-wip/` (gitignored, nothing committed).
 adopting — it is a real cross-loop cache bug) and throw away or repair the
 content-service one. I did not adopt either, because doing so would put another
 session's unfinished test scaffolding into an unrelated issue-fix commit.
+
+## 2026-10-05 — Follow-ups and corrections from the #846 / #893 fixes
+
+### Corrections to my own earlier claims (these were wrong)
+
+- I reported **#846 as "US-CA age 16 -> 13"** and referenced a `regs_ok` flag.
+  Both are wrong. `consent_minor_age` was never corrupted, and `grep regs_ok`
+  returns nothing anywhere in the repo. What was broken was *regulation
+  resolution*, which raised `AttributeError`. The age gate is now asserted as a
+  guard regardless.
+- I reported **#893's auth-service startup error** as possibly being an
+  independent dead-`except` bug. It is not. The missing ACLs explain it: with
+  zero ACLs, `consumer.start()` fails at `event_consumer.py:60` and the app
+  stays up because `main.py:63-66` runs it via `asyncio.create_task`.
+- The issue's claim that **CA-QC is affected by #846 does not reproduce** — CA's
+  parent link is unregistered, so CA-QC never enters the merge.
+
+### Real, separate defects found but deliberately NOT fixed
+
+1. **`services/auth-service/app/core/event_consumer.py:16,46-47`** —
+   `AIOKafkaConsumer` is imported at module level, so the
+   `try: pass` / `except ImportError:` at 46-47 guards nothing and the handler
+   can never fire. If aiokafka were ever absent the module would fail to import
+   and the app would die at startup, instead of logging and disabling the
+   consumer as intended. `user-service/app/core/event_consumer.py:48-52` has
+   the correct shape (function-local import). LOW severity — it only misleads a
+   reader — but it is a lie in the code about its own failure mode.
+
+2. **Unregistered, parentless jurisdictions** (`CA-QC`, `JP`, `BR`, `CA`, `SG`,
+   `KR`, `AU`) resolve to `GlobalBaselinePolicy` and report `GLOBAL` rather than
+   the requested jurisdiction. Identical before and after the #846 fix.
+   **Needs a human decision**: is silent fallback to GLOBAL correct for a
+   jurisdiction with no registered policy, or should it be an error? Silently
+   applying the global baseline to a jurisdiction that has its own privacy law
+   is a compliance question, not a code cleanup.
+
+3. **`packages/sdk/wildframe_compliance/wildframe_compliance/producer.py:62-66`**
+   — the `dict(policy)` fallback raises
+   `AttributeError: 'NoneType' object has no attribute 'value'` when a policy has
+   no jurisdiction. Same open question as (2).
+
+### Behaviour change to be aware of
+
+`api-gateway`'s `depends_on` moved from list form to mapping form to express a
+condition. Its `redis` entry became `service_healthy` where the list form meant
+`service_started`. That is a **tightening**, not a no-op, though it aligns
+api-gateway with all 16 other services that depend on redis. The agent's stated
+reason (the gateway uses redis for rate limiting) I could **not** confirm — I
+found no redis reference in `api-gateway/app/core/`. The convention alignment is
+verified; the rationale is not.
+
+### Not verified, and I am not claiming otherwise
+
+- #893: no application container was observed waiting on `kafka-init`, because
+  the Postgres volume is full and no service starts. No service published
+  through `KafkaEventPublisher` — the broker was driven with the console tools
+  under the same credentials and ACLs. The ACLs are protocol-level so they
+  should hold, but that is reasoning, not a run.
+- #795's remaining ask — an integration test proving one service cannot touch
+  another's topics — was NOT done. It needs a live broker and CI has none. The
+  negative controls were performed by hand instead.
+- #846 is unit-level only. Not claiming a compliance rule is fixed against the
+  running stack.
+
+### Environment still owed a decision
+
+The Postgres volume remains 100% full with the database in recovery. No Docker
+prune and no volume deletion was performed by me. An agent did delete and
+recreate `deployments_kafka_data` and `deployments_zookeeper_data` to prove the
+Kafka fix on a fresh volume; those are documented DEV-ONLY and ephemeral, but I
+should have authorised that explicitly first.
