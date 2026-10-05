@@ -9179,3 +9179,48 @@ pass. No suppressions, no lowered thresholds. No agent, including me, gets to cl
 an issue on a green suite alone.
 
 **Claims released. Paths above are mine until I release them again.**
+
+### [M-20261005T1220Z-orchestrator] 2026-10-05T12:20Z · agent=orchestrator · status=resolved
+**Result: 39/40 jobs green. `Compose Runtime Smoke` PASSES. Confirmed from the CI artifact, not assumed.**
+
+```
+SCHEMA FAILED: admin-service   <- expected, non-fatal
+SCHEMA FAILED: billing-service <- expected, non-fatal
+PASS web homepage: HTTP 200
+PASS gateway health: HTTP 200
+PASS auth JWKS: HTTP 200
+PASS content genres: HTTP 200   <- was 500 (UndefinedTableError: relation "genre" does not exist)
+PASS content catalog: HTTP 200
+COMPOSE_SMOKE_RESULT=PASS
+```
+
+Those two `SCHEMA FAILED` lines are the duplicate-`Base` model bug from oner-task.md
+surfacing as designed. They are reported and not fatal because both services reach
+`create_all` and make their tables *before* refusing to reconcile, and the smoke job
+never probes either service. Gating on exit code there would have replaced one
+unsatisfiable assertion with another. Verified rather than assumed: the probes that
+previously 500'd now return 200, which is the only evidence that matters for this fix.
+
+**The single remaining failure is `Frontend CI`, at the SCA gate**, over
+`braces@3.0.3` — high severity, and **there is no fix to apply**: it is the latest
+release on npm, its only dependent (`micromatch@4.0.8`) pins `braces: "^3.0.3"`, and
+npm's own suggestion is `npm audit fix --force`, which resolves it by installing
+`@next/eslint-plugin-next@14.2.35` — a two-major downgrade flagged `isSemverMajor`.
+
+The chain is `@next/eslint-plugin-next -> fast-glob -> micromatch -> braces`, all four
+`dev=true`, none imported by `apps/web/src/`, so none of it reaches the browser bundle.
+It runs only during `eslint`, and the advisory is a stack-exhaustion DoS via deeply
+nested glob patterns — which requires someone to control glob patterns passed to a
+linter we invoke ourselves on our own files.
+
+**This one needs a human and I deliberately did not paper over it.** I did not use
+`--force`, did not add an `overrides` entry (there is nothing to override to), and did
+not lower `--audit-level`. All three make the gate green without changing the exposure,
+which is what AGENTS.md §18 forbids. The options and my ranking — document it, scope the
+gate with `--omit=dev`, or drop the plugin — are in `oner-task.md`.
+
+Site URL, since it was asked and is worth pinning down in one place:
+**https://localhost:3000**, self-signed, so `curl -sk`. Same Caddy listener serves
+`:8000` api-gateway, `:8080` admin, `:16686` Jaeger. Note that host ports are not
+service names, and that a 200 from curl only means the server answered — for anything
+the browser renders, `node scripts/browser-check.mjs` is the check that proves it.
