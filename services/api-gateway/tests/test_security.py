@@ -233,15 +233,16 @@ async def test_protected_paths_return_the_claims_for_a_valid_token(auth):
 async def test_docs_paths_always_require_a_token_regardless_of_environment(auth, path, monkeypatch):
     """Docs are gated in *both* environments, not just production.
 
-    ``__call__`` reads::
+    ``__call__`` is now just the PUBLIC_PATHS check followed by the token
+    verification. Docs paths are absent from PUBLIC_PATHS, so they always fall
+    through to the token check: /docs is anonymous-unreachable everywhere.
 
-        if is_docs_path and ENVIRONMENT == "production":  pass
-        elif <path is in PUBLIC_PATHS>:                    return None
-
-    ``pass`` falls through to the token check, and docs paths are absent from
-    ``PUBLIC_PATHS``, so the ``elif`` never rescues them either. The
-    environment comparison therefore has no observable effect: /docs is
-    anonymous-unreachable everywhere. Pinned here because the branch is a no-op.
+    This previously pinned a branch whose body was ``pass`` under
+    ``is_docs_path and ENVIRONMENT == "production"``; that branch was removed
+    (#808) because it had no observable effect. The behaviour asserted here is
+    unchanged. Note this is middleware-level -- the control that withholds
+    docs from the *production HTTP surface* is the ``docs_url=None`` wiring in
+    app/main.py, covered by ``test_create_app_withholds_docs_in_production``.
     """
     from app.core.settings import settings
 

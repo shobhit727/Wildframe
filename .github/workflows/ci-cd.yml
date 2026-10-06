@@ -193,6 +193,50 @@ jobs:
       - name: Validate production values
         run: helm template wildframe infrastructure/helm/wildframe -f infrastructure/helm/values-production.yaml --namespace wildframe-production > /tmp/helm-production.yaml
 
+      # Chart policy tests (#796).
+      #
+      # These have existed for a long time and were invoked by nothing: no
+      # workflow, no script, no doc. `helm lint` and the three `helm template`
+      # steps above only prove the chart *renders*; they cannot detect a
+      # production-values policy being dropped, because rendering with dev
+      # defaults in a production namespace still succeeds if the `fail`
+      # guard that is supposed to reject it is deleted. The regression tests
+      # below are what actually assert the policy, so they gate this job.
+      #
+      # `helm-lint` has no `needs:`, so it runs on every push, every pull
+      # request and every workflow_dispatch, and `build-images` already
+      # `needs: [helm-lint]` -- so a policy failure blocks the image build and
+      # therefore both deploys. No continue-on-error and no `|| true`: a
+      # production-values regression must turn CI red.
+      - name: Set up Python for chart policy tests
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Run chart policy tests (#796)
+        run: |
+          set -euo pipefail
+          # PyYAML is imported by two of the three files; pytest-cov is
+          # required because the repo-root pyproject.toml puts --cov in
+          # addopts, so pytest cannot even start without the plugin.
+          python -m pip install --quiet "pytest<8" "pytest-cov<5" "PyYAML>=6.0,<7"
+          python -m pytest \
+            infrastructure/helm/tests/test_production_external.py \
+            infrastructure/helm/tests/test_search_cursor_secret_gate.py \
+            --no-cov -q
+
+      - name: Run chart security baseline test (#796)
+        run: |
+          set -euo pipefail
+          # This file is deliberately NOT pytest-shaped: it exposes main() and
+          # calls sys.exit, so it contains no `def test_` function and
+          # `pytest <dir>` collects 0 tests from it -- pytest exits 5, or, when
+          # the two real files sit beside it, it simply passes while every
+          # assertion in it goes unchecked. Running the whole directory would
+          # have reported "27 passed" and executed none of these. It must be
+          # invoked as a script, and that is what this step does.
+          python infrastructure/helm/tests/test_security_policy.py
+
   backend-test:
     name: Backend Test (${{ matrix.service }})
     runs-on: ubuntu-latest

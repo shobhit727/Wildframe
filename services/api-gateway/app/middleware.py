@@ -1003,16 +1003,17 @@ class AuthenticationMiddleware:
     async def __call__(self, request: Request) -> dict | None:
         """Middleware to check authentication on protected routes."""
         request_path = request.url.path.rstrip("/") or "/"
-        from app.core.settings import settings
 
-        is_docs_path = request_path in (
-            "/docs",
-            "/redoc",
-            "/openapi.json",
-        ) or request_path.startswith(("/docs/", "/redoc/", "/openapi.json/"))
-        if is_docs_path and settings.ENVIRONMENT == "production":
-            pass
-        elif any(
+        # Docs paths are deliberately absent from PUBLIC_PATHS, so they fall
+        # through to the token check and are anonymous-unreachable in every
+        # environment. A `if is_docs_path and ENVIRONMENT == "production":
+        # pass` branch used to sit here: it read as a production exemption but
+        # had no effect, so it was removed as dead code (#808). Note this
+        # method is not installed via add_middleware() -- the control that
+        # actually withholds docs from the production surface is the
+        # docs_url=None wiring in app/main.py, asserted at the HTTP surface by
+        # test_create_app_withholds_docs_in_production.
+        if any(
             request_path == path or request_path.startswith(f"{path}/")
             for path in self.PUBLIC_PATHS
         ):

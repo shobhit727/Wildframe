@@ -171,6 +171,39 @@ def test_create_app_exposes_docs_outside_production():
     assert app.openapi_url == "/openapi.json"
 
 
+def test_create_app_withholds_docs_in_production(monkeypatch):
+    """The production surface must serve no documentation, at all (#808).
+
+    Asserted over real HTTP through TestClient rather than by inspecting
+    ``app.docs_url``, because the property is only a proxy for the thing the
+    issue is about: whether a request to the docs paths reaches a client. A
+    gateway that re-enabled docs in production while leaving the attributes
+    alone (or vice versa) has to fail here.
+
+    404 rather than 403: the paths should not advertise that they exist.
+
+    ``ENVIRONMENT`` is patched *before* ``create_app()`` because the docs URLs
+    are read at construction time, not per request.
+    """
+    from app.core.settings import settings
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    app = create_app()
+
+    assert app.docs_url is None
+    assert app.redoc_url is None
+    assert app.openapi_url is None
+
+    with _client(app) as client:
+        for path in ("/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"):
+            response = client.get(path)
+            assert response.status_code == 404, (
+                f"{path} returned {response.status_code} in production; "
+                "documentation must not be reachable"
+            )
+            assert "swagger-ui" not in response.text
+
+
 def test_security_headers_are_emitted_on_a_real_response():
     app = create_app()
     with _client(app) as client:
