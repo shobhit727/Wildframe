@@ -130,7 +130,6 @@ def test_module_level_settings_carries_the_gateway_defaults():
     assert settings.SERVER_PORT == 8000
     assert settings.JWT_ALGORITHM == "RS256"
     assert settings.JWT_EXPIRATION_MINUTES == 15
-    assert settings.MAX_DECOMPRESSION_RATIO == 10
     assert settings.TRUST_PROXY is False
 
 

@@ -647,3 +647,57 @@ async def test_legacy_signature_can_still_be_denied_by_its_own_limit():
     assert await limiter.check_rate_limit("legacy-user", "search") is True
     assert await limiter.check_rate_limit("legacy-user", "search") is False
     assert redis.expires["rate_limit:legacy-user:search"] == 60
+
+
+class TestLeaseTtlIsNamedForWhatItIs:
+    """The lease TTL must be settable as a TTL, not derived from a "window".
+
+    #932: `lease_seconds = max(60, RATE_LIMIT_CONCURRENCY_WINDOW * 12)`. The
+    setting's only remaining consumer was this derivation, so an operator tuning
+    the window 5 -> 30 expecting a 30s window instead got a 360s lease TTL and no
+    other effect -- and a leaked lease is a hard lockout until expiry.
+    """
+
+    def test_default_ttl_is_sixty_seconds(self):
+        from app.core.settings import settings
+
+        assert settings.RATE_LIMIT_LEASE_TTL_SECONDS == 60
+
+    def test_lease_ttl_is_independent_of_the_deprecated_window(self):
+        """Tuning the old window must not move the lease TTL.
+
+        The old expression was behaviour-preserving at the default (5 * 12 = 60),
+        which is exactly why nobody noticed: the two only diverge once an
+        operator changes the window -- and then it silently becomes a much
+        longer lockout than the setting's name suggests.
+        """
+        from app.core.settings import settings
+
+        from app.middleware import RateLimiter
+
+        limiter = RateLimiter(FakeRedis())
+        assert limiter._lease_ttl_seconds == settings.RATE_LIMIT_LEASE_TTL_SECONDS
+
+        settings.RATE_LIMIT_CONCURRENCY_WINDOW = 30
+        try:
+            fresh = RateLimiter(FakeRedis())
+            # Would have been max(60, 30 * 12) = 360 under the old expression.
+            assert fresh._lease_ttl_seconds == 60
+        finally:
+            settings.RATE_LIMIT_CONCURRENCY_WINDOW = 5
+
+    def test_lease_ttl_is_overridable_per_limiter(self):
+        from app.middleware import RateLimiter
+
+        limiter = RateLimiter(FakeRedis())
+        limiter._lease_ttl_seconds = 7
+        assert limiter._lease_ttl_seconds == 7
+
+    def test_deprecated_window_setting_still_exists(self):
+        """The old name must keep working for existing deployments.
+
+        AGENTS.md 8.1: deprecate, never remove or rename a config-visible name.
+        """
+        from app.core.settings import settings
+
+        assert settings.RATE_LIMIT_CONCURRENCY_WINDOW == 5

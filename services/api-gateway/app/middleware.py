@@ -250,7 +250,7 @@ class RateLimiter:
             "default": settings.RATE_LIMIT_CONCURRENCY_DEFAULT,
         }
         self._concurrency_upload_finalize = settings.RATE_LIMIT_CONCURRENCY_UPLOAD_FINALIZE
-        self._concurrency_window = settings.RATE_LIMIT_CONCURRENCY_WINDOW
+        self._lease_ttl_seconds = settings.RATE_LIMIT_LEASE_TTL_SECONDS
         self._window = 60
 
     _ACQUIRE_LEASE_SCRIPT = """
@@ -387,7 +387,10 @@ return 1
             return True, None
         lease_id = uuid.uuid4().hex
         now = int(time.time())
-        lease_seconds = max(60, self._concurrency_window * 12)
+        # Was max(60, RATE_LIMIT_CONCURRENCY_WINDOW * 12), which described a
+        # window but produced a TTL. At the default window of 5 that is 60s, so
+        # this is behaviour-preserving; the setting is now named for what it is.
+        lease_seconds = self._lease_ttl_seconds
         expiry = now + lease_seconds
         acquired: list[str] = []
         try:
@@ -677,17 +680,6 @@ def _validate_decompressor_complete(decompressor) -> None:
         raise ValueError("Incomplete compressed stream")
 
 
-def _flush_decompressor(decompressor) -> bytes:
-    if decompressor is None:
-        return b""
-    if hasattr(decompressor, "flush"):
-        try:
-            return cast(bytes, decompressor.flush())
-        except Exception:
-            return b""
-    return b""
-
-
 class BodyLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
@@ -698,7 +690,6 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
         self.max_header_count = settings.MAX_HEADER_COUNT
         self.max_header_field_size = settings.MAX_HEADER_FIELD_SIZE
         self.max_header_total_size = settings.MAX_HEADER_TOTAL_SIZE
-        self.max_decompression_ratio = settings.MAX_DECOMPRESSION_RATIO
         self.max_multipart_body = settings.MAX_REQUEST_BODY_SIZE * 2
         self.chunk_size = getattr(settings, "GATEWAY_BODY_STREAM_CHUNK_SIZE", 65536)
 
@@ -768,7 +759,10 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
             enc = parts[0]
             if enc not in ("identity", "gzip", "deflate"):
                 return Response("Content encoding is not supported", status_code=415)
-            is_compressed = enc in ("gzip", "deflate", "br")
+            # "br" is not in this tuple because the allowlist above already
+            # rejected it with 415 -- a brotli-encoded request can never reach
+            # here, so naming it suggested a path that does not exist.
+            is_compressed = enc != "identity"
         method = request.method
         has_body = method in ("POST", "PUT", "PATCH", "DELETE") or cl is not None
         if (

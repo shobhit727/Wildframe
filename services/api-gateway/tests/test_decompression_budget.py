@@ -273,15 +273,14 @@ async def test_streaming_incremental_budget():
 
     with patch("app.middleware._create_decompressor", return_value=IncrementalDecompressor()):
         with patch("app.middleware._decompress_chunk", side_effect=lambda d, c: d.decompress(c)):
-            with patch("app.middleware._flush_decompressor", side_effect=lambda d: d.flush()):
-                headers = [
-                    ("content-type", "application/json"),
-                    ("content-encoding", "gzip"),
-                    ("content-length", "20"),
-                ]
-                req = _make_request(headers=headers, body_chunks=[b"chunk1", b"chunk2"])
-                resp = await middleware.dispatch(req, _call_next_ok)
-                assert resp.status_code == 413
+            headers = [
+                ("content-type", "application/json"),
+                ("content-encoding", "gzip"),
+                ("content-length", "20"),
+            ]
+            req = _make_request(headers=headers, body_chunks=[b"chunk1", b"chunk2"])
+            resp = await middleware.dispatch(req, _call_next_ok)
+            assert resp.status_code == 413
 
 
 @pytest.mark.asyncio
@@ -295,7 +294,6 @@ async def test_heuristic_not_reject_legit_high_ratio_mock():
     middleware.max_header_count = 100
     middleware.max_header_field_size = 8192
     middleware.max_header_total_size = 65536
-    middleware.max_decompression_ratio = 10
 
     payload = b"a" * 50
     compressed = gzip.compress(payload)
@@ -540,38 +538,6 @@ def test_decompress_chunk_returns_empty_for_an_unrecognised_adapter():
     assert _decompress_chunk(object(), b"payload") == b""
 
 
-def test_flush_decompressor_returns_empty_for_a_missing_decompressor():
-    from app.middleware import _flush_decompressor
-
-    assert _flush_decompressor(None) == b""
-
-
-def test_flush_decompressor_delegates_to_flush():
-    from app.middleware import _flush_decompressor
-
-    class HasFlush:
-        def flush(self):
-            return b"tail"
-
-    assert _flush_decompressor(HasFlush()) == b"tail"
-
-
-def test_flush_decompressor_swallows_a_raising_adapter():
-    from app.middleware import _flush_decompressor
-
-    class RaisingFlush:
-        def flush(self):
-            raise RuntimeError("backend exploded")
-
-    assert _flush_decompressor(RaisingFlush()) == b""
-
-
-def test_flush_decompressor_returns_empty_for_an_adapter_without_flush():
-    from app.middleware import _flush_decompressor
-
-    assert _flush_decompressor(object()) == b""
-
-
 # ---------------------------------------------------------------------------
 # Ratio heuristic: active when the adapter is unavailable
 # ---------------------------------------------------------------------------
@@ -587,7 +553,6 @@ async def test_brotli_is_rejected_when_no_bounded_decoder_is_available():
     middleware.max_header_count = 100
     middleware.max_header_field_size = 8192
     middleware.max_header_total_size = 65536
-    middleware.max_decompression_ratio = 10
 
     headers = [
         ("content-type", "application/json"),
@@ -610,7 +575,6 @@ async def test_ratio_heuristic_admits_a_body_under_the_ratio_bound():
     middleware.max_header_count = 100
     middleware.max_header_field_size = 8192
     middleware.max_header_total_size = 65536
-    middleware.max_decompression_ratio = 10
 
     with patch("app.middleware._create_decompressor", return_value=None):
         headers = [

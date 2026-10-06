@@ -131,7 +131,6 @@ async def test_decompression_bomb_rejected():
     middleware.max_header_count = 100
     middleware.max_header_field_size = 8192
     middleware.max_header_total_size = 65536
-    middleware.max_decompression_ratio = 10
     bomb = gzip.compress(b"a" * 500)
     headers = [
         ("content-type", "application/json"),
@@ -1000,7 +999,6 @@ def _limiter(**overrides):
     middleware.max_header_count = 100
     middleware.max_header_field_size = 8192
     middleware.max_header_total_size = 65536
-    middleware.max_decompression_ratio = 10
     for name, value in overrides.items():
         setattr(middleware, name, value)
     return middleware

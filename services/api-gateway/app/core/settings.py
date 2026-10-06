@@ -67,7 +67,6 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     MAX_HEADER_COUNT: int = 100
     MAX_HEADER_FIELD_SIZE: int = 8192
     MAX_HEADER_TOTAL_SIZE: int = 64 * 1024
-    MAX_DECOMPRESSION_RATIO: int = 10
     GATEWAY_BODY_STREAM_CHUNK_SIZE: int = 64 * 1024
     GATEWAY_GLOBAL_BODY_BUDGET_BYTES: int = 50 * 1024 * 1024
     GATEWAY_MAX_CONCURRENT_BODIES: int = 20
@@ -98,7 +97,17 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     RATE_LIMIT_REINDEX: int = 20
     RATE_LIMIT_DEFAULT: int = 1000
     RATE_LIMIT_BURST_WINDOW: int = 10
+    # DEPRECATED: this no longer means a concurrency window. Leases are now
+    # released explicitly, so its only remaining use was deriving a lease TTL,
+    # which made the name actively misleading -- an operator tuning 5 -> 30
+    # expecting a 30s window instead got a 360s lease TTL and nothing else.
+    # Kept so an existing deployment setting keeps working; see
+    # RATE_LIMIT_LEASE_TTL_SECONDS for the name that describes what it does.
     RATE_LIMIT_CONCURRENCY_WINDOW: int = 5
+    #: Seconds a concurrency lease is held before the broker expires it. Must
+    #: comfortably exceed the longest finalize step, or a slow release leaks a
+    #: lease and the caller locks out until expiry.
+    RATE_LIMIT_LEASE_TTL_SECONDS: int = 60
     # KNOWN LIMITATION (not changed here, deliberately -- see the note below).
     # A burst ceiling is only reachable when it is TIGHTER than the sustained
     # rate implies over the burst window. For "auth" the sustained limit is
