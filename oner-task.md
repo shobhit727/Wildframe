@@ -937,3 +937,61 @@ have reported success.
 - **`kafka-init` stopped by me** after it entered the retry loop above
 - `recommendation-service` and `media-pipeline` consumers are **failing closed**
   on the two topic sets in the table — expected, not yet resolved
+
+## 2026-10-05 — Integration suite: 110 skipped -> 101 passed, 9 blocked by a real limit
+
+The suite gates itself on stack reachability, so it had been reporting "clean"
+while executing **nothing**. With the stack up it runs for real.
+
+Result: **101 passed, 9 failed** (was 110 skipped, 0 run). Two distinct causes,
+both found by running it rather than reading it:
+
+### 1. Six failures were my own stack-startup mistake (now fixed)
+
+`user-service`, `search-service` and `uploads-service` returned 502 through
+Caddy and "Application startup failed. Exiting":
+
+```
+Database health check failed: canceling statement due to statement timeout
+RuntimeError: Database is not healthy on startup
+```
+
+They died at 19:29:30 — when I started all 15 services at once *while kafka-init
+was still hammering the broker*. Transient DB load, but the apps correctly refuse
+to start on a failed health check rather than serving without a database.
+Restarting them individually fixed all six health/readiness failures. **My
+recovery procedure caused this**, same as the `docker start` ordering bypass
+recorded above.
+
+### 2. The remaining 9 are ALL `429 Rate limit exceeded` — not authorization bugs
+
+Despite the names (`test_creator_analytics_cross_user_denied`,
+`test_non_owner_cannot_end_session`, ...), **none is an authorization failure**.
+Every one is:
+
+```
+{"detail":{"error":"Rate limit exceeded","request_id":"unknown"}}   429, expected 201
+```
+
+Root cause: `RATE_LIMIT_AUTH: int = 5` (api-gateway settings). The suite shares
+one stack and every test registers users, so the auth bucket is exhausted within
+a few tests.
+
+**And it can no longer be worked around in the test.** #130 made the gateway
+replace `X-Forwarded-For` with a trusted value, so a test can no longer present a
+different client IP to get its own bucket — which is the usual isolation trick.
+
+**Your decision, three options:**
+1. Raise `RATE_LIMIT_AUTH` for the environment the integration suite runs
+   against. Smallest change, but it means the suite no longer exercises the
+   limit that production actually uses.
+2. Flush the rate-limit keys between tests (Redis is reachable). Keeps the real
+   limit, needs the key pattern.
+3. Set `RATE_LIMIT_AUTH` from an env var only in the test compose profile.
+
+Option 3 is probably right, but it is a test-infrastructure decision, not a bug
+fix, so I have not picked one.
+
+**Note the interaction:** this is the same `TRUST_PROXY` question recorded in the
+2026-09-30 board entry. Fixing #130 correctly removed the ability to spoof a
+client IP, which is what previously made per-test isolation possible.
