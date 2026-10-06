@@ -47,12 +47,15 @@ async def apply_dlq_retention(
             ctx = ssl.create_default_context(cafile=env_ca)
             ssl_context = ctx
         elif security_protocol in ("SSL", "SASL_SSL"):
-            insecure = os.getenv("KAFKA_SSL_INSECURE", "true").lower() not in ("false", "0", "no")
+            insecure = os.getenv("KAFKA_SSL_INSECURE", "false").lower() not in ("false", "0", "no")
             if insecure:
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False
                 ctx.verify_mode = ssl.CERT_NONE
                 ssl_context = ctx
+            else:
+                # Use the system trust store when no custom CA is supplied.
+                ssl_context = ssl.create_default_context()
     admin_kwargs: dict = {
         "bootstrap_servers": bootstrap_servers,
         "client_id": f"{client_id}-dlq-admin",
@@ -103,11 +106,12 @@ async def apply_dlq_retention(
         for t in dlq:
             if t in missing:
                 continue
-            resource = ConfigResource(ConfigResource.Type.TOPIC, t)
+            resource = ConfigResource("topic", t)  # Use the stable string form; aiokafka 0.14 removed ConfigResource.Type.
             resource.set_config("retention.ms", str(DLQ_RETENTION_MS))
             resource.set_config("segment.ms", str(DLQ_SEGMENT_MS))
             try:
-                await admin.alter_configs(resource)
+                # aiokafka expects an iterable of ConfigResource objects.
+                await admin.alter_configs([resource])
                 configured += 1
             except Exception:  # noqa: BLE001 - per-topic best effort
                 logger.warning("could not set retention on %s", t)

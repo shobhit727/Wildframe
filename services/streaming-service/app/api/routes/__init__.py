@@ -4,8 +4,8 @@ import inspect
 from typing import Annotated
 from uuid import UUID
 
-from jose import jwt
-from jose.exceptions import JWTError  # type: ignore[attr-defined]
+from jose import JWTError, jwt
+from wildframe_auth.verifier import get_cached_jwks, verify_token
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +34,34 @@ from app.services import StreamingService
 router = APIRouter(prefix="/api/v1", tags=["streaming"])
 
 
+async def _verify_bearer_token(authorization: str) -> dict:
+    token = authorization.removeprefix("Bearer ")
+    if settings.ENVIRONMENT in {"", "development", "test"} and settings.JWT_ALGORITHM == "HS256":
+        if not settings.JWT_SECRET_KEY:
+            raise JWTError("missing development JWT secret")
+        return jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=["HS256"],
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            options={"require_exp": True},
+        )
+
+    header = jwt.get_unverified_header(token)
+    kid = header.get("kid")
+    if not kid:
+        raise JWTError("missing kid")
+    jwks = await get_cached_jwks(settings.JWT_JWKS_URL, required_kid=kid)
+    return verify_token(
+        token,
+        jwks,
+        audience=settings.JWT_AUDIENCE,
+        issuer=settings.JWT_ISSUER,
+        expected_type="access",
+    )
+
+
 async def get_current_user_id(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> UUID:
@@ -43,18 +71,8 @@ async def get_current_user_id(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid authorization header",
         )
-    token = authorization.removeprefix("Bearer ")
     try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-            options={"require_exp": True},
-        )
-        # Token-type separation (#221): refresh tokens share the audience but
-        # must never be accepted as access tokens.
+        payload = await _verify_bearer_token(authorization)
         if payload.get("type") != "access":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -68,7 +86,7 @@ async def get_current_user_id(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
         )
     try:
-        return UUID(sub)
+        return UUID(str(sub))
     except (TypeError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token subject"
@@ -81,14 +99,7 @@ async def require_admin(
 ) -> UUID:
     """Require a verified, current administrator role for operational mutations."""
     try:
-        payload = jwt.decode(
-            authorization.removeprefix("Bearer "),
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-            options={"require_exp": True},
-        )
+        payload = await _verify_bearer_token(authorization)
         if (
             payload.get("role") != "admin"
             or int(payload.get("arv") or 0) != settings.ADMIN_ROLE_VERSION

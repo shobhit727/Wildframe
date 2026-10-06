@@ -176,4 +176,6 @@ class NotificationRepository:
             parsed = json.loads(notification.delivery_errors)  # type: ignore[arg-type]
         except ValueError:
             return {}
+        if not isinstance(parsed, dict):
+            return {}
         return {str(key): str(value) for key, value in parsed.items()}

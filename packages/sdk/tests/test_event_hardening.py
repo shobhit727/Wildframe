@@ -470,3 +470,100 @@ class TestCorrelationMiddlewareSanitization:
         assert returned is not None
         assert "\n" not in returned
         assert "injected" in returned  # content preserved, newline stripped
+
+
+# ---------------------------------------------------------------------------
+# Kafka TLS and DLQ retention regression coverage
+# ---------------------------------------------------------------------------
+
+
+class TestKafkaSecurityDefaults:
+    def test_publisher_verifies_tls_by_default(self, monkeypatch):
+        # Production-safe behavior must not silently disable certificate checks.
+        monkeypatch.delenv("KAFKA_SSL_INSECURE", raising=False)
+        from wildframe_events.publisher import KafkaEventPublisher
+
+        publisher = KafkaEventPublisher("localhost:9093", security_protocol="SSL")
+        assert publisher.ssl_context is not None
+        assert publisher.ssl_context.check_hostname is True
+        assert publisher.ssl_context.verify_mode == __import__("ssl").CERT_REQUIRED
+
+    def test_subscriber_verifies_tls_by_default(self, monkeypatch):
+        # An explicit development override remains available through the env var.
+        monkeypatch.delenv("KAFKA_SSL_INSECURE", raising=False)
+        from wildframe_events.subscriber import KafkaEventSubscriber
+
+        subscriber = KafkaEventSubscriber("localhost:9093", "test-group", security_protocol="SSL")
+        assert subscriber.ssl_context is not None
+        assert subscriber.ssl_context.check_hostname is True
+        assert subscriber.ssl_context.verify_mode == __import__("ssl").CERT_REQUIRED
+
+
+class TestDlqRetentionApiContract:
+    @pytest.mark.asyncio
+    async def test_alter_configs_receives_topic_resource_collection(self, monkeypatch):
+        # aiokafka 0.14 exposes ConfigResource without the removed nested Type enum.
+        import sys
+        import types
+
+        import wildframe_events.dlq_retention as dlq_retention
+
+        class FakeConfigResource:
+            def __init__(self, resource_type, name):
+                self.resource_type = resource_type
+                self.name = name
+                self.configs = {}
+
+            def set_config(self, key, value):
+                self.configs[key] = value
+
+        calls = []
+
+        class FakeAdmin:
+            def __init__(self, **kwargs):
+                pass
+
+            async def start(self):
+                pass
+
+            async def list_topics(self):
+                return types.SimpleNamespace(topics={"wildframe.events.dlq"})
+
+            async def alter_configs(self, resources):
+                calls.append(resources)
+
+            async def close(self):
+                pass
+
+        class FakeNewTopic:
+            def __init__(self, **kwargs):
+                pass
+
+        admin_module = types.ModuleType("aiokafka.admin")
+        admin_module.AIOKafkaAdminClient = FakeAdmin
+        admin_module.NewTopic = FakeNewTopic
+        resource_module = types.ModuleType("aiokafka.admin.config_resource")
+        resource_module.ConfigResource = FakeConfigResource
+        monkeypatch.setitem(sys.modules, "aiokafka", types.ModuleType("aiokafka"))
+        monkeypatch.setitem(sys.modules, "aiokafka.admin", admin_module)
+        monkeypatch.setitem(sys.modules, "aiokafka.admin.config_resource", resource_module)
+        monkeypatch.setattr(
+            dlq_retention,
+            "DLQ_RETENTION_MS",
+            1234,
+        )
+        monkeypatch.setattr(
+            dlq_retention,
+            "DLQ_SEGMENT_MS",
+            567,
+        )
+        monkeypatch.setattr(
+            "wildframe_events.topics.all_dlq_topics",
+            lambda: {"wildframe.events.dlq"},
+        )
+
+        configured = await dlq_retention.apply_dlq_retention("localhost:9092", "test")
+        assert configured == 1
+        assert len(calls) == 1
+        assert len(calls[0]) == 1
+        assert calls[0][0].resource_type == "topic"

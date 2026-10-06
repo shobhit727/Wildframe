@@ -13,7 +13,7 @@ pydantic = "^2.4.2"
 pydantic-settings = "^2.0.3"
 sqlalchemy = "^2.0.20"
 asyncpg = "^0.30.0"
-redis = "^5.0.1"
+redis = ">=5,<9"
 python-jose = {version = "^3.3.0", extras = ["cryptography"]}
 python-json-logger = "^2.0.7"
 email-validator = "^2.1.0"
@@ -27,6 +27,7 @@ opentelemetry-sdk = "^1.21.0"
 opentelemetry-exporter-jaeger = "^1.21.0"
 setuptools = ">=84,<86"
 cryptography = ">=41.0.7,<51.0.0"
+wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 
 [tool.poetry.group.dev.dependencies]
 types-python-jose = "^3.3.4"

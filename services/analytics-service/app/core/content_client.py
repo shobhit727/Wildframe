@@ -71,6 +71,9 @@ async def resolve_content_owner(content_id: UUID) -> UUID | None:
         raise ContentServiceUnavailableError(f"could not resolve content {content_id}")
     try:
         payload = response.json()
+        if not isinstance(payload, dict):
+            # JSON arrays/scalars are protocol errors and must fail closed.
+            raise TypeError("content-service response must be a JSON object")
         owner = payload.get("creator_id")
         return UUID(owner) if owner else None
     except (ValueError, TypeError) as exc:

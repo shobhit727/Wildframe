@@ -174,7 +174,8 @@ async def test_trust_proxy_enabled_no_trusted_list_uses_last_xff(monkeypatch):
     import json
 
     body = json.loads(resp.body)
-    assert body["x-forwarded-for"] == "203.0.113.5"
+    # Without an explicit trusted proxy list, fail closed to the socket peer.
+    assert body["x-forwarded-for"] == "10.0.0.1"
 
 
 @pytest.mark.asyncio

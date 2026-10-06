@@ -53,12 +53,26 @@ def verify_token(
             algorithms=list(ALLOWED_ALGORITHMS),
             audience=audience,
             issuer=issuer,
-            options={"leeway": leeway},
+            options={
+                "leeway": leeway,
+                # Explicitly require every security-critical claim declared by REQUIRED_CLAIMS.
+                "require_exp": True,
+                "require_iat": True,
+                "require_iss": True,
+                "require_aud": True,
+                "require_sub": True,
+                "require_type": True,
+            },
         )
     except ExpiredSignatureError:
         raise
     except JWTError:
         raise
+    # Enforce exact issuer/audience/type after signature verification; omission never fails open.
+    if payload.get("aud") != audience:
+        raise JWTError("invalid audience")
+    if payload.get("iss") != issuer:
+        raise JWTError("invalid issuer")
     if payload.get("type") != expected_type:
         raise JWTError(f"invalid type expected {expected_type}")
     return payload
@@ -86,11 +100,14 @@ def fetch_jwks_sync(url: str, timeout: float = 5.0) -> dict:
         return resp.json()
 
 
-async def get_cached_jwks(url: str, ttl: int = 300) -> dict:
+async def get_cached_jwks(url: str, ttl: int = 300, required_kid: str | None = None) -> dict:
     global _jwks_cache, _jwks_cache_expiry, _jwks_cache_url
     now = time.time()
     if _jwks_cache is not None and _jwks_cache_url == url and now < _jwks_cache_expiry:
-        return _jwks_cache
+        # A newly rotated signing key can appear before the normal TTL expires.
+        # Force a refresh when the caller sees a kid absent from the cached set.
+        if required_kid is None or get_jwk_for_kid(_jwks_cache, required_kid) is not None:
+            return _jwks_cache
     data = await fetch_jwks(url)
     _jwks_cache = data
     _jwks_cache_url = url

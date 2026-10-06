@@ -8,6 +8,8 @@ from typing import Any
 from uuid import UUID
 
 import bcrypt
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from app.core.settings import settings
 from jose import JWTError, jwt
 from jose.exceptions import ExpiredSignatureError
@@ -17,6 +19,7 @@ from app.models import User
 logger = logging.getLogger(__name__)
 
 PASSWORD_MAX_LENGTH: int = 128
+_PASSWORD_HASHER = PasswordHasher()
 
 COMMON_PASSWORDS: frozenset[str] = frozenset(
     {
@@ -107,33 +110,44 @@ class PasswordManager:
 
     @staticmethod
     def hash_password(password: str) -> str:
-        salt = bcrypt.gensalt(rounds=settings.PASSWORD_BCRYPT_ROUNDS)
-        return bcrypt.hashpw(_encode_password(password), salt).decode("utf-8")
+        # Argon2id accepts the bounded input without bcrypt's 72-byte limitation.
+        return _PASSWORD_HASHER.hash(_encode_password(password).decode("utf-8"))
 
     @classmethod
     def dummy_hash(cls) -> str:
         if cls._dummy_hash is None:
-            salt = bcrypt.gensalt(rounds=settings.PASSWORD_BCRYPT_ROUNDS)
-            cls._dummy_hash = bcrypt.hashpw(b"timing-equalizer-dummy", salt).decode("utf-8")
+            # Use the active algorithm for unknown-user timing equalization.
+            cls._dummy_hash = _PASSWORD_HASHER.hash("timing-equalizer-dummy")
         return cls._dummy_hash
 
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
+        if not hashed_password:
+            return False
         try:
+            if hashed_password.startswith("$argon2"):
+                return _PASSWORD_HASHER.verify(
+                    hashed_password,
+                    _encode_password(plain_password).decode("utf-8"),
+                )
+            # Existing bcrypt hashes remain readable and are migrated after login.
             return bcrypt.checkpw(
                 _encode_password(plain_password),
                 hashed_password.encode("utf-8"),
             )
-        except (ValueError, TypeError):
+        except (InvalidHashError, VerificationError, VerifyMismatchError, ValueError, TypeError):
             return False
 
     @staticmethod
     def needs_rehash(hashed_password: str) -> bool:
-        try:
-            rounds = int(hashed_password.split("$")[2])
-        except (IndexError, ValueError):
+        if not hashed_password:
             return False
-        return rounds < settings.PASSWORD_BCRYPT_ROUNDS
+        if hashed_password.startswith("$argon2"):
+            return _PASSWORD_HASHER.check_needs_rehash(hashed_password)
+        if hashed_password.startswith("$2"):
+            # Legacy bcrypt hashes migrate transparently after successful verification.
+            return True
+        return False
 
 
 class TokenManager:

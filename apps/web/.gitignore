@@ -11,3 +11,10 @@ build/
 .idea/
 *.swp
 *.swo
+
+# Test and browser artifacts generated locally and in CI.
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright/

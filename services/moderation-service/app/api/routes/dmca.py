@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -37,7 +37,8 @@ async def counter_notice(
     result = await db.execute(stmt)
     rec = result.scalar_one_or_none()
     if not rec:
-        return {"error": "not found"}
+        # A counter-notice must reference an existing takedown resource.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Takedown not found")
     rec.counter_notice = request.counter_reason
     rec.status = "countered"
     await db.commit()

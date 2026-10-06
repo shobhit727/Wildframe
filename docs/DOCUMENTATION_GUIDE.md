@@ -221,7 +221,7 @@ SELECT * FROM users WHERE active = true;
 
 #### Links
 ```markdown
-[Link text](docs/DEVELOPMENT.md)  # Internal link
+[Link text](DEVELOPMENT.md)  # Internal link
 [Link text](https://example.com)  # External link
 [reference]: https://example.com  # Reference link
 ```
@@ -342,7 +342,7 @@ curl -X GET https://api.wildframe.com/users/me \
 ```
 
 ### See Also
-- [Refresh Token Endpoint](/docs/API.md#post-authrefresh)
+- [Refresh Token Endpoint](API_DOCUMENTATION.md#post-authrefresh)
 - [JWT Token Structure](/docs/ARCHITECTURE.md#jwt-authentication)
 - [Rate Limiting](/docs/ARCHITECTURE.md#rate-limiting)
 ```
