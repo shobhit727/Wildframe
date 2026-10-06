@@ -2,7 +2,7 @@
 
 Get the Wildframe platform running on your local machine in under 10 minutes.
 
-**Last Updated**: September 7, 2026
+**Last Updated**: September 27, 2026
 **Version**: 1.0.0
 
 ---
@@ -47,7 +47,7 @@ Development TLS certificates are **never committed**. Generate them locally:
 
 ```bash
 bash scripts/generate-dev-certs.sh
-# verifies: apps/web/certificates/localhost.pem and localhost-key.pem exist, SANs DNS:localhost,IP:127.0.0.1,IP:::1,IP:192.168.1.14, perms 644
+# verifies: apps/web/certificates/localhost.pem and localhost-key.pem exist, SANs DNS:localhost,IP:127.0.0.1,IP:::1,IP:the host LAN address, perms 644
 ```
 
 The generator is idempotent — re-run after deleting the files to rotate.
@@ -169,7 +169,7 @@ pytest tests --asyncio-mode=auto
 
 ### Live-Stack Integration Suite
 
-Needs the compose stack up (~12 min, 87 tests):
+Needs the compose stack up (~12 min, 76 tests):
 
 ```bash
 poetry run pytest tests/integration -q

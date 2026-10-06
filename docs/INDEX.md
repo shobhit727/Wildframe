@@ -69,3 +69,4 @@ Wildframe OTT Platform
 ## Documentation rule
 
 Do not use documents named `*_COMPLETE.md`, `*COMPLETION*.md`, `FINAL_*REPORT.md`, or similar historical reports as evidence that the platform is production-ready. Verify the current repository state and GitHub Actions results instead.
+

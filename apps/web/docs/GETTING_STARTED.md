@@ -11,7 +11,7 @@
 
 ### 1. Navigate to Project
 ```bash
-cd /home/phoenix/Desktop/wildframe/apps/web
+cd ./apps/web
 ```
 
 ### 2. Install Dependencies
@@ -42,7 +42,7 @@ Output:
 ```
 > next dev
 
-  ▲ Next.js 15.0.0
+  ▲ Next.js 16.3.6
   - Local:        https://localhost:3000
   - Environments: .env.local
 
@@ -160,3 +160,4 @@ npm run test:e2e
 - Read [TEMPLATE_GUIDE.md](../TEMPLATE_GUIDE.md) in root
 - Check [QUICK_REFERENCE.md](../QUICK_REFERENCE.md) for quick lookup
 - See [Next.js Docs](https://nextjs.org/docs)
+

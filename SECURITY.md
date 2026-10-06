@@ -35,3 +35,4 @@ Please include:
 ### Sensitive data
 
 Never include passwords, API keys, access tokens, private user data, production database contents, or other secrets in a report. Redact sensitive values from logs and proof-of-concept material before submitting them.
+

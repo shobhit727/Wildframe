@@ -630,7 +630,7 @@ Start
 # API Documentation
 
 **Version**: 2.0.0  
-**Last Updated**: May 27, 2026  
+**Last Updated**: September 27, 2026
 **Stability**: Stable  
 **Deprecations**: See [Changelog](CHANGELOG.md#v200)  
 
@@ -868,4 +868,5 @@ One-line description of service purpose.
 
 **Remember**: Good documentation is an investment. It pays dividends in reduced confusion, faster onboarding, and better AI assistance. Take the time to write it well.
 
-Last Updated: May 27, 2026
+Last Updated: September 27, 2026
+

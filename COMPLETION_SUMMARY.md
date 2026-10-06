@@ -77,4 +77,4 @@
 
 ---
 
-**Last updated**: August 1, 2026
+**Last updated**: September 27, 2026

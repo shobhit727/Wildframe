@@ -5,7 +5,7 @@ pointer to the file. Files marked **current** describe how the platform is
 actually built today; files marked **historical** are retained for project
 history and are not release declarations (see `STATUS.md`).
 
-**Last updated**: August 17, 2026
+**Last updated**: September 27, 2026
 
 ---
 
@@ -17,7 +17,7 @@ history and are not release declarations (see `STATUS.md`).
 | [`STATUS.md`](STATUS.md) | Current implementation and deployment status, remaining production work, and the Aug 2026 security/QA hardening record (closed audit issues, integration suite, test totals). |
 | [`AGENTS.md`](AGENTS.md) | Agent/developer instructions: source of truth for how the repo is actually built — setup, service list, ports, HTTPS/TLS, code conventions, common patterns, and pitfalls. |
 | [`SECURITY.md`](SECURITY.md) | Vulnerability reporting policy (private reporting process). |
-| [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) | Test commands and current stats: 775 backend unit/route tests, 87 live-stack integration tests, 43 frontend vitest tests. |
+| [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) | Test commands and current stats: Backend unit/route test statistics from the August snapshot; 76 live-stack integration tests are present in the current source tree, plus the frontend Vitest suite.. |
 | [`docs/INDEX.md`](docs/INDEX.md) | Curated index of the current operational documentation (superset: this file covers everything, including history). |
 | [`DOCS_INDEX.md`](DOCS_INDEX.md) | This file — every `.md` in the repo with summaries. |
 
@@ -28,11 +28,11 @@ history and are not release declarations (see `STATUS.md`).
 | File | Summary |
 |---|---|
 | [`docs/QUICKSTART.md`](docs/QUICKSTART.md) | **Current** local setup guide: prerequisites, compose stack, frontend, test suite. |
-| [`docs/TEST_GUIDE.md`](docs/TEST_GUIDE.md) | **Current** testing playbook: test stack, layout, fixtures, coverage, and the live-stack integration suite (`tests/integration/`, 87 tests). |
+| [`docs/TEST_GUIDE.md`](docs/TEST_GUIDE.md) | **Current** testing playbook: test stack, layout, fixtures, coverage, and the live-stack integration suite (`tests/integration/`, 76 tests). |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | **Current** development workflow: setup, conventions, roadmap, technical glossary. |
 | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Contribution conventions and expected service layout. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Architecture overview (service structure, patterns, DB schema notes). Partly aspirational — header flags that `AGENTS.md`/`README.md` are authoritative for current facts (15 services, JWT audience, no Alembic). |
-| [`docs/FRONTEND_ARCHITECTURE.md`](docs/FRONTEND_ARCHITECTURE.md) | Frontend architecture: Next.js 15 App Router, state management, video player design. |
+| [`docs/FRONTEND_ARCHITECTURE.md`](docs/FRONTEND_ARCHITECTURE.md) | Frontend architecture: Next.js 16.3.6 App Router, state management, video player design. |
 | [`docs/SERVICE_ARCHITECTURE_PATTERN.md`](docs/SERVICE_ARCHITECTURE_PATTERN.md) | Canonical internal layout every microservice follows. |
 | [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md) | Database design reference: database-per-service, tables, indexes, partitioning. |
 | [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md) | API reference: base URLs, JWT auth flow (incl. `aud: wildframe-api` audience claim), rate limiting, endpoints for services 1–4, error format. |

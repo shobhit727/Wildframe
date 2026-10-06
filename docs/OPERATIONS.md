@@ -683,4 +683,4 @@ curl -I https://api.wildframe.com/api/content
 
 ---
 
-**Last Updated**: September 7, 2026
+**Last Updated**: September 27, 2026

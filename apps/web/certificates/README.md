@@ -23,3 +23,4 @@ expect them at `apps/web/certificates/` — run the generator before
 Rotate by deleting the files and re-running the script. The private key was
 previously committed (issue #788) — that history must be purged separately
 with `git filter-repo` or BFG before the repository is considered clean.
+

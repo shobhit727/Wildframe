@@ -462,3 +462,4 @@ interface ContainerProps {
 3. **Pass className** for custom styling when needed
 4. **Use semantic HTML** inside components
 5. **Mobile first** - components are responsive by default
+

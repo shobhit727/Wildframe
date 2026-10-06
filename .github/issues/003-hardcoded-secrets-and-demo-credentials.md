@@ -18,3 +18,4 @@ Recommendations:
 - Consider automated scanning to fail PRs that introduce new hardcoded secrets.
 
 Notes: Some defaults are intentionally benign for local development, but the repo already contains guidance to change them — this issue groups remaining occurrences for remediation planning.
+

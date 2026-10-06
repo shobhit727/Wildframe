@@ -1,6 +1,6 @@
 # Wildframe Platform - Documentation Index
 
-**Current**: August 4, 2026 — Full audit complete; 22 issues fixed; platform stabilized
+**Current**: September 27, 2026 — documentation refreshed against the current source tree.
 
 ---
 
@@ -149,5 +149,4 @@ black --check services/
 
 ---
 
-**Last updated**: August 4, 2026  
-**Start with**: [AUDIT_FIX_SUMMARY.md](AUDIT_FIX_SUMMARY.md)
+**Last updated: September 27, 2026
