@@ -111,6 +111,13 @@ MAX_ATTEMPTS = 5
 # accept an admin request is environment-dependent, and a dev laptop and a CI
 # runner are not the same machine.
 RETRY_DELAY_SECONDS = float(os.environ.get("KAFKA_INIT_RETRY_DELAY_SECONDS", "6"))
+#: Hard ceiling on a single kafka CLI invocation. Without it a wedged
+#: ``kafka-acls`` blocks this container forever, and because every service waits
+#: on ``service_completed_successfully`` that wedges the whole ``compose up``.
+#: Observed in practice: the broker answering
+#: ``TimeoutException: Timed out waiting for a node assignment`` rather than
+#: exiting, because it was being loaded by this script's own sequential launches.
+COMMAND_TIMEOUT_SECONDS = float(os.environ.get("KAFKA_INIT_COMMAND_TIMEOUT_SECONDS", "120"))
 
 TOPIC = "topic"
 GROUP = "group"
@@ -341,7 +348,21 @@ def describe_plan(
 def run(command: Sequence[str]) -> None:
     """Run one CLI, echoing it and surfacing any failure."""
     print("$ " + " ".join(command), flush=True)
-    completed = subprocess.run(list(command), capture_output=True, text=True, check=False)
+    try:
+        completed = subprocess.run(
+            list(command),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        # Surfaced as RuntimeError so the bounded retry in apply_plan handles a
+        # hung CLI the same way it handles a failing one, rather than hanging
+        # the container and every service that waits on it.
+        raise RuntimeError(
+            f"{command[0]} did not finish within {COMMAND_TIMEOUT_SECONDS:g}s"
+        ) from exc
     if completed.stdout.strip():
         print(completed.stdout.strip(), flush=True)
     if completed.returncode != 0:
@@ -354,13 +375,24 @@ def run(command: Sequence[str]) -> None:
 
 
 def apply_plan(commands: Sequence[Sequence[str]], *, max_attempts: int) -> None:
+    # Resume from the failure rather than restarting the plan.
+    #
+    # Both command kinds are idempotent -- kafka-topics --create and
+    # kafka-acls --add can be re-applied -- so restarting from zero is pure
+    # waste. It is also actively harmful: this plan is ~190 sequential JVM
+    # launches, and re-running all of them after a failure near the end loads
+    # the single broker harder, which is the very condition that caused the
+    # failure. Observed on a re-run: 461 commands issued where 190 were
+    # planned, ending in a TimeoutException retry loop.
+    start = 0
     for attempt in range(1, max_attempts + 1):
         try:
-            for command in commands:
-                run(command)
+            for index in range(start, len(commands)):
+                run(commands[index])
+                start = index + 1
         except RuntimeError as exc:
             print(
-                f"attempt {attempt}/{max_attempts} failed: {exc}",
+                f"attempt {attempt}/{max_attempts} failed at command {start + 1}: {exc}",
                 file=sys.stderr,
                 flush=True,
             )
@@ -368,7 +400,10 @@ def apply_plan(commands: Sequence[Sequence[str]], *, max_attempts: int) -> None:
                 raise
             time.sleep(RETRY_DELAY_SECONDS)
         else:
-            print(f"applied {len(commands)} commands on attempt {attempt}", flush=True)
+            print(
+                f"applied {len(commands)} commands on attempt {attempt}",
+                flush=True,
+            )
             return
 
 

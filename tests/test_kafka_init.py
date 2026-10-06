@@ -517,3 +517,65 @@ class TestConsumerGroupDerivation:
                     f"{name} has KAFKA_GROUP_ID={group!r}; the bootstrap derives "
                     "the group ACL from the service name"
                 )
+
+
+class TestRetryResumesInsteadOfRestarting:
+    """A retry must resume, not replay the whole plan (#893 follow-up).
+
+    The plan is ~190 sequential JVM launches against a single broker. Restarting
+    from zero after a late failure re-issues everything, which loads the broker
+    harder -- the condition that caused the failure. Observed on a re-run: 461
+    commands issued where 190 were planned, then a TimeoutException loop.
+    """
+
+    @staticmethod
+    def _plan() -> list[list[str]]:
+        return [["kafka-acls", "--add", f"--topic=t{i}"] for i in range(10)]
+
+    def test_resumes_at_the_failing_command(self, monkeypatch):
+        calls: list[list[str]] = []
+
+        def fake_run(command):
+            calls.append(list(command))
+            if "t4" in list(command)[-1]:
+                raise RuntimeError("boom")
+
+        monkeypatch.setattr(INIT, "run", fake_run)
+        monkeypatch.setattr(INIT.time, "sleep", lambda _s: None)
+
+        with pytest.raises(RuntimeError):
+            INIT.apply_plan(self._plan(), max_attempts=3)
+
+        # 5 commands to reach t4, then t4, t5, t6 ... one per attempt. A
+        # restart-from-zero would re-issue t0..t3 on every attempt, so the
+        # count would be far higher.
+        issued = [c[-1].removeprefix("--topic=") for c in calls]
+        assert issued[:5] == ["t0", "t1", "t2", "t3", "t4"]
+        # t0 must not be issued a second time.
+        assert issued.count("t0") == 1
+        # Three attempts total: 5 + 1 + 1 failing commands, never a full replay.
+        assert len(calls) == 7
+
+    def test_a_hung_cli_is_surfaced_not_hung_on(self, monkeypatch):
+        """A wedged kafka CLI must raise, not block the container forever.
+
+        Every service waits on service_completed_successfully, so a CLI that
+        never exits wedges the whole compose up.
+        """
+
+        def timeout(*_a, **_kw):
+            raise subprocess.TimeoutExpired(cmd="kafka-acls", timeout=INIT.COMMAND_TIMEOUT_SECONDS)
+
+        monkeypatch.setattr(INIT.subprocess, "run", timeout)
+
+        with pytest.raises(RuntimeError, match="did not finish"):
+            INIT.run(["kafka-acls", "--add", "--topic=x"])
+
+    def test_command_timeout_is_configurable(self, monkeypatch):
+        # The constant is read from the environment at import time, so setting the
+        # variable afterwards cannot change it -- reload to prove the env var is
+        # actually honoured rather than the value being hardcoded.
+        monkeypatch.setenv("KAFKA_INIT_COMMAND_TIMEOUT_SECONDS", "7")
+        # INIT is loaded by path with spec_from_file_location, so importlib.reload
+        # cannot take it (it is not in sys.modules). Use the file's own loader.
+        assert _load_init().COMMAND_TIMEOUT_SECONDS == 7.0
