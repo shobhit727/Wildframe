@@ -231,6 +231,9 @@ def create_app() -> FastAPI:
     async def general_exception_handler(request: Request, exc: Exception):
         corr_id = get_correlation_id()
         logger.exception("Unhandled exception (corr=%s): %s", corr_id, exc)
+        # Headers as well as body: ServerErrorMiddleware sits above the user
+        # middleware stack, so a 500 built here never passes back through
+        # add_request_context and would otherwise arrive with no tracing header.
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -238,6 +241,7 @@ def create_app() -> FastAPI:
                 "message": "Internal server error",
                 "correlation_id": corr_id,
             },
+            headers={"X-Correlation-ID": corr_id},
         )
 
     return app

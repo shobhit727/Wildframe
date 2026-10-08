@@ -469,17 +469,18 @@ def test_unhandled_exceptions_return_an_opaque_500_with_a_correlation_id():
     assert "secret internal detail" not in response.text
 
 
-def test_known_defect_500_responses_lose_the_tracing_headers():
-    """Characterisation test for a reported gap (NOT an assertion of intent).
+def test_500_responses_carry_the_tracing_headers():
+    """A 500 must carry the correlation header, not only the body.
 
     `track_in_flight` / `limit_body_size` are `@app.middleware("http")` and
     `add_request_context` lives in `wildframe_observability`, but Starlette runs
     the `Exception` handler inside `ServerErrorMiddleware`, which sits *above*
-    the user middleware stack. A 500 body therefore never passes back through
-    the middleware, so the inbound `X-Correlation-ID` is not echoed on the
-    response (it is only present in the server-side log line).
+    the user middleware stack. A 500 body therefore never passed back through
+    the middleware, so the inbound `X-Correlation-ID` was not echoed on the
+    response -- it appeared only in the server-side log line, leaving a client
+    with nothing to quote in a support ticket.
 
-    Expected to change when production code is fixed.
+    `general_exception_handler` now sets the header as well as the body field.
     """
     app = create_app()
 
@@ -495,7 +496,7 @@ def test_known_defect_500_responses_lose_the_tracing_headers():
             response = client.get("/_boom2", headers={"X-Correlation-ID": "corr-500"})
 
     assert response.status_code == 500
-    assert "X-Correlation-ID" not in response.headers
+    assert response.headers["X-Correlation-ID"] == "corr-500"
 
 
 # ---------------------------------------------------------------------------

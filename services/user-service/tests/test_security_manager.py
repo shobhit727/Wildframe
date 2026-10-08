@@ -103,17 +103,19 @@ def test_verify_rejects_a_malformed_hash_without_raising():
     assert PasswordManager.verify_password("anything", "not-a-bcrypt-hash") is False
 
 
-def test_known_defect_verify_raises_on_a_none_hash():
-    """Characterisation test for a reported defect (NOT an assertion of intent).
+def test_verify_rejects_a_none_hash_without_raising():
+    """A null or garbled stored hash must fail closed, never raise.
 
-    `app/security/manager.py:51` guards the verify path with
-    ``except (ValueError, TypeError)`` but ``None.encode("utf-8")`` raises
-    ``AttributeError``, which is not caught. A null/garbled stored hash
-    therefore escapes as an unhandled 500 instead of a `False` verification
-    failure. Expected to change when production code is fixed.
+    ``verify_password`` guards with ``except (ValueError, TypeError)``, but
+    ``None.encode("utf-8")`` raises ``AttributeError``, which was not caught --
+    so a null stored hash escaped as an unhandled 500 instead of a ``False``
+    verification failure.
+
+    Fixed in ``6d771d5f`` by adding ``AttributeError`` to the clause; this test
+    pinned the old behaviour and was left behind, which is what kept the suite
+    red. Now asserts the intent (#877).
     """
-    with pytest.raises(AttributeError):
-        PasswordManager.verify_password("anything", None)
+    assert PasswordManager.verify_password("anything", None) is False
 
 
 def test_verify_rejects_an_over_length_password_without_raising():
