@@ -9224,3 +9224,80 @@ Site URL, since it was asked and is worth pinning down in one place:
 `:8000` api-gateway, `:8080` admin, `:16686` Jaeger. Note that host ports are not
 service names, and that a 200 from curl only means the server answered — for anything
 the browser renders, `node scripts/browser-check.mjs` is the check that proves it.
+
+### [M-20261006T2100Z-orchestrator] 2026-10-06T21:00Z · agent=orchestrator · status=in-progress
+**To:** all
+**Files:** `services/*/app/{main.py,middleware.py,repositories.py,core/logging.py,core/ffmpeg.py,core/security.py,core/stages.py,core/settings.py}`, `packages/sdk/**`, `scripts/kafka_init.py`, `infrastructure/helm/**`, `.github/workflows/ci-cd.yml`, `tests/test_kafka_init.py`, `tests/integration/**`, `STATUS.md`, `oner-task.md`
+**Re:** October issue sweep — 12 defects fixed, verified by mutation and (where possible) against the running stack.
+
+## What landed
+
+Ten real defects fixed, plus two found while verifying my own work. Every fix
+was mutation-tested: the source change reverted, the test watched go red for the
+named defect, restored, watched green. Commits `6a2b8e20`, `6857b700`,
+`df29dab1`, `10e985a8`, `3356966e`, `ae75a9a6`, `6f66a33e`, `12c5689e`,
+`919cf6a1`.
+
+Highlights, because they were not all obvious:
+
+- **#893/#795 — nothing in the repo ever created a Kafka topic or ACL.** The
+  broker runs `AclAuthorizer` with `allow.everyone.if.no.acl.found=false` and
+  `auto.create.topics.enable=false`, so every publish died with
+  `TOPIC_AUTHORIZATION_FAILED`; the stack logs carried 28. Added a one-shot
+  `kafka-init` gated on `service_completed_successfully`. Verified live: 48
+  topics, 142 ACLs, zero wildcards, and **zero `TopicAuthorizationFailed` across
+  all 15 services.**
+- **#796 — 27 chart policy tests existed and nothing invoked them.** Proven by
+  deleting a production guard: `helm lint` and all three renders still passed.
+  Now they gate CI. `test_security_policy.py` has **zero** `test_` functions, so
+  it runs as a script — `pytest <dir>` would report "27 passed" and execute none
+  of its assertions.
+- **#850** every user-service JSON log line shipped `"level": null`.
+- **#846** `use_enum_values` coerced jurisdiction enums; 16 US policy variants
+  resolved the wrong regulations. Two defects, both load-bearing.
+- **#873** a scalar JSON body escaped an analytics authorization gate as
+  `AttributeError` — a 500 where the contract promised a 503 denial.
+
+## Three things I got wrong, since they are the useful part
+
+1. **I destroyed a subagent's uncommitted work** with `git checkout --` while
+   reviewing it. Recovered only because that agent had saved a copy. I now export
+   every diff to `tem/scratch/patches/` before touching a worktree.
+2. **The harness I was shipping silently tested the wrong tree.** It derived the
+   repo root from its own location, so a worktree agent could edit code and get
+   green tests for a tree it never touched. Now `git rev-parse --show-toplevel`,
+   a pytest-capable venv only, and it prints what it resolved on every run.
+3. **Three verification commands of mine were wrong in ways that looked like
+   success**: I grepped the wrong denial string and reported "0 errors, #893
+   verified"; I suppressed a `NoSuchFileException` and read the empty output as
+   "0 topics on the broker" (there are 49); and I used `docker start`, which does
+   not evaluate `depends_on`, so services raced the bootstrap.
+
+Also: a regex meant to delete 4 dead tests deleted **8**, including
+`test_brotli_is_rejected...` and `test_incomplete_compressed_stream_is_rejected`.
+Caught on a count discrepancy, reverted, redone with AST spans.
+
+## Two things I refused to do
+
+- **`check_rate_limit` looks dead but has ~80 test references.** The issue says
+  delete it. The issue's own analysis is that stubbing it is "a silent no-op", so
+  those assertions may be exercising nothing — that is a test-quality problem, not
+  a deletion. Flagged, not done.
+- **The user-service 500-header fix.** A standalone probe reproduced the defect;
+  the test harness does not, so I could not write a test that fails without the
+  fix. Change and test both reverted rather than shipped unproven.
+
+## Branch state
+
+Green. user-service **was red** for several commits (`6d771d5f` fixed #877's
+production code and left the characterisation test asserting the old behaviour) —
+found by the issue-review subagent, fixed in `919cf6a1`.
+
+Integration suite went from **110 skipped / 0 run** to **101 passed / 9 failed**.
+All 9 are `429 Rate limit exceeded` from `RATE_LIMIT_AUTH=5`, not authorization
+failures. Needs a decision — see `oner-task.md`.
+
+**Open:** the ACL gap (`recommendation-service` and `media-pipeline` subscribe in
+their own `events.py` to topics no ACL grants), `kafka-init`'s 709s cold start
+(needs batching, not more retries), and the ~14 human-decision items in
+`oner-task.md`.
