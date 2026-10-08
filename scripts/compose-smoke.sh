@@ -87,6 +87,30 @@ for service, spec in config.get("services", {}).items():
 
     state = str(item.get("State") or "").lower()
     health = str(item.get("Health") or "").lower()
+
+    # A one-shot bootstrap task is *supposed* to exit. `kafka-init` creates the
+    # topics and ACLs and then ends; `restart: "no"` with no healthcheck is what
+    # marks it as a task rather than a long-running service. Treating its exit as
+    # a terminal failure made this smoke test red on a healthy stack, which is
+    # worse than no test: it trains people to ignore it.
+    #
+    # Exiting 0 is success. Exiting non-zero is a real failure and must still
+    # fail the smoke test -- that is the whole point of gating every service on
+    # `kafka-init: service_completed_successfully`.
+    one_shot = (
+        str(spec.get("restart", "")).lower() == "no"
+        and not isinstance(spec.get("healthcheck"), dict)
+    )
+    if state == "exited" and one_shot:
+        exit_code = item.get("ExitCode")
+        # Strictly 0. An absent or unreadable ExitCode must not be read as
+        # success: this is a smoke test, and fail-open here would hide a broken
+        # bootstrap behind a green run.
+        if str(exit_code) == "0":
+            continue
+        failed.append(f"{service}: one-shot exited {exit_code}")
+        continue
+
     if state in {"exited", "dead"}:
         failed.append(f"{service}: state={state} health={health}")
         continue
