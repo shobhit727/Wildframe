@@ -129,7 +129,7 @@ export function sortRows<T>(rows: T[], sort: SortState, getters: Record<string, 
 export function paginate<T>(rows: T[], page: number, pageSize: number) {
   const total = rows.length;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const safePage = Math.min(page, pageCount - 1);
+  const safePage = Math.max(0, Math.min(page, pageCount - 1));
   const start = safePage * pageSize;
   return {
     page: safePage,

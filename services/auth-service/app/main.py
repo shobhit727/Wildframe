@@ -13,11 +13,12 @@ from app.core.database import DatabaseManager
 from app.core.logging import set_correlation_id, set_request_id, setup_logging
 from app.core.settings import settings
 from app.schemas import ErrorResponse, HealthCheckResponse
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+from starlette.types import Message
 from wildframe_observability.wire import wire_observability
 
 logger = logging.getLogger(__name__)
@@ -148,20 +149,30 @@ def create_app() -> FastAPI:
         return response
 
     def _serializable_errors(errors: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Sanitize Pydantic error ctx so JSON responses never carry non-serializable objects."""
+        """Sanitize Pydantic error entries so JSON responses never carry
+        non-serializable objects.
+
+        Pydantic puts the offending value in ``input`` and the failing
+        constraint in ``ctx``. Either can be arbitrary objects -- notably
+        ``input`` holds the raw request body (bytes) whenever a client sends a
+        body that cannot be parsed into the expected model, e.g. a JSON body
+        without ``Content-Type: application/json``. Sanitizing only ``ctx``
+        meant ``json.dumps`` raised inside the handler and turned the intended
+        422 into a 500.
+        """
+        json_safe = (str, int, float, bool, type(None))
+
+        def coerce(value: Any) -> Any:
+            return value if isinstance(value, json_safe) else str(value)
+
         cleaned: list[dict[str, Any]] = []
         for error in errors:
             error = dict(error)
+            if "input" in error:
+                error["input"] = coerce(error["input"])
             ctx = error.get("ctx")
             if isinstance(ctx, dict):
-                error["ctx"] = {
-                    key: (
-                        str(value)
-                        if not isinstance(value, (str, int, float, bool, type(None)))
-                        else value
-                    )
-                    for key, value in ctx.items()
-                }
+                error["ctx"] = {key: coerce(value) for key, value in ctx.items()}
             cleaned.append(error)
         return cleaned
 
@@ -272,20 +283,70 @@ def create_app() -> FastAPI:
                     )
             except ValueError:
                 pass
-        chunks: list[bytes] = []
+
+        raw_receive = request._receive
         total = 0
-        async for chunk in request.stream():
-            total += len(chunk)
-            if total > MAX_BODY_SIZE:
-                return JSONResponse(
-                    content={"detail": "Request body too large"},
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                )
-            chunks.append(chunk)
-        request._body = b"".join(chunks)
+
+        async def _bounded_stream() -> AsyncGenerator[bytes, None]:
+            nonlocal total
+            while True:
+                message: Message = await raw_receive()
+                if message["type"] != "http.request":
+                    return
+                chunk: bytes = message.get("body", b"")
+                total += len(chunk)
+                if total > MAX_BODY_SIZE:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="Request body too large",
+                    )
+                if chunk:
+                    yield chunk
+                if not message.get("more_body", False):
+                    return
+
+        stream = _bounded_stream()
+
+        async def _receive() -> Message:
+            try:
+                chunk = await anext(stream)
+            except StopAsyncIteration:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            return {"type": "http.request", "body": chunk, "more_body": True}
+
+        request._receive = _receive
         return await call_next(request)
 
-    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
+    # register_metrics=False: this service registers its own token-gated
+    # /metrics below, and the SDK's public route would shadow it.
+    wire_observability(
+        app,
+        service_name=settings.SERVICE_NAME,
+        log_level=settings.LOG_LEVEL,
+        register_metrics=False,
+    )
+
+    # Gate /metrics behind admin token (#469)
+    from fastapi import Depends, Header
+
+    async def require_metrics_token(
+        authorization: str | None = Header(default=None, alias="Authorization"),
+    ) -> None:
+        if settings.ENVIRONMENT == "production":
+            expected = (
+                f"Bearer {settings.METRICS_TOKEN}"
+                if hasattr(settings, "METRICS_TOKEN") and settings.METRICS_TOKEN
+                else None
+            )
+            if expected is None or authorization != expected:
+                raise HTTPException(status_code=401, detail="Unauthorized")
+
+    @app.get("/metrics", dependencies=[Depends(require_metrics_token)])
+    async def gated_metrics():
+        from prometheus_client import generate_latest
+        from fastapi.responses import Response
+
+        return Response(content=generate_latest(), media_type="text/plain")
 
     # Opaque 500 handler (#557) — never leak exception internals.
     @app.exception_handler(Exception)

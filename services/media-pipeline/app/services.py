@@ -581,7 +581,7 @@ class MediaPipelineService:
         # Determine which stages are already done.
         done = set(job.stage_versions.keys())
 
-        job.status = PipelineJobStatus.RUNNING  # type: ignore[assignment]
+        job.status = PipelineJobStatus.RUNNING
         if job.started_at is None:
             job.started_at = datetime.now(UTC)  # type: ignore[unreachable]
         await self.job_repo.save(job)
@@ -601,19 +601,20 @@ class MediaPipelineService:
                 if stage_name in done:
                     continue
 
-                # Circuit breaker check.
-                self._check_circuit_breaker(stage_name)
-
                 stage = self.registry.get(stage_name)
                 job.current_stage = stage_name  # type: ignore[assignment]
                 # Persist the (port-stripped) ctx so resume works mid-stage.
-                job.context = {k: v for k, v in ctx.items() if not _is_port(v)}  # type: ignore[assignment]
+                job.context = {k: v for k, v in ctx.items() if not _is_port(v)}
                 await self.job_repo.save(job)
 
                 # Heartbeat the lease before a potentially long stage run.
                 await self._heartbeat_lease(job)
 
                 try:
+                    # Keep the breaker decision inside the stage error boundary.
+                    # An open breaker must fail + DLQ the job rather than escape
+                    # while the job is still RUNNING.
+                    self._check_circuit_breaker(stage_name)
                     ctx, stage_retry_time = await self._run_stage_with_retries(
                         job, stage, ctx, total_retry_time
                     )
@@ -668,7 +669,7 @@ class MediaPipelineService:
                 }
                 job.retries = 0  # type: ignore[assignment]
                 # Persist ctx (without ports) so a later advance() can resume.
-                job.context = {k: v for k, v in ctx.items() if not _is_port(v)}  # type: ignore[assignment]
+                job.context = {k: v for k, v in ctx.items() if not _is_port(v)}
                 await self.job_repo.save(job)
 
                 # Reset circuit breaker on success.
@@ -699,7 +700,7 @@ class MediaPipelineService:
                     },
                 )
 
-            job.status = PipelineJobStatus.COMPLETED  # type: ignore[assignment]
+            job.status = PipelineJobStatus.COMPLETED
             job.current_stage = None  # type: ignore[assignment]
             job.error = None  # type: ignore[assignment]
             await self.job_repo.save(job)
@@ -834,7 +835,7 @@ class MediaPipelineService:
 
         Includes a ``dlq_key`` for downstream deduplication.
         """
-        job.status = PipelineJobStatus.FAILED  # type: ignore[assignment]
+        job.status = PipelineJobStatus.FAILED
         job.current_stage = stage_name  # type: ignore[assignment]
         job.error = message  # type: ignore[assignment]
         await self.job_repo.save(job)
@@ -890,7 +891,7 @@ class MediaPipelineService:
             # Only recover if the job is still in a retryable state.
             if job.status == PipelineJobStatus.RUNNING and job.current_stage:
                 job.leased_by = None
-                job.leased_at = None  # type: ignore[assignment]
+                job.leased_at = None
                 job.retries = 0  # type: ignore[assignment]  # reset retries for the current stage
                 await self.job_repo.save(job)
                 logger.info("recovered stale job %s (was leased by %s)", job.id, job.leased_by)

@@ -68,6 +68,11 @@ Build the frontend:
 docker build -f apps/web/Dockerfile -t wildframe/web:dev .
 ```
 
+`.dockerignore` is tracked and applies to both builds. It keeps the build
+context at roughly **17 MB** instead of **2.7 GB**, which is what makes these
+repository-root builds practical; without it every build uploads the whole
+checkout, including `node_modules` and image/tensor artifacts.
+
 ## Local development
 
 Prerequisites:
@@ -88,7 +93,9 @@ Then bootstrap schemas and demo data (there is no migration framework —
 tables are created from the SQLAlchemy models):
 
 ```bash
-# Create all tables for the 14 app services (idempotent).
+# Create all tables for the 14 app services (idempotent). Also adds any
+# column the models declare that an existing table lacks, so re-run it after
+# changing a model rather than writing ALTER TABLE by hand.
 python scripts/init_schemas.py
 
 # Seed genres, movies, series, an SVOD subscription and a demo admin user.
@@ -105,6 +112,9 @@ service port (`https://localhost:8000` = gateway, `:8001` auth, …) and the
 Next.js dev server serves `https://localhost:3000` with a locally-generated
 self-signed cert (`apps/web/certificates/` — never committed; run
 `bash scripts/generate-dev-certs.sh` before `docker compose up` or `npm run dev`).
+That one script also emits the Kafka TLS bundles (`kafka-keystore.pem`,
+`kafka-truststore.pem`) and the two broker password files, and is idempotent
+across partially-generated states.
 The cert carries SANs for `localhost`, loopback and `192.168.1.14`, so
 phones/devices on the LAN can hit `https://192.168.1.14:<port>` directly; a
 plain-HTTP mirror of the gateway also exists at `http://localhost:8080` for
@@ -123,7 +133,8 @@ The CI workflow is the primary reproducible validation environment. For local te
 ### Backend Unit Tests
 
 Backend unit/route tests run per service (a combined `pytest services/` sweep
-from the repo root breaks on shadowed `app.*` imports):
+from the repo root breaks on shadowed `app.*` imports). **6,217 tests across
+the 15 services**, all green:
 
 ```bash
 for svc in services/*/; do
@@ -131,9 +142,23 @@ for svc in services/*/; do
 done
 ```
 
+Shared SDK tests (**694**) span four directories and run from the repo root:
+
+```bash
+PYTHONPATH="$PWD/packages/sdk" python -m pytest -c pyproject.toml \
+  packages/sdk/tests/ \
+  packages/sdk/wildframe_compliance/tests/ \
+  packages/sdk/wildframe_events/tests/ \
+  packages/sdk/wildframe_observability/tests/ \
+  --asyncio-mode=auto
+```
+
+Per-service coverage is **97–99%**; CI enforces a **95% floor**
+(`--cov-fail-under`) and fails the build below it.
+
 ### Integration Tests
 
-The repo also ships a live-stack integration suite (`tests/integration/`, 87
+The repo also ships a live-stack integration suite (`tests/integration/`, 110
 tests) that exercises the full HTTPS stack — auth token lifecycle, gateway
 rate limiting, cross-service authorization/audience verification, billing
 webhook idempotency, health/readiness, and pipeline idempotency. It needs the
@@ -146,20 +171,24 @@ poetry run pytest tests/integration -q    # ~12 min
 
 ### Contract Tests
 
-Route drift detection (frontend-to-backend path validation):
+Route drift detection (frontend-to-backend path validation) — 24 tests,
+blocking in the `backend-route-contract` CI job:
 
 ```bash
 pytest tests/contract -q
 ```
 
-16 tests verifying frontend paths resolve to registered backend routes.
+24 tests verifying frontend paths resolve to registered backend routes. One is
+currently failing: the scanner globs all of `apps/web/src` without excluding
+`__tests__`, so it reads mock URLs from the frontend test files. Scanned over
+production source only, there is no drift.
 
 ### Frontend Tests
 
 ```bash
 cd apps/web
 
-# Unit tests (Vitest)
+# Unit tests (Vitest) — 805 tests across 44 files
 npm run test
 
 # E2E tests (Playwright)
@@ -169,10 +198,16 @@ npx playwright test      # Terminal 2
 
 ### Playwright E2E Tests
 
-**Test Suites:** 3 test files (9 tests total)
-- `e2e/auth.spec.ts` — Authentication flow (login, signup, protected route redirects)
-- `e2e/content.spec.ts` — Content library, content detail, search pages
-- `e2e/subscription.spec.ts` — Subscription page access
+The `frontend-e2e` CI job is **blocking**.
+
+**Test Suites:** 9 spec files (`apps/web/e2e/`)
+- `auth.spec.ts` — login, signup, protected-route redirects
+- `home.spec.ts`, `browse.spec.ts` — landing and catalogue
+- `watch.spec.ts` — playback: movie, series, seasons/episodes
+- `account.spec.ts`, `my-list.spec.ts` — account and My List
+- `billing.spec.ts` — subscription page
+- `creator.spec.ts` — creator pages
+- `admin.spec.ts` — admin console and its sub-routes
 
 **Run locally:**
 ```bash
@@ -180,6 +215,7 @@ npx playwright test      # Terminal 2
 npm run dev
 
 # Terminal 2: Run Playwright tests
+npx playwright install --with-deps chromium   # first run only
 npx playwright test
 ```
 
@@ -188,7 +224,9 @@ npx playwright test
 npx playwright test --reporter=github
 ```
 
-**Test count:** 9 tests total (3 test files × 3 tests each)
+**Test count:** **119 tests across 9 spec files**, covering **15 routes**.
+Dev TLS material comes from `scripts/generate-dev-certs.sh`, which the
+Playwright config runs automatically.
 
 ### CI Test Commands (reference)
 

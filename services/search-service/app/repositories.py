@@ -6,7 +6,12 @@ from sqlalchemy import delete, desc, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import SearchIndex, SearchQuery, _naive_now
+from app.models import SearchIndex, SearchQuery, SEARCH_INDEX_UPDATED_AT_DEFAULT, _naive_now
+
+
+def _resolve_python_default(default):
+    """Evaluate a Python default without depending on SQLAlchemy ColumnDefault internals."""
+    return default() if callable(default) else default
 
 
 class SearchQueryRepository:
@@ -73,9 +78,8 @@ class SearchIndexRepository:
                     "release_year": release_year,
                     "rating": int(rating) if rating is not None else None,
                     "updated_at": (
-                        SearchIndex.updated_at.default.arg(None)
-                        if SearchIndex.updated_at is not None
-                        and callable(SearchIndex.updated_at.default.arg)
+                        _resolve_python_default(SEARCH_INDEX_UPDATED_AT_DEFAULT)
+                        if SEARCH_INDEX_UPDATED_AT_DEFAULT is not None
                         else _naive_now()
                     ),
                 },

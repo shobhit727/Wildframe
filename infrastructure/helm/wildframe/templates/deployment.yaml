@@ -125,7 +125,7 @@ spec:
         - name: KAFKA_GROUP_ID
           value: {{ $name }}
         - name: KAFKA_SSL_INSECURE
-          value: "true"
+          value: {{ $.Values.kafka.sasl.insecureSkipVerify | quote }}
         {{- end }}
         - name: JAEGER_AGENT_HOST
           value: {{ $.Values.infra.jaegerAgentHost }}
@@ -134,6 +134,13 @@ spec:
             secretKeyRef:
               name: {{ $.Values.secrets.existingSecret }}
               key: {{ $.Values.secrets.jwtSecretKey }}
+        {{- if eq $name "search-service" }}
+        - name: SEARCH_CURSOR_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ $.Values.secrets.existingSecret }}
+              key: {{ $.Values.secrets.searchCursorSecretKey }}
+        {{- end }}
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:

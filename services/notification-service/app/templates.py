@@ -8,7 +8,12 @@ import html
 import re
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-_TAGS = re.compile(r"<[^>]+>")
+# A real tag starts with a letter (or "/" for a closing tag). The previous
+# pattern, <[^>]+>, treated *any* pair of angle brackets as markup, so a
+# plain-text notification containing "5 < 6 & 7 > 2" silently lost
+# " < 6 & 7 >" from the text/plain part of the email. Requiring a letter after
+# "<" keeps every real tag and leaves bare comparisons alone.
+_TAGS = re.compile(r"</?[a-zA-Z][^>]*>")
 
 # (subject, html_body, text_body) triplets; {field} placeholders are filled
 # with sanitized (escaped) values for HTML, tag-stripped plain values for text.

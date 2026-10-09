@@ -8,10 +8,15 @@ import logging.config
 import uuid
 from contextvars import ContextVar
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from app.core.settings import settings
 from pythonjsonlogger import jsonlogger
+
+# Where the rotating file handler writes. Kept as a module constant so the
+# directory it needs and the handler that uses it cannot drift apart.
+_LOG_FILENAME = "logs/auth-service.log"
 
 # Context variables for distributed tracing
 correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="")
@@ -114,8 +119,47 @@ class CorrelationIdJsonFormatter(jsonlogger.JsonFormatter):
         _redact_headers(log_record)
 
 
+def _ensure_log_directory(filename: str) -> None:
+    """Create the parent directory a file handler writes into.
+
+    ``RotatingFileHandler`` inherits ``FileHandler``'s ``delay=False``, so
+    ``dictConfig`` opens the file eagerly. If the parent directory is missing
+    that open raises ``FileNotFoundError``, which ``dictConfig`` re-raises as
+    ``ValueError: Unable to configure handler 'file'`` -- aborting application
+    startup from the FastAPI lifespan. Under ``uvicorn --reload`` the reloader
+    survives its worker, so the container reports ``running`` while the
+    healthcheck never passes: permanently ``unhealthy`` with no obvious cause.
+
+    The directory cannot be assumed to exist. A fresh checkout has no ``logs/``
+    (git does not track empty directories), and ``docker-compose.dev.yml``
+    bind-mounts ``services/auth-service`` over ``/app``, shadowing the ``logs``
+    directory the Dockerfile creates. This is the same shadowing that
+    ``AGENTS.md`` documents for the local stack.
+
+    Args:
+        filename: The configured handler filename, relative to the cwd.
+
+    Raises:
+        OSError: If the directory cannot be created -- for example when the
+            bind-mounted host directory is not writable. The path is included
+            so this is diagnosable, instead of surfacing later as a bare
+            ``dictConfig`` handler error.
+    """
+    parent = Path(filename).parent
+    if parent == Path("."):
+        return
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise OSError(
+            f"Unable to create log directory {parent} required by {filename}: {exc}"
+        ) from exc
+
+
 def setup_logging() -> None:
     """Configure structured logging with JSON output."""
+
+    _ensure_log_directory(_LOG_FILENAME)
 
     logging_config = {
         "version": 1,
@@ -144,7 +188,7 @@ def setup_logging() -> None:
                 "class": "logging.handlers.RotatingFileHandler",
                 "level": "INFO",
                 "formatter": "json",
-                "filename": "logs/auth-service.log",
+                "filename": _LOG_FILENAME,
                 "maxBytes": 10485760,  # 10MB
                 "backupCount": 10,
                 "filters": ["redact_headers"],

@@ -6,6 +6,30 @@ This document describes the current GitHub Actions → GHCR → AWS EKS deployme
 
 Wildframe is **not production-ready by default**. The workflow assumes that the AWS infrastructure, EKS clusters, PostgreSQL, Redis, Kafka, Elasticsearch, DNS/TLS, and required GitHub environments already exist and are correctly configured.
 
+### Dev TLS and Kafka trust material
+
+Production TLS is terminated by your ingress/load balancer and is not managed
+by this repository. **Development** TLS is a separate, self-contained path:
+`scripts/generate-dev-certs.sh` mints a self-signed cert/key under
+`apps/web/certificates/` (never committed) and also emits everything the local
+Kafka brokers need to come up with TLS:
+
+- `kafka-keystore.pem` — Kafka PEM keystore (private key and certificate
+  concatenated into one file, which is what Kafka's PEM keystore format
+  requires)
+- `kafka-truststore.pem` — Kafka PEM truststore (the certificate alone)
+- `kafka_keystore_password` and `kafka_key_password` — the two broker password
+  files. `cp-kafka` reads these from **files**, not environment variables, which
+  is why the password files are generated rather than only exported.
+
+The script is idempotent and self-repairing: it skips regeneration when the web
+certs already exist but still ensures the Kafka PEM bundle and the password
+files are present, so it converges from any of the three partially-generated
+states (nothing, web certs only, web certs + Kafka PEMs but no passwords).
+
+The `Security Scan` job runs it before Trivy, and the Playwright config runs it
+before the E2E suite, so both work from a clean checkout with no manual step.
+
 ## Pipeline
 
 ```text
@@ -32,19 +56,26 @@ push main
     +--> in-cluster /health checks
 ```
 
-## CI Pipeline Details (54 Jobs)
+## CI Pipeline Details (15 jobs, several matrixed)
+
+`.github/workflows/ci-cd.yml` defines 15 jobs. `Backend Test`,
+`Docker Build Smoke`, and `Build & Push` fan out over a 15-service matrix, and
+`Backend Lint` runs mypy per service.
 
 | Stage | Jobs | Tools |
 |---|---|---|
+| Supply chain | 1 | `verify-supply-chain.py` (action pinning, scanner suppressions) + 4 unit tests |
 | Lint | 1 (Backend) + 1 (Frontend) | ruff, black, mypy, ESLint, Prettier |
 | Unit Tests | 16 (15 services + SDK) | pytest, Vitest |
-| Integration | 1 | pytest + httpx (87 tests, ~12 min) |
-| Contract | 1 | pytest (16 route drift tests) |
-| Frontend E2E | 1 | Playwright (9 tests: auth, content, subscription) |
-| Build | 17 (16 services + frontend) | Docker |
-| Security | 1 | Trivy |
-| Helm | 1 | helm lint |
-| Deploy | 2 | skipped (no AWS creds) |
+| Contract | 1 | pytest (`tests/contract`, 24 route drift tests) |
+| Frontend E2E | 1 | Playwright — 119 tests across 9 files, 15 routes (blocking) |
+| Build | 17 (15 services + frontend + web) | Docker |
+| Security | 1 | Trivy, Semgrep, CodeQL |
+| Helm | 1 | helm lint (+ default/staging/production rendering) |
+| Deploy | 2 | requires AWS OIDC + environment secrets |
+
+Per-service coverage is enforced at a **95% floor** (`--cov-fail-under`); the
+services currently sit at 97–99%.
 
 **Total time**: ~15-20 minutes
 
@@ -120,8 +151,15 @@ apps/web/Dockerfile
 Images are published to:
 
 ```text
-ghcr.io/shobhit727/wildframe/<service>
+ghcr.io/<owner>/<repo>/<service>
 ```
+
+where `<owner>/<repo>` is `${{ github.repository }}` — CI builds the image path
+as `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/<service>` rather than hardcoding
+an account name. For this repository that currently resolves to
+`ghcr.io/shobhit727/Wildframe/<service>`, which is also the `repository` value
+in `infrastructure/helm/wildframe/values.yaml`. The frontend image is published
+as `ghcr.io/<owner>/<repo>/web-app`.
 
 The deployment uses the immutable tag:
 
@@ -179,11 +217,80 @@ The deployment contract is a Kubernetes Secret named `wildframe-runtime` contain
 ```text
 JWT_SECRET_KEY
 POSTGRES_PASSWORD
+SEARCH_CURSOR_SECRET
 ```
 
 The deployment workflow must create/update that secret from GitHub Environment secrets before running Helm.
 
 Do not commit real credentials to `values.yaml`, `values-staging.yaml`, `values-production.yaml`, or any Markdown file.
+
+### Key requirements and consumers
+
+| Key | Consumed by | Requirements |
+| --- | --- | --- |
+| `JWT_SECRET_KEY` | all services | >= 32 chars, not a known-insecure value |
+| `POSTGRES_PASSWORD` | all services | must match the database deployment |
+| `SEARCH_CURSOR_SECRET` | `search-service` only | >= 32 chars, not a known-insecure value |
+
+`SEARCH_CURSOR_SECRET` signs the search pagination cursor. It is deliberately a
+**separate key** from `JWT_SECRET_KEY`: the two have different lifecycles, and
+sharing one key would mean rotating either silently invalidates the other.
+
+`search-service` validates this key at startup whenever `ENVIRONMENT` is not
+`development`. If it is missing, too short, or a known-insecure value, the pod
+fails validation and crash-loops. The chart injects it into `search-service`
+only, so the other 14 services are unaffected if the key is absent — but
+`search-service` will not start. A `secretKeyRef` pointing at a key that does
+not exist is a hard container-start failure, not a silent empty value.
+
+The dev default `dev-cursor-secret-change-in-production-min-32-bytes` is on the
+service's known-insecure list. It satisfies the length check and is still
+rejected — this is why a placeholder that looks strong enough is not safe to
+copy into a real environment.
+
+### Rotating runtime secrets
+
+The chart never rotates secrets. Rotation is an out-of-band cluster operation
+against the live Secret; the key *names* stay stable, so no chart or values
+change is required.
+
+```bash
+# Generate a value that satisfies the service validator.
+openssl rand -base64 48
+
+# Update the Secret in place, preserving the other keys.
+kubectl -n wildframe-production create secret generic wildframe-runtime \
+  --from-literal=JWT_SECRET_KEY="$WILDFRAME_JWT_SECRET" \
+  --from-literal=POSTGRES_PASSWORD="$WILDFRAME_POSTGRES_PASSWORD" \
+  --from-literal=SEARCH_CURSOR_SECRET="$NEW_CURSOR_SECRET" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# secretKeyRef values are read at container start, so pods must roll to pick
+# up the new value.
+kubectl -n wildframe-production rollout restart deployment/search-service
+kubectl -n wildframe-production rollout status deployment/search-service
+```
+
+What breaks while rotating `SEARCH_CURSOR_SECRET`:
+
+- **Only `search-service` is affected.** It is injected into that deployment alone.
+- **In-flight pagination cursors are invalidated.** Any cursor a client is
+  holding fails HMAC verification and the client restarts pagination. Expect a
+  brief UX blip, not a security event, and no impact on stored data.
+- **Issued JWTs are unaffected.** That separation is the reason this is a
+  distinct key; rotating it does not sign users out.
+- **Staging is independent.** It reads the same Secret name in the
+  `wildframe-staging` namespace, so rotate each namespace separately.
+
+Rotate `JWT_SECRET_KEY` and `POSTGRES_PASSWORD` the same way, but note that
+rotating `JWT_SECRET_KEY` invalidates existing access tokens and forces a
+re-login across all services.
+
+> Provisioning gap: the deployment workflow currently does not create or update
+> `wildframe-runtime`; it only creates the `ghcr-pull` image-pull secret. Until
+> that is wired up, the `kubectl` command above is the actual rotation path, and
+> the Secret must be seeded manually before the first deploy or every pod that
+> references it will fail to start. Tracked separately from this change.
 
 ## Image pull authentication
 
@@ -233,6 +340,7 @@ Before enabling automatic production deployment, verify:
 - [ ] `AWS_DEPLOY_ROLE_ARN` is configured.
 - [ ] `WILDFRAME_JWT_SECRET` is configured.
 - [ ] `WILDFRAME_POSTGRES_PASSWORD` matches the database deployment.
+- [ ] `WILDFRAME_SEARCH_CURSOR_SECRET` is configured (>= 32 chars, not a known-insecure value) and present in the `wildframe-runtime` Secret.
 - [ ] GHCR package access works from the cluster.
 - [ ] PostgreSQL, Redis, Kafka, and Elasticsearch endpoints are configured.
 - [ ] Ingress, TLS, DNS, and CDN are configured.

@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 _naive_now = lambda: datetime.now(UTC).replace(tzinfo=None)  # noqa: E731
+SEARCH_INDEX_UPDATED_AT_DEFAULT = _naive_now
 
 
 class Base(DeclarativeBase):
@@ -20,7 +21,7 @@ class SearchQuery(Base):
     """Search query log for analytics."""
 
     __tablename__ = "search_queries"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     query_text = Column(String(500), nullable=False)
     result_count = Column(Integer, default=0)
@@ -53,4 +54,6 @@ class SearchIndex(Base):
     dub_languages = Column(JSON, nullable=True)
     subtitle_languages = Column(JSON, nullable=True)
     indexed_at = Column(DateTime, default=_naive_now)
-    updated_at = Column(DateTime, default=_naive_now, onupdate=_naive_now)
+    updated_at = Column(
+        DateTime, default=SEARCH_INDEX_UPDATED_AT_DEFAULT, onupdate=SEARCH_INDEX_UPDATED_AT_DEFAULT
+    )

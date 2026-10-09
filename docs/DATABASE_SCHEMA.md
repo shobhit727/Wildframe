@@ -814,9 +814,9 @@ Files monitored by Loki (log aggregation):
 ## Resources
 
 - [PostgreSQL Docs](https://www.postgresql.org/docs/)
-- [Database Design Guide](../docs/DATABASE_DESIGN.md)
-- [API Documentation](../docs/API_DOCUMENTATION.md)
-- [Backup Procedures](../docs/OPERATIONS_GUIDE.md#backups)
+- [Database Design Guide](ARCHITECTURE.md#database-schema)
+- [API Documentation](API_DOCUMENTATION.md)
+- [Backup Procedures](OPERATIONS.md#backup-strategy)
 
 ---
 

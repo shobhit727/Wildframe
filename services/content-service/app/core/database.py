@@ -33,7 +33,10 @@ class DatabaseManager:
             # Pool class follows the driver: NullPool only for SQLite test
             # engines; PostgreSQL always gets a capped QueuePool so live dev
             # is pooled too.
-            is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+            database_url = settings.DATABASE_URL
+            if not database_url:
+                raise RuntimeError("DATABASE_URL is not configured")
+            is_sqlite = database_url.startswith("sqlite")
             pool_class = NullPool if is_sqlite else None
 
             pool_kwargs: dict = (
@@ -61,7 +64,7 @@ class DatabaseManager:
             )
 
             self._engine = create_async_engine(
-                settings.DATABASE_URL,
+                database_url,
                 echo=settings.DEBUG,
                 future=True,
                 **({"poolclass": pool_class} if pool_class else {}),

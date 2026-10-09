@@ -24,7 +24,10 @@ class DatabaseManager:
         """Initialize database."""
         # NullPool for SQLite (in-memory tests); PostgreSQL lets SQLAlchemy
         # pick its async-adapted queue pool (see create_async_engine below).
-        if settings.DATABASE_URL.startswith("sqlite"):
+        database_url = settings.DATABASE_URL
+        if not database_url:
+            raise RuntimeError("DATABASE_URL is not configured")
+        if database_url.startswith("sqlite"):
             pool_kwargs = {}
         else:
             pool_kwargs = {
@@ -36,13 +39,13 @@ class DatabaseManager:
             }
 
         cls.engine = create_async_engine(
-            settings.DATABASE_URL,
+            database_url,
             echo=False,
             future=True,
             # NullPool only for SQLite; for PostgreSQL omit poolclass so
             # SQLAlchemy selects its async-adapted queue pool automatically
             # (the sync QueuePool class is rejected by async engines).
-            **({"poolclass": NullPool} if settings.DATABASE_URL.startswith("sqlite") else {}),
+            **({"poolclass": NullPool} if database_url.startswith("sqlite") else {}),
             connect_args=(
                 {
                     "command_timeout": 30,
@@ -52,7 +55,7 @@ class DatabaseManager:
                         "idle_in_transaction_session_timeout": "30000",
                     },
                 }
-                if not settings.DATABASE_URL.startswith("sqlite")
+                if not database_url.startswith("sqlite")
                 else {}
             ),
             **pool_kwargs,

@@ -168,21 +168,24 @@ class StreamingService:
         return signed_url, expires_at
 
     def verify_signed_url(
-        self, session_id: UUID, content_id: UUID, signature: str, expires: int
+        self, session_id: UUID, episode_id: UUID, signature: str, expires: int
     ) -> bool:
         """Verify HMAC-signed playback URL.
 
         Checks:
-        1. Signature matches HMAC(secret, session_id|content_id|expiry)
+        1. Signature matches HMAC(secret, session_id|episode_id|expiry)
         2. Expiry not in the past
-        3. Session exists and is active
+
+        Session status/expiry is enforced separately by
+        check_session_valid_for_playback, which binds the session to the same
+        episode and, when a bearer token is present, to its owner.
         """
         # Check expiry
         if datetime.now(UTC).timestamp() > expires:
             return False
 
         # Verify signature
-        message = f"{session_id}|{content_id}|{expires}".encode()
+        message = f"{session_id}|{episode_id}|{expires}".encode()
         secret = settings.PLAYBACK_URL_SIGNING_SECRET.encode()
         expected_signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
 

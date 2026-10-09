@@ -142,6 +142,7 @@ class RefreshTokenRepository(BaseRepository):
             select(RefreshToken)
             .where(RefreshToken.user_id == user_id)
             .order_by(RefreshToken.created_at.desc(), RefreshToken.id.desc())
+            .limit(1)
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

@@ -210,14 +210,29 @@ class MilestoneRepository:
         return tranche
 
     async def release_tranche(self, milestone_id: UUID, threshold: int) -> MilestoneTranche | None:
-        """Mark a single tranche released and stamp released_at."""
+        """Release one LOCKED tranche of a live milestone.
+
+        A killed milestone has already rolled its tranches back, and a released
+        or rolled-back tranche is immutable; releasing either would break the
+        capital-protection guarantee (PRODUCT_VISION §2.3). Returns None when
+        the tranche is not in an eligible state.
+        """
+        ms_result = await self.session.execute(
+            select(Milestone)
+            .where(Milestone.id == milestone_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        ms = ms_result.scalar_one_or_none()
+        if ms is None or ms.status == MilestoneStatus.KILLED:
+            return None
         stmt = select(MilestoneTranche).where(
             MilestoneTranche.milestone_id == milestone_id,
             MilestoneTranche.threshold == threshold,
         )
         result = await self.session.execute(stmt)
         tranche = result.scalar_one_or_none()
-        if tranche is None:
+        if tranche is None or tranche.status != TrancheStatus.LOCKED:
             return None
         tranche.status = TrancheStatus.RELEASED
         tranche.released_at = datetime.now(UTC).replace(tzinfo=None)

@@ -133,3 +133,61 @@ def test_consent_record_tracks_grant_and_withdrawal_state() -> None:
     consent.withdrawn_at = datetime.now(UTC).replace(tzinfo=None)
     assert consent.granted is False
     assert consent.withdrawn_at is not None
+
+
+# ==========================================================================
+# User.is_locked — the property and its compat setter
+# ==========================================================================
+
+
+class TestIsLockedProperty:
+    def test_unlocked_when_locked_until_is_none(self) -> None:
+        user = User()
+        user.locked_until = None
+
+        assert user.is_locked is False
+
+    def test_locked_when_locked_until_is_in_the_future(self) -> None:
+        user = User()
+        user.locked_until = datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=5)
+
+        assert user.is_locked is True
+
+    def test_unlocked_once_locked_until_has_passed(self) -> None:
+        user = User()
+        user.locked_until = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=1)
+
+        assert user.is_locked is False
+
+    def test_tz_aware_locked_until_is_normalised_before_comparing(self) -> None:
+        user = User()
+        user.locked_until = datetime.now(UTC) + timedelta(minutes=5)
+
+        assert user.is_locked is True
+
+    def test_setter_true_locks_for_one_hour(self) -> None:
+        user = User()
+
+        user.is_locked = True
+
+        assert user.locked_until is not None
+        assert user.locked_until.tzinfo is None
+        assert user.is_locked is True
+        remaining = user.locked_until - datetime.now(UTC).replace(tzinfo=None)
+        assert timedelta(minutes=59) < remaining <= timedelta(hours=1)
+
+    def test_setter_false_clears_the_lock(self) -> None:
+        user = User()
+        user.locked_until = datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=5)
+
+        user.is_locked = False
+
+        assert user.locked_until is None
+        assert user.is_locked is False
+
+    def test_setter_false_on_a_never_locked_user_is_a_noop(self) -> None:
+        user = User()
+
+        user.is_locked = False
+
+        assert user.locked_until is None

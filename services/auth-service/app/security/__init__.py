@@ -1,6 +1,5 @@
 import base64
 import hashlib
-import json
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -16,7 +15,12 @@ from app.models import User
 
 logger = logging.getLogger(__name__)
 
-PASSWORD_MAX_LENGTH: int = 128
+# bcrypt silently truncates its input at 72 BYTES. Anything past that is
+# ignored, so two passwords sharing their first 72 bytes are
+# interchangeable and either one authenticates. The cap is therefore the
+# algorithm's limit, measured in bytes rather than characters -- 40
+# multi-byte characters already exceed it.
+PASSWORD_MAX_LENGTH: int = 72
 
 COMMON_PASSWORDS: frozenset[str] = frozenset(
     {
@@ -55,9 +59,13 @@ def normalize_email(email: str) -> str:
 
 
 def _encode_password(password: str) -> bytes:
-    if len(password) > PASSWORD_MAX_LENGTH:
-        raise ValueError(f"password exceeds maximum length of {PASSWORD_MAX_LENGTH} characters")
-    return password.encode("utf-8")
+    encoded = password.encode("utf-8")
+    if len(encoded) > PASSWORD_MAX_LENGTH:
+        raise ValueError(
+            f"password cannot be longer than {PASSWORD_MAX_LENGTH} bytes "
+            f"(got {len(encoded)}); bcrypt ignores everything past that"
+        )
+    return encoded
 
 
 def role_for_email(email: str | None) -> str:
@@ -290,27 +298,6 @@ class TokenManager:
                 raise
             logger.warning(f"Token verification failed: {e}")
             return None
-
-    @staticmethod
-    def extract_user_id(token: str) -> UUID | None:
-        try:
-            payload = jwt.decode(
-                token,
-                "",
-                algorithms=[settings.JWT_ALGORITHM],
-                options={
-                    "verify_signature": False,
-                    "verify_aud": False,
-                    "verify_iss": False,
-                    "verify_exp": False,
-                },
-            )
-            user_id_str = payload.get("user_id")
-            if user_id_str:
-                return UUID(user_id_str)
-        except (JWTError, ValueError, IndexError, UnicodeDecodeError, json.JSONDecodeError):
-            pass
-        return None
 
     def create_access_token_for_user(self, user: User) -> str:
         return TokenManager.create_access_token(user.id, user.email, user.auth_version)

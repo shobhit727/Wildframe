@@ -52,9 +52,9 @@ def test_get_db_session_is_async_generator():
 
     from app.core.database import get_db_session
 
-    assert inspect.isasyncgenfunction(get_db_session), (
-        "get_db_session must be an async generator function for FastAPI " "dependency injection."
-    )
+    assert inspect.isasyncgenfunction(
+        get_db_session
+    ), "get_db_session must be an async generator function for FastAPI dependency injection."
 
 
 @pytest.mark.unit
@@ -94,7 +94,7 @@ async def test_get_db_session_yields_and_closes():
 
 @pytest.mark.unit
 def test_streaming_settings_exist():
-    """New streaming settings must exist (#281, #489, #490, #491, #587)."""
+    """New streaming settings must exist (#281, #489, #490, #491)."""
     from app.core.settings import settings
 
     assert hasattr(settings, "MAX_ACTIVE_SESSIONS")
@@ -108,6 +108,3 @@ def test_streaming_settings_exist():
     assert hasattr(settings, "PLAYBACK_URL_TTL_SECONDS")
     assert isinstance(settings.PLAYBACK_URL_TTL_SECONDS, int)
     assert settings.PLAYBACK_URL_TTL_SECONDS > 0
-
-    assert hasattr(settings, "ENTITLEMENT_CHECK_ENABLED")
-    assert isinstance(settings.ENTITLEMENT_CHECK_ENABLED, bool)

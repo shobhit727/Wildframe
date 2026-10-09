@@ -43,7 +43,7 @@ class UserModerationRepository:
     async def list_moderated_users(
         self, status: str | None = None, limit: int = 50, offset: int = 0
     ) -> list[UserModeration]:
-        query = select(UserModeration).where(UserModeration.is_active == True)
+        query = select(UserModeration).where(UserModeration.is_active.is_(True))
         if status:
             query = query.where(UserModeration.status == status)
         query = (
@@ -116,7 +116,7 @@ class ContentModerationRepository:
                 and_(
                     ContentModeration.content_id == content_id,
                     ContentModeration.flagged_by == flagged_by,
-                    ContentModeration.is_active == True,
+                    ContentModeration.is_active.is_(True),
                     ContentModeration.status == "flagged",
                 )
             )
@@ -129,7 +129,7 @@ class ContentModerationRepository:
     ) -> list[ContentModeration]:
         query = (
             select(ContentModeration)
-            .where(and_(ContentModeration.is_active == True, ContentModeration.status == status))
+            .where(and_(ContentModeration.is_active.is_(True), ContentModeration.status == status))
             .order_by(desc(ContentModeration.flagged_at), desc(ContentModeration.id))
             .limit(limit)
             .offset(offset)
@@ -144,7 +144,7 @@ class ContentModerationRepository:
             select(ContentModeration)
             .where(
                 ContentModeration.content_id == content_id,
-                ContentModeration.is_active == True,
+                ContentModeration.is_active.is_(True),
                 ContentModeration.status == "flagged",
             )
             .order_by(desc(ContentModeration.created_at), ContentModeration.id.desc())
@@ -181,7 +181,7 @@ class SystemAlertRepository:
     async def list_unacknowledged(self, limit: int = 50) -> list[SystemAlert]:
         query = (
             select(SystemAlert)
-            .where(and_(SystemAlert.is_active == True, SystemAlert.acknowledged == False))
+            .where(and_(SystemAlert.is_active.is_(True), SystemAlert.acknowledged.is_(False)))
             .order_by(desc(SystemAlert.created_at), desc(SystemAlert.id))
             .limit(limit)
         )
@@ -191,7 +191,7 @@ class SystemAlertRepository:
     async def list_by_severity(self, severity: str, limit: int = 50) -> list[SystemAlert]:
         query = (
             select(SystemAlert)
-            .where(and_(SystemAlert.is_active == True, SystemAlert.severity == severity))
+            .where(and_(SystemAlert.is_active.is_(True), SystemAlert.severity == severity))
             .order_by(desc(SystemAlert.created_at), desc(SystemAlert.id))
             .limit(limit)
         )
@@ -235,7 +235,7 @@ class SystemConfigRepository:
     async def list_all(self, limit: int = 100) -> list[SystemConfig]:
         query = (
             select(SystemConfig)
-            .where(SystemConfig.is_active == True)
+            .where(SystemConfig.is_active.is_(True))
             .order_by(SystemConfig.key)
             .limit(limit)
         )
@@ -296,6 +296,16 @@ class AdminAuditLogRepository:
 
     async def delete(self, *args, **kwargs) -> None:
         raise AuditLogAppendOnlyError("admin audit logs are append-only: deletion is not permitted")
+
+    async def list_recent(self, limit: int = 50, offset: int = 0) -> list[AdminAuditLog]:
+        query = (
+            select(AdminAuditLog)
+            .order_by(desc(AdminAuditLog.created_at), desc(AdminAuditLog.id))
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
 
     async def list_by_admin(self, admin_id: str, limit: int = 50) -> list[AdminAuditLog]:
         query = (

@@ -1,6 +1,59 @@
 # Wildframe Status
 
-**Last reviewed:** August 2026
+**Last reviewed:** 6 October 2026
+
+## Issue-fix sweep, October 2026
+
+A triage of the open issue backlog found **31 issues verified: 10 already fixed,
+11 misdiagnosed (fixing them as written would have been a regression), 10 real.**
+All 10 real ones are fixed on `audit/fix-open-github-issues`; every fix was
+mutation-tested, meaning the source change was reverted and the test watched go
+red for the named defect.
+
+| Area | Issues fixed | What was wrong |
+|---|---|---|
+| auth-service | #852 | `get_by_user_id` ordered but never limited, so a user with two refresh tokens raised `MultipleResultsFound` instead of returning the newest |
+| user-service | #850 | JSON formatter used `%(timestamp)s`/`%(level)s`, which do not exist on a `LogRecord`; every line shipped `"level": null, "timestamp": null` |
+| notification | #856, sanitization | `parse_delivery_errors` raised `AttributeError` on valid non-object JSON, 500-ing every read path; `sanitize_plain` ate bare comparisons so "5 < 6 & 7 > 2" arrived as "5  2" |
+| analytics | #873 | `resolve_content_owner` assumed a JSON object; a scalar body escaped as `AttributeError` past an authorization gate that only caught its own error type, so the request 500ed instead of denying with 503 |
+| compliance SDK | #846 | `use_enum_values` coerced jurisdiction enums to strings; 16 US policy variants resolved the wrong regulations. Two defects, both load-bearing |
+| Kafka | #893, #795 | **Nothing in the repo ever created a topic or an ACL.** Every publish died with `TOPIC_AUTHORIZATION_FAILED`; the stack logs carried 28 of them |
+| api-gateway | #808, #932 | Unreachable docs branch, dead `br` encoding, dead decompressor flush, dead ratio limit, and a lease TTL derived from a setting named for a window |
+| media-pipeline | #862, #883 | `_read_capped` discarded the chunk that tripped its cap, so ffmpeg diagnostics froze at 60 of 100 bytes; plus three dead paths |
+| CI / Helm | #796 | 27 chart policy tests existed and **nothing invoked them**; deleting a production guard left CI green |
+
+### Two findings that changed how we measure things
+
+**Tests that pin the bug are a convention here, and they work.** Of the defects
+above, several had a test named `test_known_defect_*` or `test_known_drift_*`
+asserting the broken behaviour, with a docstring saying it was "expected to be
+replaced when production code is fixed". Each was flipped into an invariant. A
+green suite therefore proves nothing about these areas on its own.
+
+**A passing test is not evidence the app works.** The integration suite gated
+itself on stack reachability, so it reported clean while executing **zero** of its
+110 tests. With the stack up it runs 101 passed / 9 failed.
+
+### State of the local stack
+
+Postgres, Kafka, Zookeeper and all 15 services plus web and Caddy run together.
+Verified live: the Kafka ACL fix yields zero `TopicAuthorization_FAILED`
+across all services, and `kafka-init` bootstraps 48 topics and 142 ACLs with no
+wildcards.
+
+**Two consumers still fail closed by design of the ACL table** --
+`recommendation-service` and `media-pipeline` subscribe in their own
+`core/events.py` to topics `TOPIC_METADATA` does not list them as consumers of,
+so no ACL is created. Awaiting a grant-or-remove decision (see `oner-task.md`).
+
+### Open decisions
+
+`oner-task.md` holds the full owner action list. The ones that gate further work:
+the payout ledger model collision (#999, deferred), whether unregistered
+jurisdictions may fall back to `GLOBAL`, the two ungranted Kafka ACLs, and how
+the integration suite should get past `RATE_LIMIT_AUTH=5`.
+
+---
 
 ## Overall
 
@@ -338,7 +391,17 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (Aug 18, 2026): 895 backend unit/route tests + 110 integration
-tests + 18 static route-contract/sandbox tests (CI) + 43 frontend vitest
-tests. One known pre-existing failure, billing
-`test_release_tranche_not_locked`, is unrelated to the hardening work.
+Test totals (re-measured on `audit/fix-open-github-issues`): **6,217** backend
+unit/route tests across the 15 services + **694** shared SDK tests + **24**
+static route-contract tests (CI) + **4** supply-chain guard tests + **110**
+live-stack integration tests + **805** frontend vitest tests across 44 files +
+**119** Playwright e2e tests across 9 files covering 15 routes. Per-service
+coverage is 97–99% with a 95% floor enforced in CI; mypy reports 0 errors
+across all 15 services.
+
+One known open failure: `tests/contract/test_route_drift.py::
+test_frontend_paths_resolve_to_backend_routes` fails because it globs all of
+`apps/web/src` without excluding `__tests__` and therefore reads mock URL
+literals from the frontend test files. Excluding fixtures, the scan finds **0**
+unresolved paths, so there is no real frontend↔backend route drift.
+ 

@@ -69,15 +69,124 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="${KAFKA_INTER_BROKER_USER}" password="${KAFKA_INTER_BROKER_PASSWORD}" user_admin="${KAFKA_ADMIN_PASSWORD}" user_auth-service="${AUTH_SERVICE_KAFKA_PASSWORD}" user_user-service="${USER_SERVICE_KAFKA_PASSWORD}" user_content-service="${CONTENT_SERVICE_KAFKA_PASSWORD}" user_streaming-service="${STREAMING_SERVICE_KAFKA_PASSWORD}" user_search-service="${SEARCH_SERVICE_KAFKA_PASSWORD}" user_recommendation-service="${RECOMMENDATION_SERVICE_KAFKA_PASSWORD}" user_billing-service="${BILLING_SERVICE_KAFKA_PASSWORD}" user_analytics-service="${ANALYTICS_SERVICE_KAFKA_PASSWORD}" user_notification-service="${NOTIFICATION_SERVICE_KAFKA_PASSWORD}" user_creators-service="${CREATORS_SERVICE_KAFKA_PASSWORD}" user_moderation-service="${MODERATION_SERVICE_KAFKA_PASSWORD}" user_uploads-service="${UPLOADS_SERVICE_KAFKA_PASSWORD}" user_media-pipeline="${MEDIA_PIPELINE_KAFKA_PASSWORD}" user_admin-service="${ADMIN_SERVICE_KAFKA_PASSWORD}";'
-      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/localhost.pem
+      # All broker credentials live in ONE static JAAS section, generated at
+      # container start by ./kafka-entrypoint.sh from the variables below. Do not
+      # reintroduce KAFKA_LISTENER_NAME_*_SASL_JAAS_CONFIG here: cp-kafka's
+      # configure lowercases every KAFKA_* variable, so
+      # KAFKA_LISTENER_NAME_SASL_SSL_PLAIN_SASL_JAAS_CONFIG becomes
+      # `listener.name.sasl.ssl.plain.sasl.jaas.config` and can never match the
+      # listener actually named `SASL_SSL` (Kafka matches listener names
+      # case-sensitively). Verified against a running broker: with only that
+      # property set, a client authenticating as `admin` succeeded while all 15
+      # service users were rejected, because every listener credential was
+      # silently falling back to the static section anyway.
+      #
+      # The variable NAMES and the ${VAR:-default} expressions below are the same
+      # ones each service uses in its own block, so the broker and the services
+      # cannot drift: a .env override moves both sides at once. Every password
+      # has a dev-only default for the same reason KAFKA_INTER_BROKER_PASSWORD
+      # and KAFKA_ADMIN_PASSWORD do -- an unset variable interpolates to the
+      # empty string, and a broker holding empty passwords can never
+      # authenticate anybody. A real .env value always wins.
+      #
+      # These are deliberately NOT KAFKA_-prefixed: cp-kafka would translate them
+      # into unknown broker properties (it already did so for
+      # inter.broker.user/admin.password, which are not Kafka configs).
+      WF_INTER_BROKER_USER: ${KAFKA_INTER_BROKER_USER:-kafka}
+      WF_INTER_BROKER_PASSWORD: ${KAFKA_INTER_BROKER_PASSWORD:-wildframe-dev}
+      WF_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD:-wildframe-dev}
+      API_GATEWAY_KAFKA_USERNAME: ${API_GATEWAY_KAFKA_USERNAME:-api-gateway}
+      API_GATEWAY_KAFKA_PASSWORD: ${API_GATEWAY_KAFKA_PASSWORD:-wildframe-dev}
+      AUTH_SERVICE_KAFKA_USERNAME: ${AUTH_SERVICE_KAFKA_USERNAME:-auth-service}
+      AUTH_SERVICE_KAFKA_PASSWORD: ${AUTH_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      USER_SERVICE_KAFKA_USERNAME: ${USER_SERVICE_KAFKA_USERNAME:-user-service}
+      USER_SERVICE_KAFKA_PASSWORD: ${USER_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      CONTENT_SERVICE_KAFKA_USERNAME: ${CONTENT_SERVICE_KAFKA_USERNAME:-content-service}
+      CONTENT_SERVICE_KAFKA_PASSWORD: ${CONTENT_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      STREAMING_SERVICE_KAFKA_USERNAME: ${STREAMING_SERVICE_KAFKA_USERNAME:-streaming-service}
+      STREAMING_SERVICE_KAFKA_PASSWORD: ${STREAMING_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      SEARCH_SERVICE_KAFKA_USERNAME: ${SEARCH_SERVICE_KAFKA_USERNAME:-search-service}
+      SEARCH_SERVICE_KAFKA_PASSWORD: ${SEARCH_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      RECOMMENDATION_SERVICE_KAFKA_USERNAME: ${RECOMMENDATION_SERVICE_KAFKA_USERNAME:-recommendation-service}
+      RECOMMENDATION_SERVICE_KAFKA_PASSWORD: ${RECOMMENDATION_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      BILLING_SERVICE_KAFKA_USERNAME: ${BILLING_SERVICE_KAFKA_USERNAME:-billing-service}
+      BILLING_SERVICE_KAFKA_PASSWORD: ${BILLING_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      ANALYTICS_SERVICE_KAFKA_USERNAME: ${ANALYTICS_SERVICE_KAFKA_USERNAME:-analytics-service}
+      ANALYTICS_SERVICE_KAFKA_PASSWORD: ${ANALYTICS_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      NOTIFICATION_SERVICE_KAFKA_USERNAME: ${NOTIFICATION_SERVICE_KAFKA_USERNAME:-notification-service}
+      NOTIFICATION_SERVICE_KAFKA_PASSWORD: ${NOTIFICATION_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      CREATORS_SERVICE_KAFKA_USERNAME: ${CREATORS_SERVICE_KAFKA_USERNAME:-creators-service}
+      CREATORS_SERVICE_KAFKA_PASSWORD: ${CREATORS_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      MODERATION_SERVICE_KAFKA_USERNAME: ${MODERATION_SERVICE_KAFKA_USERNAME:-moderation-service}
+      MODERATION_SERVICE_KAFKA_PASSWORD: ${MODERATION_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      UPLOADS_SERVICE_KAFKA_USERNAME: ${UPLOADS_SERVICE_KAFKA_USERNAME:-uploads-service}
+      UPLOADS_SERVICE_KAFKA_PASSWORD: ${UPLOADS_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      MEDIA_PIPELINE_KAFKA_USERNAME: ${MEDIA_PIPELINE_KAFKA_USERNAME:-media-pipeline}
+      MEDIA_PIPELINE_KAFKA_PASSWORD: ${MEDIA_PIPELINE_KAFKA_PASSWORD:-wildframe-dev}
+      ADMIN_SERVICE_KAFKA_USERNAME: ${ADMIN_SERVICE_KAFKA_USERNAME:-admin-service}
+      ADMIN_SERVICE_KAFKA_PASSWORD: ${ADMIN_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      # A PEM keystore must be the private key AND certificate concatenated in one
+      # file; localhost.pem is the certificate only, so it cannot serve as a
+      # keystore. scripts/generate-dev-certs.sh emits both bundles below.
+      # cp-kafka's entrypoint (etc/confluent/docker/configure) derives
+      # KAFKA_SSL_KEYSTORE_LOCATION from *_FILENAME and hard-fails without it, so
+      # the FILENAME vars are what actually select the generated bundles.
+      KAFKA_SSL_KEYSTORE_FILENAME: kafka-keystore.pem
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/kafka/secrets/kafka-keystore.pem
       KAFKA_SSL_KEYSTORE_TYPE: PEM
-      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/localhost.pem
+      KAFKA_SSL_TRUSTSTORE_FILENAME: kafka-truststore.pem
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/kafka-truststore.pem
       KAFKA_SSL_TRUSTSTORE_TYPE: PEM
       KAFKA_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM: ""
-      KAFKA_SSL_KEYSTORE_PASSWORD: ${KAFKA_SSL_KEYSTORE_PASSWORD}
-      KAFKA_SSL_KEY_PASSWORD: ${KAFKA_SSL_KEY_PASSWORD}
-      KAFKA_SSL_TRUSTSTORE_PASSWORD: ${KAFKA_SSL_TRUSTSTORE_PASSWORD}
+      # The entrypoint reads the key/keystore passwords from these two files.
+      # cp-kafka requires both vars: KAFKA_SSL_KEY_CREDENTIALS supplies
+      # ssl.key.password, KAFKA_SSL_KEYSTORE_CREDENTIALS supplies
+      # ssl.keystore.credentials. scripts/generate-dev-certs.sh writes them.
+      KAFKA_SSL_KEY_CREDENTIALS: kafka_key_password
+      KAFKA_SSL_KEYSTORE_CREDENTIALS: kafka_keystore_password
+      # ONLY the key password is allowed with a PEM keystore. Kafka validates
+      # this in SslEngineFactory and refuses to start with
+      #   SSL key store password cannot be specified with PEM format,
+      #   only key password may be specified
+      # (thrown from the broker-to-controller channel, so it kills the broker the
+      # same way the missing JAAS section did). So KAFKA_SSL_KEYSTORE_PASSWORD
+      # and KAFKA_SSL_TRUSTSTORE_PASSWORD are deliberately NOT set: leaving them
+      # unset is what keeps the PEM keystore valid, and an unset variable here
+      # simply omits the property rather than emitting an empty one. The
+      # keystore password is still available to the broker through
+      # ssl.keystore.credentials above if a future keystore type needs it.
+      # deployments/kafka-client.properties follows the same rule.
+      KAFKA_SSL_KEY_PASSWORD: ${KAFKA_SSL_KEY_PASSWORD:-wildframe-dev}
+      # cp-kafka's entrypoint hard-fails with `dub ensure KAFKA_OPTS` whenever
+      # ADVERTISED_LISTENERS contains a SASL_ endpoint, so this must be non-empty.
+      # Heap settings plus the one system property the broker cannot do without.
+      #
+      # -Djava.security.auth.login.config points at /etc/kafka/kafka-server-jaas.conf,
+      # which kafka-entrypoint.sh generates from KAFKA_INTER_BROKER_USER /
+      # KAFKA_INTER_BROKER_PASSWORD / KAFKA_ADMIN_PASSWORD immediately before the
+      # broker launches. It is REQUIRED: the broker-to-controller channel
+      # (BrokerToControllerChannelManagerImpl) looks its credentials up in the
+      # static JAAS configuration named "KafkaServer" and ignores the
+      # listener-scoped KAFKA_LISTENER_NAME_*_SASL_JAAS_CONFIG settings, so
+      # without this property the broker crash-loops at startup with
+      #   Could not find a 'KafkaServer' or 'sasl_ssl.KafkaServer' entry in the
+      #   JAAS configuration. System property 'java.security.auth.login.config'
+      #   is not set
+      #
+      # That property is JVM-global, which is why it used to be a trap: every JVM
+      # in the container inherits it, and cp-kafka's preflight `cub zk-ready`
+      # then tries to SASL to the dev ZooKeeper, which has no SASL, and exits 1
+      # (verified: "ERROR ... Authentication failed", exit 1). The escape hatch
+      # is ZOOKEEPER_SASL_ENABLED=false below, NOT removing the property:
+      # cub only forwards KAFKA_OPTS to its own JVM when ZooKeeper SASL is
+      # enabled, so with that set the preflight stays plaintext -- which is
+      # correct, because this stack's ZooKeeper genuinely has no SASL.
+      KAFKA_OPTS: -Xms256M -Xmx512M -Djava.security.auth.login.config=/etc/kafka/kafka-server-jaas.conf
+      # Read by confluent-docker-utils' cub (see note above). Deliberately NOT
+      # KAFKA_-prefixed: a KAFKA_* var would be translated into a broker property.
+      # The dev ZooKeeper is plaintext; saying so is what keeps the preflight JVM
+      # from inheriting the broker's SASL login config.
+      ZOOKEEPER_SASL_ENABLED: "false"
     ports:
     - 9092:9092
     - 29092:29092
@@ -86,16 +195,104 @@ services:
     # Dev TLS certificates are generated locally via scripts/generate-dev-certs.sh (never committed, issue #788).
     # Mount the directory so Caddy/Grafana/Kafka all see the same generated pair.
     - ../apps/web/certificates:/etc/kafka/secrets:ro
+    # SASL_SSL credentials for the broker healthcheck (see deployments/kafka-client.properties).
+    - ./kafka-client.properties:/etc/kafka/kafka-client.properties:ro
+    # Generates /etc/kafka/kafka-server-jaas.conf from the environment before the
+    # broker starts; see the script header for why the static JAAS section is
+    # required and why it is not committed.
+    - ./kafka-entrypoint.sh:/opt/wildframe/kafka-entrypoint.sh:ro
+    entrypoint:
+    - /bin/bash
+    - /opt/wildframe/kafka-entrypoint.sh
     healthcheck:
+      # localhost:29092 is the SASL_SSL listener, so this CLI must authenticate or
+      # it can never succeed and every service blocked on
+      # `depends_on: kafka: condition: service_healthy` deadlocks. The
+      # --command-config file supplies sasl.mechanism/PLAIN + the admin
+      # credentials + the dev truststore; the file is mounted read-only just
+      # above. The client context is taken from sasl.jaas.config in that file, so
+      # the broker's global login config (KAFKA_OPTS) does not apply to it.
       test:
       - CMD
       - kafka-broker-api-versions
       - --bootstrap-server
       - localhost:29092
+      - --command-config
+      - /etc/kafka/kafka-client.properties
       interval: 15s
       timeout: 15s
       retries: 10
       start_period: 90s
+    networks:
+    - wildframe-network
+  # One-shot bootstrap: creates every topic in the SDK's registry and every
+  # per-service ACL in its _SERVICE_ACL matrix (issue #893).
+  #
+  # It has to be a separate container, not part of kafka-entrypoint.sh:
+  # kafka-topics and kafka-acls are clients and need a broker that is already
+  # listening, while the entrypoint runs before the broker launches. Depending on
+  # kafka: service_healthy gives the ordering, and the applications depend on
+  # kafka-init: service_completed_successfully so nothing publishes into a broker
+  # that will deny it.
+  #
+  # Same image as the broker: it already ships both CLIs and a python3, so this
+  # adds no image and no dependency. Authenticated as the broker's `admin` super
+  # user over the same SASL_SSL listener the services use.
+  kafka-init:
+    restart: "no"
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint:
+    - python3
+    - /opt/wildframe/kafka_init.py
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      # The broker's admin super user, same variable kafka-entrypoint.sh reads.
+      WF_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD:-wildframe-dev}
+      # The same ${VAR:-default} expressions the kafka service block uses, for
+      # the same reason: one .env override has to move the broker's JAAS file,
+      # the service, and the ACL this script creates, together. If a username
+      # here drifted from the broker's, the ACL would be granted to a principal
+      # that cannot authenticate and the real one would still be denied --
+      # tests/test_kafka_init.py asserts these blocks stay identical.
+      API_GATEWAY_KAFKA_USERNAME: ${API_GATEWAY_KAFKA_USERNAME:-api-gateway}
+      API_GATEWAY_KAFKA_PASSWORD: ${API_GATEWAY_KAFKA_PASSWORD:-wildframe-dev}
+      AUTH_SERVICE_KAFKA_USERNAME: ${AUTH_SERVICE_KAFKA_USERNAME:-auth-service}
+      AUTH_SERVICE_KAFKA_PASSWORD: ${AUTH_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      USER_SERVICE_KAFKA_USERNAME: ${USER_SERVICE_KAFKA_USERNAME:-user-service}
+      USER_SERVICE_KAFKA_PASSWORD: ${USER_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      CONTENT_SERVICE_KAFKA_USERNAME: ${CONTENT_SERVICE_KAFKA_USERNAME:-content-service}
+      CONTENT_SERVICE_KAFKA_PASSWORD: ${CONTENT_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      STREAMING_SERVICE_KAFKA_USERNAME: ${STREAMING_SERVICE_KAFKA_USERNAME:-streaming-service}
+      STREAMING_SERVICE_KAFKA_PASSWORD: ${STREAMING_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      SEARCH_SERVICE_KAFKA_USERNAME: ${SEARCH_SERVICE_KAFKA_USERNAME:-search-service}
+      SEARCH_SERVICE_KAFKA_PASSWORD: ${SEARCH_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      RECOMMENDATION_SERVICE_KAFKA_USERNAME: ${RECOMMENDATION_SERVICE_KAFKA_USERNAME:-recommendation-service}
+      RECOMMENDATION_SERVICE_KAFKA_PASSWORD: ${RECOMMENDATION_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      BILLING_SERVICE_KAFKA_USERNAME: ${BILLING_SERVICE_KAFKA_USERNAME:-billing-service}
+      BILLING_SERVICE_KAFKA_PASSWORD: ${BILLING_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      ANALYTICS_SERVICE_KAFKA_USERNAME: ${ANALYTICS_SERVICE_KAFKA_USERNAME:-analytics-service}
+      ANALYTICS_SERVICE_KAFKA_PASSWORD: ${ANALYTICS_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      NOTIFICATION_SERVICE_KAFKA_USERNAME: ${NOTIFICATION_SERVICE_KAFKA_USERNAME:-notification-service}
+      NOTIFICATION_SERVICE_KAFKA_PASSWORD: ${NOTIFICATION_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      CREATORS_SERVICE_KAFKA_USERNAME: ${CREATORS_SERVICE_KAFKA_USERNAME:-creators-service}
+      CREATORS_SERVICE_KAFKA_PASSWORD: ${CREATORS_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      MODERATION_SERVICE_KAFKA_USERNAME: ${MODERATION_SERVICE_KAFKA_USERNAME:-moderation-service}
+      MODERATION_SERVICE_KAFKA_PASSWORD: ${MODERATION_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      UPLOADS_SERVICE_KAFKA_USERNAME: ${UPLOADS_SERVICE_KAFKA_USERNAME:-uploads-service}
+      UPLOADS_SERVICE_KAFKA_PASSWORD: ${UPLOADS_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+      MEDIA_PIPELINE_KAFKA_USERNAME: ${MEDIA_PIPELINE_KAFKA_USERNAME:-media-pipeline}
+      MEDIA_PIPELINE_KAFKA_PASSWORD: ${MEDIA_PIPELINE_KAFKA_PASSWORD:-wildframe-dev}
+      ADMIN_SERVICE_KAFKA_USERNAME: ${ADMIN_SERVICE_KAFKA_USERNAME:-admin-service}
+      ADMIN_SERVICE_KAFKA_PASSWORD: ${ADMIN_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
+    volumes:
+    - ../scripts/kafka_init.py:/opt/wildframe/kafka_init.py:ro
+    # Only topics.py, not the whole SDK: the package __init__ imports the
+    # publisher, which needs aiokafka, which this image does not carry.
+    - ../packages/sdk/wildframe_events/topics.py:/opt/wildframe/topics.py:ro
+    - ../apps/web/certificates:/etc/kafka/secrets:ro
     networks:
     - wildframe-network
   zookeeper:
@@ -110,13 +307,29 @@ services:
     - zookeeper_data:/var/lib/zookeeper/data
     healthcheck:
       test:
+      # `cub zk-ready <connect_string> <timeout_secs>` takes exactly two
+      # positional arguments -- `timeout` is REQUIRED (bare `cub zk-ready
+      # localhost:2181` exits 2 with "the following arguments are required:
+      # timeout"). The old form passed "localhost 2181", which cub parsed as
+      # connect_string=localhost, timeout=2181 SECONDS (sessionTimeout=2181000
+      # ms in the output), i.e. a nonsense 36-minute wait, not a 5s one.
+      # The 5s healthcheck timeout was below the tool's real floor: it is a JVM,
+      # so it spends ~5s on startup before it ever touches ZooKeeper (measured
+      # 4.8-6.0s idle, up to ~17s while the broker was crash-looping). That
+      # made the container flap healthy -> unhealthy -> restart and killed the
+      # broker's ZK session each time. 15s leaves ~2.5x headroom over the
+      # observed floor; 10s is the tool-level cap on waiting for ZK.
+      #
+      # Do NOT "fix" this with `echo ruok | nc localhost 2181`: 4lw.commands.whitelist
+      # excludes ruok on ZK 3.6, and nc still exits 0 against a disabled
+      # handler, so that check passes without proving anything.
       - CMD-SHELL
-      - cub zk-ready localhost 2181 5
+      - cub zk-ready localhost:2181 10
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout: 15s
+      retries: 10
     networks:
-    - wildframe-network
+      - wildframe-network
   elasticsearch:
     restart: unless-stopped
     image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
@@ -143,6 +356,9 @@ services:
     image: prom/prometheus:latest
     volumes:
     - ../infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    # bearer_token_file for the /metrics guard. Generated + gitignored; the
+    # same value reaches the services as METRICS_TOKEN below.
+    - ../infrastructure/prometheus/metrics_bearer_token:/etc/prometheus/metrics_bearer_token:ro
     - prometheus_data:/prometheus
     command:
     - --config.file=/etc/prometheus/prometheus.yml
@@ -238,12 +454,47 @@ services:
   web:
     restart: unless-stopped
     image: deployments-web:latest
+    # apps/web/Dockerfile builds from the repo root (it COPYs the workspace
+    # package.json + package-lock.json, apps/web, and packages/), so the context
+    # must be `..` exactly like the 15 backend services. Without this key no
+    # image was ever produced and `image:` alone could only ever pull/push.
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
     environment:
       - NODE_ENV=production
       - NEXT_TELEMETRY_DISABLED=1
       - NEXT_PUBLIC_APP_NAME=Wildframe
-      - NEXT_PUBLIC_APP_URL=https://192.168.1.14:3000
-      - NEXT_PUBLIC_API_URL=https://192.168.1.14:8080
+      # NEXT_PUBLIC_API_URL is deliberately NOT set here.
+      #
+      # It used to be hardcoded to https://192.168.1.14:8080, which broke account
+      # creation for everyone: 8080 is Caddy's cleartext listener, so asking for
+      # https:// on it fails the TLS handshake and the browser could not reach the
+      # API at all. It was also a machine-specific LAN IP committed to source, so
+      # it was wrong on any other host, and it overrode the correct value in
+      # apps/web/.env.
+      #
+      # Left unset, client.ts derives the gateway at runtime from the host the
+      # page was served on, i.e. https://<hostname>:8000. Caddy's HTTPS gateway is
+      # a catch-all on :8000, so that is correct for localhost and for LAN access
+      # without per-device config. Verified: register returns 201 on both
+      # https://localhost:8000 and https://192.168.1.14:8000.
+      #
+      # AUTH_SERVICE_URL is the server-side counterpart, and the two are not
+      # interchangeable. /auth-session's GET and DELETE handlers run inside this
+      # container, where `localhost:8000` is the web container itself and nothing
+      # listens on 8000. Reusing NEXT_PUBLIC_API_URL there made every hard
+      # reload of a protected route 502 with `auth_unreachable` and bounced the
+      # user to /login, even though login had succeeded. This var has no
+      # NEXT_PUBLIC_ prefix on purpose: Next inlines only NEXT_PUBLIC_* into the
+      # client bundle, so this stays server-side.
+      #
+      # It points at auth-service directly over the docker network, matching how
+      # every other service in this file reaches auth (AUTH_SERVICE_URL and
+      # JWT_JWKS_URL on api-gateway/billing-service). Only the browser needs the
+      # gateway; going through it for server-side refreshes would funnel every
+      # user's refreshes into one IP-keyed /auth/* rate-limit budget.
+      - AUTH_SERVICE_URL=${AUTH_SERVICE_URL:-http://auth-service:8000}
     depends_on:
       - api-gateway
     networks:
@@ -278,6 +529,9 @@ services:
       dockerfile: services/auth-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/auth_db
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       EVENT_PUBLISHER: kafka
@@ -294,10 +548,15 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      # Spans are exported over OTLP. The Jaeger exporter was
+      # discontinued upstream at 1.21.0 and cannot be used with the SDK
+      # this stack now requires; Jaeger ingests OTLP natively because
+      # COLLECTOR_OTLP_ENABLED is set on the jaeger service above.
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://jaeger:4317'
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${AUTH_SERVICE_KAFKA_USERNAME:-auth-service}
-      KAFKA_SASL_PASSWORD: ${AUTH_SERVICE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${AUTH_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: auth-service
       KAFKA_GROUP_ID: auth-service
       KAFKA_SSL_INSECURE: "true"
@@ -308,12 +567,14 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/auth-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
-    - ../packages/sdk/wildframe_auth:/app/wildframe_auth
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: &backend-healthcheck
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5).read()"]
@@ -330,6 +591,9 @@ services:
       dockerfile: services/user-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/users_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/1
@@ -340,10 +604,15 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      # Spans are exported over OTLP. The Jaeger exporter was
+      # discontinued upstream at 1.21.0 and cannot be used with the SDK
+      # this stack now requires; Jaeger ingests OTLP natively because
+      # COLLECTOR_OTLP_ENABLED is set on the jaeger service above.
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://jaeger:4317'
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${USER_SERVICE_KAFKA_USERNAME:-user-service}
-      KAFKA_SASL_PASSWORD: ${USER_SERVICE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${USER_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: user-service
       KAFKA_GROUP_ID: user-service
       KAFKA_SSL_INSECURE: "true"
@@ -354,11 +623,14 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/user-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -370,6 +642,9 @@ services:
       dockerfile: services/admin-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/admin_db
       EVENT_PUBLISHER: kafka
       DLQ_RETENTION_MS: '604800000'
@@ -382,10 +657,15 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      # Spans are exported over OTLP. The Jaeger exporter was
+      # discontinued upstream at 1.21.0 and cannot be used with the SDK
+      # this stack now requires; Jaeger ingests OTLP natively because
+      # COLLECTOR_OTLP_ENABLED is set on the jaeger service above.
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://jaeger:4317'
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${ADMIN_SERVICE_KAFKA_USERNAME:-admin-service}
-      KAFKA_SASL_PASSWORD: ${ADMIN_SERVICE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${ADMIN_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: admin-service
       KAFKA_GROUP_ID: admin-service
       KAFKA_SSL_INSECURE: "true"
@@ -396,9 +676,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/admin-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
@@ -412,6 +695,9 @@ services:
       dockerfile: services/content-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/content_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/2
@@ -424,10 +710,15 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      # Spans are exported over OTLP. The Jaeger exporter was
+      # discontinued upstream at 1.21.0 and cannot be used with the SDK
+      # this stack now requires; Jaeger ingests OTLP natively because
+      # COLLECTOR_OTLP_ENABLED is set on the jaeger service above.
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://jaeger:4317'
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${CONTENT_SERVICE_KAFKA_USERNAME:-content-service}
-      KAFKA_SASL_PASSWORD: ${CONTENT_SERVICE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${CONTENT_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: content-service
       KAFKA_GROUP_ID: content-service
       KAFKA_SSL_INSECURE: "true"
@@ -438,11 +729,14 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/content-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -454,10 +748,38 @@ services:
       dockerfile: services/api-gateway/Dockerfile
       target: development
     environment:
-      # Dev-friendly auth burst limit (prod default stays 5/min)
-      RATE_LIMIT_AUTH: '60'
+      # RATE_LIMIT_AUTH is deliberately NOT overridden here. The single source of
+      # truth is services/api-gateway/app/core/settings.py (RATE_LIMIT_AUTH), and
+      # the dev stack must run the same ceiling the rest of the system documents,
+      # otherwise the live-stack suite stops testing the shipped configuration.
+      #
+      # What the setting actually is (it is NOT a burst limit):
+      #   sustained requests per 60s window, per client key, where the client key
+      #   is the authenticated JWT `sub`, else the client IP (app/api/gateway_routes.py
+      #   -> RateLimiter._check_dual in app/middleware.py). The separate burst
+      #   setting is RATE_LIMIT_BURST_AUTH over RATE_LIMIT_BURST_WINDOW seconds.
+      #
+      # This bucket covers the WHOLE /auth/* namespace, not just /auth/login: the
+      # service name is the first path segment, so /auth/me, /auth/refresh,
+      # /auth/logout and /auth/step-up all draw on the same budget. The abuse-prone
+      # endpoints carry their own finer-grained limits inside auth-service
+      # (app/api/routes/auth.py -> app/core/rate_limit.py), so the gateway's job
+      # here is a coarse edge ceiling, not per-endpoint abuse control.
+      #
+      # It is load-bearing for the live-stack suite, which runs against this very
+      # stack: tests/integration/conftest.py paces itself to <=3 IP-keyed auth
+      # calls per 60s and tests/integration/test_gateway_auth.py asserts the 6th
+      # auth request in a window is a 429. Raising this above 5 silently breaks
+      # both. If you need a higher dev ceiling, raise the default in settings.py
+      # together with that suite, not just here.
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       AUTH_SERVICE_URL: http://auth-service:8000
+      JWT_JWKS_URL: http://auth-service:8000/.well-known/jwks.json
+      JWT_ISSUER: wildframe-auth
+      JWT_AUDIENCE: wildframe-api
       USER_SERVICE_URL: http://user-service:8000
       CONTENT_SERVICE_URL: http://content-service:8000
       REDIS_URL: redis://redis:6379/3
@@ -467,23 +789,38 @@ services:
       JAEGER_ENABLED: 'true'
       JAEGER_AGENT_HOST: jaeger
       JAEGER_AGENT_PORT: '6831'
+      # Spans are exported over OTLP. The Jaeger exporter was
+      # discontinued upstream at 1.21.0 and cannot be used with the SDK
+      # this stack now requires; Jaeger ingests OTLP natively because
+      # COLLECTOR_OTLP_ENABLED is set on the jaeger service above.
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://jaeger:4317'
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${API_GATEWAY_KAFKA_USERNAME:-api-gateway}
-      KAFKA_SASL_PASSWORD: ${API_GATEWAY_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${API_GATEWAY_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: api-gateway
       KAFKA_GROUP_ID: api-gateway
       KAFKA_SSL_INSECURE: "true"
+    # Long form, not the list form, so kafka-init can be gated on having
+    # COMPLETED: the gateway must not accept traffic before the topics and ACLs
+    # it will publish through exist. The other four keep their previous ordering.
     depends_on:
-    - auth-service
-    - user-service
-    - content-service
-    - redis
+      auth-service:
+        condition: service_started
+      user-service:
+        condition: service_started
+      content-service:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/api-gateway:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
@@ -496,6 +833,9 @@ services:
       dockerfile: services/streaming-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/streaming_db
       REDIS_URL: redis://redis:6379/4
@@ -506,7 +846,7 @@ services:
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${STREAMING_SERVICE_KAFKA_USERNAME:-streaming-service}
-      KAFKA_SASL_PASSWORD: ${STREAMING_SERVICE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${STREAMING_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: streaming-service
       KAFKA_GROUP_ID: streaming-service
       KAFKA_SSL_INSECURE: "true"
@@ -515,8 +855,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/streaming-service:/app
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
@@ -531,6 +874,9 @@ services:
       dockerfile: services/search-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       ELASTICSEARCH_URL: http://elasticsearch:9200
       CONTENT_SERVICE_URL: http://content-service:8000
       REDIS_URL: redis://redis:6379/5
@@ -545,7 +891,7 @@ services:
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${SEARCH_SERVICE_KAFKA_USERNAME:-search-service}
-      KAFKA_SASL_PASSWORD: ${SEARCH_SERVICE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${SEARCH_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: search-service
       KAFKA_GROUP_ID: search-service
       KAFKA_SSL_INSECURE: "true"
@@ -556,11 +902,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/search-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -572,6 +921,9 @@ services:
       dockerfile: services/recommendation-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/recommendation_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       CONTENT_SERVICE_URL: http://content-service:8000
@@ -585,7 +937,7 @@ services:
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${RECOMMENDATION_SERVICE_KAFKA_USERNAME:-recommendation-service}
-      KAFKA_SASL_PASSWORD: ${RECOMMENDATION_SERVICE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${RECOMMENDATION_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: recommendation-service
       KAFKA_GROUP_ID: recommendation-service
       KAFKA_SSL_INSECURE: "true"
@@ -594,11 +946,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/recommendation-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -610,6 +965,9 @@ services:
       dockerfile: services/billing-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/billing_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/7
@@ -621,8 +979,37 @@ services:
       JWT_SECRET_KEY: dev-secret-key
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
+      # --- Stripe (development) -------------------------------------------
+      # billing-service reads these five in app/core/settings.py. Each already
+      # carries a deliberately-fake placeholder default in that file, so nothing
+      # here is required for the service to boot; declaring them explicitly makes
+      # the dev contract visible and overridable instead of an invisible fallback.
+      #
+      # The defaults below are intentionally identical to the settings.py
+      # defaults -- one documented value, no compose/code drift. STRIPE_API_KEY
+      # is a syntactically-shaped but non-existent Stripe test key: Stripe
+      # rejects it with 401, so it cannot authenticate against any real account,
+      # and settings.py refuses any sk_test_* value outside development. These
+      # are placeholders, not credentials; never commit a real key here.
+      #
+      # To use real Stripe *test-mode* keys, export them (or put them in a local
+      # .env -- see deployments/.env.example) before `docker compose up`; the
+      # VAR-defaults form is the same convention the Kafka credentials below use.
+      #
+      # STRIPE_WEBHOOK_SECRET is pinned to the settings.py default on purpose:
+      # tests/integration/test_billing_webhook_idempotency.py signs its replayed
+      # payloads with this exact value (tests/integration/conftest.py), so
+      # changing it here without changing that suite breaks webhook verification.
+      # Without real keys, checkout routes answer 502 "Payment provider
+      # unavailable" -- that is the placeholder being rejected, not a provider
+      # outage. See docs/DEVELOPMENT.md for the Stripe-backed test path.
+      STRIPE_API_KEY: ${STRIPE_API_KEY:-sk_test_default_change_me}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_default_change_me}
+      STRIPE_SVOD_PRICE_ID: ${STRIPE_SVOD_PRICE_ID:-price_default_svod}
+      STRIPE_SUCCESS_URL: ${STRIPE_SUCCESS_URL:-https://wildframe.com/billing/success}
+      STRIPE_CANCEL_URL: ${STRIPE_CANCEL_URL:-https://wildframe.com/billing/cancel}
       KAFKA_SASL_USERNAME: ${BILLING_SERVICE_KAFKA_USERNAME:-billing-service}
-      KAFKA_SASL_PASSWORD: ${BILLING_SERVICE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${BILLING_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: billing-service
       KAFKA_GROUP_ID: billing-service
       KAFKA_SSL_INSECURE: "true"
@@ -631,12 +1018,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/billing-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
-    - ../packages/sdk/wildframe_auth:/app/wildframe_auth
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -648,6 +1037,9 @@ services:
       dockerfile: services/analytics-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/analytics_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/8
@@ -659,7 +1051,7 @@ services:
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${ANALYTICS_SERVICE_KAFKA_USERNAME:-analytics-service}
-      KAFKA_SASL_PASSWORD: ${ANALYTICS_SERVICE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${ANALYTICS_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: analytics-service
       KAFKA_GROUP_ID: analytics-service
       KAFKA_SSL_INSECURE: "true"
@@ -668,11 +1060,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/analytics-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -684,6 +1079,9 @@ services:
       dockerfile: services/notification-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/notification_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/9
@@ -694,7 +1092,7 @@ services:
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${NOTIFICATION_SERVICE_KAFKA_USERNAME:-notification-service}
-      KAFKA_SASL_PASSWORD: ${NOTIFICATION_SERVICE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${NOTIFICATION_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: notification-service
       KAFKA_GROUP_ID: notification-service
       KAFKA_SSL_INSECURE: "true"
@@ -703,11 +1101,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/notification-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -719,6 +1120,9 @@ services:
       dockerfile: services/creators-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/creators_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/11
@@ -729,7 +1133,7 @@ services:
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${CREATORS_SERVICE_KAFKA_USERNAME:-creators-service}
-      KAFKA_SASL_PASSWORD: ${CREATORS_SERVICE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${CREATORS_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: creators-service
       KAFKA_GROUP_ID: creators-service
       KAFKA_SSL_INSECURE: "true"
@@ -740,11 +1144,14 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/creators-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -756,6 +1163,9 @@ services:
       dockerfile: services/moderation-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/moderation_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/12
@@ -766,7 +1176,7 @@ services:
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${MODERATION_SERVICE_KAFKA_USERNAME:-moderation-service}
-      KAFKA_SASL_PASSWORD: ${MODERATION_SERVICE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${MODERATION_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: moderation-service
       KAFKA_GROUP_ID: moderation-service
       KAFKA_SSL_INSECURE: "true"
@@ -777,11 +1187,14 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/moderation-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -793,6 +1206,9 @@ services:
       dockerfile: services/uploads-service/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/uploads_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/13
@@ -803,7 +1219,7 @@ services:
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${UPLOADS_SERVICE_KAFKA_USERNAME:-uploads-service}
-      KAFKA_SASL_PASSWORD: ${UPLOADS_SERVICE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${UPLOADS_SERVICE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: uploads-service
       KAFKA_GROUP_ID: uploads-service
       KAFKA_SSL_INSECURE: "true"
@@ -814,11 +1230,14 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/uploads-service:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:
@@ -830,6 +1249,9 @@ services:
       dockerfile: services/media-pipeline/Dockerfile
       target: development
     environment:
+      # Bearer token for the production /metrics guard (#841); matches the
+      # file Prometheus reads via bearer_token_file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-wildframe-metrics-dev}
       DATABASE_URL: postgresql+asyncpg://wildframe:wildframe_dev_password@postgres:5432/media_db
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","https://localhost:3000","http://192.168.1.14:3000","https://192.168.1.14:3000"]'
       REDIS_URL: redis://redis:6379/10
@@ -840,7 +1262,7 @@ services:
       KAFKA_SECURITY_PROTOCOL: SASL_SSL
       KAFKA_SASL_MECHANISM: PLAIN
       KAFKA_SASL_USERNAME: ${MEDIA_PIPELINE_KAFKA_USERNAME:-media-pipeline}
-      KAFKA_SASL_PASSWORD: ${MEDIA_PIPELINE_KAFKA_PASSWORD}
+      KAFKA_SASL_PASSWORD: ${MEDIA_PIPELINE_KAFKA_PASSWORD:-wildframe-dev}
       KAFKA_CLIENT_ID: media-pipeline
       KAFKA_GROUP_ID: media-pipeline
       KAFKA_SSL_INSECURE: "true"
@@ -849,11 +1271,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     volumes:
     - ../services/media-pipeline:/app
     - ../packages/sdk/wildframe_events:/app/wildframe_events
     - ../packages/sdk/wildframe_observability:/app/wildframe_observability
     - ../packages/sdk/wildframe_compliance/wildframe_compliance:/app/wildframe_compliance
+    - ../packages/sdk/wildframe_auth/wildframe_auth:/app/wildframe_auth
     command: uvicorn app.main:app --host 0.0.0.0 --reload
     healthcheck: *backend-healthcheck
     networks:

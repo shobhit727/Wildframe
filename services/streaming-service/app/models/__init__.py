@@ -98,7 +98,7 @@ class PlaybackSession(Base):
 
     # Timestamps
     started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    last_activity_at = Column(
+    last_activity_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
     ended_at = Column(DateTime, nullable=True)
@@ -163,7 +163,7 @@ class TranscodingJob(Base):
 
     __tablename__ = "transcoding_job"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     episode_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     content_id = Column(UUID(as_uuid=True), nullable=False, index=True)
 
@@ -171,7 +171,8 @@ class TranscodingJob(Base):
     status = Column(
         SQLEnum(TranscodingStatus), nullable=False, default=TranscodingStatus.PENDING, index=True
     )  # type: ignore[var-annotated]
-    priority = Column(Integer, default=5)  # 1-10, higher = more important
+    # 1-10, higher = more important
+    priority: Mapped[int | None] = mapped_column(Integer, default=5)
 
     # Input file
     input_file_path = Column(String(500), nullable=False)
@@ -232,7 +233,7 @@ class StreamingQualityProfile(Base):
     min_bandwidth_kbps = Column(Integer, nullable=False)
     max_bandwidth_kbps = Column(Integer, nullable=False)
 
-    is_active = Column(Boolean, default=True)
+    is_active: Mapped[bool | None] = mapped_column(Boolean, default=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -263,7 +264,7 @@ class CDNRegion(Base):
     current_active_streams = Column(Integer, default=0)
     bandwidth_capacity_gbps = Column(Float, nullable=False)
 
-    is_active = Column(Boolean, default=True)
+    is_active: Mapped[bool | None] = mapped_column(Boolean, default=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

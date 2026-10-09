@@ -48,7 +48,7 @@ export default function MyListPage() {
           }
         })
       );
-      return items.filter(Boolean) as Awaited<ReturnType<typeof apiClient.getContentById>>[];
+      return items.filter((item): item is Awaited<ReturnType<typeof apiClient.getContentById>> => item !== null);
     },
     enabled: isAuthenticated && !!user && cached.length > 0,
   });

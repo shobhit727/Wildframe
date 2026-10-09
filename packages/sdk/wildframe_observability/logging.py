@@ -85,14 +85,17 @@ REDACT_FIELDS: frozenset[str] = frozenset(
     }
 )
 
+#: ``REDACT_FIELDS`` pre-normalized (case folded, separators stripped) so the
+#: per-key check in :func:`_is_sensitive_field` allocates nothing.
+_REDACT_FIELDS_NORMALIZED = frozenset(f.replace("-", "").replace("_", "") for f in REDACT_FIELDS)
+
 
 def _is_sensitive_field(key: Any) -> bool:
     """Return True if a string field name is a secret field."""
     if not isinstance(key, str):
         return False
     normalized = key.lower().replace("-", "").replace("_", "")
-    redacted = {f.replace("-", "").replace("_", "") for f in REDACT_FIELDS}
-    return normalized in redacted
+    return normalized in _REDACT_FIELDS_NORMALIZED
 
 
 def _redact_secrets(value: Any, depth: int = 0) -> Any:

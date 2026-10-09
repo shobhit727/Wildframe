@@ -1,6 +1,7 @@
 """Tests for Search Service API routes."""
 
 import pytest
+import wildframe_auth
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,6 +12,24 @@ from app.api.search_routes import get_search_service
 from app.main import app
 from app.services import ReindexResult
 from app.core.security import Identity
+from tests._test_jwks import JWKS
+from wildframe_auth.verifier import clear_jwks_cache
+
+
+class _Endpoint:
+    """The auth service's JWKS endpoint, as the routes see it."""
+
+    async def fetch(self, url: str):
+        return JWKS
+
+
+@pytest.fixture(autouse=True)
+def _stub_jwks_endpoint(monkeypatch):
+    """Serve the test JWKS and clear the SDK cache around every test."""
+    monkeypatch.setattr(wildframe_auth.verifier, "fetch_jwks", _Endpoint().fetch)
+    clear_jwks_cache()
+    yield
+    clear_jwks_cache()
 
 
 @pytest.fixture
@@ -219,8 +238,13 @@ class TestSearchEndpoints:
         from uuid import uuid4
 
         from jose import jwt as pyjwt
+        from tests._test_jwks import PRIVATE_PEM
 
         now = int(time.time())
+        # RS256 over the in-memory test key: the service no longer accepts a
+        # shared-secret HS256 token. ``av`` (auth version) is required by the
+        # shared verifier and is distinct from ``arv`` (admin role version),
+        # which is the claim this test is actually exercising.
         token = pyjwt.encode(
             {
                 "sub": str(uuid4()),
@@ -229,11 +253,13 @@ class TestSearchEndpoints:
                 "iss": settings.JWT_ISSUER,
                 "role": "admin",
                 "arv": 0,
+                "av": 0,
                 "iat": now,
                 "exp": now + 900,
             },
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
+            PRIVATE_PEM,
+            algorithm="RS256",
+            headers={"kid": "k1"},
         )
         response = client.post(
             "/api/v1/search/reindex", headers={"Authorization": f"Bearer {token}"}

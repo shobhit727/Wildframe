@@ -731,6 +731,38 @@ class TestConcurrencyLocks:
 
 class TestAuditLogs:
     @pytest.mark.asyncio
+    async def test_get_audit_logs_returns_recent_entries_and_clamps_pagination(self, admin_service):
+        mock_logs = [
+            MagicMock(
+                id=2,
+                admin_id="admin2",
+                action="newer",
+                resource_type="alert",
+                resource_id="2",
+                changes=None,
+                ip_address="192.168.1.2",
+                created_at="2026-05-21",
+            ),
+            MagicMock(
+                id=1,
+                admin_id="admin1",
+                action="older",
+                resource_type="user",
+                resource_id="1",
+                changes=None,
+                ip_address="192.168.1.1",
+                created_at="2026-05-20",
+            ),
+        ]
+        admin_service.audit_repo.list_recent = AsyncMock(return_value=mock_logs)
+
+        result = await admin_service.get_audit_logs(limit=50, offset=-3)
+
+        admin_service.audit_repo.list_recent.assert_awaited_once_with(50, 0)
+        assert [row["action"] for row in result] == ["newer", "older"]
+        assert result[0]["admin_id"] == "admin2"
+
+    @pytest.mark.asyncio
     async def test_get_audit_logs_by_admin(self, admin_service):
         mock_logs = [
             MagicMock(
@@ -779,15 +811,28 @@ class TestAuditLogs:
 
 class TestSystemStats:
     @pytest.mark.asyncio
-    async def test_get_system_stats(self, admin_service):
-        # get_system_stats() counts flagged content and unacknowledged alerts
-        # with two db.scalar() aggregates, not the repository list methods.
-        admin_service.db.scalar = AsyncMock(side_effect=[5, 2])
+    async def test_get_system_stats_counts_own_tables_and_never_invents_users(self, admin_service):
+        # Flagged content, unacknowledged alerts and suspended/banned users are
+        # SQL aggregates over this service's own tables. User totals are not:
+        # user-service owns the directory and exposes no count, so they stay
+        # null instead of reporting a fabricated zero.
+        admin_service.db.scalar = AsyncMock(side_effect=[5, 2, 7])
 
-        result = await admin_service.get_system_stats(total_users=5000, suspended_users=50)
+        result = await admin_service.get_system_stats()
 
-        assert result["total_users"] == 5000
-        assert result["active_users"] == 4950
-        assert result["suspended_users"] == 50
+        assert admin_service.db.scalar.await_count == 3
         assert result["flagged_content"] == 5
         assert result["active_alerts"] == 2
+        assert result["suspended_users"] == 7
+        assert result["total_users"] is None
+        assert result["active_users"] is None
+
+    @pytest.mark.asyncio
+    async def test_get_system_stats_uptime_is_measured_not_fixed(self, admin_service):
+        admin_service.db.scalar = AsyncMock(side_effect=[0, 0, 0])
+
+        result = await admin_service.get_system_stats()
+
+        # 99.9 was hardcoded; uptime now comes from the process start marker.
+        assert result["system_uptime_hours"] != 99.9
+        assert result["system_uptime_hours"] >= 0

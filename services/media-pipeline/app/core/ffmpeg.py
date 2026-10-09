@@ -64,8 +64,20 @@ class OutputLimitExceeded(CommandFailure):
 
 
 async def _read_capped(stream: asyncio.StreamReader, limit: int) -> tuple[bytes, int]:
-    """Read a pipe, keeping at most ``limit`` bytes; return (tail, total)."""
+    """Read a pipe, keeping at most ``limit`` bytes; return (tail, total).
+
+    Retains the *first* ``limit`` bytes for diagnostics and counts every byte
+    read. Retention is bounded by slicing each chunk as it arrives rather than
+    by collapsing the accumulated list: the previous version replaced ``chunks``
+    with the join of the chunks read *so far*, which discarded the very chunk
+    that tripped the cap and then never appended again, so retention froze at
+    whatever had accumulated before the first over-limit read -- 60 bytes of a
+    100-byte cap, and nothing at all when a single read exceeded the cap. Since
+    the read loop must continue anyway to report an honest ``total``, this
+    bounds retained memory to exactly ``limit`` bytes without that failure.
+    """
     chunks: list[bytes] = []
+    retained = 0
     total = 0
     while True:
         try:
@@ -75,12 +87,11 @@ async def _read_capped(stream: asyncio.StreamReader, limit: int) -> tuple[bytes,
         if not chunk:
             break
         total += len(chunk)
-        if total > limit:
-            # Keep only the first ``limit`` bytes of the stream for diagnostics.
-            chunks = [b"".join(chunks)[:limit]] if len(chunks) == 1 else [b"".join(chunks)[:limit]]
-            continue
-        chunks.append(chunk)
-    captured = b"".join(chunks)[:limit]
+        if retained < limit:
+            kept = chunk[: limit - retained]
+            chunks.append(kept)
+            retained += len(kept)
+    captured = b"".join(chunks)
     return captured, total
 
 

@@ -2,6 +2,83 @@
 
 This is the repository-level operating guide for coding agents. It describes the current implementation on main and should be updated when the implementation changes.
 
+**New to this repository? Read `ONBOARDING.md` first.** It is the path — what to do
+in what order, which commands actually work, and the traps that produce wrong
+conclusions. This file is the rules; `ONBOARDING.md` is the route through them.
+
+| File | Read it for |
+|---|---|
+| `AGENTS.md` (this one) | engineering rules, conventions, testing, troubleshooting |
+| `ONBOARDING.md` | the path through the work, and the current state |
+| `AGENT_COORDINATION.md` | working with other agents, the shared tree, `/tmp`, subagents |
+| `oner-task.md` | what a human still owes, and what agents deliberately did not fix |
+
+Three skills in `skills/` cover the things this guide states but cannot
+enforce. **Load the relevant one before you start work, not after you have already
+made the mistake it prevents.**
+
+| Skill | Load it when |
+|---|---|
+| `verify-against-running-stack` | a change passes its tests and you need to know it actually works; or after touching auth, CSP, schema, dependencies, or compose |
+| `wildframe-service-change` | adding or changing a route, schema, repository query, or cross-service call in any of the 15 services |
+| `shared-tree-coordination` | editing the shared branch at all — before your first edit, and whenever a push is rejected |
+
+**If someone asks you to read this file,** you do not need all of it. It is the
+rules, not the path. Read `ONBOARDING.md` for how to get started, then this file for
+the sections your task touches — 19 for testing, 5 and 8 for adding an endpoint, 24
+for security, 26 when something is broken. Read `AGENT_COORDINATION.md` before
+editing anything, because other agents share the tree.
+
+Being asked to read `AGENTS.md` is usually a signal that something in it is wrong,
+missing, or no longer true. Check whether that is what is meant, and if so, see
+"Maintaining this guide" below.
+
+Two facts worth knowing before you touch anything, both established by running the
+stack rather than by reading code:
+
+- **A green CI run is not evidence the application works.** The Playwright suite
+  mocks the API, so mock-versus-real drift is structurally invisible to it, and the
+  Docker jobs build images without running one. For a period CI was fully green while
+  the website rendered a blank page, account creation was broken, and five services
+  could not start.
+- **A passing build is not evidence the image is current.** A `docker compose build`
+  has been observed printing `CACHED`, exiting 0, and shipping pre-fix code. Verify by
+  grepping the built artifact, and use `--no-cache` plus `--force-recreate` when it
+  matters.
+- **Probe with TLS, and probe the right port.** The dev stack is HTTPS behind
+  Caddy: plain `curl http://localhost:8003/health` answers `400 Client sent an
+  HTTP request to an HTTPS server` from the TLS listener, which is not a broken
+  service. Use `curl -sk https://localhost:$p/health`. Host 8000 is the
+  api-gateway catch-all (`infrastructure/caddy/Caddyfile:13`); 8001..8014 map the
+  individual services. A 404 usually means the wrong host port, not a routing
+  fault.
+- **If `poetry run` fails with `No such file or directory: 'python'`, the venv
+  interpreter still works.** A drifted venv has no `python` shim, and a lock from
+  a newer Poetry makes `poetry install` refuse. Run the interpreter directly with
+  `PYTHONPATH="$PWD:$PWD/../../packages/sdk/wildframe_{auth,compliance,events}"`
+  and `"$(cd services/<svc> && poetry env info -p)/bin/python" -m pytest`. Never put
+  `packages/sdk/wildframe_observability` on `PYTHONPATH` — its
+  `logging.py` shadows stdlib `logging` at startup and breaks pytest and poetry.
+- **Before pip-installing into a venv, check `pyproject.toml`.** Declared means
+  the venv is stale; undeclared is a real missing dependency to report, not to
+  patch around.
+- **Two Docker daemons can share a host.** `docker ps` can show a different view
+  from the daemon actually running the stack. If it is empty but a port answers,
+  read `curl -s --unix-socket /run/docker.sock http://x/v1.41/containers/json`.
+- **Bound the build parallelism.** Unbounded `docker compose build` over 16
+  images wedged a 4-vCPU/2.8 GB VM (daemon stops answering). Use
+  `COMPOSE_PARALLEL_LIMIT=3` and expect tens of minutes.
+- **A bind-mounted service directory shadows the image's `/app/logs`.** Compose
+  mounts `../services/<svc>` over `/app`, so the `RotatingFileHandler` in
+  `app/core/logging.py` resolves into a host dir Docker creates as root, and a
+  uid-1000 container dies with `Unable to configure handler 'file'`. Every
+  service goes unhealthy while the image is fine. Check `ls -ld
+  services/<svc>/logs` before debugging application code.
+
+The bugs worth finding here are mostly plumbing bugs — a value that should have
+arrived somewhere and did not. When something passes a test and fails in the app,
+believe the app.
+
 ## 1. Repository model
 
 Wildframe is a monorepo for an OTT streaming platform. It contains 15 FastAPI backend services, a Next.js/TypeScript frontend, shared Python SDK packages, local Docker/Caddy orchestration, Kubernetes/Helm manifests, Terraform, database bootstrap SQL, monitoring configuration, tests, and engineering documentation.
@@ -24,11 +101,19 @@ The repository contains many historical completion/audit/quick-start documents. 
 When sources disagree, use this order:
 1. Code and configuration on the branch being changed.
 2. Tests that execute against that code.
-3. .github/workflows/ci-cd.yml for CI behavior.
-4. Current README.md and current docs/ architecture, development, testing, deployment, and operations guides.
-5. Historical audit, completion, status, and implementation reports.
+3. The running stack. A test suite can be green while the application is broken,
+   because the suite may mock the very layer where the defect lives. When a test
+   passes and the app does not work, the app wins — go and reproduce it.
+4. .github/workflows/ci-cd.yml for CI behavior.
+5. Current README.md, ONBOARDING.md, oner-task.md, and current docs/ architecture,
+   development, testing, deployment, and operations guides.
+6. Historical audit, completion, status, and implementation reports.
 
 Before changing behavior, inspect the complete relevant path: route, schema/model, service logic, repository, settings, event handling, and tests. For cross-service work, inspect both sides of the HTTP or Kafka contract.
+
+`ONBOARDING.md` records the traps that have produced wrong conclusions in this repo
+specifically. `oner-task.md` records what a human still owes, including the
+deliberate limitations and anything an agent chose not to fix.
 
 ## 3. Backend services
 
@@ -72,6 +157,52 @@ Use async FastAPI handlers, async SQLAlchemy sessions, Pydantic schemas at API b
 
 Health endpoints are part of the deployment contract. Database health checks must use a real SQL statement such as text("SELECT 1"), not a Python callable.
 
+### 5.1 Adding an endpoint, file by file
+
+Layout is consistent across services — do not normalize it, some services use flat
+modules and some use packages. Check the target service first.
+
+```
+services/<service>/app/
+  main.py            create_app() + module-level `app`
+  api/routes/        the HTTP layer
+  schemas/           Pydantic models at the boundary
+  services/          business logic
+  repositories/      data access
+  models/            SQLAlchemy models
+  core/settings.py   pydantic-settings
+```
+
+1. **Schema** in `app/schemas/` — request *and* response models, separately. Never
+   return a password hash, access token, refresh token, or internal auth state in a
+   response model.
+2. **Repository** in `app/repositories/` — all queries live here. Keep routes free of
+   SQL.
+3. **Service** in `app/services/` — business rules, and the only place that composes
+   repositories.
+4. **Route** in `app/api/routes/` — parse, authorize, call the service, map errors to
+   status codes. No business logic, no queries.
+5. **Register** the route in that service's router aggregation (`api/routes/__init__.py`),
+   and confirm with `curl -sk https://localhost:<port>/openapi.json` that your path
+   actually appears. A route you forget to register returns 404 while the code looks
+   correct.
+6. **Test** it against the running service, not just the suite. See 19.2.
+
+**Authorization happens before state-changing side effects**, in the route or the
+service — never after the write.
+
+### 5.2 Calling another service
+
+Use the service's own settings for the URL, never a hardcoded Docker hostname. Follow
+the pattern already in `app/core/settings.py` — several services already carry
+`AUTH_SERVICE_URL: http://auth-service:8000` and `JWT_JWKS_URL`, and that is the
+convention.
+
+**Be explicit about which side of the trust boundary the code runs on.** Browser code
+and in-container server code need different base URLs, and merging them into one
+variable is a real bug we shipped: server-side code that used a *public* host resolved
+to the wrong container from inside the network and returned 502 on every request.
+
 ## 6. Database
 
 Backend persistence uses SQLAlchemy 2.x and PostgreSQL/asyncpg.
@@ -104,6 +235,32 @@ frontend/client path -> gateway route -> service prefix -> FastAPI route.
 
 Update the API client, gateway, backend route, and contract tests together when an external route changes.
 
+### 8.1 Changing an API without breaking clients
+
+The frontend, the gateway, and the service are three consumers of one contract, and
+they are updated in one commit or not at all. In this monorepo that is cheap — do it
+in the same change.
+
+- **Never remove or rename a field.** Deprecate it: keep returning it, mark it
+  deprecated in the schema, and stop consuming it on your own side. A removed
+  response field is an outage for a client you cannot see.
+- **Additive first.** A new optional field or a new endpoint is safe. A changed
+  meaning of an existing field is not, however compatible the shape looks.
+- **Response models are the contract.** If a Pydantic model drops a field, the field
+  disappears. Check the response model, not just the database, when auditing what a
+  client can see.
+- **Route a changed path rather than swapping it**, then delete the old one once no
+  caller remains. `tests/contract/` is where the route inventory lives — if a path
+  exists there, something depends on it.
+- **The E2E fixtures are a second, unreconciled contract.** They are typed against a
+  hand-maintained DTO, so a backend field can change and the frontend fixture type
+  will not. Two defects during the last audit existed only in that gap: a scale
+  mismatch on `audience_score`, and `content.price_usd` present in the model and
+  absent from the schema. When you change a payload, update `e2e/fixtures.ts` and the
+  matching `types/index.ts` in the same commit.
+- **Do not treat a green contract test as proof the client works.** Those tests check
+  that no shared secret is used for JWT verification, not that the payloads agree.
+
 ## 9. Kafka and events
 
 Shared event code lives in packages/sdk/wildframe_events. Use its DomainEvent, topic definitions, publisher, and subscriber abstractions instead of creating a second event envelope.
@@ -111,6 +268,8 @@ Shared event code lives in packages/sdk/wildframe_events. Use its DomainEvent, t
 The SDK implements in-memory and Kafka publishers, payload validation, size limits, bounded retries, idempotent Kafka production where configured, at-least-once consumption, handler retries, dead-letter quarantine, optional deduplication, and Prometheus counters.
 
 Event handlers must be idempotent. A message may be delivered more than once.
+
+The dev stack's topics and ACLs are created by the one-shot `kafka-init` compose service (`scripts/kafka_init.py`), which walks `_SERVICE_ACL` in `packages/sdk/wildframe_events/topics.py` — that dict is the source of truth for the permission matrix, so change it there and re-run `docker compose -f deployments/docker-compose.dev.yml up kafka-init` rather than granting anything by hand.
 
 aiokafka compatibility matters. Before changing topic/admin behavior, inspect the installed dependency range, the implementation, and its tests. In particular inspect packages/sdk/wildframe_events/dlq_retention.py before changing DLQ retention.
 
@@ -147,6 +306,8 @@ Content, user, auth, admin, creators, moderation, and analytics code contains pr
 
 Preserve explicit authorization, consent, jurisdiction, audit, and error/status semantics. Do not weaken a policy check simply to satisfy a happy-path test.
 
+Never set `use_enum_values` on a compliance model. It stores the raw value, so a policy re-constructed with an explicit `jurisdiction=` holds a `str` and `self.jurisdiction.regulations` raises `AttributeError` — and because pydantic does not validate defaults, the bug hides until the first re-construction, so a direct `USPrivacyPolicy()` looks fine. Serialize at the boundary (`model_dump(mode="json")` / `json.dumps`).
+
 ## 14. Observability
 
 Shared observability code is in packages/sdk/wildframe_observability. The platform uses OpenTelemetry, Prometheus, Grafana, Loki, and Jaeger.
@@ -169,7 +330,30 @@ Important areas:
 - src/__tests__/ — Vitest tests.
 - e2e/ — Playwright tests.
 
-Keep browser/server boundaries explicit. Never move server-only secrets into client components. The frontend API base URL is environment-driven and normally targets the HTTPS gateway in local development.
+### 15.1 Frontend conventions worth stating
+
+- **A Server Component by default.** Add `"use client"` only for state, effects,
+  refs, browser APIs, or event handlers. A client boundary that does not need to
+  exist costs bundle size and hydration work.
+- **Holding a render on an effect is a last resort.** `apps/web/src/app/providers.tsx`
+  gates the entire tree on `authReady`, so if `hydrate()` never settles the whole app
+  is a spinner — a single unguarded promise here takes down every route. If you must
+  gate, give it a timeout and a visible failure.
+- **Do not route on the client what the proxy already knows.** `src/proxy.ts`
+  redirects unauthenticated users off protected routes. A second client-side guard
+  duplicates that rule and will drift.
+- **Auth state lives in the store, not in component state.** `useAuthStore` and the
+  `__Host-wf_refresh` cookie are the source of truth; page components read them.
+- **One variable per audience.** Browser code derives its API base from
+  `window.location.hostname`; in-container server code uses `AUTH_SERVICE_URL`.
+  Merging them produced a 502 on every hard reload — see 5.2.
+- **A cookie named `__Host-` must not be given a `Domain` attribute**, in app code
+  or in a test harness. The browser drops it silently and the symptom looks like an
+  auth bug. This bit a verification script before it bit anything in `src/`.
+
+Keep browser/server boundaries explicit. Note that `apps/web/AGENTS.md` directs agents to
+`node_modules/next/dist/docs/`; that directory is not present in this install, so verify
+Next.js behaviour against the installed source under `node_modules/next/dist/` instead. Never move server-only secrets into client components. The frontend API base URL is environment-driven and normally targets the HTTPS gateway in local development.
 
 ## 16. Local development and TLS
 
@@ -178,6 +362,8 @@ The local stack is defined by deployments/docker-compose.dev.yml. Caddy provides
 Relevant files include infrastructure/caddy/Caddyfile and scripts/generate-dev-certs.sh. Generated development certificates under apps/web/certificates are not committed.
 
 Inside the Docker network, service-to-service traffic normally uses container HTTP ports. Host-facing traffic is TLS-aware; do not change this boundary casually.
+
+**Every service container listens on :8000, whatever its Dockerfile declares.** The per-service Dockerfiles each pass their own `--port`, but `deployments/docker-compose.dev.yml` overrides every service with `command: uvicorn app.main:app --host 0.0.0.0 --reload`, which has no `--port` and therefore binds 8000; the shared healthcheck confirms it. So `ServiceRegistry` in `services/api-gateway/app/middleware.py` is correct to point every entry at `:8000`, and rewriting it to match the Dockerfiles' `SERVER_PORT` breaks routing. Only the **host** mapping differs per service, and host ports are not service names. Do not read a port out of this file: read the host port from the service's `ports:` entry in `deployments/docker-compose.dev.yml`, and the container port from that same block's `command:`. Probing a host port that belongs to a different service returns 404 and reads exactly like broken routing.
 
 ## 17. Infrastructure
 
@@ -209,13 +395,156 @@ Typical commands:
 
 For authentication, billing, gateway, event, upload, media-pipeline, and authorization changes, run the relevant security/regression tests rather than only a happy-path test.
 
-Regression tests should fail against the old behavior and pass against the new behavior. Prefer externally observable assertions over tests that merely reproduce implementation details.
+### 19.1 Writing a test that can actually fail
+
+Regression tests must fail against the old behavior and pass against the new. The
+hard part is proving they can fail at all, and we have shipped tests that could not.
+
+**Verify red/green before you commit.** Revert your fix, run the new test, confirm it
+fails, restore, confirm it passes. If you never saw it red, you do not know what it
+is testing.
+
+**A test that passes for the wrong reason is worse than no test.** Real examples from
+this repo:
+
+- A test asserting only "the request succeeded" passed against a *completely broken*
+  build. The code under test swallowed its own exceptions, so the app came back
+  healthy and fully uninstrumented, and every assertion passed against nothing.
+  Fix: assert the side effect that proves the mechanism ran — a recorded span, a
+  written row, an actual call — not just the absence of an error.
+- A test whose only assertion was `not.toContain('some-url')` passed against an empty
+  list. Fix: assert length, then contents.
+- A downgrade that broke an unrelated package made the test red for the wrong reason.
+  **A red test is not proof until you have read why it is red.** Check the failure
+  message names the actual defect.
+- A test that shrank its input to fit the old limit passed, having defeated its own
+  purpose. Use realistically sized data — the bug is often that the real value is
+  bigger than anyone assumed.
+
+**Do not mock the layer where the defect lives.** Several of the worst bugs here were
+invisible precisely because the tests mocked that layer. A dependency-injection test
+proves your code calls what you told it to call; it cannot prove the real thing works.
+
+**Prefer externally observable assertions.** Status code, persisted row, emitted
+event, written cookie. Mock-heavy tests pass when the product is broken.
+
+### 19.1b Turn a repeated task into a script
+
+**If you run the same sequence of commands more than twice, it is a script.** This is
+the highest-leverage habit in this repo, and it is not optional polish.
+
+Every serious fix in the last audit needed a loop — build, force-recreate, wait for
+health, hit a real endpoint, read the logs. That loop was retyped by hand dozens of
+times, and hand-retyping is where the mistakes happened: a missing
+`--force-recreate` shipped an old image, a missing `--no-cache` hid the change, and
+`up -d` was repeatedly assumed to have picked up a new build.
+
+**What to script, in rough order of return:**
+
+- **Anything you ran three or more times.** No threshold debate; you already know.
+- **Anything that has to be right in a specific order.** Build before recreate,
+  install before test, lock before install. A script cannot forget step two.
+- **Anything where a past failure was a missing flag.** Every one of those becomes a
+  permanent guard the moment it is in a script.
+- **Anything you need to do again after a rebuild or a fresh volume.** Schema
+  bootstrap, stack bring-up, a smoke pass.
+
+**Where it goes:** `scripts/`, documented in `scripts/README.md`, referenced from
+this section. Not `/tmp` — see `AGENT_COORDINATION.md` 23.6.
+
+**The bar is that someone else can run it without you.** A script you have to
+explain is a note, not a tool. That means: a usage comment at the top, sane
+defaults, an `--help` or a printed usage line, and **a meaningful exit code** so it
+can gate a build rather than only be read.
+
+**Verify a new script before you commit it.** Run it against the running stack. Every
+harness written in the last audit reported a failure caused by its own bug before it
+worked: a syntax error, a cookie injected with an attribute the browser silently
+drops, and a form submit that reused an email and correctly got a `409`. A script that
+fails for the wrong reason sends the next person after a defect that is not there.
+
+**Do not delete a working script because it looks redundant.** If two scripts overlap,
+merge them and keep the one that is more general. If you find yourself retyping
+something, the duplication is the finding.
+
+### 19.2 Verifying a change against the running app
+
+Ready-made harnesses live in `scripts/` — see `scripts/README.md`:
+
+- `node scripts/browser-check.mjs` — does each page actually render in a browser?
+  Reports inputs, CSP violations, visible text, and the post-redirect URL.
+- `node scripts/causation-check.mjs` — strips one response header and reports whether
+  the symptom disappears. Turns a hypothesis into a demonstrated cause, or rules a
+  layer out. This is how the blank page was diagnosed.
+- `node scripts/auth-flow-check.mjs` — can a real user register and stay signed in?
+  Registration returning 201 is not sufficient; three defects once hid behind it.
+
+The suite is necessary and not sufficient. Before calling work done:
+
+```bash
+docker compose -f deployments/docker-compose.dev.yml build --no-cache <service>
+docker compose -f deployments/docker-compose.dev.yml up -d --no-deps --force-recreate <service>
+curl -sk https://localhost:<port>/<real endpoint>     # a real route, not /health
+docker compose -f deployments/docker-compose.dev.yml logs <service> --tail 200
+```
+
+Hit a **real** endpoint. Three services returned 200 on `/health` while every real
+route 500'd, because the health path skipped the middleware where the bug lived.
+
+When a fix is not a plain code change — a dependency pin, a build flag, a deployment
+setting — also prove it took effect in the artifact, not just on disk. A build has been
+observed printing `CACHED`, exiting 0, and shipping pre-fix code. Grep the built
+artifact for the value you expect.
+
+For anything the browser has to run, drive a real browser. A page can return 200 with
+an empty body and look fine to `curl`.
+
+### 19.3 Proving causation, not correlation
+
+When you infer a cause from a symptom, try to break it on purpose. Strip the one
+header, comment out the one line, restore the old value — and confirm the symptom
+appears and disappears with it. If you cannot make the bug come back on demand, you
+have a theory, not a diagnosis, and you should say so.
 
 ## 20. Dependencies
 
 The repository has a root Poetry project plus service-level dependency metadata and lockfiles; some services also have independent Poetry/uv configuration.
 
 When changing dependencies, inspect the service metadata, root metadata if shared, lockfiles, Docker installation behavior, and the relevant tests. Do not add a dependency to compensate for a local package/import mistake.
+
+**A floor you raise for one conflict can create a different one.** Two dependency
+resolutions in this repo did exactly that, and both looked correct in isolation:
+
+- Three manifests pinned `opentelemetry-instrumentation-fastapi` to disjoint ranges,
+  making every per-service lock unresolvable. Unifying them fixed the conflict — and
+  the version chosen then, `^0.49b0`, was a two-year-old release that crashes against
+  the FastAPI version we pin, 500ing every route registered via `include_router`.
+  The current floor is **`^0.64b0`**: the first release whose `_get_route_details()`
+  tolerates an `_IncludedRouter` in `scope['route']`. `0.50b0` and `0.55b0` carry the
+  identical unguarded code, so 'bump to the next release' is not a fix — bisect. That
+  forced the API/SDK floor to `1.43.0` and, because the Jaeger exporter is EOL at
+  `1.21.0`, a migration to OTLP export. See #978.
+- Fixing that forced the API/SDK floor to `1.43.0`, which in turn broke
+  `opentelemetry-exporter-jaeger`, discontinued upstream at `1.21.0` with no later
+  release. There was no version of that exporter that worked, so the exporter had to
+  be replaced with OTLP.
+
+**When you bump one, check the whole family and the thing it depends on.** These
+packages pin each other exactly (`sdk 1.43.0` requires `semantic-conventions==0.64b0`),
+and a partial upgrade produces a set that installs and then fails at runtime, or does
+not install at all. `pip check` must be clean before you call it done — and note that
+`pip check` reporting a conflict in a *transitive* package is how you find out.
+
+**Install before you type-check or test.** CI runs `poetry install --no-interaction
+--with dev` per service. Running mypy or pytest against an empty or stale venv produces
+confident, entirely fictional errors — an `import-untyped` storm across 13 services
+from a package that was never installed, in one recorded case.
+
+**Do not report a vulnerability you have not confirmed.** A scratch venv produced a
+"redis 5.3.1 has 2 HIGH CVEs" finding that actually came from `msgpack` and
+`setuptools`. Confirm the package name in the finding before escalating it. For real
+signal use `.github/scripts/verify-supply-chain.py`; a local Trivy run over the working tree
+flags generated dev certificates, which are gitignored and never committed.
 
 ## 21. Documentation
 
@@ -239,18 +568,12 @@ Do not assume that an open issue is necessarily an unfixed defect, and do not as
 
 ## 23. Agent workflow
 
-1. Read this file and any nearer service-specific AGENTS.md.
-2. Locate the entry point and trace the complete execution path.
-3. Inspect models, schemas, settings, repositories, events, and tests.
-4. Inspect cross-service contracts for cross-service changes.
-5. Make the smallest coherent change.
-6. Add or update a regression test.
-7. Run focused tests and applicable lint/type checks.
-8. Run contract/integration tests when an external contract changed.
-9. Review the final diff for accidental security, API, dependency, or documentation changes.
-10. Update current documentation if behavior or setup changed.
-
-Do not mix unrelated cleanup into the same PR.
+Agent workflow lives in **`AGENT_COORDINATION.md`** — read it before you touch a shared
+branch. It covers claiming paths, the verified git failure modes, what belongs in
+`/tmp` and what does not, when to dispatch a subagent, and the rules for what a human
+must decide. It was extracted from this file when it reached 378 lines, because
+everything below is engineering guidance you need whether or not other agents are
+active.
 
 ## 24. Security
 
@@ -258,18 +581,201 @@ Never commit real credentials, tokens, private keys, production connection strin
 
 Use SECURITY.md for genuine vulnerability reporting. Do not disclose exploitable secrets in public issues or pull requests.
 
+### 24.1 Handling a suspected secret
+
+If you find a credential in the repository, an agent, or a log:
+
+- **Do not decide yourself whether it is authorized.** That is a human decision, and
+  the evidence is often contradictory — one commit asserting "owner-authorized"
+  while another says it should never have been there. Record what you found, in
+  `oner-task.md`, and stop.
+- **Redaction is not remediation.** A credential that was ever committed must be
+  treated as compromised and **rotated**. Rewriting history does not un-clone anything.
+- **Do not quote the value**, not even into a board entry. A previous agent re-quoted a
+  fragment into the board to make a point, and the entry had to be removed. Refer to
+  it by location, not content.
+- **Scratch files are not a safe place for it either.** `/tmp` is world-readable on most
+  systems and `.gitignore` does not cover it. See AGENT_COORDINATION.md 23.6.
+
+A secret in a dev compose file is still a secret, and a LAN IP with a TLS-terminating
+listener in front of it is not a secret but is a machine-specific hardcode that breaks
+everybody else's setup — see AGENT_COORDINATION.md 23.4.
+
 ## 25. Pull requests
 
 Use descriptive branches such as fix/auth-jwt-audience, fix/billing-refund-reconciliation, test/gateway-body-limit-regression, or docs/update-architecture-guide.
 
 PR descriptions should state what changed, why, tests run, and any security, data, deployment, or configuration implications.
 
+**Attach the evidence, not just the claim.** "Tests pass" is not reviewable. Include
+the failing output before the fix and the passing output after, and say which command
+produced each. If a check could not be run, say so rather than leaving it implied.
+
 Do not merge a PR unless the task explicitly requires it. The normal agent workflow is branch -> focused commit(s) -> PR -> human review.
+
+## 26. Troubleshooting: symptom first
+
+Reach for the logs before theorising. Every row here cost real time to derive.
+
+| Symptom | Most likely cause | First command |
+|---|---|---|
+| Service healthy, every real route 500s | middleware raising before the handler | `logs <svc> \| grep -A20 Error` |
+| Blank page, HTTP 200, curl looks fine | page never hydrated; CSP blocked the inline script | `node scripts/browser-check.mjs /route` |
+| `502` from a Next.js server-side fetch | in-container code used a public host; `localhost` is the container itself | `exec <svc> curl -sv http://api-gateway:8000` |
+| `UndefinedColumnError` on an existing table | model declares a column the table lacks; `create_all` is `checkfirst` and never alters tables | `python scripts/init_schemas.py --allow-add <table>.<column>` on a populated table; it refuses an undeclared add. Then re-read 23.6 in AGENT_COORDINATION.md |
+| Whole bootstrap exits 1 on a `NotNullViolationError` | a `nullable=False` column with no server default, against a populated table | needs a human `ALTER TABLE`, not the reconcile pass |
+| Build says `CACHED`, image has old code | layer cache; `--no-cache` plus `--force-recreate` | `build --no-cache && up -d --force-recreate` |
+| `up -d` did not pick up a new image | container was reused, not recreated | `up -d --no-deps --force-recreate` |
+| Register returns 201 but UI says it failed | session rejected after the account was created | `node scripts/auth-flow-check.mjs` |
+| Hard reload bounces to /login | server-side session read failing | `curl -sk https://localhost:3000/auth-session` |
+| Services healthy but Kafka operations fail | `kafka-init` has not completed, or an ACL is missing from `_SERVICE_ACL` | `logs kafka-init`; `kafka-acls --list` inside the broker; `python scripts/kafka_init.py --print-plan` |
+| Kafka healthy but `listTopics` times out | healthcheck only proves TLS/SASL, not metadata | `logs kafka \| tail` |
+| `TOPIC_AUTHORIZATION_FAILED` on a topic that exists | no ACL — the authorizer denies everything, and `auto.create.topics.enable=false` means a missing topic is masked by the same error | `docker compose -f deployments/docker-compose.dev.yml up kafka-init`, then re-check |
+| `pip check` reports a transitive conflict | partial upgrade; the family pins each other | `pip check` then align the whole family |
+| Thousands of `import-untyped` errors | deps not installed in this venv | `poetry install --with dev` |
+| A test passes but the app is broken | the test mocks the layer where the value should arrive | run it against the running stack |
+| Push says success, commit is missing | branch moved; check content, not exit code | `git show origin/<b>:<path> \| grep -c` |
+| Push rejected, tree is dirty | someone else's uncommitted work — see AGENT_COORDINATION.md 23.1 | `git status --porcelain` |
+
+## 27. Before you claim something is done
+
+A single checkable list. Most of these cost me a correction during the last audit.
+
+- [ ] Ran the change against the **running stack**, not only the test suite
+- [ ] Hit a **real endpoint**, not `/health` — a healthy service can 500 on every route
+- [ ] For anything browser-rendered: `node scripts/browser-check.mjs` passes
+- [ ] If a schema changed: `python scripts/init_schemas.py` run, verified on a **fresh
+      volume**, and the migration is additive or explicitly reviewed. On a populated
+      table the script refuses an undeclared add — pass `--allow-add <table>.<column>`
+      once you have decided the table is stale rather than the column being
+      deliberately absent
+- [ ] If a dependency moved: `pip check` clean, and the **whole family** moved together
+- [ ] Verified the **built artifact** contains the change, not just the source tree
+- [ ] New test **fails without the fix** — revert and watch it go red
+- [ ] Board updated: claim released, findings recorded
+- [ ] `oner-task.md` updated with anything you deliberately left undone
+- [ ] Nothing reusable left in `/tmp` — see 23.6
+- [ ] Diff reviewed for accidental security, API, dependency or docs changes
+- [ ] No secrets in the diff, in a log, or in a board entry — see 24.1
+
+**If you cannot tick a box, say so** and name it. An honest partial result is far more
+useful than a confident wrong one, and it is what the next agent can act on.
+
+## 28. Reviewing someone else's change
+
+Reviewers: the branch is large, so spend your attention where the risk is.
+
+- [ ] **Does the test actually fail without the fix?** Ask to see it go red. A test
+      that passes both ways is decoration.
+- [ ] **What was ruled out, and is the conclusion consistent with it?** Check the
+      reasoning against the evidence, not just the conclusion.
+- [ ] **Did anything get weakened to make something pass?** `except: pass`,
+      `ignoreBuildErrors`, `continue-on-error`, `|| true`, a deleted assertion, a
+      lowered threshold. These are the single most common way an outage ships green.
+- [ ] **Is there a scope creep into unrelated files?** Especially other agents' paths.
+- [ ] **Schema and dependency changes** are the highest-risk review targets: does the
+      change work on a fresh volume, and does the dependency family move together?
+- [ ] **Claims that were verified, versus claims that were assumed.** Ask which.
+
+A reviewer's most valuable output is sometimes "this does not prove what it claims",
+not a list of style nits. Say so plainly when that is your finding.
+
+## 28b. Getting feedback on your own work
+
+**Dispatch a reviewer before you call your work done, not after.** Self-review
+re-reads what you meant to write rather than what is there, and it cannot notice the
+assumption you have already been convinced of. A fresh agent with no memory of the
+session is the only thing that can do this properly.
+
+In this repo that review was worth more than the work it reviewed. The diagnosis work
+survived scrutiny — the blank-page fix and the 502 fix were both verified end to end
+— while the *tooling* did not, and the tooling was what had been cited as proof. A
+reviewer found that `scripts/browser-check.mjs` **reported OK for a 404** and for every
+protected route that silently bounced to `/login`, because it collected the status
+and the redirect target, printed them, and then never used them in its verdict. That
+had been cited as evidence the site was healthy.
+
+**Ask for criticism, not approval.** A brief that says "check this is good" gets you
+a summary. Say: find what is wrong, assume the claims are overstated, and tell me
+which of them are wrong. Request a verdict per claim — VERIFIED / OVERSTATED / WRONG,
+with evidence. Ask specifically what was ruled out, and whether the conclusion is
+consistent with it.
+
+**A reviewer's most valuable output is often "this does not prove what it claims."**
+Take that seriously even when the code is correct. Three ways this shows up:
+
+- **A harness that cannot fail, or fails for the wrong reason.** Ask what the check
+  would report if the bug were still present, and whether it would report a *different*
+  bug. "Does each page render?" that passes on a 404 is worse than no check.
+- **Counts presented as identity.** "164/164 columns" proves a column count matched.
+  It does not prove indexes, constraints, defaults, or types matched.
+- **A test that re-asserts what an adjacent test already asserts.** Two identical
+  assertions are one assertion. Ask how many of the passing tests are actually
+  load-bearing.
+
+**When the review finds something, fix it before citing the work again.** And if it
+finds that your verification never ran — a script that exits 2 on the documented
+invocation, a build that was already broken — say so plainly rather than leaving the
+tool referenced as the designated check. A documented tool that does not run is worse
+than a missing one, because it is trusted.
+
+**Push back on findings you think are wrong**, with evidence. A reviewer is not
+automatically right, and this repo has seen both directions. But do not quietly
+decline a finding: state your reasoning, and record it if it stays disputed.
+
+## 29. Maintaining this guide
+
+This guide is only useful while it is true. Treat a stale line as a bug.
+
+**Edit `AGENTS.md` when** you learn something that would have saved you time:
+
+- A convention you violated and were corrected on, or one you followed that worked.
+- A command, path, or flag that is wrong in the file. A wrong `scripts/` path has
+  already survived here; verify every path you add.
+- A pitfall that cost real time and is not yet written down.
+- A rule that turned out to be wrong or counterproductive.
+
+**Do not edit it for:** a one-off incident with no general lesson, a preference that
+is yours alone, or a restatement of what the code already shows. Every addition makes
+the file slightly harder to read, and that cost is real — section 23 was 378 lines
+before it was extracted, and that bloat was pushing the engineering rules out of
+reach.
+
+**Edit the right file.** Rules and conventions go in `AGENTS.md`. The path and the
+current state go in `ONBOARDING.md`. Multi-agent coordination, `/tmp` hygiene and
+subagent dispatch go in `AGENT_COORDINATION.md`. Anything a human must decide goes in
+`oner-task.md`. **Do not duplicate content across them** — a second copy is a second
+thing to keep true.
+
+**Where a pitfall gets reported, depending on who needs it:**
+
+| The pitfall | Report it in | Because |
+|---|---|---|
+| Would mislead any agent, and stays true | `AGENTS.md` | everyone hits it |
+| How to get started here, or the current state | `ONBOARDING.md` | it is the path, and it decays |
+| Only matters when other agents are active | `AGENT_COORDINATION.md` | nobody solo needs it |
+| A human must decide, review, or choose | `oner-task.md` | see `AGENT_COORDINATION.md` 23.3 |
+| Transient, or another agent's in-flight work | `Message-board.md` | coordination, not reference |
+| It is your own mistake this session | `Message-board.md`, in the open | see `AGENT_COORDINATION.md` 23.5 |
+
+**If you are wrong, correct the file, not just the code.** Leaving a wrong line in the
+guide guarantees the next agent repeats your mistake with more confidence. Several of
+the most useful entries in this repo are exactly that: a disproven root cause, a bad
+verification command, an overstated scope.
+
+**Keep it short.** Prefer one line that names the trap and its fix over a paragraph
+that narrates finding it. If a section is growing past roughly a hundred lines, it is
+probably two sections, or it belongs in another file.
 
 ## Quick reference
 
 | Concern | Location |
 |---|---|
+| Agent coordination | `Message-board.md` (claims, notices, recipes) |
+| Human-only tasks | `oner-task.md` (decisions, review, blocked work) |
+| New agent start here | `ONBOARDING.md` (path, traps, current state) |
+| Multi-agent / shared tree | `AGENT_COORDINATION.md` (claims, /tmp, subagents) |
+| Task skills | `skills/` (verify, service change, shared tree) |
 | Backend entrypoint | services/<service>/app/main.py |
 | Routes | services/<service>/app/api/ |
 | Settings | services/<service>/app/core/settings.py |

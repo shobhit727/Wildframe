@@ -20,10 +20,13 @@ collisions, and cross-session overwrites by construction.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from functools import partial
+from typing import NoReturn
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +61,14 @@ class StorageError(Exception):
     """Object-storage failure (missing object, size/content-type mismatch)."""
 
 
-def _raise_storage_error(message: str) -> str:
-    """Narrow a Optional storage return by raising instead (#105 follow-up)."""
+def _raise_storage_error(message: str) -> NoReturn:
+    """Narrow an Optional storage return by raising instead (#105 follow-up).
+
+    Annotated ``NoReturn`` rather than ``str``: the function never returns, and
+    saying so lets mypy narrow the ``Optional`` at every call site. The old
+    ``-> str`` was a fiction -- nothing could ever return the value -- and it
+    left callers re-deriving the narrowing by hand.
+    """
     raise StorageError(message)
 
 
@@ -262,8 +271,7 @@ class StubStoragePort(StoragePort):
             stored_mime = self.content_types.get(key, "")
             if stored_mime and mime and stored_mime != mime:
                 raise StorageError(
-                    f"content type mismatch for {key}: stored {stored_mime!r} "
-                    f"!= session {mime!r}"
+                    f"content type mismatch for {key}: stored {stored_mime!r} != session {mime!r}"
                 )
         assembled = b"".join(parts)
         if len(assembled) != size_bytes:
@@ -322,8 +330,9 @@ class S3StoragePort(StoragePort):
         self.endpoint_url = endpoint_url
         self.ttl_seconds = clamp_ttl(ttl_seconds, max_ttl_seconds)
         self.checksum_verify_max_bytes = checksum_verify_max_bytes
-        # session_id -> multipart UploadId (created lazily on first part URL).
-        self._upload_ids: dict[str, str] = {}
+        # Multipart UploadIds are NOT cached here: the session row is the single
+        # source of truth (see ``UploadSession.multipart_upload_id``) so any
+        # worker can complete or abort an upload created by another process.
 
         import boto3
 
@@ -335,13 +344,22 @@ class S3StoragePort(StoragePort):
             endpoint_url=endpoint_url or None,
         )
 
-    async def begin_upload(self, *, session_id: str, mime: str) -> str | None:
-        import asyncio
+    async def begin_upload(self, *, session_id: str, mime: str) -> str:
+        """Create the multipart upload for ``final_key`` and return its UploadId.
 
-        existing = self._upload_ids.get(session_id)
-        if existing is not None:
-            return existing
-        created = await asyncio.get_event_loop().run_in_executor(
+        The caller persists the id on the session row; nothing about an active
+        upload lives in this process, so a restart or a second worker can still
+        sign parts, complete and abort.
+        """
+        # The annotation is wider than the stub's: `boto3-stubs` types
+        # `CreateMultipartUploadOutputTypeDef["UploadId"]` as `str`, but S3 can
+        # return a null UploadId and this method is required to reject that
+        # rather than hand the caller a broken id (see
+        # test_begin_upload_raises_when_s3_returns_no_upload_id). Widening the
+        # local to `str | None` states what the service actually enforces, so
+        # the guard below is real code rather than a dead branch. The call stays
+        # inside the executor: it is a blocking S3 round trip.
+        created: str | None = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: self._client.create_multipart_upload(
                 Bucket=self.bucket,
@@ -349,13 +367,9 @@ class S3StoragePort(StoragePort):
                 ContentType=mime,
             )["UploadId"],
         )
-        upload_id = (
-            created
-            if created is not None
-            else _raise_storage_error("S3 create_multipart_upload returned no UploadId")
-        )
-        self._upload_ids[session_id] = upload_id
-        return upload_id
+        if created is None:
+            _raise_storage_error("S3 create_multipart_upload returned no UploadId")
+        return created
 
     async def create_upload(
         self,
@@ -366,10 +380,9 @@ class S3StoragePort(StoragePort):
         chunk_index: int | None = None,
         upload_id: str | None = None,
     ) -> PresignedUpload:
-        import asyncio
-
         final_key = storage_key_for(session_id, None)
         if chunk_index is None:
+            # Single-object upload: one signed PUT against the final key.
             storage_key = final_key
             url = await asyncio.get_event_loop().run_in_executor(
                 None,
@@ -380,28 +393,21 @@ class S3StoragePort(StoragePort):
                 ),
             )
         else:
-            storage_key = storage_key_for(session_id, chunk_index)
             if upload_id is None:
-                upload_id = self._upload_ids.get(session_id)
-            if upload_id is None:
-                upload_id = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: self._client.create_multipart_upload(
-                        Bucket=self.bucket, Key=final_key, ContentType=mime
-                    )["UploadId"],
-                )
-                self._upload_ids[session_id] = (
-                    upload_id
-                    if upload_id is not None
-                    else _raise_storage_error("S3 create_multipart_upload returned no UploadId")
-                )
+                # Never sign a part against an upload we do not know: the
+                # UploadId is created once (begin_upload) and persisted.
+                _raise_storage_error("multipart part URL requested without an UploadId")
+            # Multipart parts are addressed by the key the UploadId was created
+            # against — the final object key — plus a PartNumber. Signing any
+            # other key produces an UploadPart that S3 rejects outright.
+            storage_key = final_key
             url = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: self._client.generate_presigned_url(
                     "upload_part",
                     Params={
                         "Bucket": self.bucket,
-                        "Key": storage_key,
+                        "Key": final_key,
                         "UploadId": upload_id,
                         "PartNumber": chunk_index + 1,
                     },
@@ -423,28 +429,27 @@ class S3StoragePort(StoragePort):
         )
 
     async def get_object_metadata(self, *, storage_key: str) -> StorageObjectMetadata | None:
-        import asyncio
-
         try:
             head = await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: self._client.head_object(Bucket=self.bucket, Key=storage_key),
+                lambda: self._client.head_object(
+                    Bucket=self.bucket, Key=storage_key, ChecksumMode="ENABLED"
+                ),
             )
         except Exception as exc:  # noqa: BLE001 - botocore 404 surface
-            if (
-                getattr(exc, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
-                == 404
-            ):
+            if _is_missing_resource(exc):
                 return None
             raise
 
-        checksum: str | None = None
-        if head["ContentLength"] <= self.checksum_verify_max_bytes:
+        # Prefer the provider-computed digest when the object carries one: it
+        # is authoritative and, unlike a full read, not bounded by size.
+        checksum: str | None = head.get("ChecksumSHA256")
+        if checksum is None and head["ContentLength"] <= self.checksum_verify_max_bytes:
             body = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: self._client.get_object(Bucket=self.bucket, Key=storage_key)["Body"].read(),
             )
-            checksum = hashlib.sha256(body).hexdigest()
+            checksum = _sha256(body)
         return StorageObjectMetadata(
             storage_key=storage_key,
             size_bytes=head["ContentLength"],
@@ -460,32 +465,28 @@ class S3StoragePort(StoragePort):
         total_chunks: int,
         upload_id: str | None = None,
     ) -> StorageObjectMetadata | None:
-        import asyncio
-
         storage_key = storage_key_for(session_id, index if total_chunks > 1 else None)
         if upload_id is None:
             return await self.get_object_metadata(storage_key=storage_key)
         # Multipart parts are not objects: read their authoritative byte count
         # from the provider's part listing instead of a HEAD request.
-        listed = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: self._client.list_parts(
-                Bucket=self.bucket,
-                Key=storage_key_for(session_id, None),
-                UploadId=upload_id,
-            ),
+        parts = await self._list_all_parts(
+            final_key=storage_key_for(session_id, None), upload_id=upload_id
         )
-        for part in listed.get("Parts", []):
+        for part in parts:
             if part.get("PartNumber") == index + 1:
                 return StorageObjectMetadata(
                     storage_key=storage_key,
                     size_bytes=part["Size"],
                     # S3 exposes no SHA-256 for parts of a multipart upload that
                     # was not created with a checksum algorithm; part integrity
-                    # is covered by the ETag verification in complete_upload.
+                    # is covered by the size check here and the ETag
+                    # verification in complete_upload.
                     checksum_sha256=None,
                     mime=None,
                 )
+            if part.get("PartNumber", 0) > index + 1:
+                break  # the listing is ascending: this part was never uploaded
         return None
 
     async def complete_upload(
@@ -498,39 +499,37 @@ class S3StoragePort(StoragePort):
         mime: str,
         upload_id: str | None = None,
     ) -> StorageObjectMetadata:
-        import asyncio
-
-        loop = asyncio.get_event_loop()
-        mapped_upload_id = self._upload_ids.pop(session_id, None)
-        upload_id = upload_id or mapped_upload_id
         if upload_id is not None:
-            parts = await loop.run_in_executor(
-                None,
-                lambda: self._client.list_parts(
-                    Bucket=self.bucket, Key=final_key, UploadId=upload_id
-                ),
-            )
-            listed = sorted(parts.get("Parts", []), key=lambda p: p["PartNumber"])
-            # Provider semantics: parts must be exactly 1..N with no gaps/dups.
-            expected = list(range(1, len(chunk_keys) + 1))
-            actual = [p["PartNumber"] for p in listed]
-            if actual != expected:
-                raise StorageError(
-                    f"multipart part list incomplete/malformed: {actual} != {expected}"
+            try:
+                listed = await self._list_all_parts(final_key=final_key, upload_id=upload_id)
+            except Exception as exc:  # noqa: BLE001
+                if not _is_missing_upload(exc):
+                    raise
+                # NoSuchUpload: a previous attempt already completed the
+                # multipart upload and the DB commit then failed. Fall through
+                # to the final-object verification so the retry converges.
+                listed = None
+            if listed is not None:
+                # Provider semantics: parts must be exactly 1..N, no gaps/dups.
+                expected = list(range(1, len(chunk_keys) + 1))
+                actual = [p["PartNumber"] for p in listed]
+                if actual != expected:
+                    raise StorageError(
+                        f"multipart part list incomplete/malformed: {actual} != {expected}"
+                    )
+                await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self._client.complete_multipart_upload(
+                        Bucket=self.bucket,
+                        Key=final_key,
+                        UploadId=upload_id,
+                        MultipartUpload={
+                            "Parts": [
+                                {"PartNumber": p["PartNumber"], "ETag": p["ETag"]} for p in listed
+                            ]
+                        },
+                    ),
                 )
-            await loop.run_in_executor(
-                None,
-                lambda: self._client.complete_multipart_upload(
-                    Bucket=self.bucket,
-                    Key=final_key,
-                    UploadId=upload_id,
-                    MultipartUpload={
-                        "Parts": [
-                            {"PartNumber": p["PartNumber"], "ETag": p["ETag"]} for p in listed
-                        ]
-                    },
-                ),
-            )
 
         metadata = await self.get_object_metadata(storage_key=final_key)
         if metadata is None:
@@ -545,6 +544,44 @@ class S3StoragePort(StoragePort):
             )
         return metadata
 
+    async def _list_all_parts(self, *, final_key: str, upload_id: str) -> list[dict]:
+        """Every uploaded part of ``upload_id``, in ascending PartNumber order.
+
+        ``ListParts`` returns at most 1,000 parts per response while a session
+        may declare up to ``MAX_CHUNKS_PER_SESSION`` chunks, so a single call
+        would silently under-report the plan. The result is sorted rather than
+        taken as-is: ``complete_upload``'s 1..N check and ``get_chunk_metadata``'s
+        "this part was never uploaded" early exit both read the listing as
+        ascending, and an out-of-order page would reject a complete upload.
+        """
+        parts: list[dict] = []
+        marker: int | str | None = None
+        while True:
+            params: dict = {
+                "Bucket": self.bucket,
+                "Key": final_key,
+                "UploadId": upload_id,
+                "MaxParts": 1000,
+            }
+            if marker is not None:
+                params["PartNumberMarker"] = marker
+
+            # A named closure, not a lambda: run_in_executor needs a callable
+            # whose return type is inferable, and a lambda with a default
+            # argument erases it.
+            def _fetch_page() -> dict:
+                return dict(self._client.list_parts(**params))
+
+            page = await asyncio.get_event_loop().run_in_executor(None, _fetch_page)
+            parts.extend(page.get("Parts", []))
+            if not page.get("IsTruncated"):
+                break
+            marker = page.get("NextPartNumberMarker")
+            if marker is None:
+                break
+        parts.sort(key=lambda part: part["PartNumber"])
+        return parts
+
     async def cleanup_upload(
         self,
         *,
@@ -553,21 +590,24 @@ class S3StoragePort(StoragePort):
         final_key: str,
         upload_id: str | None = None,
     ) -> None:
-        import asyncio
+        """Delete the session's objects and cancel its multipart upload.
 
+        Only *confirmed missing* resources count as success. Any other failure
+        propagates so the caller keeps ``storage_cleaned_at`` unset and the
+        reaper retries; swallowing it would mark the session cleaned while the
+        bytes stayed in the bucket forever.
+        """
         loop = asyncio.get_event_loop()
-        for key in [*chunk_keys, final_key]:
+        for key in dict.fromkeys([*chunk_keys, final_key]):
             try:
-                await loop.run_in_executor(
-                    None,
-                    lambda k=key: self._client.delete_object(  # type: ignore[misc]
-                        Bucket=self.bucket, Key=k
-                    ),
-                )
-            except Exception:  # noqa: BLE001 - idempotent: missing objects are fine
-                logger.warning("cleanup delete failed for %s", key, exc_info=True)
-        mapped_upload_id = self._upload_ids.pop(session_id, None)
-        upload_id = upload_id or mapped_upload_id
+
+                def _delete(k: str) -> None:
+                    self._client.delete_object(Bucket=self.bucket, Key=k)
+
+                await loop.run_in_executor(None, partial(_delete, key))
+            except Exception as exc:  # noqa: BLE001
+                if not _is_missing_resource(exc):
+                    raise
         if upload_id is not None:
             try:
                 await loop.run_in_executor(
@@ -576,8 +616,37 @@ class S3StoragePort(StoragePort):
                         Bucket=self.bucket, Key=final_key, UploadId=upload_id
                     ),
                 )
-            except Exception:  # noqa: BLE001
-                logger.warning("multipart abort failed for session %s", session_id, exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                if not _is_missing_upload(exc):
+                    raise
+
+
+def _s3_error_code(exc: BaseException) -> str:
+    """The botocore error code for an exception, or "" when it has none."""
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return ""
+    return str(response.get("Error", {}).get("Code", "") or "")
+
+
+def _s3_status(exc: BaseException) -> int:
+    """The HTTP status botocore reported for an exception (0 when unknown)."""
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return 0
+    return int(response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0) or 0)
+
+
+def _is_missing_resource(exc: BaseException) -> bool:
+    """True only for a provider response proving the object is already gone."""
+    return _s3_error_code(exc) in ("NoSuchKey", "NoSuchBucket", "NotFound", "404") or (
+        _s3_status(exc) == 404
+    )
+
+
+def _is_missing_upload(exc: BaseException) -> bool:
+    """True only for a provider response proving the multipart upload is gone."""
+    return _s3_error_code(exc) == "NoSuchUpload" or _is_missing_resource(exc)
 
 
 def _sha256(data: bytes) -> str:
