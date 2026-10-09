@@ -995,3 +995,87 @@ fix, so I have not picked one.
 **Note the interaction:** this is the same `TRUST_PROXY` question recorded in the
 2026-09-30 board entry. Fixing #130 correctly removed the ability to spoof a
 client IP, which is what previously made per-test isolation possible.
+
+## 2026-10-06 — CI: both remaining red jobs, and one that cannot be fixed
+
+`Frontend CI` and `Security Scan` both failed. Both were pre-existing (they fail
+identically on `32057edb` and earlier), but `TODO-full.md`'s loop is explicit:
+CI not green means another exploration/fixing cycle, not a stop.
+
+### Fixed: both CRITICAL advisories (401a7d85, 07ceb925)
+
+One root cause behind both jobs. `seroval` 1.5.6 was CVE-2026-104846 (CRITICAL)
+and CVE-2026-104845 (HIGH); `npm audit` independently flagged `solid-js` 1.9.15
+as inside its own vulnerable range.
+
+Chain: `apps/web` **`dependencies`** -> `@tanstack/react-query-devtools` ->
+`query-devtools` -> `solid-js` -> `seroval`. **Note it is declared under
+`dependencies`, not `devDependencies`** — a subagent initially called it
+dev-only and that was wrong. Do not describe it as dev-only.
+
+`npm audit fix` (non-breaking) moved the whole root lockfile: seroval 1.5.6 ->
+1.6.8, solid-js 1.9.15 -> 1.9.17, sharp 0.35.4 -> 0.35.5, source-map-js 1.2.1 ->
+1.2.2, next 16.3.6 -> 16.3.8.
+
+Verified on the bumped lock: lint exit 0 (one pre-existing react-hooks warning),
+`tsc --noEmit` 0 errors, vitest **847/847**, `next build` exit 0, 18 routes. The
+same four gates run against the **pre-bump** lock gave identical results, so the
+bump changed no observable behaviour.
+
+**Two claims in `AGENTS.md` no longer reproduce and should stop being cited:**
+"11 pre-existing TS errors in apps/web (block build)" and "3 vitest failures".
+Type-check is clean and all 847 tests pass on this branch.
+
+### Fixed: the security gate now says what it found (401a7d85)
+
+`Security Scan` was uninformative: `format: sarif` sent every finding to a file,
+so the log showed a DB download and then a bare exit 1. A red job you cannot
+diagnose trains people to ignore it. Added `Report Trivy findings`, which prints
+severity counts and a table of advisory / package / installed / fixed-in /
+file:line to the log and job summary. Threshold, `exit-code`, `ignore-unfixed`,
+SARIF upload and Semgrep all unchanged.
+
+### NOT FIXED: `braces` HIGH — there is no fix
+
+`GHSA-vfj7-8cjw-p6xm`. The advisory's vulnerable range is `<= 3.0.3` and
+**3.0.3 is the latest published version**; `first_patched_version` is null.
+Forcing `fast-glob@3.3.3` with a clean re-resolve still lands `braces@3.0.3`.
+No combination of these three packages clears it.
+
+It is also provably unreachable here:
+
+- `npm ls braces --omit=dev` is **empty** — not in the production graph.
+- Not imported anywhere in `apps/web/src`; absent from `.next/standalone`.
+- The one consumer, `@next/eslint-plugin-next`'s `get-root-dirs.js`, is only
+  reached from the `no-html-link-for-pages` rule, which `eslint.config.mjs`
+  turns off — and `next.config.ts` sets no `rootDir`, so the glob is never
+  constructed.
+- A probe proved **zero invocations** under the real config, with a positive
+  control showing 112 `fast-glob` / 560 `micromatch` calls when the path *is*
+  reachable. So the probe can detect calls.
+
+**Your decision.** The only routes to a green job are an unacceptable Next 16->14
+downgrade, or changing the gate. Recommended: keep `npm audit --audit-level=high`
+blocking, add an allowlist step that **fails on any advisory not on the list**
+(so new findings cannot be silently absorbed), and add a step asserting
+`npm ls braces --omit=dev` is empty — so if someone sets `rootDir` or re-enables
+that rule, the justification lapses automatically. I have not implemented a gate
+change.
+
+### Needs a decision: 6 of Trivy's 8 findings are in dead lockfiles
+
+`apps/web/package-lock.json` and `pnpm-lock.yaml`. CI installs from the **root**
+lockfile with `npm ci`; **no CI job uses pnpm**. These are real findings in real
+files the gate scans, but they do not describe a shipped artifact — and they are
+already stale (root has `next@16.3.8`, `sharp@0.35.5`, `source-map-js@1.2.2`;
+these files still carry 16.3.6 / 0.35.4 / 1.2.1). Delete them or regenerate
+them? Not mine to decide — they are the reason the Security Scan number will not
+reach zero even after everything above.
+
+### Also noticed, not acted on
+
+`.trivy.yaml` appears **inert**: its `skip-files` does not suppress lockfile
+findings (`-c .trivy.yaml` gives byte-identical counts to the default), and its
+`exit-code: 0` is overridden by the action's `exit-code: "1"`. The board entry
+"#809 Report active scanner suppressions" advertises suppressions that change
+nothing. Left alone deliberately — changing it would alter what the gate scans.
