@@ -485,6 +485,15 @@ def main(argv: Sequence[str]) -> int:
     except RuntimeError as exc:
         print(f"kafka bootstrap failed: {exc}", file=sys.stderr)
         return 1
+    finally:
+        try:
+            if os.path.exists(args.client_config):
+                os.remove(args.client_config)
+        except OSError as cleanup_exc:
+            print(
+                f"warning: failed to remove {args.client_config}: {cleanup_exc}",
+                file=sys.stderr,
+            )
     print(
         f"kafka bootstrap complete: {len(topics)} topics, "
         f"{len(topic_acls)} topic ACLs, {len(group_acls)} group ACLs",
