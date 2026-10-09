@@ -457,8 +457,8 @@ def main(argv: Sequence[str]) -> int:
         # never authenticate anybody, and a silent default would present as a
         # broker fault instead of a missing environment variable.
         print(
-            f"{ADMIN_PASSWORD_ENV} is unset; cannot authenticate as the "
-            f"{ADMIN_USER} super user",
+            "Required admin credentials are missing; cannot authenticate as "
+            "the configured super user",
             file=sys.stderr,
         )
         return 2
