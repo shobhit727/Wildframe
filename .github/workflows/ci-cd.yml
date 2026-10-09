@@ -616,6 +616,95 @@ jobs:
           exit-code: "1"
           skip-dirs: "apps/web/node_modules,apps/web/.next,node_modules,.git,.github,docs,tests,scripts,.cache,.github,__pycache__,*.pyc,*.pyo,*.pyd"
 
+      # Trivy writes SARIF only, so with `exit-code: "1"` the step failed with a
+      # bare "Process completed with exit code 1" and no statement of what it had
+      # found. A gate nobody can read is not a gate: the next person has to
+      # re-derive the finding list by hand from the Security tab. This step
+      # renders the SARIF Trivy already wrote -- counts by severity plus the
+      # offending package, installed and fixed version, and file:line -- into the
+      # log and the run summary.
+      #
+      # It only reads and prints. The threshold, `exit-code: "1"` and the SARIF
+      # upload below are untouched, so the gate is exactly as strict as before and
+      # this step cannot turn a failure into a pass. It runs `if: always()` so the
+      # summary appears on the runs that matter: the failing ones. If Trivy died
+      # before writing any SARIF, this exits non-zero rather than reporting a clean
+      # run, so a broken scanner can never read as a passing gate.
+      - name: Report Trivy findings
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys
+
+          SARIF = "trivy-results.sarif"
+          THRESHOLD = "CRITICAL,HIGH"
+          SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN")
+
+          if not os.path.exists(SARIF):
+              sys.exit(
+                  f"ERROR: {SARIF} was not produced -- Trivy failed before writing "
+                  "results, so this summary cannot say what it found. Read the "
+                  "Trivy step log."
+              )
+
+          with open(SARIF, encoding="utf-8") as fh:
+              run = json.load(fh)["runs"][0]
+          rules = {r["id"]: r for r in run["tool"]["driver"]["rules"]}
+
+          def severity_of(result):
+              tags = rules.get(result["ruleId"], {}).get("properties", {}).get("tags", [])
+              return next((s for s in SEVERITIES if s in tags), "UNKNOWN")
+
+          rows = []
+          for result in run["results"]:
+              fields = dict(
+                  re.findall(
+                      r"^(Package|Installed Version|Fixed Version): (.*)$",
+                      result["message"]["text"],
+                      re.M,
+                  )
+              )
+              place = result["locations"][0]["physicalLocation"]
+              line = place.get("region", {}).get("startLine", 0)
+              uri = place["artifactLocation"]["uri"]
+              rows.append(
+                  {
+                      "severity": severity_of(result),
+                      "id": result["ruleId"],
+                      "package": fields.get("Package", "?").strip(),
+                      "installed": fields.get("Installed Version", "?").strip(),
+                      "fixed": fields.get("Fixed Version", "").strip() or "(no fix)",
+                      "where": f"{uri}:{line}" if line else uri,
+                  }
+              )
+
+          counts = {s: sum(1 for r in rows if r["severity"] == s) for s in SEVERITIES}
+          tally = ", ".join(f"{s} {counts[s]}" for s in SEVERITIES if counts[s]) or "none"
+          out = [
+              f"## Trivy findings (severity {THRESHOLD})",
+              "",
+              f"**{len(rows)}** finding(s): {tally}",
+              "",
+              "| Severity | Advisory | Package | Installed | Fixed in | File |",
+              "| --- | --- | --- | --- | --- | --- |",
+          ]
+          for row in sorted(
+              rows, key=lambda r: (SEVERITIES.index(r["severity"]), r["id"], r["where"])
+          ):
+              out.append(
+                  "| {severity} | `{id}` | {package} | {installed} | {fixed} "
+                  "| `{where}` |".format(**row)
+              )
+          out += ["", "Full detail: Security tab, or `trivy-results.sarif` (uploaded below).", ""]
+
+          report = "\n".join(out)
+          print(report)
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write(report + "\n")
+          PY
+
       - name: Upload Trivy results
         if: always()
         uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
