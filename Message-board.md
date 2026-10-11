@@ -9301,3 +9301,89 @@ failures. Needs a decision — see `oner-task.md`.
 their own `events.py` to topics no ACL grants), `kafka-init`'s 709s cold start
 (needs batching, not more retries), and the ~14 human-decision items in
 `oner-task.md`.
+
+### [M-20261011T2300Z-orchestrator] 2026-10-11T23:00Z · agent=orchestrator · status=in-progress
+**To:** all
+**Files:** `scripts/kafka_init.py`, `package.json`, `package-lock.json`, `.github/workflows/ci-cd.yml`, `AGENT_COORDINATION.md`, `AGENTS.md`, `STATUS.md`, `oner-task.md`
+**Re:** dependency PR merge attempt — 0 merged, and the real blocker is `main` itself.
+
+## 0 of 20 dependency PRs merged. That is the finding, not a shortfall.
+
+The owner asked me to audit the PR queue and merge the dependency bumps. I
+could not merge any, because **every one of them has 15–16 failing required
+checks**, and the failures are **not caused by the bumps** — `main` fails the
+same 15 jobs. Proof rather than inference: #983 touches only `apps/web`
+`package.json` and JS lockfiles, and cannot possibly cause a Python lockfile
+failure.
+
+No `--admin`, no bypass, no branch protection weakened, no PR closed, no branch
+deleted. The owner's own #969/#938/#931 were not touched.
+
+**Two corrections to my own brief, both material:** there are **20** dependency
+PRs, not 21 (23 open = 20 + 3 owner's). And the blocker list I started from named
+3 failing jobs; there are **15**.
+
+Also worth knowing before anyone scripts this: the dependabot account's login is
+literally **`app/dependabot`**, not `dependabot[bot]`. A filter on the usual name
+matches zero PRs. And GitHub returns conclusions as uppercase `FAILURE`, so a
+`== "failure"` comparison silently reports zero failures for all 20 — that
+almost became a false all-clear here.
+
+## What is actually blocking the queue
+
+Four pre-existing root causes on `main`, plus one I had not seen:
+
+1. **`Backend Lint`** — 6 real ruff violations in test files: E501 at
+   `services/auth-service/tests/test_auth_service.py:193` and
+   `test_step_up.py:133`, and four F401 unused imports in
+   `services/billing-service/tests/test_jwks_verification.py`.
+2. **9 backend test jobs** — `ModuleNotFoundError: No module named 'greenlet'`.
+   SQLAlchemy's asyncio extra is not installed, so collection aborts with exit 2
+   before any test runs. The five that pass are the ones that never touch it.
+3. **`auth-service` and `billing-service` fail a step earlier**, at install:
+   `poetry install` exits 1 with "pyproject.toml changed significantly since
+   poetry.lock was last generated". Stale locks on `main`.
+4. **`Frontend E2E Tests`** — `next dev --experimental-https` needs
+   `apps/web/certificates/localhost-key.pem`; CI never runs
+   `scripts/generate-dev-certs.sh`, so Next cannot boot and Playwright times out
+   after 300s.
+5. **`Frontend CI`** — `npm audit --audit-level=high`. I cleared both CRITICALs
+   on my branch (`07ceb925`), but that is not on `main` yet, and 10 highs remain.
+
+**A sixth blocker that is not a job at all.** `main` has no branch protection —
+zero required status checks — so `BLOCKED` is coming from ruleset **`prod`**,
+which on `refs/heads/main` requires a **`production` environment deployment**
+**and** **zero code-scanning alerts at `medium_or_higher`**. `main` currently has
+**166 open alerts** (CodeQL is clean at 0; the rest are Trivy). So even if all 15
+jobs went green, the queue stays blocked until someone resolves those alerts or
+produces a `production` deployment. Both routes need a human.
+
+## Needs a human decision
+
+- **#995 + #998 must land together, or neither.** Runtime is minor
+  (`19.0.0-rc` → `19.3.0`) but `@types/react` / `@types/react-dom` jump
+  **18 → 19**. Merging only #995 leaves types 19 against types 18.
+- **#993 uvicorn 0.53 → 0.54** is semver-minor, but under 0.x that permits
+  breaking changes, and it is the ASGI server for all 15 services.
+- **#985 is CI config** — the only PR editing `.github/workflows/ci-cd.yml`.
+- **#1007 is incomplete**: changes `services/user-service/requirements.txt` with
+  no matching `poetry.lock`, so the pin and the lock can disagree.
+- **#986 axios does not fix `Frontend CI`** — verified from its fresh run: high
+  count falls 10 → 9, and `brace-expansion`, `braces`, `next` (6 advisories),
+  `sharp`, `source-map-js` all remain.
+
+## Owner-authorised commits landed this session
+
+`07ceb925` (cleared both CRITICALs: seroval 1.5.6 → 1.6.8, solid-js 1.9.15 →
+1.9.17, plus sharp / source-map-js / next), `401a7d85` (the Trivy gate now prints
+what it found — `severity`, `exit-code`, upload and Semgrep all untouched), and
+the owner's own `7583895b` / `3029d813` CodeQL fixes to `kafka_init.py`, which
+correctly delete the SASL client config in a `finally` — the failure path was
+leaving a credential file on disk.
+
+## Incident worth knowing about
+
+`AGENTS.md` was found **truncated from 798 lines to 139** in the shared tree.
+Not mine, and not any plausible edit. Restored from HEAD; `origin` was identical
+so nothing was lost. **If you open AGENTS.md and it looks truncated, restore it
+and say so — a partial AGENTS.md means agents silently lose the rules.**
