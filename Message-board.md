@@ -9387,3 +9387,50 @@ leaving a credential file on disk.
 Not mine, and not any plausible edit. Restored from HEAD; `origin` was identical
 so nothing was lost. **If you open AGENTS.md and it looks truncated, restore it
 and say so — a partial AGENTS.md means agents silently lose the rules.**
+
+## 2026-10-11 — main's CI is red, and PR #938 already contains the fixes (agent)
+
+**Correction to my earlier report.** I previously cited main run `37367691811`
+as green. It is a Dependabot *event* run whose only job is named `Dependabot`; it
+is not the CI pipeline. Main's real CI/CD run `37361191563` (91b37db8) is **red with
+15 failing jobs**. The systemic blockers are real.
+
+**The important consequence: they are mostly already fixed, in unmerged PR #938.**
+
+| main failure | root cause | already fixed on branch? |
+|---|---|---|
+| 9x `Backend Test` `No module named 'greenlet'` | 10 of 15 `poetry.lock` on main have **no greenlet**; locks predate `sqlalchemy[asyncio]` pulling it in | **yes** — `d220d730`; all 15 locks on this branch contain it |
+| `Backend Lint` | ruff violations present on main only | **yes** — `ruff check services/` clean |
+| `auth`/`billing` "pyproject changed significantly" | stale lock content-hash | **yes** — `poetry check --lock` exits 0 for every service I sampled |
+| `Frontend E2E Tests` (missing `localhost-key.pem`) | main's e2e job has **no** cert-generation step | **yes** — `6bfea365 fix(#916)` added it |
+
+Evidence: my run `38117241118` (3029d813) has **all 15 backend tests green,
+Backend Lint green, Frontend E2E green**, plus Compose Runtime Smoke and all 16
+Docker Build Smoke green. Only 3 failures remain: `Frontend CI` (npm audit),
+`Security Scan` (Trivy), and `Supply Chain Guard`.
+
+**`Supply Chain Guard` was a real regression from my own work** — fixed in `afbfbb80`.
+Cause: the CodeQL clear-text-storage fix (`3029d813`) added a `finally` that deletes
+the generated `client.properties`, and two tests in `tests/test_kafka_init.py` were
+pinned to the pre-fix behaviour. `test_client_properties_are_generated_not_committed`
+read the file back *after* the script exited — it could only pass while the file the
+fix targets still existed, i.e. it was asserting the leak. The stub CLI now snapshots
+`--command-config` while it exists (and records its mode), and the test additionally
+asserts the file is gone afterwards. `test_missing_admin_password_fails_loudly`
+required the error to name `WF_ADMIN_PASSWORD`, which the same fix removed; it now
+asserts non-zero exit + real error + no broker command, without pinning the phrasing.
+Red/green verified: disabling the cleanup fails with "SASL client config still on disk
+after bootstrap". 32 passed, ruff/black clean.
+
+**Lesson for all agents:** two "green" tests were pinning a security defect. When a
+security fix removes an artefact or a message, check whether a test is asserting the
+artefact rather than the behaviour — and do not re-introduce the leak to satisfy a test.
+
+**Owner decision, not mine:** the new missing-credentials message no longer names the
+env var, so an operator is not told which variable to set. Usability collateral of
+the security fix. Left as-is; flagged in `oner-task.md`.
+
+**Still open, genuinely unfixed:** `npm audit` (braces has no patched upstream
+release) and Trivy findings from stale `apps/web/package-lock.json` / `pnpm-lock.yaml`.
+Both need an owner decision. And **no Dependabot PR is mergeable yet** — all 20 fail
+checks, so the real blocker for them is #938 itself, not the PRs.
