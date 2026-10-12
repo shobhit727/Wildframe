@@ -60,11 +60,6 @@ jobs:
           python -m pip install --quiet "pytest<8" "pytest-cov<5"
           python -m pytest tests/test_supply_chain_guard.py -q
 
-      - name: Test dev-audit reachability guard
-        run: |
-          python -m pip install --quiet "pytest<8"
-          python -m pytest tests/test_audit_reachability_guard.py -q
-
       - name: Test Kafka topic/ACL bootstrap (#893)
         # Needs PyYAML to read deployments/docker-compose.dev.yml, the same
         # range the contract step installs. This test is the only thing that
@@ -465,6 +460,16 @@ jobs:
 
       - name: Assert dev-only advisories are unreachable from production
         run: bash "$GITHUB_WORKSPACE/scripts/assert-dev-audit-unreachable.sh"
+
+      - name: Test dev-audit reachability guard
+        # Lives here rather than in Supply Chain Guard because it needs a real
+        # node_modules: the guard shells out to `npm ls`, which cannot resolve a
+        # tree that `npm ci` has not installed. This job has Node and has run
+        # `npm ci`. The test points the guard at a package that genuinely is in
+        # the production graph, so a guard that stopped checking would fail.
+        run: |
+          python3 -m pip install --quiet "pytest<8"
+          python3 -m pytest "$GITHUB_WORKSPACE/tests/test_audit_reachability_guard.py" -q
 
       - name: Report dev-only advisories (advisory, does not fail the build)
         # Dev-dependency advisories stay visible in the summary. They are not
