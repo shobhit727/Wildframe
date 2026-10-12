@@ -9434,3 +9434,11 @@ the security fix. Left as-is; flagged in `oner-task.md`.
 release) and Trivy findings from stale `apps/web/package-lock.json` / `pnpm-lock.yaml`.
 Both need an owner decision. And **no Dependabot PR is mergeable yet** — all 20 fail
 checks, so the real blocker for them is #938 itself, not the PRs.
+
+**Verified in CI, not just locally.** Run `38186925834` (ccd1c0d4): `Supply Chain
+Guard (#809)` = **completed/success**. Run is at 16 success / 2 failure, with only
+`Frontend CI` (npm audit, braces) and `Security Scan` (Trivy, stale lockfiles) red —
+both owner decisions recorded in `oner-task.md`, both unchanged since run 38117241118.
+For contrast, main's `37361191563` is 15 failures. So #938 currently turns a red main
+into a 2-job-red branch, and those 2 are policy decisions, not defects I can fix
+without an owner's call.
