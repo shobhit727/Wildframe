@@ -319,6 +319,24 @@ STUB = """#!/bin/sh
     for arg in "$0" "$@"; do printf '%s\\037' "$arg"; done
     printf '\\n'
 } >> "$KAFKA_STUB_LOG"
+
+# The real script deletes its SASL client config in a `finally`, so a test cannot
+# read it after the run. When KAFKA_STUB_CAPTURE names a directory, snapshot the
+# --command-config file into it while the CLI is running.
+if [ -n "${KAFKA_STUB_CAPTURE:-}" ] && [ -d "$KAFKA_STUB_CAPTURE" ]; then
+    cfg=""
+    prev=""
+    for arg in "$@"; do
+        if [ "$prev" = "--command-config" ]; then cfg="$arg"; fi
+        prev="$arg"
+    done
+    if [ -n "$cfg" ] && [ -f "$cfg" ]; then
+        cp "$cfg" "$KAFKA_STUB_CAPTURE/props.txt"
+        # GNU stat first, BSD stat second: both print the bare octal mode.
+        mode=$(stat -c '%a' "$cfg" 2>/dev/null) || mode=$(stat -f '%Lp' "$cfg" 2>/dev/null) || mode=""
+        printf '%s' "$mode" > "$KAFKA_STUB_CAPTURE/mode.txt"
+    fi
+fi
 exit "${KAFKA_STUB_EXIT:-0}"
 """
 
@@ -407,18 +425,39 @@ class TestScriptExecution:
         assert sorted(groups) == expected
         assert len(groups) == len(set(groups))
 
-    def test_client_properties_are_generated_not_committed(
+    def test_client_properties_are_generated_then_removed(
         self, stub_binaries, monkeypatch, tmp_path
     ):
+        """The SASL client config must be generated, restrictive, and then gone.
+
+        The file holds the admin password, so it must never persist after the
+        bootstrap finishes. It used to be read back here after the script exited,
+        which only passed because nothing removed it -- that file *was* the leak
+        (CodeQL: clear-text storage of sensitive information). It is now deleted
+        in a ``finally``, so the properties are asserted from a snapshot taken
+        while the stub CLI was running, and the removal is asserted afterwards.
+        """
         config = tmp_path / "client.properties"
-        completed, _ = _run_script(stub_binaries, {}, tmp_path)
+        capture = tmp_path / "capture"
+        capture.mkdir()
+        completed, _ = _run_script(stub_binaries, {"KAFKA_STUB_CAPTURE": str(capture)}, tmp_path)
         assert completed.returncode == 0, completed.stderr
-        text = config.read_text()
+
+        # The stub copied the config out while it still existed on disk.
+        captured = capture / "props.txt"
+        assert captured.exists(), "stub never saw a --command-config file"
+        text = captured.read_text()
         assert "security.protocol=SASL_SSL" in text
         assert "sasl.mechanism=PLAIN" in text
         assert "ssl.truststore.type=PEM" in text
         # Holds the admin password, so it must not be world/group readable.
-        assert config.stat().st_mode & 0o077 == 0, oct(config.stat().st_mode)
+        raw_mode = (capture / "mode.txt").read_text().strip()
+        assert raw_mode, "stub could not stat the client config"
+        mode = int(raw_mode, 8)
+        assert mode & 0o077 == 0, oct(mode)
+
+        # And it must not survive the run -- that file was the leak.
+        assert not config.exists(), "SASL client config still on disk after bootstrap"
 
     def test_missing_admin_password_fails_loudly(self, stub_binaries, monkeypatch, tmp_path):
         bindir, log = stub_binaries
@@ -441,7 +480,12 @@ class TestScriptExecution:
             check=False,
         )
         assert completed.returncode == 2
-        assert "WF_ADMIN_PASSWORD" in completed.stderr
+        # The message text is deliberately not pinned: it used to name
+        # WF_ADMIN_PASSWORD, which the CodeQL clear-text-storage fix removed.
+        # Assert the operator still gets a real error and a non-zero exit,
+        # not a particular phrasing.
+        assert completed.stderr.strip(), "missing credentials must produce an error"
+        assert "credential" in completed.stderr.lower()
         # Nothing may have been attempted against the broker.
         assert _invocations(log) == []
 
