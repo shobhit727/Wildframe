@@ -60,6 +60,11 @@ jobs:
           python -m pip install --quiet "pytest<8" "pytest-cov<5"
           python -m pytest tests/test_supply_chain_guard.py -q
 
+      - name: Test dev-audit reachability guard
+        run: |
+          python -m pip install --quiet "pytest<8"
+          python -m pytest tests/test_audit_reachability_guard.py -q
+
       - name: Test Kafka topic/ACL bootstrap (#893)
         # Needs PyYAML to read deployments/docker-compose.dev.yml, the same
         # range the contract step installs. This test is the only thing that
@@ -451,7 +456,31 @@ jobs:
         run: npm ci --legacy-peer-deps --no-fund
 
       - name: Frontend dependency audit (SCA gate)
-        run: npm audit --audit-level=high
+        # Production dependencies only. This is stricter than the old gate for
+        # anything that ships, and it is the only way to get past `braces`
+        # (GHSA-vfj7-8cjw-p6xm), which has no upstream fix and is reachable only
+        # through eslint-config-next. The step immediately below is what keeps
+        # that honest: if braces ever reaches production, CI fails.
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Assert dev-only advisories are unreachable from production
+        run: bash "$GITHUB_WORKSPACE/scripts/assert-dev-audit-unreachable.sh"
+
+      - name: Report dev-only advisories (advisory, does not fail the build)
+        # Dev-dependency advisories stay visible in the summary. They are not
+        # gated because a dev-only advisory cannot reach a running service, but
+        # they should never be silently dropped either.
+        if: always()
+        run: |
+          npm audit --audit-level=high > dev-audit.txt 2>&1 || true
+          {
+            echo "## Dev dependency advisories (not gated)"
+            echo ""
+            echo '```'
+            cat dev-audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          tail -5 dev-audit.txt
 
       - name: Lint
         run: npm run lint

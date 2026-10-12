@@ -193,3 +193,12 @@ playwright/.cache/
 
 # Dated point-in-time audit snapshots; the durable record is the issue tracker
 GITHUB_ISSUES_CODE_AUDIT_*.md
+
+# This is an npm *workspaces* monorepo: npm ci, the Dockerfile and CI all
+# resolve from the single root package-lock.json. A nested apps/web lockfile and
+# a pnpm lockfile are both vestigial -- nothing reads them -- and they drifted
+# badly enough that Trivy kept reporting fixed-in-root advisories
+# (next 16.3.6, sharp 0.35.4, source-map-js 1.2.1) against code we do not ship.
+# Removed in the same change that added this rule.
+apps/web/package-lock.json
+pnpm-lock.yaml
