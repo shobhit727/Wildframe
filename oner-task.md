@@ -1079,3 +1079,51 @@ findings (`-c .trivy.yaml` gives byte-identical counts to the default), and its
 `exit-code: 0` is overridden by the action's `exit-code: "1"`. The board entry
 "#809 Report active scanner suppressions" advertises suppressions that change
 nothing. Left alone deliberately — changing it would alter what the gate scans.
+
+### Kafka init: missing-credentials error lost its actionable hint (needs an owner call)
+
+The CodeQL clear-text-storage fix (`3029d813`) changed the abort message from one
+naming `WF_ADMIN_PASSWORD` to:
+
+    Required admin credentials are missing; cannot authenticate as the configured super user
+
+It no longer says *which* variable to set, so an operator hitting this has to read the
+source to find out. The name of an env var is not itself the leak CodeQL flagged — the
+leak was the password being logged and the generated `client.properties` persisting —
+so naming the variable could likely be restored without weakening the fix.
+
+I deliberately did **not** re-add it, because a test failing is not authorisation to
+revert someone's security fix. The affected test
+(`test_missing_admin_password_fails_loudly`) now asserts non-zero exit, a real error,
+and that no broker command was attempted, without pinning the wording.
+
+Owner decision: restore the env-var name in the message, or leave it generic?
+- Restore: `tests/test_kafka_init.py` needs no further change (it does not pin wording).
+- Leave generic: consider logging the *variable name* via a path that does not also
+  risk the value, so the operator can still self-serve.
+
+### Stale lockfiles still feed Trivy (`Security Scan` job)
+
+`apps/web/package-lock.json` and `pnpm-lock.yaml` are vestigial — the app is installed
+with npm and both npm and pnpm security audit report 0 for them. They remain on disk
+and Trivy scans them, so `Security Scan` fails on findings that do not describe shipped
+code. Fixing means deleting the two files (or teaching Trivy to skip them). I have not
+done this: deleting lockfiles is not a decision I should make unilaterally, and the
+removal needs to be confirmed safe for anyone still using pnpm here.
+
+### `braces` has no patched release, so `Frontend CI` cannot go green as written
+
+`GHSA-vfj7-8cjw-p6xm`, latest `3.0.3`, affected range `<=3.0.3` — there is no fixed
+version. Verified unreachable in production: `npm ls braces --omit=dev` is empty, it is
+absent from the standalone build, and the only path is via eslint tooling with the
+affected rule disabled; a probe found zero invocations.
+
+Two viable directions, both an owner call:
+1. Allowlist this advisory in `Frontend CI` **with** the reachability assertion kept as
+   the guard, so a future upgrade that makes it reachable still fails.
+2. Change the gate so `npm audit` is high-severity rather than `--audit-level=high`
+   with zero tolerance.
+
+I have not done either. Weakening the gate to make it green is exactly what `TODO-full.md`
+forbids, and an allowlist that is not scoped by reachability would hide a real future
+finding.
