@@ -428,6 +428,26 @@ proves your code calls what you told it to call; it cannot prove the real thing 
 **Prefer externally observable assertions.** Status code, persisted row, emitted
 event, written cookie. Mock-heavy tests pass when the product is broken.
 
+**A script that passes on your machine is not a green CI step.** Three
+consecutive changes failed in CI for environment reasons while passing locally:
+a guard test moved to a job with no `npm ci` (`npm ls` cannot resolve a tree
+that was never installed, so it reported "nothing reachable" and failed), a step
+that installed `pytest` without `pytest-cov` while root `addopts` carries
+`--cov` flags (exit 4, no tests ran, green locally only because the local venv
+already had pytest-cov), and a step relying on Node in a Python-only job. Check
+what the *job* provides — interpreters, installed dependencies, PATH, working
+directory — not what your shell has. A `npm`/`node`/`python` difference between
+your venv and the runner is the usual cause.
+
+**Read back what you staged before you commit.** A `git add` with one bad
+pathspec aborts the whole command, leaving later pathspecs unstaged, so the
+commit ships without changes its message describes — and the message is the
+thing reviewers trust. This happened here: a commit claimed to rewire an audit
+gate, and CI ran the old command because the `git add` had failed on an already
+removed file. Run `git status --short` and `git diff --cached --stat`, then
+compare the staged files against what your message claims. `git commit` without
+`-a` commits only what is staged, so the omission is silent.
+
 ### 19.1b Turn a repeated task into a script
 
 **If you run the same sequence of commands more than twice, it is a script.** This is
