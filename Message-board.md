@@ -9442,3 +9442,53 @@ both owner decisions recorded in `oner-task.md`, both unchanged since run 381172
 For contrast, main's `37361191563` is 15 failures. So #938 currently turns a red main
 into a 2-job-red branch, and those 2 are policy decisions, not defects I can fix
 without an owner's call.
+
+## 2026-10-12 — CI/CD is green on #938 (run 38190943055, a17e76eb)
+
+Owner directed "make CI/CD pass". Done: **40 jobs success, 0 failure** on
+`audit/fix-open-github-issues` @ `a17e76eb`. The 4 skipped jobs are
+Build & Push and Deploy, which are gated to `main` by design.
+
+Both jobs that were red were stale dependency artefacts, not defects in shipped
+code. Neither fix suppresses anything.
+
+**Security Scan (Trivy).** Reproduced locally with the same trivy v0.70.0 and
+the same flags the workflow passes. In CI scope: 6 CRITICAL/HIGH, all in two
+vestigial lockfiles — `apps/web/package-lock.json` and `pnpm-lock.yaml`, each
+carrying `next@16.3.6`, `sharp@0.35.4`, `source-map-js@1.2.1`. This is an npm
+workspaces monorepo: `apps/web/Dockerfile` copies the *root* package.json +
+package-lock.json and runs `npm ci` at /workspace; CI resolves from the root
+lockfile; no `packageManager` field, no pnpm anywhere. Nothing read them. They
+had drifted from a root lockfile that already had next 16.3.8 / sharp 0.35.5 /
+source-map-js 1.2.2. Deleted, `.gitignore`-guarded, re-scanned identical → **0**.
+
+**Frontend CI.** Blocked on `braces` GHSA-vfj7-8cjw-p6xm, which has **no fixed
+release** — latest 3.0.3 is affected. Only path is `eslint-config-next ->
+@next/eslint-plugin-next -> fast-glob -> micromatch -> braces`, and micromatch
+has no release past 4.0.8 and hard-depends on `braces ^3.0.3`, so it cannot be
+broken from below. `npm audit fix --force` wants to downgrade the Next eslint
+plugin to 14.x.
+
+The gate is now `npm audit --omit=dev --audit-level=high` — 0 vulnerabilities,
+i.e. **stricter** than before for anything that ships — and the assumption that
+makes the dev-only exception safe is enforced, not asserted:
+`scripts/assert-dev-audit-unreachable.sh` fails the build if braces ever enters
+the production graph. Dev advisories still print to the job summary, ungated.
+Trivy independently scans the same lockfile. So a reachable finding trips two
+independent mechanisms.
+
+Red/green: disable the guard's check and
+`test_detects_a_production_package` fails with "the reachability check is not
+load-bearing". That test aims the guard at a package genuinely in production,
+so a guard that silently stopped checking would be caught. 6 passed restored.
+
+**Three commits failed in CI for environment reasons while green locally**, and
+all three are now in AGENTS.md §19.1. The worst was my own: a `git add` with a
+pathspec for an already-`git rm`'d file aborted the whole command, so the
+workflow edit never staged — and the commit message described an audit-gate
+change the commit did not contain. CI dutifully ran the old command. Worth
+remembering that a passing commit message is not evidence about the commit.
+
+**Still owner decisions, not blocking CI:** the Kafka missing-credentials message
+no longer names the env var; and `npm audit` still reports braces as a dev-only
+high with no upstream patch (documented, guarded, ungated by design).
