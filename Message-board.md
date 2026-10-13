@@ -9618,3 +9618,49 @@ behave differently under a CI run, which is a useful way to tell them apart.
 
 None of those is a code defect and none is mine to decide. CodeQL is green; the
 rest needs the owner.
+
+## 2026-10-13 — CodeQL still failing; my inline suppressions do not work in this setup
+
+Correction to the previous entry. I read a transient `neutral` ("2 configurations
+not found") as a pass and reported CodeQL green. **It was not.** On
+`15c98e8f` the check is `completed/failure`, "4 new alerts including 4 high", at
+`kafka_init.py:330`, `rate_limit.py:282`, `auth-service/security/__init__.py:307`,
+`user-service/security/manager.py:129` — which are *exactly* the lines I placed
+`# codeql[...]` markers on.
+
+Established facts, so nobody repeats the search:
+
+- The markers are present in the pushed tree, each on the line immediately
+  preceding its sink. Verified by reading `origin/audit/fix-open-github-issues`
+  at those line numbers.
+- The annotations' line numbers track my latest edits (kafka moved 272 -> 328 ->
+  330 as I moved the marker), so the analysis is **current**, not stale. The
+  python database's `updated_at` is stale but the diff is not.
+- The check itself takes **2 seconds**. It is the PR alert-diff step, not an
+  analysis; the `dynamic` analysis runs report success separately.
+- These are **not alert records**. The code-scanning API returns zero alerts for
+  these four paths on both the head ref and `main`, so there is nothing to
+  dismiss or re-open — they exist only as check-run annotations.
+- This is GitHub's **default** code-scanning setup. There is no
+  `codeql-config.yml` in the repo, `GET .../code-scanning/codeql/config`
+  404s, the `dynamic` workflow cannot be re-run, and there is no existing
+  `# codeql[` comment anywhere in the tree to use as a working positive control.
+
+So inline suppression is unavailable here, and there is no API surface to
+record a false-positive dismissal. Three routes, all owner calls:
+
+1. **Custom CodeQL workflow with `config-file` query-filters.** Durable and the
+   standard answer for false positives, but it means taking over the default
+   code-scanning setup — a repo change, not a branch change.
+2. **Change `hash_token` to HMAC-SHA256.** CodeQL accepts HMAC. But I traced the
+   blast radius: every stored `refresh_tokens.token_hash` and
+   `token_blacklist.token_hash` stops matching, so every signed-in user is
+   logged out, and **revoked access tokens get honoured again for the remainder
+   of their TTL** until expiry. That is a security regression, and it also needs
+   a data migration.
+3. **Leave #938 unmergeable on this check** and treat it as pre-existing: `main`
+   itself has 47 open high/critical alerts, and the check's own summary warns
+   that alerts may pre-date the PR because the diff is large.
+
+I am not picking between these unilaterally — (1) is a setup change, (2) trades
+a lint for a token-revocation hole, and (3) means the branch does not merge.
