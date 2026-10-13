@@ -25,13 +25,13 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.api.routes import get_admin_identity, get_content_service, router
 from app.core import events as core_events
 from app.core.settings import settings
-from app.models import AnimationStyle, Content, ContentStatus, ContentType
+from app.models import AnimationStyle, Content, ContentStatus, ContentType, content_cast_association
+from app.services import DEFAULT_CAST_ROLE
 from app.repositories import (
     CastMemberRepository,
     ContentRatingRepository,
@@ -845,22 +845,38 @@ class TestContentLifecycleAgainstPostgres:
         )
         assert [r.id for r in await service.list_recommendations(content.id)] == [rec.id]
 
-        # Reported bug: ``content_cast.role`` is NOT NULL but
-        # ContentService.add_cast_member appends to ``content.cast_members``
-        # without ever populating the association row's role, so the insert
-        # fails against a real PostgreSQL database.
-        content_id = content.id  # read before the failed insert expires the row
-        with pytest.raises(IntegrityError) as exc:
-            await service.add_cast_member(
-                content.id,
-                CastMemberCreateRequest(
-                    name="Keanu Reeves", slug=f"keanu-{uuid4().hex[:8]}", bio="Actor"
-                ),
-            )
-        assert "role" in str(exc.value)
-        await db_session.rollback()
+        # Regression (#858): ``content_cast.role`` is NOT NULL, so the
+        # association row has to be written *with* a role. Appending to
+        # ``content.cast_members`` leaves it unset and every cast-member add
+        # failed with NotNullViolationError against real PostgreSQL.
+        content_id = content.id
+        member = await service.add_cast_member(
+            content_id,
+            CastMemberCreateRequest(
+                name="Keanu Reeves", slug=f"keanu-{uuid4().hex[:8]}", bio="Actor"
+            ),
+        )
+        assert member is not None
+
+        # The add is observable through the relationship...
         reloaded = await service.get_content(content_id)
-        assert reloaded.cast_members == []
+        assert [m.id for m in reloaded.cast_members] == [member.id]
+        assert [m.name for m in await service.list_cast(content_id)] == ["Keanu Reeves"]
+
+        # ...and the association row itself carries a role, which is the
+        # NOT NULL column the old path left unset.
+        rows = (
+            (
+                await db_session.execute(
+                    select(content_cast_association.c.role).where(
+                        content_cast_association.c.content_id == content_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows == [DEFAULT_CAST_ROLE]
 
     async def test_standalone_cast_member_crud(self, db_session):
         service = ContentService(db_session)

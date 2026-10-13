@@ -109,31 +109,48 @@ class TestProductionRejections:
             Settings(**_prod(KAFKA_BOOTSTRAP_SERVERS=None))
 
 
-class TestKnownGap_WhitespaceOnlySecret:
-    """moderation-service's guard is weaker than admin-service's here.
+class TestBlankAndWhitespaceOnlySecretsAreRejected:
+    """Every production guard rejects blank/blank-ish values, not just ``None``.
 
-    ``admin-service/app/core/settings.py`` adds an explicit
-    ``if not self.JWT_SECRET_KEY.strip():`` rejection before the list and length
-    checks. This copy has no such check, so a production config with a
-    whitespace-only (or whitespace-padded) secret is accepted. Reported, not
-    fixed; these tests pin the current behaviour so the divergence is visible.
+    The guard is ``is None``-based, so ``""`` and whitespace-only values sailed
+    through: a 40-space ``JWT_SECRET_KEY`` is long enough to clear the length
+    check and is not a member of the insecure list, so production booted with a
+    signing key of nothing but spaces. Same class of gap as #793/#871, which
+    billing-service already closed with ``not value.strip()``.
     """
 
-    def test_whitespace_only_secret_is_accepted_in_production(self):
-        s = Settings(**_prod(JWT_SECRET_KEY=" " * 40))
-        assert s.JWT_SECRET_KEY == " " * 40
-        assert s.ENVIRONMENT == "production"
+    @pytest.mark.parametrize("secret", ["", " ", " " * 40, "\t", "\n" * 40, "  \t\n  "])
+    def test_a_blank_or_whitespace_only_jwt_secret_is_rejected(self, secret):
+        with pytest.raises(ValidationError, match="strong random value"):
+            Settings(**_prod(JWT_SECRET_KEY=secret))
 
-    def test_padded_strong_secret_is_accepted_verbatim(self):
+    @pytest.mark.parametrize("value", ["", " ", "   "])
+    def test_an_empty_database_url_is_rejected(self, value):
+        with pytest.raises(ValidationError, match="DATABASE_URL must be set explicitly"):
+            Settings(**_prod(DATABASE_URL=value))
+
+    @pytest.mark.parametrize("value", ["", " ", "   "])
+    def test_an_empty_redis_url_is_rejected(self, value):
+        with pytest.raises(ValidationError, match="REDIS_URL must be set explicitly"):
+            Settings(**_prod(REDIS_URL=value))
+
+    @pytest.mark.parametrize("value", ["", " ", "   "])
+    def test_an_empty_kafka_bootstrap_servers_is_rejected(self, value):
+        with pytest.raises(ValidationError, match="KAFKA_BOOTSTRAP_SERVERS must be set"):
+            Settings(**_prod(KAFKA_BOOTSTRAP_SERVERS=value))
+
+    def test_a_padded_strong_secret_is_accepted_verbatim(self):
+        # Padding around a genuinely strong secret is *not* a blank value: the
+        # secret is still there, so it stays the operator's value, untouched.
         padded = f"  {STRONG_JWT}  "
         s = Settings(**_prod(JWT_SECRET_KEY=padded))
         assert s.JWT_SECRET_KEY == padded
 
-    def test_a_genuinely_short_secret_is_still_rejected(self):
-        # The length guard is the only thing standing between a blank-ish
-        # secret and production here.
+    def test_a_genuinely_short_secret_is_still_rejected_by_the_length_guard(self):
+        # Distinct from the blank cases above: a short but non-blank secret is
+        # rejected for its length, which is the check that should catch it.
         with pytest.raises(ValidationError, match="at least 32 characters"):
-            Settings(**_prod(JWT_SECRET_KEY=" " * 31))
+            Settings(**_prod(JWT_SECRET_KEY="a" * 31))
 
 
 class TestModuleLevelSettings:

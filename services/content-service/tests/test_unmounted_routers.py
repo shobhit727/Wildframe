@@ -1,33 +1,30 @@
 """Tests for the routers that production ``main.py`` never mounts.
 
-``rights.py``, ``dsar.py`` and ``reviews.py`` are mountable, so they are driven
-over HTTP through a throwaway FastAPI app with ``get_db`` overridden to a real
-PostgreSQL session (these tables use ``postgresql.UUID`` columns, so SQLite is
-not an option).
+``rights.py``, ``dsar.py``, ``reviews.py`` and ``ads.py`` are mountable, so they
+are driven over HTTP through a throwaway FastAPI app with ``get_db`` overridden
+to a real PostgreSQL session (these tables use ``postgresql.UUID`` columns, so
+SQLite is not an option).
 
-``ads.py`` cannot be imported at all: ``create_ad`` annotates its request body
-as the SQLAlchemy ``DeclarativeBase`` subclass ``AdConfig``, so the
-``@router.post`` decorator raises ``FastAPIError`` while building the route.
-That is reported in :class:`TestAdsRouterIsUnimportable`. The handlers are still
-reachable — the decorator hands back the undecorated coroutine — so the
-behaviour itself is covered by calling them directly, using a test-only
-Pydantic shim that lets the module import.
+The router still being unmounted in production is a separate decision: it has
+its own authenticated surface to design, and mounting an unauthenticated
+write endpoint is not a side effect of making the module importable.
 """
 
 import importlib
 import os
-import sys
 from contextlib import ExitStack
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
+import pydantic
 import pytest
 import pytest_asyncio
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.api.routes import ads as ads_routes
 from app.api.routes import dsar as dsar_routes
 from app.api.routes import reviews as review_routes
 from app.api.routes import rights as rights_routes
@@ -103,11 +100,12 @@ async def session(engine_url):
 
 @pytest_asyncio.fixture
 async def client(session):
-    """Throwaway app mounting the three mountable compliance routers."""
+    """Throwaway app mounting the four mountable compliance routers."""
     application = FastAPI()
     application.include_router(rights_routes.router)
     application.include_router(review_routes.router)
     application.include_router(dsar_routes.router)
+    application.include_router(ads_routes.router)
 
     async def _override_get_db():
         yield session
@@ -348,100 +346,97 @@ class TestDsarRouter:
 
 
 # --------------------------------------------------------------------- ads router
-def _make_ads_module_importable():
-    """Give ``AdConfig`` a Pydantic core schema so the route can be declared.
+class TestAdsRouterIsImportable:
+    """Reported bug: the module could not even be imported.
 
-    Purely a test-side shim: production ``ads.py`` is left untouched and stays
-    unimportable (see TestAdsRouterIsUnimportable).
-    """
-    from pydantic_core import core_schema
-
-    def __get_pydantic_core_schema__(cls, source_type, handler):
-        return core_schema.is_instance_schema(cls)
-
-    AdConfig.__get_pydantic_core_schema__ = classmethod(__get_pydantic_core_schema__)
-    sys.modules.pop("app.api.routes.ads", None)
-    return importlib.import_module("app.api.routes.ads")
-
-
-@pytest.fixture(scope="module")
-def ads_module():
-    module = _make_ads_module_importable()
-    yield module
-    del AdConfig.__get_pydantic_core_schema__
-    sys.modules.pop("app.api.routes.ads", None)
-
-
-class TestAdsRouterIsUnimportable:
-    """Reported bug: the module cannot even be imported.
-
-    ``create_ad`` declares ``request: AdConfig`` where ``AdConfig`` is a
-    SQLAlchemy ``DeclarativeBase`` subclass, so the ``@router.post`` decorator
-    fails while building the route — before ``include_router`` is ever reached.
+    ``create_ad`` annotated its request body as the SQLAlchemy
+    ``DeclarativeBase`` subclass ``AdConfig``, so Pydantic could not build a
+    field from it and the ``@router.post`` decorator raised ``FastAPIError``
+    while building the route — before ``include_router`` was ever reached. The
+    body is now the Pydantic ``app.schemas.ads.AdCreate``, translated to the
+    ORM model inside the handler, so the module imports and mounts normally.
     """
 
-    def test_import_raises_a_fastapi_error(self):
-        sys.modules.pop("app.api.routes.ads", None)
+    def test_the_module_imports_without_a_shim(self):
+        # No sys.modules surgery and no injected ``__get_pydantic_core_schema__``:
+        # a plain import is the whole claim.
+        assert importlib.import_module("app.api.routes.ads") is ads_routes
 
-        with pytest.raises(Exception) as exc:
-            importlib.import_module("app.api.routes.ads")
+    def test_the_request_annotation_is_not_the_sqlalchemy_model(self):
+        import inspect
 
-        assert "Invalid args for response field" in str(exc.value)
-        assert "AdConfig" in str(exc.value)
+        annotation = inspect.signature(ads_routes.create_ad).parameters["request"].annotation
 
-    def test_the_annotation_is_a_sqlalchemy_declarative_base(self):
-        from sqlalchemy.orm import DeclarativeBase
+        assert annotation is not AdConfig
+        assert hasattr(annotation, "model_fields")
+        assert issubclass(annotation, pydantic.BaseModel)
 
-        assert issubclass(AdConfig, DeclarativeBase)
-        assert not hasattr(AdConfig, "model_fields")
+    def test_the_router_declares_the_expected_paths(self):
+        routes = {(r.path, tuple(sorted(r.methods))) for r in ads_routes.router.routes}
 
-    def test_include_router_is_unreachable(self):
-        # Documents *where* the failure does NOT happen: mounting never gets a
-        # chance, the module-level decorator blows up first.
-        sys.modules.pop("app.api.routes.ads", None)
-        with pytest.raises(Exception) as exc:
-            importlib.import_module("app.api.routes.ads")
-        assert exc.type.__name__ == "FastAPIError"
+        assert ("/ads", ("POST",)) in routes
+        assert ("/ads/check", ("GET",)) in routes
 
 
-class TestAdsHandlers:
-    """Direct calls on the handler coroutines (the shimmed module's endpoints)."""
+class TestAdsRouter:
+    """Driven over HTTP, so the Pydantic body is actually decoded and validated."""
 
-    async def test_create_ad_persists_a_consent_gated_config(self, ads_module, session):
-        config = AdConfig(content_id=uuid4())
+    async def test_create_ad_persists_a_consent_gated_config(self, client, session):
+        content_id = uuid4()
 
-        result = await ads_module.create_ad(config, session)
+        response = await client.post("/ads", json={"content_id": str(content_id)})
 
-        assert result == {"id": str(config.id)}
-        stored = await session.get(AdConfig, config.id)
+        assert response.status_code == 201
+        body = response.json()
+        assert body["id"]
+        stored = await session.get(AdConfig, UUID(body["id"]))
         assert stored is not None
-        assert stored.content_id == config.content_id
+        assert stored.content_id == content_id
         assert stored.consent_gated is True
         assert stored.minor_safe is True
         assert stored.tcf_required is True
 
-    async def test_create_ad_persists_explicit_flags(self, ads_module, session):
-        config = AdConfig(content_id=uuid4(), consent_gated=False, tcf_required=False)
+    async def test_create_ad_persists_explicit_flags(self, client, session):
+        response = await client.post(
+            "/ads",
+            json={
+                "content_id": str(uuid4()),
+                "consent_gated": False,
+                "tcf_required": False,
+            },
+        )
 
-        await ads_module.create_ad(config, session)
-
-        stored = await session.get(AdConfig, config.id)
+        assert response.status_code == 201
+        stored = await session.get(AdConfig, UUID(response.json()["id"]))
         assert stored.consent_gated is False
         assert stored.tcf_required is False
 
-    async def test_check_ad_allows_a_consented_request(self, ads_module):
-        assert await ads_module.check_ad(uuid4(), "granted") == {"allowed": True}
+    @pytest.mark.parametrize(
+        "payload",
+        [{}, {"content_id": "not-a-uuid"}, {"content_id": str(uuid4()), "minor_safe": "maybe"}],
+    )
+    async def test_a_body_the_pydantic_schema_rejects_is_a_422(self, client, payload):
+        # Proves the body is genuinely validated as a Pydantic model rather
+        # than coerced onto the ORM instance.
+        response = await client.post("/ads", json=payload)
+
+        assert response.status_code == 422
+
+    async def test_check_ad_allows_a_consented_request(self, client):
+        response = await client.get(
+            "/ads/check", params={"content_id": str(uuid4())}, headers={"X-Consent": "granted"}
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"allowed": True}
 
     @pytest.mark.parametrize("consent", [None, ""])
-    async def test_check_ad_blocks_without_consent(self, ads_module, consent):
-        with pytest.raises(HTTPException) as exc:
-            await ads_module.check_ad(uuid4(), consent)
+    async def test_check_ad_blocks_without_consent(self, client, consent):
+        headers = {"X-Consent": consent} if consent is not None else {}
 
-        assert exc.value.status_code == 403
-        assert exc.value.detail == "Consent required"
+        response = await client.get(
+            "/ads/check", params={"content_id": str(uuid4())}, headers=headers
+        )
 
-    def test_the_router_declares_the_expected_paths(self, ads_module):
-        routes = {(route.path, tuple(sorted(route.methods))) for route in ads_module.router.routes}
-
-        assert ("/ads", ("POST",)) in routes
-        assert ("/ads/check", ("GET",)) in routes
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Consent required"

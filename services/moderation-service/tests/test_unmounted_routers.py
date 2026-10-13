@@ -133,7 +133,7 @@ class TestCounterNotice:
         assert rows[0].counter_notice == "fair use"
 
     async def test_unknown_takedown_reports_not_found(self, client):
-        http, _ = client
+        http, factory = client
         resp = await http.post(
             "/dmca/counter",
             json={
@@ -141,9 +141,18 @@ class TestCounterNotice:
                 "counter_reason": "fair use",
             },
         )
-        # The handler answers 201 with an error body rather than 404.
-        assert resp.status_code == 201
-        assert resp.json() == {"error": "not found"}
+        # A failed lookup must not answer 201: 201 is a success code, so a
+        # client (and any monitoring keyed on status) reads "not found" as a
+        # created counter-notice. The route also declares status_code=201, so
+        # the success shape has to be rejected explicitly.
+        assert resp.status_code == 404
+        body = resp.json()
+        assert "status" not in body
+        assert "id" not in body
+
+        # Nothing was written for the unknown takedown.
+        async with factory() as session:
+            assert (await session.execute(select(DMCATakedown))).scalars().all() == []
 
     async def test_rejects_a_malformed_counter_body(self, client):
         http, _ = client
