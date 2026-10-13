@@ -316,7 +316,17 @@ class StubPackager(Packager):
 
 
 class ObjectStorage(ABC):
-    """Port: upload packaged artifacts to object storage (S3-like)."""
+    """Port: upload packaged artifacts to object storage (S3-like).
+
+    ``durable`` is the contract the orchestrator completes a job on. It is True
+    only when :meth:`upload` actually puts the bytes somewhere that outlives the
+    job sandbox, so the pipeline may then report ``COMPLETED`` and remove its
+    temp directories. In-process stubs leave it False: they fabricate a URI and
+    copy nothing, which makes the job sandbox the only copy of the media
+    (#1000).
+    """
+
+    durable: bool = False
 
     @abstractmethod
     async def upload(self, local_path: str, storage_key: str) -> str:
@@ -325,6 +335,8 @@ class ObjectStorage(ABC):
 
 
 class StubObjectStorage(ObjectStorage):
+    """Fabricates storage URIs. Stores nothing, so ``durable`` stays False."""
+
     async def upload(self, local_path: str, storage_key: str) -> str:
         return f"s3://wildframe-media/{storage_key}"
 

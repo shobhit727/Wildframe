@@ -129,8 +129,13 @@ def test_build_ports_wires_the_ffmpeg_adapters_with_the_configured_ceilings():
     assert isinstance(ports["thumbnail_generator"], FFmpegThumbnailGenerator)
     assert isinstance(ports["encoder"], FFmpegMultiBitrateEncoder)
     assert isinstance(ports["packager"], FFmpegPackager)
-    # S3 is still a stub (adapter TBD), the rest must be the real thing.
+    # S3 is still a stub (adapter TBD), the rest must be the real thing. That
+    # stub is NOT correct behaviour to lock in — it is the cause of #1000, and
+    # it is contained by refusing to publish a job whose media was never
+    # stored, not by treating the stub as fine. See
+    # tests/test_storage_durability.py for the containment.
     assert isinstance(ports["object_storage"], StubObjectStorage)
+    assert ports["object_storage"].durable is False
 
     encoder: FFmpegMultiBitrateEncoder = ports["encoder"]
     assert encoder.cpu_threads == settings.PIPELINE_MAX_CPU_THREADS

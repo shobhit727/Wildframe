@@ -1,20 +1,26 @@
 """Two defensive branches at the tail of ``advance()``'s stage loop.
 
-``app/services.py:630-637`` (``except CircuitBreakerOpen``) and ``660-662``
-(``if job.status == FAILED`` after a stage returns) are both hard to reach from
-the shipped stage set. This module pins down *why* for each, and tests the
-branch that is genuinely reachable.
+``app/services.py``'s ``except CircuitBreakerOpen`` handler and its
+post-stage ``if job.status == FAILED`` guard are both reachable, but only
+through paths the shipped stage set does not take on its own. This module pins
+down *which* path reaches each, so neither is "cleaned up" as dead code.
 
-* **630-637 is unreachable.** ``CircuitBreakerOpen`` subclasses ``PipelineError``
-  but not ``PipelineNonRetryable``, so when a stage raises it,
-  ``_run_stage_with_retries`` catches it in its generic ``except Exception``
-  and treats it as an ordinary retryable failure — it never escapes. The only
-  other source, ``_check_circuit_breaker`` at line 605, sits *outside* the
-  per-stage ``try``. So nothing can ever arrive at line 630. Proven below.
-* **660-662 is reachable** via a stage that fails the job itself (a supported
-  extension point — ``Stage`` is a public port and is injected through
-  ``StageRegistry``). It is unreachable via the built-in stages, which either
-  return with the job RUNNING or raise ``PipelineError`` from line 645.
+* **The ``except CircuitBreakerOpen`` handler is reachable**, from
+  ``_check_circuit_breaker``. That call sits *inside* the per-stage ``try`` on
+  purpose (``cb2bcb4a`` moved it there): an already-open breaker must fail and
+  DLQ the job rather than escape while the job is still ``RUNNING``, which
+  would orphan it. Driven by ``TestPreOpenBreakerIsRecordedNotPropagated``
+  below. It is *not* reached when a **stage itself** raises the error — see
+  ``TestStageRaisedBreakerErrorIsRetried``.
+* **The post-stage ``FAILED`` guard is reachable** via a stage that fails the
+  job itself (a supported extension point — ``Stage`` is a public port injected
+  through ``StageRegistry``). It is unreachable via the built-in stages, which
+  either return with the job RUNNING or raise ``PipelineError`` after
+  ``_run_stage_with_retries`` has already failed the job.
+
+Both branches are named rather than cited by line number, because the numbers
+move with every edit and a stale citation is what makes a live branch look
+dead.
 """
 
 from typing import Any
@@ -87,8 +93,13 @@ def _reset_counters() -> None:
     MediaPipelineService._circuit_breaker.clear()
 
 
-class TestCircuitBreakerOpenHandlerIsUnreachable:
-    """services.py:630-637 — nothing can reach it. Asserted, not fixed."""
+class TestStageRaisedBreakerErrorIsRetried:
+    """A stage *raising* ``CircuitBreakerOpen`` takes the retry path.
+
+    Not the handler: ``CircuitBreakerOpen`` subclasses ``PipelineError`` but not
+    ``PipelineNonRetryable``, so ``_run_stage_with_retries`` catches it in its
+    generic ``except Exception`` and treats it as an ordinary retryable failure.
+    """
 
     async def test_a_stage_raising_the_breaker_error_is_retried_not_routed_to_the_handler(self):
         """The breaker error is swallowed by the retry handler and retried to exhaustion."""
@@ -108,12 +119,12 @@ class TestCircuitBreakerOpenHandlerIsUnreachable:
         assert result.status == PipelineJobStatus.FAILED
         # The message is the critical-exhaustion wrapper around the last error —
         # the shape _run_stage_with_retries produces, not the bare breaker message
-        # that line 635 would have written.
+        # the handler would have written.
         assert result.error.startswith("critical stage flaky exhausted 3 attempts:")
         assert "circuit breaker open for stage flaky" in result.error
 
     async def test_the_handler_would_have_logged_one_failed_stage_row(self):
-        """Had 630 run, the stage log would hold a single FAILED row.
+        """Had the handler run, the stage log would hold a single FAILED row.
 
         Instead every attempt is logged, which is the observable signature of the
         retry handler having dealt with the error.
@@ -147,9 +158,8 @@ class TestPreOpenBreakerIsRecordedNotPropagated:
     and left the job in ``running`` with no stage log and no DLQ event. The
     handler is now reachable and the job is properly failed, so asserting the
     escape would re-introduce the orphaned-job defect. This test was moved out of
-    ``TestCircuitBreakerOpenHandlerIsUnreachable`` because that class name is no
-    longer true of it; the two tests in that class still describe the retry path
-    accurately.
+    ``TestStageRaisedBreakerErrorIsRetried``, which covers the other source of
+    the error and is not true of this one.
     """
 
     async def test_an_already_open_breaker_fails_the_job_without_running_the_stage(self):
@@ -174,7 +184,7 @@ class TestPreOpenBreakerIsRecordedNotPropagated:
 
 
 class TestPostStageFailedGuard:
-    """services.py:660-662 — a stage that failed the job stops the loop."""
+    """The post-stage ``FAILED`` guard: a stage that failed the job stops the loop."""
 
     async def test_advance_returns_the_failed_job_and_stops_the_loop(self):
         repo = FakeJobRepo()
@@ -307,11 +317,11 @@ class TestPostStageFailedGuard:
         assert result.leased_at is None
 
     async def test_a_built_in_stage_never_reaches_the_guard(self):
-        """Control: the shipped stages cannot trip 660 — they raise instead.
+        """Control: the shipped stages cannot trip the guard — they raise instead.
 
         A critical stage that exhausts its retries fails the job and *then*
-        raises ``PipelineError``, which line 645 handles. So the guard is only
-        for stages that fail the job without raising.
+        raises ``PipelineError``, which the ``except PipelineError`` arm handles.
+        So the guard is only for stages that fail the job without raising.
         """
         repo = FakeJobRepo()
         registry = _fresh_registry()

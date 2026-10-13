@@ -59,8 +59,10 @@ Hardening (new in v2)
 * **Disk quota** — ``PIPELINE_DISK_QUOTA_BYTES`` limits per-job temp storage.
 * **Adapter selection** — ``MEDIA_PIPELINE_ADAPTERS=stub|ffmpeg`` selects
   real vs. stub ports at startup.
-* **Temp-file cleanup** — per-job work/quarantine dirs are removed on failure
-  or completion.
+* **Temp-file cleanup** — per-job work/quarantine dirs are removed on failure,
+  and on completion only when the active object-storage port is durable. A
+  non-durable port means the sandbox is the only copy of the media, so the job
+  is DLQ'd rather than published and cleaned (#1000).
 * **DLQ dedup** — ``content.pipeline.failed`` events carry a job-scoped
   ``dlq_key`` so downstream consumers can deduplicate.
 """
@@ -418,6 +420,22 @@ class MediaPipelineService:
             if os.path.isdir(job_dir):
                 shutil.rmtree(job_dir, ignore_errors=True)
 
+    def _storage_is_durable(self) -> bool:
+        """True when the active storage port really persists the uploaded bytes.
+
+        ``StubObjectStorage`` returns an ``s3://`` URI without opening the file,
+        so the job sandbox remains the only copy of the encoded media. Under the
+        all-``stub`` adapter set that costs nothing — the stub encoder and
+        packager never wrote a file either — but under a real adapter set
+        (``MEDIA_PIPELINE_ADAPTERS=ffmpeg``) the renditions, HLS playlists and
+        DASH manifest are on disk, and completing the job would delete them
+        without ever having stored them (#1000).
+        """
+        storage = self._ports.get("object_storage")
+        if storage is not None and getattr(storage, "durable", False):
+            return True
+        return settings.MEDIA_PIPELINE_ADAPTERS == "stub"
+
     # ------------------------------------------------------------------
     # start_job
     # ------------------------------------------------------------------
@@ -699,6 +717,29 @@ class MediaPipelineService:
                         "dash_url": ctx.get("dash_url"),
                     },
                 )
+
+            # Every stage ran, but the terminal transition below claims the media
+            # is stored and then deletes the job sandbox. Only make that claim
+            # when the storage port is durable: with the ffmpeg adapter set the
+            # renditions/manifests on disk are the only copy, so completing the
+            # job would destroy media that was never uploaded (#1000). DLQ it
+            # instead and leave the artifacts for an operator to recover.
+            if not self._storage_is_durable():
+                sandbox = os.path.join(settings.PIPELINE_WORK_ROOT, str(job.id))
+                # Blame the upload only if it ran; a trimmed registry would
+                # otherwise log a stage that never executed.
+                blame = "s3_upload" if "s3_upload" in job.stage_versions else "publish"
+                message = (
+                    f"cannot publish job {job.id}: the active object storage port "
+                    f"is not durable, so the encoded media was never stored; "
+                    f"artifacts left under {sandbox}"
+                )
+                logger.error(message)
+                await self._record_stage(job, blame, PipelineStageStatus.FAILED, 0, message)
+                await self._fail_job(job, blame, message)
+                # Deliberately no _cleanup_job_dirs here: the sandbox holds the
+                # only copy of the media.
+                return job
 
             job.status = PipelineJobStatus.COMPLETED
             job.current_stage = None  # type: ignore[assignment]
