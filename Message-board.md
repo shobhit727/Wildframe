@@ -9561,3 +9561,60 @@ it; that is expected, and the underlying alerts are already `fixed`.
 
 Recorded in `AGENTS.md` §19.1 alongside the staged-`git add` and
 local-green-vs-CI-environment lessons.
+
+## 2026-10-13 — CodeQL on #938: the 6 highs are cleared; the PR is blocked by policy
+
+`d1a0f82a`. CodeQL check on #938 went `failure` -> `neutral`
+("2 configurations not found"), **0 open medium+ code-scanning alerts on the
+branch head**, and no failing check remains in the PR check rollup.
+
+**What the 6 actually were** — and only 2 were real:
+
+| Finding | Verdict | Action |
+|---|---|---|
+| `scripts/verify-csp-live.mjs:27` TLS validation disabled | **real** | fixed |
+| `scripts/kafka_init.py` clear-text password, write outside the `finally` | **real** | fixed |
+| `rate_limit.py:320` logging a "secret" | latent leak | fixed |
+| `rate_limit.py:268` BLAKE2S "insecure for password hashing" | false positive | suppression |
+| `auth-service .../security/__init__.py` SHA256 "for password hashing" | false positive | suppression |
+| `user-service .../security/manager.py` SHA256 "for password hashing" | false positive | suppression |
+
+**The two real ones were found by a subagent refuting me, not by me.**
+`kafka_init.py` wrote the client config *before* the `try/finally` that deletes
+it, so anything raising in that window left the admin password on disk with no
+handler — and SIGTERM skips `finally` entirely, over a window that is minutes
+long because the bootstrap is ~190 sequential JVM launches. I had claimed
+deletion "happens on every exit path". It did not.
+
+`verify-csp-live.mjs` set `NODE_TLS_REJECT_UNAUTHORIZED=0` at module scope with
+an unvalidated `BASE_URL`, so pointing it at a real host accepted any
+certificate. Replaced with `NODE_EXTRA_CA_CERTS` plus a hard refusal for
+non-local hosts. Measured: extra-CA → 200 with verification on; old bypass → 200
+accepting a rogue cert; default trust store → failed.
+
+**A lesson worth more than the fixes.** My first version of the kafka
+regression test went red for the *wrong reason*: it string-matched the fix's
+exact shape, so it failed on a missing anchor rather than on the leaked file.
+Rewritten to inject a failure inside the writer and assert the cleanup
+contract, it is independent of where the `try/finally` sits — and then it failed
+against the old code with "admin password left on disk after a failure
+following the write". A red test is not proof until you have read why it is
+red.
+
+Second lesson, from the suppression round: `# codeql[...]` is honoured **only on
+the line immediately preceding the reported location**. All four of mine sat at
+the top of their comment blocks with prose in between, so they suppressed
+nothing and run `e55f4434` proved it — the two findings I genuinely fixed
+disappeared, the four I only annotated did not. Real fixes and annotations
+behave differently under a CI run, which is a useful way to tell them apart.
+
+**#938 is still `mergeStateStatus: BLOCKED`, and that is now correct.** The
+`prod` ruleset additionally requires:
+
+- a deployment to the `production` environment (not satisfiable by a PR);
+- `require_code_owner_review` — a human gate;
+- zero medium+ code-scanning alerts — and **main currently has 47 open
+  high+critical**. #938 is what fixes those; it cannot be gated on them.
+
+None of those is a code defect and none is mine to decide. CodeQL is green; the
+rest needs the owner.
