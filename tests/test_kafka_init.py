@@ -459,6 +459,60 @@ class TestScriptExecution:
         # And it must not survive the run -- that file was the leak.
         assert not config.exists(), "SASL client config still on disk after bootstrap"
 
+    def test_client_config_is_removed_when_a_failure_follows_the_write(
+        self, stub_binaries, monkeypatch, tmp_path
+    ):
+        """The credential must not survive a failure that happens after it is written.
+
+        ``write_client_properties`` used to be called *before* the try/finally
+        that deletes the file, so anything raising after the write -- a closed
+        Docker log pipe on the next print, an error in ``plan_commands`` --
+        left the admin password on disk with no handler to remove it.
+
+        The injection deliberately makes the writer itself raise *after* writing,
+        so the test asserts the cleanup contract rather than the shape of the fix.
+        It fails against the old code for the right reason and passes against the
+        new code, and it does not care where the try/finally sits.
+        """
+        config = tmp_path / "client.properties"
+        bindir, log = stub_binaries
+
+        instrumented = SCRIPT.read_text().replace(
+            "        handle.write(contents)",
+            "        handle.write(contents)\n"
+            "        raise RuntimeError('injected failure after the credential was written')",
+            1,
+        )
+        assert instrumented != SCRIPT.read_text(), "failed to instrument the write"
+
+        tmp_script = tmp_path / "kafka_init_injected.py"
+        tmp_script.write_text(instrumented)
+
+        env = dict(os.environ)
+        env["PATH"] = f"{bindir}{os.pathsep}{env['PATH']}"
+        env["KAFKA_STUB_LOG"] = str(log)
+        env["WF_ADMIN_PASSWORD"] = "test-only-not-a-real-secret"
+
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(tmp_script),
+                "--topics-registry",
+                str(TOPICS_SRC),
+                "--client-config",
+                str(config),
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert not config.exists(), (
+            "admin password left on disk after a failure following the write "
+            f"(exit={completed.returncode})"
+        )
+        assert not _invocations(log), "nothing should reach the broker"
+
     def test_missing_admin_password_fails_loudly(self, stub_binaries, monkeypatch, tmp_path):
         bindir, log = stub_binaries
         env = dict(os.environ)

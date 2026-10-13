@@ -283,6 +283,27 @@ class TokenManager:
 
     @staticmethod
     def hash_token(token: str) -> str:
+        """Digest a signed JWT for at-rest storage.
+
+        Never call this with a password -- use PasswordManager.hash_password,
+        which is bcrypt. SHA-256 is correct here because the preimage is a
+        high-entropy signed token, not a low-entropy secret.
+        """
+        # codeql[py/weak-sensitive-data-hashing]
+        # This hashes a high-entropy RS256-signed JWT for at-rest lookup, never a
+        # password. All call sites were traced: auth.py:116/393/543 pass the
+        # Authorization token or a verification token, services/__init__.py:280
+        # passes an MFA challenge (itself a signed JWT), :355/:407 pass refresh
+        # tokens. Every password in this service goes through
+        # PasswordManager.hash_password (bcrypt); TokenManager and PasswordManager
+        # are never cross-wired. The two sites that hash before verifying
+        # (auth.py:116, services/__init__.py:407) feed only SELECT/DELETE lookups,
+        # so no attacker-chosen string is ever stored as a digest.
+        #
+        # A slow KDF here would be a net loss: hash_token runs inside the
+        # get_current_user dependency, i.e. on every authenticated request, to
+        # protect a preimage that is already unbrute-forceable (recovering it
+        # means forging an RSA signature, not enumerating a dictionary).
         return hashlib.sha256(token.encode()).hexdigest()
 
     @staticmethod

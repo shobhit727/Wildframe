@@ -242,11 +242,19 @@ def _parse_bucket(key: str) -> tuple[BucketKind, str] | None:
 def _namespace_of(key: str) -> str:
     """Return the leading ``<namespace>:`` of a key, for diagnostics only.
 
-    Never the subject. Returns ``"<none>"`` for a key with no delimiter so the
-    log line cannot be blank or misleading.
+    Returns a prefix only when it is one this module actually defines, so the
+    log line can never echo caller-supplied text. It used to return whatever
+    preceded the first ``:``; the subject is discarded either way, but the
+    namespace slot was protected only by the convention that call sites write a
+    literal there -- a convention, not an invariant. Given the key is refused
+    precisely *because* it is malformed, that is the wrong place to trust it.
     """
-    head, sep, _ = key.partition(":") if isinstance(key, str) else ("", "", "")
-    return f"{head}:" if sep else "<none>"
+    if not isinstance(key, str) or not key:
+        return "<malformed>"
+    for prefix, _kind in _BUCKET_PREFIXES:
+        if key.startswith(f"{prefix}:"):
+            return f"{prefix}:"
+    return "<unknown-namespace>"
 
 
 def _scope(kind: BucketKind, subject: str) -> str:
@@ -264,6 +272,12 @@ def _scope(kind: BucketKind, subject: str) -> str:
     ``str(UUID(...))`` and ``str(ip_address(...))`` are the strings that are
     hashed today and their digests are unchanged.
     """
+    # codeql[py/weak-sensitive-data-hashing]
+    # Not password hashing. This fingerprints a rate-limit bucket so no PII
+    # (email, IP) reaches Redis. Every subject is constrained by
+    # _SUBJECT_VALIDATORS to a UUID or an IP address before this is reached, and
+    # the value is never persisted as a credential. A slow KDF here would be an
+    # availability liability for no gain: rate_limit is on the request hot path.
     return hashlib.blake2s(
         f"{kind.value}:{_canonical_subject(kind, subject)}".encode(), digest_size=20
     ).hexdigest()

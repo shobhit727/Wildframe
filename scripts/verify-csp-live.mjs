@@ -18,13 +18,58 @@
  *     fine.
  */
 
+import fs from 'node:fs/promises';
+
 // This harness verifies the local dev stack, whose TLS layer is Caddy fronting
 // the certificates scripts/generate-dev-certs.sh generates — self-signed by
-// design and gitignored. Node's fetch rejects them by default, which made every
-// live probe fail with DEPTH_ZERO_SELF_SIGNED_CERT and read like the CSP bug
-// it is not. Opt out unless the caller has set a stricter mode explicitly.
-if (process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '1') {
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+// design and gitignored. Node rejects them by default, which made every live
+// probe fail with DEPTH_ZERO_SELF_SIGNED_CERT and read like the CSP bug it is
+// not.
+//
+// It used to work around that by setting NODE_TLS_REJECT_UNAUTHORIZED=0, which
+// disables verification entirely. That accepted an attacker's certificate just
+// as readily as ours, and because the host came from an unvalidated BASE_URL it
+// applied to any host the script was pointed at. Trust the dev certificate as a
+// CA instead: NODE_EXTRA_CA_CERTS keeps certificate *and* hostname verification
+// on, so only the dev CA is additionally trusted.
+//
+// Node reads NODE_EXTRA_CA_CERTS once at process start, so setting it here would
+// be too late. Re-exec ourselves with it instead.
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+const DEV_CA = new URL('../apps/web/certificates/localhost.pem', import.meta.url);
+
+{
+  const target = new URL(process.env.BASE_URL ?? 'https://localhost:3000');
+  if (!LOCAL_HOSTS.has(target.hostname)) {
+    console.error(
+      `refusing to probe ${target.hostname}: this harness exists to verify the LOCAL dev\n` +
+        'stack and only trusts the self-signed dev CA. Pointing it at a real host would\n' +
+        'require trusting that host\'s CA; use a normal HTTP client for remote targets.'
+    );
+    process.exit(2);
+  }
+
+  if (!process.env.NODE_EXTRA_CA_CERTS) {
+    try {
+      await fs.access(DEV_CA);
+    } catch {
+      console.error(
+        `no dev CA at ${DEV_CA.pathname}. Run scripts/generate-dev-certs.sh first, or set\n` +
+          'NODE_EXTRA_CA_CERTS to the CA that signed the server you are probing.'
+      );
+      process.exit(2);
+    }
+    const { spawnSync } = await import('node:child_process');
+    const result = spawnSync(
+      process.execPath,
+      [process.argv[1], ...process.argv.slice(2)],
+      {
+        stdio: 'inherit',
+        env: { ...process.env, NODE_EXTRA_CA_CERTS: DEV_CA.pathname },
+      }
+    );
+    process.exit(result.status ?? 1);
+  }
 }
 
 const PROTECTED = ['/browse', '/watch', '/my-list', '/account', '/billing', '/creator'];

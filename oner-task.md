@@ -1127,3 +1127,57 @@ Two viable directions, both an owner call:
 I have not done either. Weakening the gate to make it green is exactly what `TODO-full.md`
 forbids, and an allowlist that is not scoped by reachability would hide a real future
 finding.
+
+### CodeQL triage on #938 — what was a real bug, and what was a record problem
+
+Six CodeQL `high` findings blocked the merge on code changed by #938. Verdicts,
+after subagents traced every call site rather than reading the rule:
+
+- **Real bug, fixed.** `scripts/kafka_init.py` wrote the SASL client config
+  *before* the `try/finally` that deletes it, so any failure in the 17-line
+  window in between (a `print` raising on a closed Docker log pipe, an error in
+  `plan_commands`) left the admin password on disk with no handler to remove it.
+  Separately, Python's default SIGTERM disposition skips `finally` entirely, and
+  the window is minutes long because the bootstrap is ~190 sequential JVM
+  launches — so `docker stop` would have done the same. Both fixed; the new
+  `test_client_config_is_removed_when_a_failure_follows_the_write` fails against
+  the old code for the right reason.
+- **Real bug, fixed.** `scripts/verify-csp-live.mjs` disabled TLS verification
+  globally at module scope, and the host came from an unvalidated `BASE_URL` —
+  so `BASE_URL=https://staging.example.com` silently accepted any certificate.
+  Replaced with `NODE_EXTRA_CA_CERTS` (dev CA trusted, certificate *and* hostname
+  verification retained) plus a hard refusal for non-local hosts.
+- **False positives, suppressed with justification, not "fixed".** Three
+  `py/weak-sensitive-data-hashing` hits: `hash_token` in both services and
+  `_scope` in `rate_limit.py`. None of them hash a password — the traced call
+  sites and reasoning are in the suppression comments. A slow KDF would be a
+  net *loss* for `hash_token`: it runs inside the `get_current_user`
+  dependency on every authenticated request, to protect a preimage that is
+  already unbrute-forceable.
+- **Latent leak, fixed.** `_namespace_of` returned whatever text preceded the
+  first `:`. Today every call site writes a literal there so nothing leaks, but
+  that is a convention, not an invariant, on the branch that fires precisely
+  *because* the key is malformed. It now returns a prefix only when the module
+  actually defines it.
+
+Two things I did **not** act on:
+
+- **`user-service TokenManager.hash_token` has no production caller.** Only
+  `verify_token` is used; user-service has no blacklist or refresh-token table.
+  Deleting it would close the alert outright instead of suppressing it. I left
+  it because deleting a security helper (and its tests) is the owner's call, not
+  a side effect of making CI green.
+- **`scripts/generate-dev-certs.sh:109,122` hardcode `IP:192.168.1.14`** into the
+  certificate SAN. Machine-specific, breaks every other developer's setup, and
+  is the reason this harness wanted a TLS bypass in the first place. Fixing it
+  properly means generating SANs from the live interface addresses.
+
+One caveat on the fix I did make: `verify-csp-live.mjs` now requires the dev CA
+to exist (`scripts/generate-dev-certs.sh`) and re-execs itself with
+`NODE_EXTRA_CA_CERTS` set, because Node reads that variable only at process
+start. The full live path could not be exercised against the running stack —
+the dev stack was down — so it was verified against a local TLS server using the
+real dev certificate: `NODE_EXTRA_CA_CERTS` returned 200 with verification on,
+the old bypass returned 200 while accepting a rogue cert, and the default trust
+store failed. The mechanism is proven; the Caddy-serves-that-cert assumption is
+inferred from `generate-dev-certs.sh`, not observed.

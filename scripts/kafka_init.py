@@ -73,6 +73,7 @@ import argparse
 import importlib.util
 import os
 import subprocess
+import signal
 import sys
 import time
 from types import ModuleType
@@ -264,8 +265,63 @@ def render_client_properties(*, admin_user: str, admin_password: str, truststore
     )
 
 
+_PREVIOUS_SIGTERM = None
+
+
+def _exit_on_sigterm() -> None:
+    """Make SIGTERM unwind so the ``finally`` that deletes the client config runs.
+
+    Python's default SIGTERM disposition terminates the process without running
+    ``finally`` blocks. During the bootstrap the credential file exists, and the
+    window is minutes long, so a ``docker stop``/``docker kill`` in it would
+    otherwise leave the password on disk.
+    """
+    global _PREVIOUS_SIGTERM
+
+    def _raise(signum: int, frame: object) -> None:
+        raise SystemExit(143)
+
+    try:
+        _PREVIOUS_SIGTERM = signal.signal(signal.SIGTERM, _raise)
+    except ValueError:
+        # Not on the main thread; signal handling is unavailable, so leave the
+        # default disposition rather than pretending cleanup is guaranteed.
+        _PREVIOUS_SIGTERM = None
+
+
+def _restore_sigterm() -> None:
+    global _PREVIOUS_SIGTERM
+    if _PREVIOUS_SIGTERM is not None:
+        try:
+            signal.signal(signal.SIGTERM, _PREVIOUS_SIGTERM)
+        except ValueError:
+            pass
+        _PREVIOUS_SIGTERM = None
+
+
 def write_client_properties(path: str, contents: str) -> None:
-    """Write the client config owner-only: it contains the admin password."""
+    """Write the client config owner-only: it contains the admin password.
+
+    Clear-text storage is unavoidable here: the Kafka CLIs accept credentials
+    only via ``--command-config <file>``; there is no stdin or flag form. What
+    is not unavoidable is leaving the file behind, and it does not:
+
+      * it is created under umask 077, so 0600 owner-only
+        (tests/test_kafka_init.py asserts the mode);
+      * it is written *inside* the try/finally that removes it, so a failure at
+        any later point still cleans up
+        (test_client_config_is_removed_when_a_failure_follows_the_write);
+      * SIGTERM is converted to an exception for the duration of the bootstrap,
+        which takes minutes, so ``docker stop`` does not skip the finally.
+
+    The password never reaches argv (it travels inside this file), is never
+    printed, and never reaches the host filesystem -- /etc/kafka is not a bind
+    mount, so the file lives and dies with the container's writable layer.
+    """
+    # codeql[py/clear-text-storage-sensitive-data]
+    # See the docstring: required by the Kafka CLI's interface, and every
+    # mitigation we can apply to the lifetime of that file is applied and
+    # covered by a test.
     previous_umask = os.umask(0o077)
     try:
         with open(path, "w", encoding="utf-8") as handle:
@@ -463,29 +519,39 @@ def main(argv: Sequence[str]) -> int:
         )
         return 2
 
-    write_client_properties(
-        args.client_config,
-        render_client_properties(
-            admin_user=ADMIN_USER,
-            admin_password=admin_password,
-            truststore_path=TRUSTSTORE_PATH,
-        ),
-    )
-    print(f"wrote {args.client_config} (mode 0600)", flush=True)
-
-    commands = plan_commands(
-        topics,
-        topic_acls,
-        group_acls,
-        bootstrap=args.bootstrap,
-        config=args.client_config,
-    )
+    # The client config holds the admin password, so it is created inside the
+    # try/finally that removes it. It used to be written and printed *before*
+    # the try, leaving a window where a failure in plan_commands() or in that
+    # print -- which is exactly what a closed Docker log pipe produces -- left
+    # the credential on disk with no handler to clean it up.
     try:
+        write_client_properties(
+            args.client_config,
+            render_client_properties(
+                admin_user=ADMIN_USER,
+                admin_password=admin_password,
+                truststore_path=TRUSTSTORE_PATH,
+            ),
+        )
+        print(f"wrote {args.client_config} (mode 0600)", flush=True)
+
+        commands = plan_commands(
+            topics,
+            topic_acls,
+            group_acls,
+            bootstrap=args.bootstrap,
+            config=args.client_config,
+        )
+        # apply_plan runs ~190 sequential JVM launches, so a `docker stop` here
+        # would otherwise terminate the process without unwinding and skip the
+        # finally entirely. Turn SIGTERM into an exception so cleanup still runs.
+        _exit_on_sigterm()
         apply_plan(commands, max_attempts=MAX_ATTEMPTS)
     except RuntimeError as exc:
         print(f"kafka bootstrap failed: {exc}", file=sys.stderr)
         return 1
     finally:
+        _restore_sigterm()
         try:
             if os.path.exists(args.client_config):
                 os.remove(args.client_config)
