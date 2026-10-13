@@ -60,24 +60,25 @@ def test_billing_jurisdiction_prefers_the_explicit_header():
     assert detect_billing_jurisdiction("eu", "us") == "EU"
 
 
-def test_billing_jurisdiction_uppercases_but_does_not_trim_the_header():
-    """``detect_billing_jurisdiction`` only upper-cases; it never strips.
+def test_billing_jurisdiction_strips_before_upper_casing_the_header():
+    """``detect_billing_jurisdiction`` strips, then upper-cases (#866).
 
-    A padded header therefore survives verbatim and later misses the
-    BILLING_RATE_LIMITS lookup (see the whitespace note below).
+    It previously only upper-cased, so a padded header survived verbatim and
+    missed the BILLING_RATE_LIMITS lookup. Whitespace normalisation is pinned
+    here and exhaustively in test_billing_jurisdiction.py.
     """
-    assert detect_billing_jurisdiction("  us-ca  ") == "  US-CA  "
+    assert detect_billing_jurisdiction("  us-ca  ") == "US-CA"
 
 
-def test_padded_billing_jurisdiction_falls_through_to_the_default_rate_limit():
-    """Whitespace is not stripped, so a padded header loses its rate limit.
+def test_a_padded_billing_jurisdiction_keeps_its_rate_limit():
+    """Whitespace no longer costs a jurisdiction its configured limit.
 
-    This is a real (fail-safe) inconsistency against ``resolve_jurisdiction``,
-    which does strip. Recorded here so the behaviour cannot change silently.
+    This was the reported impact: a legitimate US jurisdiction dropped from 200
+    to 100 requests purely because of padding.
     """
     padded = detect_billing_jurisdiction("  us  ")
-    assert padded != "US"
-    assert billing_rate_limit(padded) == BILLING_RATE_LIMITS["GLOBAL"] == 100
+    assert padded == "US"
+    assert billing_rate_limit(padded) == BILLING_RATE_LIMITS["US"] == 200
 
 
 def test_billing_jurisdiction_falls_back_to_the_geoip_country():
@@ -142,14 +143,18 @@ def test_public_paths_are_not_age_restricted():
         assert is_age_restricted(path) is False
 
 
-def test_age_restricted_matching_is_a_raw_prefix_not_a_path_segment():
-    """No boundary check: a sibling route that merely shares a prefix is gated.
+def test_age_restricted_matching_respects_the_path_segment_boundary():
+    """A sibling route that merely shares a prefix is no longer gated (#879).
 
-    This over-blocks rather than under-blocks, so it is fail-safe, but it is
-    pinned here so tightening it later is a deliberate change.
+    This previously matched on a raw prefix, so "/maturityx" and
+    "/purchase-order/list" were 403'd purely for sharing a leading substring.
+    The over-match failed safe, but tightening it is the deliberate change this
+    test was pinned for; the boundary rule itself is covered exhaustively in
+    test_age_gate_boundary.py.
     """
-    assert is_age_restricted("/maturityx") is True
-    assert is_age_restricted("/purchase-order/list") is True
+    assert is_age_restricted("/maturityx") is False
+    assert is_age_restricted("/purchase-order/list") is False
+    assert is_age_restricted("/content/restrictedxyz") is False
 
 
 def test_age_gate_allows_unrestricted_paths_without_any_headers():

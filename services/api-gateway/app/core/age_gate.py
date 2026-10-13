@@ -7,15 +7,26 @@ from fastapi import Header, HTTPException, Request, status
 
 logger = logging.getLogger(__name__)
 
-# Routes that require age verification
+# Routes that require age verification. These are whole path *segments*:
+# "/maturity" covers "/maturity" and "/maturity/film", not "/maturityx".
 AGE_RESTRICTED_PREFIXES = {"/maturity", "/purchase", "/content/restricted"}
 # Jurisdictions with stricter minor age
 JURISDICTION_MINOR_AGE = {"EU": 16, "US": 13, "IN": 18, "GLOBAL": 16}
 
 
 def is_age_restricted(path: str) -> bool:
-    """Check if path requires age verification."""
-    return any(path.startswith(prefix) for prefix in AGE_RESTRICTED_PREFIXES)
+    """Check if path requires age verification.
+
+    Matches on a path-segment boundary, not a raw substring: a prefix matches
+    the path itself and anything beneath it. A bare ``startswith`` also matched
+    unrelated siblings that merely shared a leading substring -- "/maturityx",
+    "/purchase-order/list" (#879) -- and refused them. The over-match failed
+    safe, but it was indistinguishable from a real gate hit, so it will 403 an
+    unrelated route as soon as one of these prefixes gains a neighbour.
+    """
+    return any(
+        path == prefix or path.startswith(f"{prefix}/") for prefix in AGE_RESTRICTED_PREFIXES
+    )
 
 
 def check_age_gate(

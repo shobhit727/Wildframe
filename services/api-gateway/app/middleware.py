@@ -482,15 +482,9 @@ return 1
             service = args[1]
         if len(args) >= 3:
             path = args[2]
-        if user_id_kw is not None:
-            user_id = user_id_kw
         if service_kw is not None:
             service = service_kw
-        elif "service" in kwargs:
-            service = kwargs["service"]
-        if "path" in kwargs:
-            path = kwargs["path"]
-        elif path_kw != "":
+        if path_kw != "":
             path = path_kw
         if user_id is None or service is None:
             return True
@@ -531,8 +525,13 @@ def _is_trusted_ip(ip_str: str, trusted: list[str]) -> bool:
                 if ip == ipaddress.ip_address(entry):
                     return True
             except ValueError:
-                if ip_str == entry:
-                    return True
+                # A malformed entry is skipped, exactly like a malformed CIDR
+                # above. This branch used to fall back to a literal `ip_str ==
+                # entry` comparison, but that is unreachable: reaching here
+                # means `entry` failed to parse, and `ip_str` is only in scope
+                # because it already parsed at the top of the function, so
+                # `entry == ip_str` would have parsed too (#886).
+                continue
     return False
 
 
@@ -936,9 +935,11 @@ class ServiceRegistry:
     @classmethod
     def route_request(cls, path: str) -> tuple[str | None, str]:
         """Route request path to appropriate service."""
+        # `str.split` always returns at least one element ("" -> [""]), so
+        # `parts` is never empty and an emptiness guard here is unreachable.
+        # An empty path yields parts == [""], which falls through to the
+        # ordinary "unknown service" answer below (#886).
         parts = path.strip("/").split("/")
-        if not parts:
-            return None, ""
 
         service = parts[0]
         remaining_path = "/" + "/".join(parts[1:]) if len(parts) > 1 else "/"
