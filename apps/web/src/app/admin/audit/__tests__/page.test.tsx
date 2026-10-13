@@ -108,12 +108,139 @@ describe('AdminAuditPage (/admin/audit)', () => {
     expect(screen.getByText('Actions by admins will be recorded here.')).toBeInTheDocument();
   });
 
-  it('keeps the page usable when the audit lookup fails', async () => {
+  it('reports a failed lookup as a failure, not as an empty log', async () => {
+    // "No audit entries" after a 503 is the exact under-report these two issues
+    // are about: an operator reads an unreachable trail as a quiet one.
     adminApi.listAuditLogs.mockRejectedValue(new Error('admin 503'));
 
     renderWithQuery(<AdminAuditPage />);
 
-    expect(await screen.findByText('No audit entries')).toBeInTheDocument();
+    expect(await screen.findByText('Audit log unavailable')).toBeInTheDocument();
+    expect(screen.getByText(/admin 503/)).toBeInTheDocument();
+    expect(screen.queryByText('No audit entries')).toBeNull();
+  });
+
+  describe('empty state', () => {
+    beforeEach(() => {
+      adminApi.listAuditLogs.mockResolvedValue([ENTRY]);
+    });
+
+    it('separates "filter returned nothing" from "no activity"', async () => {
+      renderWithQuery(<AdminAuditPage />);
+      await screen.findByText('admin-1');
+
+      fireEvent.change(screen.getByPlaceholderText('Search admin, action, resource…'), {
+        target: { value: 'nothing-matches-this' },
+      });
+
+      expect(await screen.findByText('No entries match the current filter')).toBeInTheDocument();
+      // The unqualified "no activity" copy must not appear: entries exist.
+      expect(screen.queryByText('Actions by admins will be recorded here.')).toBeNull();
+    });
+
+    it('names the filters responsible for the empty result', async () => {
+      renderWithQuery(<AdminAuditPage />);
+      await screen.findByText('admin-1');
+
+      fireEvent.change(screen.getByPlaceholderText('Search admin, action, resource…'), {
+        target: { value: 'nothing-matches-this' },
+      });
+
+      await screen.findByText('No entries match the current filter');
+      expect(screen.getByText(/nothing-matches-this/)).toBeInTheDocument();
+    });
+
+    it('restores the whole log from the empty state', async () => {
+      renderWithQuery(<AdminAuditPage />);
+      await screen.findByText('admin-1');
+
+      fireEvent.change(screen.getByPlaceholderText('Search admin, action, resource…'), {
+        target: { value: 'nothing-matches-this' },
+      });
+      await screen.findByText('No entries match the current filter');
+
+      fireEvent.click(screen.getByRole('button', { name: /Clear filters/ }));
+
+      expect(await screen.findByText('admin-1')).toBeInTheDocument();
+      expect(screen.queryByText('No entries match the current filter')).toBeNull();
+    });
+
+    it('still says "no audit entries" when no filter is active', async () => {
+      adminApi.listAuditLogs.mockResolvedValue([]);
+
+      renderWithQuery(<AdminAuditPage />);
+
+      expect(await screen.findByText('No audit entries')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Clear filters/ })).toBeNull();
+    });
+  });
+
+  describe('time range', () => {
+    it('covers the whole log by default', async () => {
+      // The fixture is from 2024. A default window narrower than the log would
+      // silently hide every entry, which is the #949 failure mode again.
+      renderWithQuery(<AdminAuditPage />);
+
+      expect(await screen.findByText('admin-1')).toBeInTheDocument();
+      expect(screen.getByLabelText('Time range')).toHaveValue('all');
+      expect(entrySummary()).toBe('1 entry');
+    });
+
+    it('offers bounded windows alongside the default', async () => {
+      renderWithQuery(<AdminAuditPage />);
+      await screen.findByText('admin-1');
+
+      const options = within(screen.getByLabelText('Time range'))
+        .getAllByRole('option')
+        .map((o) => (o as HTMLOptionElement).value);
+      expect(options).toEqual(['all', '24h', '7d', '30d']);
+    });
+
+    it('drops entries older than the selected window', async () => {
+      adminApi.listAuditLogs.mockResolvedValue([
+        ENTRY,
+        { ...ENTRY, id: 2, admin_id: 'admin-recent', created_at: new Date().toISOString() },
+      ]);
+      renderWithQuery(<AdminAuditPage />);
+      await screen.findByText('admin-recent');
+
+      fireEvent.change(screen.getByLabelText('Time range'), { target: { value: '24h' } });
+
+      await waitFor(() => expect(screen.queryByText('admin-1')).toBeNull());
+      expect(screen.getByText('admin-recent')).toBeInTheDocument();
+      expect(entrySummary()).toBe('1 entry');
+    });
+
+    it('treats a narrowed window as a filter, not as an absence of activity', async () => {
+      adminApi.listAuditLogs.mockResolvedValue([ENTRY]);
+      renderWithQuery(<AdminAuditPage />);
+      await screen.findByText('admin-1');
+
+      fireEvent.change(screen.getByLabelText('Time range'), { target: { value: '24h' } });
+
+      expect(await screen.findByText('No entries match the current filter')).toBeInTheDocument();
+      expect(screen.queryByText('No audit entries')).toBeNull();
+    });
+
+    it('warns when the request limit truncates the log', async () => {
+      adminApi.listAuditLogs.mockResolvedValue(
+        Array.from({ length: 100 }, (_, i) => ({
+          ...ENTRY,
+          id: i + 1,
+          admin_id: `admin-${i + 1}`,
+        })),
+      );
+      renderWithQuery(<AdminAuditPage />);
+
+      expect(await screen.findByText(/most recent 100/)).toBeInTheDocument();
+    });
+
+    it('does not warn about truncation below the request limit', async () => {
+      renderWithQuery(<AdminAuditPage />);
+      await screen.findByText('admin-1');
+
+      expect(screen.queryByText(/most recent 100/)).toBeNull();
+    });
   });
 
   describe('search', () => {
@@ -186,7 +313,9 @@ describe('AdminAuditPage (/admin/audit)', () => {
         target: { value: 'nothing-matches-this' },
       });
 
-      expect(await screen.findByText('No audit entries')).toBeInTheDocument();
+      // A narrowed search reports the filter, not an absent trail: entries exist
+      // behind the filter, so "No audit entries" would be a false statement.
+      expect(await screen.findByText('No entries match the current filter')).toBeInTheDocument();
       expect(entrySummary()).toBe('0 entries');
     });
   });
@@ -196,9 +325,9 @@ describe('AdminAuditPage (/admin/audit)', () => {
       renderWithQuery(<AdminAuditPage />);
 
       await waitFor(() =>
-        expect(screen.getByRole('combobox')).toBeInTheDocument(),
+        expect(screen.getByLabelText('Action')).toBeInTheDocument(),
       );
-      const options = within(screen.getByRole('combobox'))
+      const options = within(screen.getByLabelText('Action'))
         .getAllByRole('option')
         .map((o) => (o as HTMLOptionElement).value);
       expect(options).toEqual([
@@ -219,7 +348,7 @@ describe('AdminAuditPage (/admin/audit)', () => {
       renderWithQuery(<AdminAuditPage />);
       await screen.findByText('content_resolved');
 
-      fireEvent.change(screen.getByRole('combobox'), { target: { value: 'content_flagged' } });
+      fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'content_flagged' } });
 
       await waitFor(() => expect(screen.queryByText('content_resolved')).toBeNull());
       expect(screen.getByText('content_flagged')).toBeInTheDocument();
@@ -234,10 +363,10 @@ describe('AdminAuditPage (/admin/audit)', () => {
       renderWithQuery(<AdminAuditPage />);
       await screen.findByText('content_flagged');
 
-      fireEvent.change(screen.getByRole('combobox'), { target: { value: 'content_flagged' } });
+      fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'content_flagged' } });
       await waitFor(() => expect(entrySummary()).toBe('1 entry'));
 
-      fireEvent.change(screen.getByRole('combobox'), { target: { value: '' } });
+      fireEvent.change(screen.getByLabelText('Action'), { target: { value: '' } });
       expect(await screen.findByText('user_moderation')).toBeInTheDocument();
       expect(entrySummary()).toBe('2 entries');
     });

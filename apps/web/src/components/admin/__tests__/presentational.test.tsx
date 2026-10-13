@@ -370,20 +370,104 @@ describe('form fields', () => {
     expect(screen.getAllByText('Reason')).toHaveLength(1);
   });
 
-  it('renders a field label that is not tied to its control', () => {
-    // BUG (fields.tsx:52-57): `Field` renders `<Label>` with no htmlFor, so the
-    // visible "Moderation reason" text is not programmatically associated with
-    // the input. Screen readers announce the field unlabelled and clicking the
-    // label does not focus the input. Passing an `id` to the child and reading
-    // it back through getByLabelText is the fix.
+  it('associates the label with its control when the child has no id', () => {
     render(
       <Field label="Moderation reason">
-        <Input id="mod-reason" />
+        <Input />
       </Field>
     );
 
-    expect(screen.getByText('Moderation reason')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Moderation reason')).toBeNull();
+    // The association is the whole point: getByLabelText only resolves when the
+    // label carries htmlFor pointing at the control's id, and the control
+    // carries that id. Before the fix this returned null.
+    expect(screen.getByLabelText('Moderation reason')).toBe(screen.getByRole('textbox'));
+  });
+
+  it('gives the synthesised control id a CSS-safe value', () => {
+    render(
+      <Field label="Moderation reason">
+        <Input />
+      </Field>
+    );
+
+    const control = screen.getByLabelText('Moderation reason');
+    // React's useId emits guillemets («r0»), which are legal in an id but make
+    // the element unreachable from a CSS selector. Sanitised ids keep the
+    // element addressable by `querySelector` for anything that needs to focus
+    // or label it imperatively.
+    expect(control.id).toMatch(/^[A-Za-z][\w-]*$/);
+    expect(document.querySelector(`#${control.id}`)).toBe(control);
+  });
+
+  it('gives each field a distinct id so two same-labelled fields do not collide', () => {
+    render(
+      <>
+        <Field label="Reason">
+          <Input />
+        </Field>
+        <Field label="Reason">
+          <Input />
+        </Field>
+      </>,
+    );
+
+    const ids = screen.getAllByLabelText('Reason').map((el) => el.id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
+  it.each([
+    ['textarea', () => <Textarea />],
+    [
+      'select',
+      () => (
+        <Select value="a" onChange={() => {}}>
+          <option value="a">a</option>
+        </Select>
+      ),
+    ],
+  ])('associates the label with a %s control', (_kind, makeChild) => {
+    render(<Field label="Severity">{makeChild()}</Field>);
+
+    expect(screen.getByLabelText('Severity')).toBeInTheDocument();
+  });
+
+  it('honours an explicit id prop on the Field', () => {
+    render(
+      <Field id="audit-admin-id" label="Admin ID">
+        <Input />
+      </Field>,
+    );
+
+    expect(screen.getByLabelText('Admin ID').id).toBe('audit-admin-id');
+  });
+
+  it('keeps an id the child declared itself and points the label at it', () => {
+    render(
+      <Field label="Moderation reason">
+        <Input id="mod-reason" />
+      </Field>,
+    );
+
+    // The child owns its id when it declares one; Field must target that id
+    // rather than overwriting it with its own generated value.
+    expect(screen.getByLabelText('Moderation reason').id).toBe('mod-reason');
     expect(document.getElementById('mod-reason')).toBe(screen.getByRole('textbox'));
+  });
+
+  it('falls back to an unassociated label when the child is not a control element', () => {
+    render(
+      <Field label="Group">
+        <>
+          <Input />
+          <Input />
+        </>
+      </Field>,
+    );
+
+    // Nothing to attach an id to, so the label must not claim a control it
+    // does not own — a htmlFor pointing at no element is worse than none.
+    expect(screen.getByText('Group')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Group')).toBeNull();
   });
 });

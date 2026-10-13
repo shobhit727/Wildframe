@@ -49,6 +49,14 @@ const PLACEHOLDERS = {
   message: 'Describe the issue…',
 } as const;
 
+/** Accessible names of the drawer controls, i.e. their `Field` labels. */
+const LABELS = {
+  type: 'Alert type',
+  service: 'Service',
+  severity: 'Severity',
+  message: 'Message',
+} as const;
+
 function listItems(): HTMLElement[] {
   return within(screen.getByRole('list'))
     .queryAllByRole('listitem');
@@ -60,16 +68,16 @@ async function openCreateDrawer(): Promise<HTMLElement> {
 }
 
 /**
- * The drawer inputs are addressed by placeholder, not by label: the shared
- * `Field` component renders a <label> with no `htmlFor` and the inputs have no
- * id, so there is no accessible name to query. Reported as an a11y bug.
+ * Drawer controls are addressed by their accessible name. `Field` owns the
+ * label/control id association, so `getByLabelText` resolves the same element a
+ * screen reader would announce; placeholders are decoration and are only used
+ * below to assert the markup itself.
  */
-function fillDrawer(dialog: HTMLElement, values: Partial<Record<keyof typeof PLACEHOLDERS, string>>) {
+function fillDrawer(dialog: HTMLElement, values: Partial<Record<keyof typeof LABELS, string>>) {
   for (const [field, value] of Object.entries(values)) {
-    fireEvent.change(
-      within(dialog).getByPlaceholderText(PLACEHOLDERS[field as keyof typeof PLACEHOLDERS]),
-      { target: { value } },
-    );
+    fireEvent.change(within(dialog).getByLabelText(LABELS[field as keyof typeof LABELS]), {
+      target: { value },
+    });
   }
 }
 
@@ -205,6 +213,19 @@ describe('AdminAlertsPage (/admin/alerts)', () => {
       expect(within(drawer).getByPlaceholderText(PLACEHOLDERS.type)).toHaveValue('');
       expect(within(drawer).getByPlaceholderText(PLACEHOLDERS.service)).toHaveValue('');
       expect(within(drawer).getByPlaceholderText(PLACEHOLDERS.message)).toHaveValue('');
+    });
+
+    it('names every control from its visible label', async () => {
+      renderWithQuery(<AdminAlertsPage />);
+
+      const drawer = await openCreateDrawer();
+      // Each Field renders a <label htmlFor> pointing at its control's id, so a
+      // screen reader announces the same name a sighted operator reads. This is
+      // what a `label` without `for` a11y rule flags.
+      expect(within(drawer).getByLabelText(LABELS.type)).toBeInTheDocument();
+      expect(within(drawer).getByLabelText(LABELS.service)).toBeInTheDocument();
+      expect(within(drawer).getByLabelText(LABELS.severity)).toBeInTheDocument();
+      expect(within(drawer).getByLabelText(LABELS.message)).toBeInTheDocument();
     });
 
     it('keeps create disabled until type, service and message are supplied', async () => {

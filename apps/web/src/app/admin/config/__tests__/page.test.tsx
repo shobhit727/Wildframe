@@ -60,23 +60,29 @@ const PLACEHOLDERS = {
   json: '{"enabled": true}',
 } as const;
 
+/** Accessible names of the drawer controls, i.e. their `Field` labels. */
+const LABELS = {
+  key: 'Key',
+  type: 'Type',
+  value: 'Value',
+  description: 'Description',
+} as const;
+
 /**
- * The drawer inputs are addressed by placeholder: the shared `Field` renders a
- * <label> with no `htmlFor` and the inputs carry no id, so there is no
- * accessible name to query on. Reported as an a11y bug.
+ * Drawer controls are addressed by their accessible name. `Field` owns the
+ * label/control id association, so `getByLabelText` resolves the same element a
+ * screen reader would announce.
  */
 function fillDrawer(
   dialog: HTMLElement,
-  values: Partial<Record<keyof typeof PLACEHOLDERS | 'rawValue', string>>,
+  values: Partial<Record<keyof typeof LABELS | 'rawValue', string>>,
 ) {
   for (const [field, value] of Object.entries(values)) {
     if (field === 'rawValue') {
-      fireEvent.change(within(dialog).getByPlaceholderText(PLACEHOLDERS.value), {
-        target: { value },
-      });
+      fireEvent.change(within(dialog).getByLabelText(LABELS.value), { target: { value } });
       continue;
     }
-    fireEvent.change(within(dialog).getByPlaceholderText(PLACEHOLDERS[field as keyof typeof PLACEHOLDERS]), {
+    fireEvent.change(within(dialog).getByLabelText(LABELS[field as keyof typeof LABELS]), {
       target: { value },
     });
   }
@@ -263,6 +269,22 @@ describe('AdminConfigPage (/admin/config)', () => {
       expect(within(drawer).getByPlaceholderText(PLACEHOLDERS.key)).toHaveValue('');
       expect(within(drawer).getByPlaceholderText(PLACEHOLDERS.key)).toBeEnabled();
       expect(within(drawer).getByRole('combobox')).toHaveValue('string');
+    });
+
+    it('names every control from its visible label', async () => {
+      renderWithQuery(<AdminConfigPage />);
+      await screen.findByText('rate_limit.rps');
+
+      fireEvent.click(screen.getByRole('button', { name: /New config/ }));
+      const drawer = await screen.findByRole('dialog', { name: 'New config entry' });
+
+      // Each Field renders a <label htmlFor> pointing at its control's id, so a
+      // screen reader announces the same name a sighted operator reads. This is
+      // what a `label` without `for` a11y rule flags.
+      expect(within(drawer).getByLabelText(LABELS.key)).toBeInTheDocument();
+      expect(within(drawer).getByLabelText(LABELS.type)).toBeInTheDocument();
+      expect(within(drawer).getByLabelText(LABELS.value)).toBeInTheDocument();
+      expect(within(drawer).getByLabelText(LABELS.description)).toBeInTheDocument();
     });
 
     it('keeps save disabled until both key and value are present', async () => {
