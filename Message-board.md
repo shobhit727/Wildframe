@@ -9664,3 +9664,64 @@ record a false-positive dismissal. Three routes, all owner calls:
 
 I am not picking between these unilaterally — (1) is a setup change, (2) trades
 a lint for a token-revocation hole, and (3) means the branch does not merge.
+
+## 2026-10-13 — first triage wave: 12 issues fixed and closed, 4 verdicts recorded
+
+Dispatched 5 subagents over **disjoint file ownership** (billing /
+media-pipeline / moderation+content / api-gateway / apps-web) so they could not
+collide. All results independently re-verified by me before committing — the
+first run of the suites showed errors in three services that turned out to be a
+**wrong venv**, not a regression: `stripe` and `psycopg2` were absent from the
+auth-service venv. Re-run against the correct per-service venvs, every suite
+matched the agent's claimed number exactly.
+
+**Fixed and closed (12).** Each has a red/green test; the red output names the
+actual defect.
+
+| # | Sev | What |
+|---|---|---|
+| 842 | CRITICAL | `_handle_invoice_paid` divided by a hardcoded 100; JPY 1000x wrong, BHD 1000x wrong. Now uses the existing `app/core/money.py` minor-unit helpers. Also fixed an uncaught `InvalidOperation` that 500'd poison invoices. |
+| 1000 | CRITICAL | ffmpeg branch reported COMPLETED then deleted the media. **I expected this to be already fixed; it was not.** Contained behind a `durable` storage contract; no S3 adapter exists to add. |
+| 858 | HIGH | `add_cast_member` NULL role. The issue said "invisible on SQLite" — wrong; a characterization test had *pinned* the bug. Verified against real PostgreSQL 15. |
+| 866 | HIGH | `X-Jurisdiction: "US  "` missed the lookup because h11 keeps trailing spaces. Strip-only; unknown codes still fall to `GLOBAL`. |
+| 870 | MEDIUM | dmca counter returned 201 with an error body. |
+| 872 | MEDIUM | moderation guard accepted `" "*40`. |
+| 878 | MEDIUM | ads.py genuinely un-importable — but the feature is *unmounted*, not dead, so nothing was deleted. |
+| 879 | LOW | `age_gate` matched `/maturityx`. |
+| 855 | MEDIUM | `PAYOUT_TRANSITIONS` keyed by states the enum does not have. |
+| 886 | LOW | 5 gateway dead branches, each proven unreachable (256-case matrix diff = 0 changes). |
+| 952 | MEDIUM | audit page conflated three different empty states. |
+| 966 | LOW | admin `Field` label never associated with its control. |
+
+Suite results, re-run by me: billing **889 passed** / 6 skipped, media-pipeline
+**478**, content **446**, moderation **377**, api-gateway **416**, web **866**
+(was 847). ruff and black clean.
+
+**Recorded verdicts without closing (4).** Closing an issue on a premise I only
+partly accept would be worse than leaving it open.
+
+- **#869 NOT_REAL** — `save()` is flush-only, but its single production caller
+  passes an instance from `get_for_update()` on the same session, so it is
+  already persistent. Probed through a fresh session.
+- **#864 NOT_REAL** — `/docs` is 200 in dev and 404 in prod, not 401 everywhere.
+  `AuthenticationMiddleware` is not installed, and its `__call__` is not even
+  ASGI-shaped.
+- **#867 real mechanism, no impact** — `check_rate_limit` has *zero* production
+  callers and never touches concurrency keys, so it is 4 counters not 9. The
+  promotion to `account_id` is load-bearing on the live path.
+- **#887 MISDIAGNOSED** — the streaming file it cites has never existed in this
+  repo, and the media branch it wants deleted is reachable and load-bearing.
+
+**The pattern worth keeping:** three of these were defects whose *tests pinned
+them*. `test_services_gaps.py` asserted the stub path completed — that assertion
+*is* the cause of #1000. `presentational.test.tsx` asserted the label was absent
+— that assertion *is* the cause of #966. A characterization test written to pin
+observed behaviour becomes a ratchet that locks in whatever it first saw. Look
+for a test that fails when the bug is fixed.
+
+**Still open, deliberately:** #999 and the payout schema (owner-deferred), #1003
+(`/health` returns 200 while degraded — needs compose + Helm + 10 services),
+#968 (backend in analytics-service), and #950's second half (`/admin/*` in
+`protectedRoutes`), which is an authorization decision: the refresh cookie is an
+optimistic hint, not authentication, so proxy-gating adds a redirect without
+adding authorization while risking admin lockout.
