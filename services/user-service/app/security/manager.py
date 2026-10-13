@@ -119,11 +119,11 @@ class TokenManager:
         which is bcrypt. SHA-256 is correct here because the preimage is a
         high-entropy signed token, not a low-entropy secret.
         """
-        # codeql[py/weak-sensitive-data-hashing]
         # Suppressed on the same grounds as auth-service TokenManager.hash_token,
         # and this service has no blacklist or refresh-token table at all, so
         # there is nowhere for the digest to be used or leaked. Note: as of this
         # writing this method has no production caller in user-service; only
         # verify_token is used. Recorded in oner-task.md rather than deleting it,
         # so the decision belongs to the owner.
+        # codeql[py/weak-sensitive-data-hashing]
         return hashlib.sha256(token.encode()).hexdigest()

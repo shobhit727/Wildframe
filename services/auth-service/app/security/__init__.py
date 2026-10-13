@@ -289,7 +289,6 @@ class TokenManager:
         which is bcrypt. SHA-256 is correct here because the preimage is a
         high-entropy signed token, not a low-entropy secret.
         """
-        # codeql[py/weak-sensitive-data-hashing]
         # This hashes a high-entropy RS256-signed JWT for at-rest lookup, never a
         # password. All call sites were traced: auth.py:116/393/543 pass the
         # Authorization token or a verification token, services/__init__.py:280
@@ -304,6 +303,7 @@ class TokenManager:
         # get_current_user dependency, i.e. on every authenticated request, to
         # protect a preimage that is already unbrute-forceable (recovering it
         # means forging an RSA signature, not enumerating a dictionary).
+        # codeql[py/weak-sensitive-data-hashing]
         return hashlib.sha256(token.encode()).hexdigest()
 
     @staticmethod

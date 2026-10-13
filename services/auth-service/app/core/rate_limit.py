@@ -272,15 +272,14 @@ def _scope(kind: BucketKind, subject: str) -> str:
     ``str(UUID(...))`` and ``str(ip_address(...))`` are the strings that are
     hashed today and their digests are unchanged.
     """
-    # codeql[py/weak-sensitive-data-hashing]
+    material = f"{kind.value}:{_canonical_subject(kind, subject)}".encode()
     # Not password hashing. This fingerprints a rate-limit bucket so no PII
     # (email, IP) reaches Redis. Every subject is constrained by
     # _SUBJECT_VALIDATORS to a UUID or an IP address before this is reached, and
     # the value is never persisted as a credential. A slow KDF here would be an
     # availability liability for no gain: rate_limit is on the request hot path.
-    return hashlib.blake2s(
-        f"{kind.value}:{_canonical_subject(kind, subject)}".encode(), digest_size=20
-    ).hexdigest()
+    # codeql[py/weak-sensitive-data-hashing]
+    return hashlib.blake2s(material, digest_size=20).hexdigest()
 
 
 def _canonical_subject(kind: BucketKind, subject: str) -> str:

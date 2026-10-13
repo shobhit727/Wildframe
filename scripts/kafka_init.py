@@ -318,13 +318,15 @@ def write_client_properties(path: str, contents: str) -> None:
     printed, and never reaches the host filesystem -- /etc/kafka is not a bind
     mount, so the file lives and dies with the container's writable layer.
     """
-    # codeql[py/clear-text-storage-sensitive-data]
-    # See the docstring: required by the Kafka CLI's interface, and every
-    # mitigation we can apply to the lifetime of that file is applied and
-    # covered by a test.
     previous_umask = os.umask(0o077)
     try:
         with open(path, "w", encoding="utf-8") as handle:
+            # Clear-text storage is required by the Kafka CLI's interface -- it
+            # accepts credentials only via --command-config <file>. See this
+            # function's docstring for the three controls on that file's
+            # lifetime (owner-only mode, write inside the deleting finally, and
+            # SIGTERM converted to an exception) and the tests that hold them.
+            # codeql[py/clear-text-storage-sensitive-data]
             handle.write(contents)
     finally:
         os.umask(previous_umask)
