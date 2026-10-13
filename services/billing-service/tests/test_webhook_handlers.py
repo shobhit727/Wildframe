@@ -461,6 +461,70 @@ class TestInvoicePaid:
 
 
 # ---------------------------------------------------------------------------
+# invoice.paid minor-unit conversion (#842)
+#
+# Stripe sends `total` in *minor units* whose count is a property of the
+# currency, not a universal 100. Dividing by a hardcoded 100 records a 100x
+# error for JPY (0 minor units) and a 1000x error for BHD (3 minor units).
+# ---------------------------------------------------------------------------
+
+
+class TestInvoicePaidCurrencyMinorUnits:
+    @staticmethod
+    def _svc_for(currency: str, total, invoice_id: str = "in_minor"):
+        svc = _service_mock()
+        return svc, _event(
+            "invoice.paid",
+            {
+                "id": invoice_id,
+                "total": total,
+                "currency": currency,
+                "lines": {"data": [{"metadata": {"user_id": str(uuid4())}}]},
+            },
+        )
+
+    async def test_zero_decimal_currency_is_not_divided_by_100(self):
+        # JPY has 0 minor units: a total of 1000 IS 1000 yen, not 10.
+        svc, event = self._svc_for("jpy", 1000)
+        await _handle_invoice_paid(event, svc)
+        svc.inv_repo.create.assert_awaited_once()
+        kwargs = svc.inv_repo.create.call_args.kwargs
+        assert kwargs["amount"] == Decimal("1000")
+        assert kwargs["currency"] == "JPY"
+
+    async def test_two_decimal_currency_still_divides_by_100(self):
+        svc, event = self._svc_for("usd", 799, invoice_id="in_usd")
+        await _handle_invoice_paid(event, svc)
+        assert svc.inv_repo.create.call_args.kwargs["amount"] == Decimal("7.99")
+
+    async def test_three_decimal_currency_divides_by_1000(self):
+        # BHD has 3 minor units: 1000 halala IS 1.000 dinar, not 10.000.
+        svc, event = self._svc_for("bhd", 1000, invoice_id="in_bhd")
+        await _handle_invoice_paid(event, svc)
+        kwargs = svc.inv_repo.create.call_args.kwargs
+        assert kwargs["amount"] == Decimal("1.000")
+        assert kwargs["currency"] == "BHD"
+
+    @pytest.mark.parametrize("total", [None, "", "not-a-number", "12.5.6", []])
+    async def test_unusable_total_is_rejected_without_raising(self, total):
+        # A missing/garbage total is permanent: retrying cannot fix it, so the
+        # handler must acknowledge rather than blow up with InvalidOperation.
+        svc, event = self._svc_for("usd", total, invoice_id="in_poison")
+        await _handle_invoice_paid(event, svc)
+        svc.inv_repo.create.assert_not_awaited()
+
+    async def test_unsupported_currency_is_rejected_without_raising(self):
+        svc, event = self._svc_for("xyz", 1000, invoice_id="in_badcur")
+        await _handle_invoice_paid(event, svc)
+        svc.inv_repo.create.assert_not_awaited()
+
+    async def test_valid_invoice_is_unaffected_by_the_rejection_paths(self):
+        svc, event = self._svc_for("usd", 250, invoice_id="in_ok")
+        await _handle_invoice_paid(event, svc)
+        svc.inv_repo.create.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
 # payment_intent.succeeded
 # ---------------------------------------------------------------------------
 
@@ -1207,6 +1271,37 @@ class TestStripeWebhookEndpoint:
     async def test_settings_currency_is_used_for_the_mismatch_guard(self):
         # The handlers compare against the *configured* currency, not a literal.
         assert settings.DEFAULT_CURRENCY == "USD"
+
+    async def test_invoice_with_poison_total_is_acknowledged_not_retried(self, inbox_service):
+        # A missing total cannot be fixed by retrying. It must close out the
+        # inbox row (200) instead of burning attempts on a permanent 500.
+        app = _app_with(inbox_service)
+        # The real handler runs here, so its invoice repo must be awaitable.
+        inbox_service.inv_repo.get_by_stripe_invoice_id = AsyncMock(return_value=None)
+        inbox_service.inv_repo.create = AsyncMock(side_effect=lambda **kw: SimpleNamespace(**kw))
+        with patch(
+            "app.api.webhook_routes.StripeClient.handle_webhook",
+            return_value={
+                "id": "evt_poison",
+                "type": "invoice.paid",
+                "data": {
+                    "object": {
+                        "id": "in_poison",
+                        "total": None,
+                        "currency": "usd",
+                        "lines": {"data": [{"metadata": {"user_id": str(uuid4())}}]},
+                    }
+                },
+            },
+        ):
+            resp = await _post(app, {"id": "evt_poison"})
+        assert resp.status_code == 200
+        assert resp.json()["handled"] is True
+        # Acknowledged => PROCESSED, not FAILED, so Stripe stops redelivering.
+        inbox_service.webhook_events_repo.complete.assert_awaited_once_with("evt_poison")
+        inbox_service.webhook_events_repo.fail.assert_not_awaited()
+        inbox_service.inv_repo.create.assert_not_awaited()
+        app.dependency_overrides.clear()
 
 
 async def test_stripe_webhook_is_callable_directly(inbox_service):

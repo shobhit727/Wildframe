@@ -27,6 +27,7 @@ import pytest
 from app.models import (
     InvoiceStatus,
     MilestoneStatus,
+    PayoutStatus,
     RefundStatus,
     RevenueTier,
     SubscriptionStatus,
@@ -133,7 +134,7 @@ class TestValidateTransition:
         )
 
     def test_raw_string_keys_are_accepted(self):
-        assert validate_transition("accrued", "paid", PAYOUT_TRANSITIONS) is None
+        assert validate_transition("accrued", "transferring", PAYOUT_TRANSITIONS) is None
 
     def test_disallowed_transition_raises(self):
         with pytest.raises(InvalidStateTransitionError, match="not in"):
@@ -173,6 +174,79 @@ class TestValidateTransition:
     def test_paid_payout_is_terminal(self):
         with pytest.raises(InvalidStateTransitionError):
             validate_transition("paid", "accrued", PAYOUT_TRANSITIONS)
+
+
+# ---------------------------------------------------------------------------
+# PAYOUT_TRANSITIONS must agree with the persisted PayoutStatus enum (#855)
+# ---------------------------------------------------------------------------
+
+
+class TestPayoutTransitionsMatchEnum:
+    def test_every_payout_status_is_a_legal_key(self):
+        # The table gates mutations to *persisted* payout rows. A status the
+        # table does not key can never be the source of a transition, so the
+        # guard would reject every real row rather than guarding anything.
+        missing = {s.value for s in PayoutStatus} - set(PAYOUT_TRANSITIONS)
+        assert not missing, f"PAYOUT_TRANSITIONS is missing enum members: {sorted(missing)}"
+
+    def test_no_key_is_invented_outside_the_enum(self):
+        # Symmetric drift: a table key no row can ever hold is dead weight and
+        # hides the fact that the real vocabulary is unenumerated.
+        extra = set(PAYOUT_TRANSITIONS) - {s.value for s in PayoutStatus}
+        assert not extra, f"PAYOUT_TRANSITIONS has keys outside PayoutStatus: {sorted(extra)}"
+
+    def test_every_target_is_a_payout_status(self):
+        bad = {
+            src: sorted(set(targets) - {s.value for s in PayoutStatus})
+            for src, targets in PAYOUT_TRANSITIONS.items()
+            if set(targets) - {s.value for s in PayoutStatus}
+        }
+        assert not bad, f"PAYOUT_TRANSITIONS has non-enum targets: {bad}"
+
+    @pytest.mark.parametrize("status", list(PayoutStatus))
+    def test_every_enum_member_can_transition_to_itself(self, status):
+        # No-op self-transitions are the idempotent-retry convention every
+        # other table in this module follows.
+        assert validate_transition(status, status, PAYOUT_TRANSITIONS) is None
+
+    @pytest.mark.parametrize("status", list(PayoutStatus))
+    def test_every_enum_member_reaches_a_terminal_state(self, status):
+        # A payout must be able to finish. If a status cannot reach COMPLETED
+        # or FAILED, money accrues into a state that never settles.
+        settled = {PayoutStatus.COMPLETED.value, PayoutStatus.FAILED.value}
+        reachable = {status.value}
+        frontier = [status.value]
+        while frontier:
+            current = frontier.pop()
+            for target in PAYOUT_TRANSITIONS.get(current, ()):
+                if target in settled:
+                    return
+                if target not in reachable:
+                    reachable.add(target)
+                    frontier.append(target)
+        pytest.fail(f"PayoutStatus.{status.name} cannot reach a settled state")
+
+    def test_completed_payout_is_terminal(self):
+        assert PAYOUT_TRANSITIONS[PayoutStatus.COMPLETED.value] == (PayoutStatus.COMPLETED.value,)
+
+    def test_accrued_payout_may_start_a_transfer(self):
+        assert (
+            validate_transition(PayoutStatus.ACCRUED, PayoutStatus.TRANSFERRING, PAYOUT_TRANSITIONS)
+            is None
+        )
+
+    def test_transferring_payout_may_settle_as_completed(self):
+        assert (
+            validate_transition(
+                PayoutStatus.TRANSFERRING, PayoutStatus.COMPLETED, PAYOUT_TRANSITIONS
+            )
+            is None
+        )
+
+    def test_phantom_paid_status_is_rejected(self):
+        # "paid" was never a PayoutStatus; the table used to accept it.
+        with pytest.raises(InvalidStateTransitionError):
+            validate_transition("accrued", "paid", PAYOUT_TRANSITIONS)
 
 
 # ---------------------------------------------------------------------------

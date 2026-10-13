@@ -17,8 +17,13 @@ State machine invariants (#190/#220/#482):
     last_stripe_event_ts prevents stale events from regressing state).
   - Invoice transitions: PENDING -> {PAID, FAILED}; FAILED -> {PAID,
     PENDING}; PAID -> REFUNDED; REFUNDED is terminal.
-  - Tranche/Payout transitions defined in TRANCHE_TRANSITIONS /
-    PAYOUT_TRANSITIONS. All mutations go through ``validate_transition``.
+  - Tranche transitions: LOCKED -> {RELEASED, REVERTED}; RELEASED and
+    REVERTED are terminal.
+  - Payout transitions: ACCRUED -> {TRANSFERRING, FAILED}; TRANSFERRING ->
+    {COMPLETED, FAILED}; FAILED -> TRANSFERRING (retry); COMPLETED is
+    terminal. Keyed by the persisted ``PayoutStatus`` enum.
+  All mutations go through ``validate_transition``, so every table must be
+  keyed by the enum its rows actually persist.
 
 Monetary invariants (#477/#478):
   - All amounts stored as Decimal (exact). Provider boundaries use
@@ -43,6 +48,7 @@ from app.models import (
     MilestoneStatus,
     MilestoneTranche,
     PayoutLedger,
+    PayoutStatus,
     Purchase,
     Refund,
     RefundStatus,
@@ -132,10 +138,21 @@ TRANCHE_TRANSITIONS: Mapping[TrancheStatus, tuple[TrancheStatus, ...]] = {
     TrancheStatus.REVERTED: (TrancheStatus.REVERTED,),
 }
 
-PAYOUT_TRANSITIONS: Mapping[str, tuple[str, ...]] = {
-    "accrued": ("accrued", "paid", "cancelled"),
-    "paid": ("paid",),
-    "cancelled": ("cancelled",),
+PAYOUT_TRANSITIONS: Mapping[PayoutStatus, tuple[PayoutStatus, ...]] = {
+    PayoutStatus.ACCRUED: (
+        PayoutStatus.ACCRUED,
+        PayoutStatus.TRANSFERRING,
+        PayoutStatus.FAILED,
+    ),
+    PayoutStatus.TRANSFERRING: (
+        PayoutStatus.TRANSFERRING,
+        PayoutStatus.COMPLETED,
+        PayoutStatus.FAILED,
+    ),
+    # COMPLETED is terminal: funds moved, nothing further may change the row.
+    PayoutStatus.COMPLETED: (PayoutStatus.COMPLETED,),
+    # FAILED retries by re-attempting the transfer, not by re-accruing.
+    PayoutStatus.FAILED: (PayoutStatus.FAILED, PayoutStatus.TRANSFERRING),
 }
 
 
