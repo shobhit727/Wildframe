@@ -9492,3 +9492,72 @@ remembering that a passing commit message is not evidence about the commit.
 **Still owner decisions, not blocking CI:** the Kafka missing-credentials message
 no longer names the env var; and `npm audit` still reports braces as a dev-only
 high with no upstream patch (documented, guarded, ungated by design).
+
+## 2026-10-12 — "CI/CD is green" was too narrow: CodeQL was still red on #938
+
+I reported CI/CD green off run `38190943055`. That was true of the
+**ci-cd.yml** workflow and nothing else. I had only ever polled that one
+workflow, so I never looked at the code-scanning result that gates the merge.
+The user caught it: CodeQL had not passed. What follows is the whole reason,
+because the cause is structural and will recur.
+
+**Symptom.** `gh pr view 938` reported `CodeQL: FAILURE` and
+`mergeStateStatus: BLOCKED`, while every CodeQL workflow run I could see said
+`success`. The failing check-run lasted 3 seconds
+(01:24:04 -> 01:24:07), had an empty `workflowName`, and its details URL 404s
+against the Actions API. A 3-second failure is not an analysis; it is a
+diff/alert evaluation.
+
+Its actual title was the whole answer:
+
+    6 new alerts including 6 high severity security vulnerabilities
+    View all branch alerts: .../code-scanning?query=pr%3A938+tool%3ACodeQL+is%3Aopen
+
+**Cause.** The 16 open alerts on `audit/fix-open-github-issues` all pointed at
+`apps/web/package-lock.json` and `pnpm-lock.yaml` — the two files the previous
+commit deleted. They were orphaned, not real:
+
+    ci-cd.yml triggers: push -> main|develop, pull_request -> main, workflow_dispatch
+
+The audit branch is neither. So every run was a `pull_request` event and
+`upload-sarif` always targeted `refs/pull/938/merge` (where all alerts were
+already `fixed`). The **branch-head ref never received a code-scanning
+analysis**, so an alert can only leave `open` if a later analysis of the same
+ref no longer reports it — and there was never such an analysis. Deleting a
+file does not close an alert. Trivy's job cannot do it either, because the
+scan that would clear them is the very run that has to happen first.
+
+So the alerts were stuck open against files that no longer existed, the PR's
+CodeQL check read them as "new in this PR", and the merge blocked. Nothing in
+`ci-cd.yml` had regressed.
+
+**Fix, no manual mutation of security state.** Dispatched the existing
+`workflow_dispatch` entry point against the branch ref, run `38325268936`:
+
+    gh workflow run ci-cd.yml --ref audit/fix-open-github-issues
+
+Its Security Scan re-analysed that ref and reported 0 findings. Open alerts on
+`audit/fix-open-github-issues` went 16 -> **0**, and all 18 alerts on that ref
+now read `fixed` with `dismissed_reason` empty — closed by re-analysis, not by
+dismissal or by editing the ruleset.
+
+**Three things every agent should take from this.**
+
+1. "CI is green" means nothing until you have checked *which workflow*. Say
+   the workflow name and the run id, or do not claim it. `gh run list
+   --branch <b> --workflow ci-cd.yml` cannot see a code-scanning verdict;
+   `mergeStateStatus` on the PR can.
+2. A check that reports failures without a workflow name and fails in seconds
+   is an alert-diff check, not an analysis. Read its `output.title` /
+   `output.summary` — `gh api repos/:owner/:repo/check-runs/<id>` — rather than
+   concluding the scanner disagrees with you.
+3. Alerts live on a **ref**, and only a new analysis of that same ref closes
+   them. A `pull_request` upload goes to the merge ref and will never clear the
+   head ref. When a fix removes a file that had alerts, plan for a
+   ref-scoped re-analysis or the alerts stay open forever.
+
+The PR check-run on the previous SHA stays red until a new push re-evaluates
+it; that is expected, and the underlying alerts are already `fixed`.
+
+Recorded in `AGENTS.md` §19.1 alongside the staged-`git add` and
+local-green-vs-CI-environment lessons.
