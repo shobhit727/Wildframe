@@ -9765,3 +9765,74 @@ dated rather than stated flatly:
 `HOW_TO_RUN_TESTS.md`. The other repeated facts (ports, service count, CI job
 list) now each have exactly one home: Caddyfile for ports, `ls services/` for
 the count, `ci-cd.yml` for jobs.
+
+## 2026-10-13 — wave 2: 17 issues closed, 3 left open on purpose. 89 → 60.
+
+Five more subagents over disjoint ownership (root deps+CI / auth / admin+streaming+
+recommendation / docs / scripts+root tests). Every claim re-verified by me first,
+and the re-verification earned its keep twice more:
+
+- Three suites initially reported errors. Wrong venv again — `stripe` and
+  `psycopg2` are absent from the auth-service venv. Against correct per-service
+  venvs every count matched exactly: admin 495, streaming 376, recommendation
+  315, auth 891 passed/1 skipped, contract 89.
+- The new lockfile gate was verified by **planting** a bad lock: a synthetic
+  `0.49b2` + jaeger lock exits 1 naming both, the clean tree exits 0. (My first
+  check read `$?` after a pipe to `tail`, so it reported the gate passing on a
+  deliberately-broken tree. The gate was fine; the test was not.)
+- Docs agent published a "this suite is broken" warning about an
+  IndentationError in auth tests that a concurrent agent then fixed. It
+  re-measured and withdrew it rather than leaving a false claim standing.
+
+**Closed (17):** #977 BLOCKER, #976, #868, #863, #882, #849, #851, #848, #933,
+#874, #926, #1001, #1002, #924, #929, #1004, #902.
+
+**Two findings that changed what the issues claimed:**
+
+1. **#977's core was already fixed but five locks were not.** moderation,
+   notification, recommendation, search and uploads still shipped
+   `opentelemetry-instrumentation-fastapi 0.49b2`, which 500s every
+   `include_router` route — and `poetry check --lock` said **green throughout**,
+   because the constraint arrives via a path dependency and Poetry's
+   content-hash only covers a package's *own* pyproject. A green lock check is
+   not evidence a transitive constraint holds. That is the single most
+   transferable lesson here.
+2. **#908's number was wrong in the direction that makes it ignorable.** It
+   claims 184/1,388 (13.3%) assert nothing. Measured: **61 of 6,985 = 0.9%**.
+   The issue's figure comes from scanning for the literal token `assert`, so
+   ~750 tests that assert via `pytest.raises` / `assert_not_called` were counted
+   as vacuous. A large, alarming, wrong list is a plausible reason a real defect
+   rate got filed and then ignored.
+
+**The detector failed its author's own checks twice** — once letting a mutant
+survive, once reporting **313 instead of 61** with 12 phantoms in a clean tree,
+because it only inspected top-level statements and missed asserts inside
+for/if/with. Caught by reading flagged output, not by trusting the number. It
+now has `--self-test` exiting 3 so a broken detector can never be mistaken for a
+clean tree.
+
+**Left open deliberately, with the reasoning recorded on each:**
+- **#908** — the 61 service-local vacuous tests are hand-off in
+  `tests/contract/VACUOUS_TESTS_BACKLOG.md`, not gated. A count gate over all
+  services would break CI on every fix.
+- **#979** — compose smoke is real and running, but advisory twice over:
+  `continue-on-error: true` *and* absent from every `needs:`. Actual runtime
+  ~7.5 min against a 15-min budget for a 16-image build, so promoting it
+  without more headroom would trade a false green for a flaky red.
+- **#881** — real, but filed against the wrong service (moderation, not admin).
+
+**Owner decisions surfaced, not taken:**
+- **#849** — bcrypt's 72-byte cap. Silent truncation rejected outright (it makes
+  `<password><anything>` authenticate against `<password>`). 422 preserves
+  semantics and invalidates nothing. Pre-hashing removes the limit entirely and
+  is the correct long-term answer, but changes every existing hash and needs a
+  dual-hash migration.
+- **#874** — I kept the `is_active` filter and **deleted** the 403 branches.
+  Making them reachable would create an account-enumeration oracle.
+- **#976** — `ecdsa` and `python-jose` have no upstream fix; removing
+  python-jose means editing `services/*/app/security`, which no one owned.
+
+**Also corrected in passing:** AGENTS.md §20 claims jaeger is "incompatible with
+SDK 1.43.0". The lockfile disproves it — jaeger-thrift 1.21.0 requires
+`opentelemetry-sdk >=1.11,<2.0`. The real reason is EOL. §20 still carries the
+wrong claim; not mine to edit.
