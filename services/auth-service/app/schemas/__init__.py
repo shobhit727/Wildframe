@@ -9,7 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.security import COMMON_PASSWORDS
+from app.security import COMMON_PASSWORDS, PASSWORD_MAX_LENGTH
 
 
 class TokenResponse(BaseModel):
@@ -47,9 +47,27 @@ def validate_password_strength(v: str) -> str:
     passphrases like "correct-horse-battery-staple-42!". A two-class minimum
     blocks single-class passwords and the breach-list check blocks common
     credentials (#164).
+
+    The hard maximum is measured in **bytes**, not characters (#849). bcrypt
+    ignores everything past 72 bytes of input, so 72 bytes is the real ceiling
+    on how much of a password is ever used. Pydantic's ``max_length`` counts
+    characters, which lets a multi-byte password through validation and then
+    raise inside ``PasswordManager.hash_password`` -- where ``/register``
+    answered 400 and ``/change-password`` answered 500. Rejecting here makes it
+    a 422 on both, like every other invalid password.
+
+    We reject rather than truncate. Truncating would make any password that
+    shares its first 72 bytes with an existing one interchangeable, so
+    ``<password><anything>`` would authenticate against ``<password>``.
     """
     if len(v) < 12:
         raise ValueError("Password must be at least 12 characters")
+    encoded_length = len(v.encode("utf-8"))
+    if encoded_length > PASSWORD_MAX_LENGTH:
+        raise ValueError(
+            f"Password cannot be longer than {PASSWORD_MAX_LENGTH} bytes "
+            f"(got {encoded_length}); bcrypt ignores everything past that"
+        )
     classes = sum(
         bool(re.search(pat, v)) for pat in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^A-Za-z0-9]")
     )

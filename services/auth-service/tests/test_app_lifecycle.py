@@ -411,9 +411,116 @@ class TestBodySizeLimit:
         assert response.json() == {"detail": "Request body too large"}
 
 
-# --------------------------------------------------------------------------
-# validation + opaque 500 handler
-# --------------------------------------------------------------------------
+class TestChunkedBodySizeLimit:
+    """#933: the cap must survive the *streaming* path, not just content-length.
+
+    The api-gateway strips ``content-length`` and forwards the body as a chunked
+    async generator, so every proxied request arrives here uncapped by the header
+    check. The streaming guard was deleted at some point and CI stayed green
+    because every other test in ``TestBodySizeLimit`` exercises the header fast
+    path. These drive the raw ASGI ``receive`` channel instead.
+
+    Starlette's sync ``TestClient`` cannot send a chunked body at all (httpx
+    refuses an async iterator on a sync client), so driving ``app(scope, ...,
+    send)`` directly is the only way to reproduce what the gateway sends. It
+    also makes "did the guard stop reading?" exactly measurable, because the
+    test owns the receive channel.
+    """
+
+    MAX_BODY_SIZE = 1048576
+    CHUNK = b"x" * 65536
+
+    @staticmethod
+    def _asgi_call(app, *, chunk, chunks):
+        """POST to /api/v1/auth/login over a chunked body, no content-length.
+
+        Returns ``(status_code, chunks_pulled)``. ``chunks_pulled`` counts how
+        many ``http.request`` messages the application actually asked for.
+        """
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0", "spec_version": "2.3"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "https",
+            "path": "/api/v1/auth/login",
+            "raw_path": b"/api/v1/auth/login",
+            "query_string": b"",
+            "root_path": "",
+            # Deliberately no content-length: this is the transfer-encoding:
+            # chunked case the gateway produces.
+            "headers": [(b"host", b"testserver"), (b"content-type", b"application/json")],
+            "client": ("127.0.0.1", 50000),
+            "server": ("testserver", 443),
+        }
+
+        pulled = 0
+        status = 500
+
+        async def receive():
+            nonlocal pulled
+            if pulled >= chunks:
+                return {"type": "http.disconnect"}
+            pulled += 1
+            return {"type": "http.request", "body": chunk, "more_body": pulled < chunks}
+
+        async def send(message):
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = message["status"]
+
+        _run(app(scope, receive, send))
+        return status, pulled
+
+    def test_chunked_body_with_no_content_length_is_rejected(self, wired_db):
+        chunks = 40  # 2.5 MB, well over the 1 MB cap
+        status, _ = self._asgi_call(create_app(), chunk=self.CHUNK, chunks=chunks)
+
+        assert status == 413
+
+    def test_chunked_guard_stops_reading_before_the_stream_is_drained(self, wired_db):
+        """A 413 is not sufficient evidence on its own.
+
+        A middleware that buffers the entire body and only then rejects it would
+        pass the test above while still being the memory-exhaustion DoS this cap
+        exists to prevent. The streaming guard has to give up early, so the
+        application must never pull all 40 chunks (2.5 MB) to earn the 413.
+        """
+        chunks = 40
+        status, pulled = self._asgi_call(create_app(), chunk=self.CHUNK, chunks=chunks)
+
+        assert status == 413
+        assert pulled < chunks, (
+            f"the guard drained the whole stream ({pulled}/{chunks} chunks) before "
+            "rejecting; it must stop reading once the cap is passed"
+        )
+
+    def test_chunked_body_under_the_cap_is_not_rejected(self, wired_db):
+        """A small chunked body must still get past the guard."""
+        # One chunk well under the cap: the guard must hand it through, and the
+        # request then fails downstream on a malformed JSON body -- anything but
+        # 413 proves the cap did not fire.
+        status, pulled = self._asgi_call(create_app(), chunk=b'{"e"', chunks=1)
+
+        assert pulled == 1
+        assert status != 413
+
+    def test_chunked_body_just_under_the_cap_is_not_rejected(self, wired_db):
+        """The boundary: 16 chunks is exactly 1 MiB, which must be allowed."""
+        chunk = b"x" * 65536
+        chunks = self.MAX_BODY_SIZE // len(chunk)
+
+        status, _ = self._asgi_call(create_app(), chunk=chunk, chunks=chunks)
+
+        assert status != 413
+
+    def test_chunked_body_one_byte_over_the_cap_is_rejected(self, wired_db):
+        """One byte past the cap must still be rejected, not rounded away."""
+        chunk = b"x" * 65536
+        # 16 full chunks = exactly 1 MiB, plus one more byte.
+        status, _ = self._asgi_call(create_app(), chunk=chunk, chunks=17)
+
+        assert status == 413
 
 
 class TestExceptionHandlers:

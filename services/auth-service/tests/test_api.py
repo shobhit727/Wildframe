@@ -126,6 +126,54 @@ class TestAuthEndpoints:
 
         assert response.status_code == 422
 
+    @pytest.mark.parametrize(
+        ("password", "why"),
+        [
+            # 70 characters but 80 UTF-8 bytes: a realistic accented passphrase.
+            ("Aa1!" + "correct-horse-battery-staple-" * 2 + "éééééééééé", "accents"),
+            # 30 characters but 108 bytes.
+            ("Aa1!" + "\U0001f600" * 26, "emoji"),
+        ],
+    )
+    def test_register_password_over_the_byte_cap_is_422_not_500(self, client, password, why):
+        """#849: the 72-byte bcrypt cap must be enforced at the request boundary.
+
+        ``PASSWORD_MAX_LENGTH`` is 72 *bytes*, because bcrypt truncates at 72
+        bytes -- but Pydantic's ``max_length`` counts *characters*. A password
+        with multi-byte characters therefore sailed through schema validation
+        and then raised ``ValueError`` inside ``PasswordManager.hash_password``.
+        ``AuthService.register`` hashes outside its try block, so the caller
+        got a 500 for what is plainly invalid input.
+
+        It must be a 422, and it must be rejected rather than silently
+        truncated: two passwords sharing their first 72 bytes are
+        interchangeable under bcrypt, so truncating would let
+        ``<password><anything>`` authenticate against ``<password>``.
+        """
+        assert len(password) <= 72, "must stay under the character cap to isolate the byte cap"
+        assert len(password.encode("utf-8")) > 72
+
+        response = client.post(
+            "/api/v1/auth/register",
+            json={"email": f"{why}@example.com", "password": password},
+        )
+
+        assert response.status_code == 422, response.text
+        # The message has to name the real limit, or the client cannot act on it.
+        assert "72 bytes" in response.text
+
+    def test_register_password_at_exactly_the_byte_cap_is_accepted(self, client):
+        """The boundary itself must still work -- 72 bytes exactly is allowed."""
+        password = "Aa1!" + "x" * 68  # 72 chars, 72 bytes
+        assert len(password.encode("utf-8")) == 72
+
+        response = client.post(
+            "/api/v1/auth/register",
+            json={"email": "exactcap@example.com", "password": password},
+        )
+
+        assert response.status_code == 201, response.text
+
     def test_login_success(self, client):
         """Test successful login."""
         # Register user first

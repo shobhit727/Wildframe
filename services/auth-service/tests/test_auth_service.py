@@ -842,19 +842,25 @@ class TestLoginRemainingBranches:
         assert exc_info.value.status_code == 401
         assert exc_info.value.detail == "Invalid email or password"
 
-    async def test_stored_naive_lock_raises_a_type_error_instead_of_429(
+    async def test_stored_naive_lock_is_429_not_a_type_error(
         self, service, test_user, test_session
     ):
-        """BUG: the locked-account 429 is unreachable through the database.
+        """#848: the locked-account 429 must survive a real database round trip.
 
-        ``users.locked_until`` is a naive column (AGENTS.md: TIMESTAMP WITHOUT
-        TIME ZONE), so a stored lock reads back without tzinfo. ``login`` then
-        evaluates ``user.locked_until > datetime.now(UTC)``
-        (app/services/__init__.py:128) and raises
-        ``TypeError: can't compare offset-naive and offset-aware datetimes`` —
-        a 500 on the login path instead of the intended 429. ``User.is_locked``
-        normalises tzinfo before comparing; ``login`` does not. Asserted as-is;
-        not fixed here.
+        ``users.locked_until`` is stored as a naive timestamp, so a lock read
+        back through the repository arrives without tzinfo. ``login`` used to
+        evaluate ``user.locked_until > datetime.now(UTC)`` directly
+        (app/services/__init__.py), raising
+        ``TypeError: can't compare offset-naive and offset-aware datetimes`` --
+        a 500 on the login path instead of the intended 429, which also
+        skipped the ``locked`` audit row. ``User.is_locked`` already normalises
+        tzinfo before comparing; ``login`` must use it rather than re-deriving
+        the comparison by hand.
+
+        This drives the real ``UserRepository`` against a real database, which
+        is what makes the stored (naive) value reach ``login``. A mocked
+        repository that hands over a tz-aware ``locked_until`` cannot see this
+        defect at all.
         """
 
         user = await service.user_repo.get_by_email(test_user.email)
@@ -866,11 +872,53 @@ class TestLoginRemainingBranches:
         reloaded = await service.user_repo.get_by_email(test_user.email)
         assert reloaded.locked_until.tzinfo is None
 
-        with pytest.raises(TypeError, match="offset-naive and offset-aware"):
+        with pytest.raises(HTTPException) as exc_info:
             await service.login(
                 UserLoginRequest(email=test_user.email, password="testpass123"),
                 ip_address="1.1.1.1",
             )
+
+        assert exc_info.value.status_code == 429
+        assert "temporarily locked" in exc_info.value.detail
+
+    async def test_expired_naive_lock_does_not_block_login(self, service, test_user, test_session):
+        """The mirror image: a naive lock in the past must not lock the account out.
+
+        Without the normalisation a stale naive lock would either raise or be
+        misread, so this pins the false branch of the same comparison.
+        """
+        from sqlalchemy import select
+
+        from app.models import LoginAudit
+
+        user = await service.user_repo.get_by_email(test_user.email)
+        user.locked_until = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=5)
+        await service.user_repo.commit()
+
+        reloaded = await service.user_repo.get_by_email(test_user.email)
+        assert reloaded.locked_until.tzinfo is None
+        assert reloaded.is_locked is False
+
+        # Fails at the password check (the fixture password is deliberately
+        # wrong below), which proves the lock gate let the request through.
+        with pytest.raises(HTTPException) as exc_info:
+            await service.login(
+                UserLoginRequest(email=test_user.email, password="wrong-password-here"),
+                ip_address="1.1.1.1",
+            )
+
+        assert exc_info.value.status_code == 401
+        assert "temporarily locked" not in exc_info.value.detail
+
+        statuses = [
+            row.status
+            for row in (
+                await test_session.execute(
+                    select(LoginAudit).where(LoginAudit.user_id == test_user.id)
+                )
+            ).scalars()
+        ]
+        assert "locked" not in statuses
 
     async def test_locked_account_is_429_when_the_value_is_tz_aware(
         self, service, test_user, test_session

@@ -271,6 +271,12 @@ def create_app() -> FastAPI:
     # Request body size cap (#517): reject oversized payloads before parsing.
     MAX_BODY_SIZE = 1048576  # bytes
 
+    def _too_large() -> JSONResponse:
+        return JSONResponse(
+            content={"detail": "Request body too large"},
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        )
+
     @app.middleware("http")
     async def limit_body_size(request: Request, call_next):
         content_length = request.headers.get("content-length")
@@ -286,9 +292,10 @@ def create_app() -> FastAPI:
 
         raw_receive = request._receive
         total = 0
+        overflowed = False
 
         async def _bounded_stream() -> AsyncGenerator[bytes, None]:
-            nonlocal total
+            nonlocal total, overflowed
             while True:
                 message: Message = await raw_receive()
                 if message["type"] != "http.request":
@@ -296,6 +303,9 @@ def create_app() -> FastAPI:
                 chunk: bytes = message.get("body", b"")
                 total += len(chunk)
                 if total > MAX_BODY_SIZE:
+                    # Raise to abandon the read immediately -- buffering the rest
+                    # is exactly the memory-exhaustion this cap exists to stop.
+                    overflowed = True
                     raise HTTPException(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                         detail="Request body too large",
@@ -315,7 +325,28 @@ def create_app() -> FastAPI:
             return {"type": "http.request", "body": chunk, "more_body": True}
 
         request._receive = _receive
-        return await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            # #933: raising from the receive channel does not reach the client
+            # as a 413. The read happens downstream, inside an anyio task
+            # group, so the HTTPException arrives at FastAPI's body parser
+            # wrapped in ExceptionGroup(s); `except HTTPException` there does
+            # not match, and it substitutes a generic
+            # 400 "There was an error parsing the body".
+            if not overflowed:
+                raise
+            return _too_large()
+
+        # The 400 above is turned into a response by the exception middleware,
+        # so it usually arrives here rather than as a raise -- and a body under
+        # the cap still returns its own response. `overflowed` is the only
+        # thing that distinguishes the two: when it is set the downstream result
+        # was produced from a body we abandoned mid-stream, so it is not a
+        # meaningful answer and must be replaced.
+        if overflowed:
+            return _too_large()
+        return response
 
     # register_metrics=False: this service registers its own token-gated
     # /metrics below, and the SDK's public route would shadow it.

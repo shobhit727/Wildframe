@@ -195,8 +195,10 @@ class TestVerifyDsarIdentity:
                 headers={"Authorization": "Bearer not.a.jwt"},
             )
 
-        assert response.status_code in (401, 403)
-        assert response.json()["detail"] in {"Missing auth", "User mismatch"}
+        # A token that will not decode is an invalid *credential* (401), not a
+        # subject mismatch (403) -- the caller never proved who they are.
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid or expired token"
 
     def test_token_for_a_different_user_is_403(self, client_for):
         """The DSAR gate: possession of *a* valid token is not enough."""
@@ -214,63 +216,51 @@ class TestVerifyDsarIdentity:
         assert response.status_code == 403
         assert response.json()["detail"] == "User mismatch"
 
-    def test_refresh_token_produces_a_500_instead_of_a_401(self, client_for):
-        """BUG: a non-access token makes this route raise instead of refuse.
+    @pytest.mark.parametrize("token_kind", ["refresh", "mfa_challenge", "admin_step_up"])
+    def test_non_access_token_is_401_not_500(self, client_for, token_kind):
+        """#851: a token-type mismatch must be refused, not raise.
 
         ``TokenManager.verify_token`` deliberately re-raises ``JWTError`` when
-        the claim type does not match (``app/security/__init__.py:289-290``), and
-        every other call site wraps it (``auth.get_current_user``,
-        ``auth.verify_email``, ``auth.logout``). ``dsar_verify.py:32`` does not,
-        so presenting a refresh token to ``POST /dsar/verify`` returns 500
-        rather than 401. Asserted as-is; not fixed here.
+        the claim type does not match (``app/security/__init__.py``), and every
+        other call site wraps it (``auth.get_current_user``, ``auth.verify_email``,
+        ``auth.logout``). ``dsar_verify.py`` did not, so presenting a refresh,
+        MFA-challenge or step-up token to ``POST /dsar/verify`` returned 500 --
+        an unhandled server error for what is simply an unauthenticated
+        request. It must be 401, like every other call site.
+
+        ``raise_server_exceptions=False`` is deliberate: it makes an uncaught
+        exception surface as a 500 response instead of propagating, so this test
+        cannot pass by "the exception never happened".
         """
         user_id = uuid.uuid4()
-        refresh_token = TokenManager.create_refresh_token(user_id)
+        make_token = {
+            "refresh": lambda: TokenManager.create_refresh_token(user_id),
+            "mfa_challenge": lambda: TokenManager.create_mfa_challenge_token(
+                user_id, "dsar@example.com"
+            ),
+            "admin_step_up": lambda: TokenManager.create_admin_step_up_token(
+                user_id, "dsar@example.com", 0, ["pwd"]
+            ),
+        }[token_kind]
         session = _fake_session()
 
         with client_for(session, raise_server_exceptions=False) as client:
             response = client.post(
                 "/dsar/verify",
                 json=_payload(user_id),
-                headers={"Authorization": f"Bearer {refresh_token}"},
+                headers={"Authorization": f"Bearer {make_token()}"},
             )
 
-        assert response.status_code == 500
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid or expired token"
 
-    def test_mfa_challenge_token_produces_a_500_instead_of_a_401(self, client_for):
-        """Same uncaught-JWTError path as the refresh token above."""
-        user_id = uuid.uuid4()
-        challenge = TokenManager.create_mfa_challenge_token(user_id, "dsar@example.com")
-        session = _fake_session()
-
-        with client_for(session, raise_server_exceptions=False) as client:
-            response = client.post(
-                "/dsar/verify",
-                json=_payload(user_id),
-                headers={"Authorization": f"Bearer {challenge}"},
-            )
-
-        assert response.status_code == 500
-
-    def test_admin_step_up_token_produces_a_500_instead_of_a_401(self, client_for):
-        user_id = uuid.uuid4()
-        step_up = TokenManager.create_admin_step_up_token(user_id, "dsar@example.com", 0, ["pwd"])
-        session = _fake_session()
-
-        with client_for(session, raise_server_exceptions=False) as client:
-            response = client.post(
-                "/dsar/verify",
-                json=_payload(user_id),
-                headers={"Authorization": f"Bearer {step_up}"},
-            )
-
-        assert response.status_code == 500
-
-    def test_wrong_audience_token_is_refused_with_403(self, client_for):
-        """A wrong-audience token decodes to None, so the subject check fails.
+    def test_wrong_audience_token_is_refused_with_401(self, client_for):
+        """A wrong-audience token decodes to None, so it is an invalid credential.
 
         Unlike a type mismatch, ``JWTError("Invalid audience")`` is swallowed by
-        ``TokenManager.verify_token`` and becomes ``None`` -> 403.
+        ``TokenManager.verify_token`` and becomes ``None``. That is the same
+        "this token does not authenticate you" answer every other call site
+        gives for a ``None`` payload, so it is a 401 here too.
         """
         from jose import jwt
 
@@ -299,8 +289,8 @@ class TestVerifyDsarIdentity:
                 headers={"Authorization": f"Bearer {token}"},
             )
 
-        assert response.status_code == 403
-        assert response.json()["detail"] == "User mismatch"
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid or expired token"
 
     def test_expired_access_token_is_refused(self, client_for):
         user_id = uuid.uuid4()

@@ -260,6 +260,58 @@ class TestChangePasswordEdgeCases:
 
         assert response.status_code == 422
 
+    @pytest.mark.parametrize(
+        ("new_password", "why"),
+        [
+            ("Aa1!" + "correct-horse-battery-staple-" * 2 + "éééééééééé", "accents"),
+            ("Aa1!" + "\U0001f600" * 26, "emoji"),
+        ],
+    )
+    def test_change_password_over_the_byte_cap_is_422_not_500(
+        self, client, registered, new_password, why
+    ):
+        """#849: this is where the 500 in the issue report actually reproduces.
+
+        ``/register`` wraps ``hash_password`` in a ``ValueError`` handler that
+        answers 400, but ``/change-password`` has only a blanket
+        ``except Exception`` -> 500. A password over bcrypt's 72-*byte* limit
+        that still satisfies the 72-*character* schema limit therefore reached
+        ``hash_password`` and turned a password change into a server error.
+
+        The correct answer is 422, like every other rejected password on this
+        endpoint -- it is client input, not a server fault.
+        """
+        assert len(new_password) <= 72
+        assert len(new_password.encode("utf-8")) > 72
+
+        response = client.post(
+            "/api/v1/auth/change-password",
+            json={"current_password": "SecurePass123!", "new_password": new_password},
+            headers=registered["headers"],
+        )
+
+        assert response.status_code == 422, response.text
+        assert "72 bytes" in response.text
+
+    def test_over_byte_cap_password_change_leaves_the_old_password_working(
+        self, client, registered
+    ):
+        """A rejected password change must not half-apply."""
+        over_cap = "Aa1!" + "\U0001f600" * 26
+
+        response = client.post(
+            "/api/v1/auth/change-password",
+            json={"current_password": "SecurePass123!", "new_password": over_cap},
+            headers=registered["headers"],
+        )
+        assert response.status_code == 422
+
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"email": "gapfill@example.com", "password": "SecurePass123!"},
+        )
+        assert login.status_code == 200
+
 
 # ==========================================================================
 # validate_password_strength — the NIST-style rules
