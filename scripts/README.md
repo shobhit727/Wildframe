@@ -16,6 +16,7 @@ Run these from the **repo root** (they resolve `playwright-core` from there or f
 | `verify-csp-nonce.mjs` | Do the CSP nonces actually reach the rendered scripts? |
 | `compose-smoke.sh` | Does the whole stack come up, and do real routes answer? |
 | `kafka_init.py --print-plan` | Which topics and per-service ACLs should the broker have? |
+| `find_vacuous_tests.py` | Which tests assert nothing, and therefore cannot fail? |
 
 All are read-only against the API except `auth-flow-check.mjs`, which creates two
 throwaway accounts per run (`agent-api-*` and `agent-ui-*` at `example.com`).
@@ -169,6 +170,81 @@ Two errors that look identical and are not: with no ACL, `kafka-topics
 and a producer gets `TOPIC_AUTHORIZATION_FAILED` whether or not the topic
 exists. The authorization check runs before the topic lookup, so "denied" masks
 "missing". `tests/test_kafka_init.py` guards both halves.
+
+---
+
+## `find_vacuous_tests.py`
+
+Finds test functions that assert nothing, so a refactor can delete the behaviour
+under test and CI stays green. Issue #908.
+
+```bash
+python scripts/find_vacuous_tests.py                  # whole repo
+python scripts/find_vacuous_tests.py --root tests      # one subtree
+python scripts/find_vacuous_tests.py --list            # file:line only
+python scripts/find_vacuous_tests.py --report json     # machine-readable
+python scripts/find_vacuous_tests.py --severity decorative
+python scripts/find_vacuous_tests.py --self-test       # verify the detector
+```
+
+Exit codes: `0` clean · `1` findings above threshold · `2` usage error · `3`
+`--self-test` failed, so the verdict is not evidence. `--max-vacuous N` exits 0
+while the count is `<= N`, for gating a tree that is not clean yet.
+
+**Run `--self-test` after editing it.** A vacuous-test detector that stops
+detecting reports "0 findings", which reads as good news — the same failure mode
+the script exists to catch, one level up.
+
+### `assert` is not the only assertion syntax, and getting that wrong is the whole trap
+
+A token scan — "does the body contain `assert`?" — reports **817 of 6,976
+tests (11.7%)** on this branch. Issue #908 quoted 184/1,388 (13.3%), which is
+the same ratio, so its number almost certainly came from that scan. It is not a
+count of tests that cannot fail, because of what the other 817 assert through:
+
+| mechanism | count | example |
+|---|---|---|
+| `assert` statement | 6,150 | `assert user.id == actor` |
+| `pytest.raises` / `pytest.fail` | 602 | `with pytest.raises(BillingError):` |
+| `unittest.mock` / `TestCase` `.assert*` | 145 | `svc.subscribe.assert_not_awaited()` |
+| same-module helper | 10 | `_assert_valid(x)` |
+| **asserts nothing** | **61** | `await _enforce_auth_version(...)` |
+
+`svc.subscribe.assert_not_awaited()` raises `AssertionError` like any other
+assert. Count those as vacuous and you get a list that is large, alarming and
+wrong — which is the likely reason a real 0.9% defect rate was reported as
+13.3% and then ignored. The real rate is **61 / 6,976 = 0.9%**.
+
+Two consequences for anyone changing this script:
+
+- Removing mock/`pytest.raises` recognition from `_is_pytest_assert` or
+  `_is_mock_or_unittest_assert` inflates the number by ~750 overnight.
+  `tests/contract/test_no_vacuous_tests.py` pins both.
+- `def test_app` decorated `@pytest.fixture` is **not a test**. Several suites
+  name the app-building fixture that way. Counting them is a false positive
+  against code pytest never runs, and it inflates the denominator.
+
+### What it cannot see
+
+Helper resolution is same-module by default (`--follow-imports` widens it), and
+assertions inside a **fixture** are not credited to the test that uses it. A
+test that delegates all of its checking elsewhere is reported vacuous. That
+direction is deliberate: the tool under-reports rather than accuses.
+
+### Reading the output
+
+The severity tiers are ranked by how easily a reviewer dismisses a finding, not
+by how often it occurs:
+
+- `decorative` — the body is one statement or a docstring. An obvious
+  placeholder; cheap to fix.
+- `unasserted` — a substantial body that runs real code and asserts nothing.
+  **This is the dangerous one.** `test_matching_auth_version_is_accepted` builds
+  a mock client, patches the transport, calls the function — and proves nothing,
+  because "does not raise" is not an assertion. Delete the body and it still
+  passes.
+- `swallowed` — an assertion *is* present but a bare `except:` or
+  `except Exception:` can discard it, so the test passes either way.
 
 ---
 
