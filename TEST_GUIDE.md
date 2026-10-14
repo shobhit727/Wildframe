@@ -1,3 +1,13 @@
+> [!WARNING]
+> **Historical document — superseded, dated the pre-2026-08 layout.** Kept only for project
+> history. It is **not** a current reference: its service counts, test counts,
+> ports, paths and commands do not describe the repo as it stands.
+>
+> **Use instead:** [`README.md`](README.md) (overview),
+> [`AGENTS.md`](AGENTS.md) (how it is actually built),
+> [`STATUS.md`](STATUS.md) (current status),
+> [`DOCS_INDEX.md`](DOCS_INDEX.md) (which document is authoritative for what).
+
 # 🧪 Wildframe Testing Guide
 
 ## Quick Start - Running Tests

@@ -9725,3 +9725,43 @@ for a test that fails when the bug is fixed.
 `protectedRoutes`), which is an authorization decision: the refresh cookie is an
 optimistic hint, not authentication, so proxy-gating adds a redirect without
 adding authorization while risking admin lockout.
+
+---
+
+## Documentation audit pass — issues #923, #924, #925, #926, #928, #929, #1001, #1002, #1004
+
+**Files (markdown only, no code/config/CI touched, nothing committed):**
+`README.md`, `STATUS.md`, `SECURITY.md`, `DOCS_INDEX.md`, `HOW_TO_RUN_TESTS.md`,
+`ONBOARDING.md`, `QUICKSTART.md`, `TEST_GUIDE.md`, `SECURITY_AUDIT_FIXES.md`,
+`AUDIT_FIX_SUMMARY.md`, `CLOSED_ISSUES_AUDIT.md`, `CLOSED_ISSUES_AUDIT_FULL.md`,
+`web_audit_report.md`, `PROJECT_MEMORY/12_Todo_List_Backlog.md`, and
+`docs/{API_DOCUMENTATION,ARCHITECTURE,COMPLIANCE_MASTER_PLAN,DATABASE_SCHEMA,
+DEPLOYMENT_GUIDE,DEVELOPMENT,DOCUMENTATION_GUIDE,FRONTEND_ARCHITECTURE,GLOSSARY,
+INDEX,OPERATIONS,OVERVIEW,QUICKSTART,QUICK_LOCAL_SETUP,SERVICE_ARCHITECTURE_PATTERN,
+TEST_GUIDE,TIMEOUT_ORDERING,WHATS_INCLUDED}.md`.
+**Not touched:** `skills/**`, `apps/web/**`, and the four root helper shell
+scripts (`run_tests.sh`, `run_all_tests.sh`, `start_services.sh`,
+`backend-quickstart.sh`) — owned elsewhere; each is now flagged in the docs
+that recommend them.
+
+**Counts are now canonical in `HOW_TO_RUN_TESTS.md` and dated.** Re-measured
+2026-10-14: 6,943 backend (SDK on `PYTHONPATH`, CI shape), 795 SDK, 84 contract
+across 12 files, 110 integration across 8 modules, 866 vitest across 46 files,
+122 Playwright across 10 spec files, **17** CI jobs, 85% coverage floor.
+
+**Two facts moved under me while I worked** — both are the reason the docs are
+dated rather than stated flatly:
+1. `ci-cd.yml` went from 16 to 17 jobs mid-pass (`lockfile-integrity` added by
+   another agent). Re-counted; all five mentions updated.
+2. `services/auth-service/tests/test_auth_service.py` had an `IndentationError`
+   at line 884 — unparseable, so the whole module was uncollectable. Another
+   agent fixed it partway through; I had already published a "this suite is
+   broken" warning, so I re-measured (auth-service 864 → 877) and replaced the
+   warning with the real remaining caveat (`tests/test_telemetry.py` needs
+   `opentelemetry-exporter-otlp-proto-grpc`, which CI installs and this
+   measurement environment did not).
+
+**Do not copy a test count out of any other document into a new one.** Link to
+`HOW_TO_RUN_TESTS.md`. The other repeated facts (ports, service count, CI job
+list) now each have exactly one home: Caddyfile for ports, `ls services/` for
+the count, `ci-cd.yml` for jobs.

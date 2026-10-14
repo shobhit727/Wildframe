@@ -38,37 +38,46 @@ Never include passwords, API keys, access tokens, private user data, production 
 
 ---
 
-## Known issues (public, tracked)
+## Resolved security issues (were public, now fixed)
 
-These are disclosed here because they are already public in the repository's own
-issue tracker. They are listed so an operator can assess exposure without
-reading 900+ issues.
+These were disclosed here because they were public in the repository's own
+issue tracker. Both are **closed**; they are listed so an operator can see what
+happened and check that the fix is still holding, not because exposure
+remains. For anything currently open, read the tracker.
 
-### Authentication bypass via legacy HS256 verification — #941
+### ~~Authentication bypass via legacy HS256 verification~~ — #941 — **FIXED**
 
-**Status: open. Treat as a release blocker for any shared or production
-deployment.**
+**Status: fixed, closed 2026-09-28.** Retained here because the incident is
+worth remembering, not because the vulnerability is live.
 
-auth-service signs **RS256** and publishes JWKS. Eight services still verify
-with the legacy path — inline `jwt.decode(token, settings.JWT_SECRET_KEY,
-algorithms=["HS256"])` — and the shared secret is committed to the repository.
-An attacker who has read the repo can mint an HS256 token carrying any `sub` and
-`role: "admin"`, and those services accept it. The same services also reject
-genuine RS256 tokens, so the split breaks legitimate authentication too.
+The original report: eight services verified tokens with inline
+`jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])` against a
+shared secret that was committed to the repository, so anyone with a clone
+could mint a token carrying any `sub` and `role: "admin"`.
 
-Affected: `analytics`, `creators`, `media-pipeline`, `notification`,
-`recommendation`, `search`, `uploads`, `content`. Using scheme A:
-`admin-service`, `streaming-service`.
+**Current state, verified 2026-10-14:**
 
-**Operator guidance until it is fixed:** do not expose this stack on an
-untrusted network, and prefer an environment that fails closed — an unset
-`JWT_SECRET_KEY` yields `503` (no authentication possible) rather than accepting
-the committed default. Do not rely on this as a mitigation; it is a stop-gap
-only. See `docs/ARCHITECTURE.md` → *Token Verification Schemes*.
+- There are exactly three `jwt.decode` call sites outside tests, and all three
+  pass a **JWK resolved from the JWKS by `kid`** — never a shared secret:
+  `packages/sdk/wildframe_auth/verifier.py`,
+  `services/billing-service/app/core/jwt_verifier.py`, and
+  `services/auth-service/app/security/__init__.py` (the issuer).
+- The `algorithms` set is closed to `{"RS256"}` in every verifier, and the
+  header `alg` is checked before the signature, so `alg: none` / HS256
+  substitution fails.
+- `tests/contract/test_no_shared_secret_jwt_verification.py` probes every
+  service for exactly this property. **17 tests, all passing** — this is the
+  regression test that keeps it fixed.
 
-### Cleartext full-API listener in the dev stack — #975
+`JWT_SECRET_KEY` still appears in `deployments/docker-compose.dev.yml` and is
+still validated against a `KNOWN_INSECURE_JWT_SECRETS` denylist, but it is no
+longer used for verification. See `docs/ARCHITECTURE.md` →
+*Token Verification — single scheme (JWKS/RS256)*.
 
-`infrastructure/caddy/Caddyfile` binds `http://:8080`, which serves the entire
-API without TLS on **every** interface. HSTS does not apply over plain HTTP.
-Dev-stack only, but it is the same network developers use real credentials on.
+### ~~Cleartext full-API listener in the dev stack~~ — #975 — **FIXED**
 
+**Status: fixed, issue closed.** `infrastructure/caddy/Caddyfile` previously
+bound `http://:8080`, serving the whole API in cleartext on every interface.
+It now binds `http://localhost:8080` — loopback only, and explicitly labelled
+in the file as a dev-only entry for tooling that cannot trust the self-signed
+cert. HSTS is irrelevant to it because it is not reachable off-host.

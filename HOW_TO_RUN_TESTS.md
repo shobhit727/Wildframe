@@ -1,6 +1,19 @@
 # How to Run Tests
 
-**Current State**: Unit/route tests for all 15 microservices (**6,217** tests), the shared SDK (**694**), the frontend (**805** vitest across 44 files), Playwright E2E (**119** across 9 files / 15 routes), a contract suite (`tests/contract`, **24** tests), and a live-stack integration suite (`tests/integration/`, 110 tests). The 15 service suites, the SDK, and the frontend suite are green. The contract suite has **one known failure** — see §2a. The integration suite needs the dockerized stack running and skips itself otherwise.
+**Current State**: Unit/route tests for all 15 microservices (**6,943** collected), the shared SDK (**795**), the frontend (**866** vitest across 46 files), Playwright E2E (**122** across 10 files / 15 routes), a contract suite (`tests/contract`, **84** tests across 12 files), and a live-stack integration suite (`tests/integration/`, 110 tests across 8 modules). The contract suite is green. The integration suite needs the dockerized stack running and skips itself otherwise.
+
+> **Every number in this file was re-measured on 2026-10-14** against
+> `audit/fix-open-github-issues`. Counts move every time a test lands — the
+> Test Stats table below is dated for exactly that reason, and it also gives
+> the command that regenerates each row. Do not copy a count from here into
+> another document; link to this file instead.
+>
+> **One measurement caveat.** `auth-service` reports 877 collected *excluding*
+> `tests/test_telemetry.py` (15 tests), which cannot be imported in an
+> environment without `opentelemetry-exporter-otlp-proto-grpc` — a declared
+> dependency in `services/auth-service/pyproject.toml` that CI installs. On a
+> correctly provisioned machine that service collects 892. Every other figure
+> here was collected with the SDK on `PYTHONPATH`, matching CI.
 
 ---
 
@@ -25,7 +38,7 @@ shadowed `app.*` imports.
 ```bash
 # All 15 services
 for svc in services/*/; do
-  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+  (cd "$svc" && PYTHONPATH="$PWD" pytest tests --asyncio-mode=auto) || exit 1
 done
 
 # One service
@@ -36,6 +49,11 @@ cd services/streaming-service
 pytest tests/test_routes.py -k "end_playback_session" -v
 ```
 
+> ⚠️ **`PYTHONPATH="$PWD"` is required, not optional.** CI sets it
+> (`.github/workflows/ci-cd.yml`), and `auth-service`, `content-service` and
+> `streaming-service` need it because their `tests/` directory has no
+> `__init__.py`. Without it pytest resolves imports against the wrong path.
+>
 ### SDK
 
 The SDK tests span four directories and need the repo root's `pyproject.toml`,
@@ -59,23 +77,18 @@ Both run from the repo root and both are **blocking CI jobs** (`backend-route-co
 and `supply-chain-guard` respectively).
 
 ```bash
-# Frontend/backend route drift (24 tests)
+# Frontend/backend route contract + supply-chain contract tests (84 tests, 12 files)
 pytest tests/contract -q
 
 # Supply-chain guard (action pinning + scanner suppressions) (4 tests)
 pytest tests/test_supply_chain_guard.py -q
 ```
 
-> ⚠️ **Known failure.** `test_frontend_paths_resolve_to_backend_routes` fails
-> with ~26 unresolved paths. The cause is not route drift: every unresolved
-> literal comes from mock URL strings inside
-> `apps/web/src/api/__tests__/admin.test.ts` and
-> `apps/web/src/api/__tests__/client.data.test.ts`, and
-> `tests/contract/test_route_drift.py:152` globs **all** of `apps/web/src`
-> without excluding `__tests__`. The same scan over production frontend source
-> (excluding `__tests__`) reports **0** unresolved paths, so there is no real
-> frontend↔backend drift. The fix belongs in the contract test's file filter,
-> not in the frontend.
+`tests/contract/` is broader than route drift. It also enforces
+`test_no_shared_secret_jwt_verification.py` (no `jwt.decode` against a shared
+secret), `test_no_committed_private_key.py`, `test_archive_sandbox.py`, the
+compose-smoke contract, the Prometheus scrape targets, the mypy policy findings,
+and the Caddy/plaintext-listener invariant. All **84 pass**.
 
 ## 2b️⃣ Run the Live-Stack Integration Suite
 
@@ -97,13 +110,13 @@ poetry run pytest tests/integration -q    # ~16 min, 110 tests
 
 ## 3️⃣ With Coverage
 
-Coverage details, the 95% CI floor, and the coverage command are in §6.
+Coverage details, the 85% CI floor, and the coverage command are in §6.
 
 ## 4️⃣ Frontend Tests
 
 ```bash
 cd apps/web
-npx vitest run          # run once — 805 tests / 44 files (CI uses `npm test -- --run`)
+npx vitest run          # run once — 866 tests / 46 files (CI uses `npm test -- --run`)
 npx vitest              # watch mode
 npm run type-check      # tsc --noEmit
 npm run lint            # eslint . (Next 16 removed `next lint`)
@@ -112,7 +125,7 @@ npm run build           # production build
 
 ## 5️⃣ E2E Tests
 
-Playwright covers **119** tests across **9** spec files and **15** routes
+Playwright covers **122** tests across **10** spec files and **15** routes
 (`/`, `/login`, `/signup`, `/browse`, `/watch/[id]`, `/account`, `/my-list`,
 `/billing`, `/creator`, `/admin`, `/admin/users`, `/admin/alerts`,
 `/admin/audit`, `/admin/config`, `/admin/flags`). The `frontend-e2e` CI job is
@@ -133,25 +146,27 @@ bash scripts/generate-dev-certs.sh
 
 ## 6️⃣ Coverage
 
-Per-service coverage is 97–99%. CI enforces a **95% floor** and fails the build
-below it:
+CI enforces a floor of **85%** per service
+(`--cov-fail-under="${COVERAGE_FLOOR:-85}"`,
+`.github/workflows/ci-cd.yml`) and fails the build below it. Override the floor
+for a one-off local run by exporting `COVERAGE_FLOOR`:
 
 ```bash
 cd services/auth-service
-pytest tests --cov=app --cov-report=term-missing:skip-covered \
-  --cov-fail-under=95 --asyncio-mode=auto
+COVERAGE_FLOOR=85 pytest tests --cov=app --cov-report=term-missing:skip-covered \
+  --cov-fail-under="${COVERAGE_FLOOR:-85}" --asyncio-mode=auto
 ```
 
 ## ⚠️ Not Available (yet)
 
 | Test Type | Status |
 |-----------|--------|
-| Unit/route tests | ✅ 15 services (6,217) + SDK (694) + frontend (805) |
-| Integration (live dockerized stack) | ✅ `tests/integration/` — 110 tests, run explicitly (see §2b) |
-| Contract / route drift | 🟡 `tests/contract` — 24 tests, blocking in the `backend-route-contract` job. 23 pass; 1 known failure from the scanner reading `__tests__` fixtures (see §2a) |
+| Unit/route tests | ✅ 15 services (6,943) + SDK (795) + frontend (866) — see the auth-service caveat above |
+| Integration (live dockerized stack) | ✅ `tests/integration/` — 110 tests across 8 modules, run explicitly (see §2b) |
+| Contract / supply-chain contract | ✅ `tests/contract` — 84 tests across 12 files, all passing, blocking in the `backend-route-contract` job (see §2a) |
 | Supply-chain guard | ✅ `tests/test_supply_chain_guard.py` — 4 tests, blocking in the `supply-chain-guard` job |
-| E2E (browser) | ✅ Playwright — 119 tests / 9 files / 15 routes, blocking in the `frontend-e2e` job (see §5) |
-| Load tests | ❌ Locust harness exists at `load-tests/`, not yet run in CI |
+| E2E (browser) | ✅ Playwright — 122 tests / 10 files / 15 routes, blocking in the `frontend-e2e` job (see §5) |
+| Load tests | ⚠️ Locust harness exists at `load-tests/locustfile.py` and runs locally, but is **not** wired into CI |
 
 ## 🚨 Troubleshooting
 
@@ -162,33 +177,56 @@ pytest tests --cov=app --cov-report=term-missing:skip-covered \
 
 ## 📊 Test Stats
 
-| Suite | Tests |
-|-------|-------|
-| auth-service | 766 |
-| billing-service | 845 |
-| admin-service | 483 |
-| media-pipeline | 440 |
-| content-service | 390 |
-| user-service | 375 |
-| uploads-service | 376 |
-| streaming-service | 359 |
-| analytics-service | 346 |
-| moderation-service | 318 |
-| search-service | 303 |
-| notification-service | 289 |
-| creators-service | 297 |
-| recommendation-service | 275 |
-| api-gateway | 354 |
-| **Backend services total (15)** | **6,217** |
-| packages/sdk (incl. compliance, events, observability) | 694 |
-| tests/contract (route drift) | 24 |
-| tests/test_supply_chain_guard.py | 4 |
-| **tests/integration (live stack, not in CI)** | **110** |
-| apps/web — vitest (44 files) | 805 |
-| apps/web — Playwright (9 files, 15 routes) | 119 |
+Measured **2026-10-14** on `audit/fix-open-github-issues`.
 
-Per-service coverage: **97–99%**, with a **95% floor** enforced in CI.
+### Backend services — `pytest tests --collect-only -q` per service
+
+Run from each service directory with the SDK on `PYTHONPATH` (the CI shape);
+collection counts equal run counts, verified against a full run of
+`notification-service` (302 collected / 302 passed).
+
+| Service | Tests |
+|---------|-------|
+| billing-service | 895 |
+| auth-service | 877 † |
+| admin-service | 495 |
+| media-pipeline | 478 |
+| user-service | 427 |
+| uploads-service | 418 |
+| content-service | 446 |
+| api-gateway | 416 |
+| search-service | 398 |
+| analytics-service | 381 |
+| moderation-service | 377 |
+| streaming-service | 376 |
+| creators-service | 342 |
+| recommendation-service | 315 |
+| notification-service | 302 |
+| **Backend services total (15)** | **6,943** |
+
+† `auth-service` excludes `tests/test_telemetry.py` (15 tests), which needs
+`opentelemetry-exporter-otlp-proto-grpc` — declared in the service's
+`pyproject.toml` and installed by CI, absent from the environment this was
+measured in. The true CI-visible total is **6,958**.
+
+### Other suites
+
+| Suite | Tests | How measured |
+|-------|-------|--------------|
+| `packages/sdk` (`tests/` + `wildframe_compliance/tests/`) | 795 | `pytest -c pyproject.toml` with `packages/sdk` on `PYTHONPATH` |
+| `tests/contract` | 84 (12 files) | `pytest tests/contract -q` |
+| `tests/test_supply_chain_guard.py` | 4 | `pytest tests/test_supply_chain_guard.py -q` |
+| `tests/integration` (live stack, not in CI) | 110 (8 modules) | `pytest tests/integration --collect-only -q` |
+| `apps/web` — vitest | 866 (46 files) | `npx vitest run` |
+| `apps/web` — Playwright | 122 (10 files, 15 routes) | `npx playwright test --list` |
+
+`packages/sdk/wildframe_events/tests/` contains only `__init__.py`, so it
+contributes 0. CI's `backend-sdk-test` job runs
+`wildframe_compliance/tests/`, `wildframe_events/tests/` and
+`wildframe_observability/tests/`; `packages/sdk/tests/` is a separate step.
+
+Per-service coverage is enforced at an **85% floor** in CI (`COVERAGE_FLOOR`).
 
 ---
 
-**Last updated**: September 27, 2026 — all counts re-measured against `audit/fix-open-github-issues`
+**Last updated**: 2026-10-14 — all counts re-measured against `audit/fix-open-github-issues`

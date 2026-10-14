@@ -567,40 +567,49 @@ enforces auth at its own boundary.
 - Refresh Token: 7 days, HttpOnly cookie, rotated on use
 - `python-jose` library, RS256 signing
 
-### Token Verification Schemes — ⚠️ currently split, migration incomplete
+### Token Verification — single scheme (JWKS/RS256)
 
-**Issuing and verification are not the same thing, and they are not yet
-consistent with each other.** auth-service *signs* RS256 and publishes JWKS at
-`/.well-known/jwks.json`. Not every service *verifies* that way.
+> **Historical.** An earlier revision of this section described a split scheme
+> in which eight services still verified HS256 tokens against the shared
+> `JWT_SECRET_KEY`, and called it an open release blocker tracked as **#941**.
+> **That is no longer true.** The migration completed; do not reintroduce the
+> warning without re-verifying it against the source first.
 
-| Verification scheme | Mechanism | Services |
-|---|---|---|
-| **A — JWKS/RS256** | `wildframe_auth.verifier` against auth-service's JWKS | `admin-service`, `streaming-service` |
-| **B — legacy HS256** | inline `jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])` | `analytics`, `creators`, `media-pipeline`, `notification`, `recommendation`, `search`, `uploads`, `content` (8) |
+auth-service signs RS256 and publishes JWKS at `/.well-known/jwks.json`. Every
+service now verifies against that JWKS — there is one scheme, not two. The
+`algorithms` list is a closed set to RS256 in every verifier:
 
-Scheme B is **not merely legacy** — it is currently exploitable, because the
-shared secret is committed (`deployments/docker-compose.dev.yml` sets
-`JWT_SECRET_KEY: dev-secret-key` with `ENVIRONMENT: development`, and
-`DEV_ENVIRONMENTS` skips the production secret validator for exactly that
-value). Anyone holding the repo can mint an HS256 token with any `sub` and
-`role: "admin"`, and those 8 services accept it. Those same 8 services also
-**reject genuine RS256 tokens** (`The specified alg value is not allowed`), so
-the split breaks legitimate authentication as well.
+| Location | `algorithms` |
+|---|---|
+| `packages/sdk/wildframe_auth/verifier.py` | `ALLOWED_ALGORITHMS = {"RS256"}` |
+| `services/billing-service/app/core/jwt_verifier.py` | `ALLOWED_ALG = {"RS256"}` |
+| `services/auth-service/app/security/__init__.py` (issuer) | `[settings.JWT_ALGORITHM]`, default `RS256` |
 
-Tracked as **#941**. `content-service` is only accidentally protected, by
-`_enforce_auth_version`; that control is absent from the other 7.
+There are exactly three `jwt.decode` call sites outside tests, and all three
+pass a **JWK resolved from the JWKS by `kid`**, never a shared secret. The
+header `alg` is checked against the allowed set before the signature is
+verified, so an `alg: none` or HS256 substitution fails.
 
-**Do not treat scheme B as an acceptable steady state.** The target is a single
-scheme: all services verify via `wildframe_auth` + JWKS, and `JWT_ALGORITHM`
-defaults to `RS256` so a missing env var fails closed. Each migration must
-preserve the error contract — a JWKS fetch failure is `503`, a bad token is
-`401`; see `JWKSUnavailableError` in `wildframe_auth`.
+`tests/contract/test_no_shared_secret_jwt_verification.py` is the regression
+test that pins this — it shells out and probes every service. **17 tests, all
+passing.**
+
+`JWT_SECRET_KEY` still appears in `deployments/docker-compose.dev.yml`
+(`dev-secret-key`) and is still validated: every service's `settings.py`
+carries a `KNOWN_INSECURE_JWT_SECRETS` denylist containing that literal and
+raises unless `ENVIRONMENT` is a development environment. It is no longer used
+for *verification*, which is why its presence in the compose file is a
+configuration smell rather than the authentication bypass the old section
+claimed.
 
 `admin-service` and `streaming-service` cache JWKS per-URL with single-flight
 fetching and a negative-cache window, so an unknown-`kid` token cannot force
 unbounded egress at auth-service. Any new verifier must use
 `verify_token_with_jwks` rather than hand-wiring `get_cached_jwks` + `verify_token`
 — see **#935**.
+
+The error contract is preserved across the migration: a JWKS fetch failure is
+`503`, a bad token is `401`; see `JWKSUnavailableError` in `wildframe_auth`.
 
 ### Rate Limiting (Gateway)
 - Key: authenticated user `sub` or client IP
@@ -633,7 +642,7 @@ Unique identifier tracking a request through all services and logs.
 | Shared SDK | pytest | `packages/sdk/tests/` and each package's `tests/` |
 | HTTP client | httpx (ASGITransport) | In-process app testing |
 | Mocking | unittest.mock, pytest-mock | Stub external dependencies |
-| Coverage | pytest-cov | Line + branch coverage, 95% CI floor |
+| Coverage | pytest-cov | Line + branch coverage, 85% CI floor (`COVERAGE_FLOOR`) |
 | Frontend unit | Vitest | `apps/web/src/**/__tests__/` (colocated) |
 | Frontend component | Vitest + Testing Library | `apps/web/src/components/**/__tests__/` |
 | Frontend E2E | Playwright | `apps/web/e2e/` |
@@ -642,27 +651,33 @@ Unique identifier tracking a request through all services and logs.
 
 ### CI Pipeline
 
-`.github/workflows/ci-cd.yml` defines 15 jobs (several fan out over a service
-matrix):
+`.github/workflows/ci-cd.yml` defines **17 jobs** (several fan out over a
+service matrix). There is **no integration job** — `tests/integration/` never
+runs in CI:
 
 ```yaml
+# Repo hygiene
+- lockfile-integrity
+
 # Backend
-- Supply Chain Guard
-- Lint (ruff, black, mypy per service)
-- Unit tests per service (15 services + SDK), 95% coverage floor
-- Contract tests (24 route drift tests)
+- supply-chain-guard
+- backend-lint  (ruff, black, mypy per service)
+- helm-lint     (+ staging/production value rendering + chart policy tests)
+- backend-test       (15 services + SDK, 85% coverage floor)
+- backend-sdk-test
+- backend-route-contract  (tests/contract, 84 tests)
+- compose-smoke
 
 # Frontend
-- Frontend CI: lint, type-check, vitest, production build
-- Frontend E2E Tests: Playwright (119 tests, blocking)
+- frontend-ci    (lint, type-check, vitest, production build)
+- frontend-e2e   (Playwright, 122 tests, blocking)
 
 # Infrastructure
-- Helm lint (+ staging/production value rendering)
-- Docker build smoke (15 services + frontend)
-- Security scan (Trivy, Semgrep, CodeQL)
+- docker-build-smoke / docker-build-frontend-smoke  (15 services + frontend)
+- security-scan  (Trivy, Semgrep, CodeQL)
 
 # Deploy
-- Build & Push (push to main/develop)
+- build-images / build-frontend
 - Deploy to staging / production (requires AWS OIDC + environment secrets)
 ```
 
@@ -696,8 +711,8 @@ pytest tests/contract -q
 
 # Frontend
 cd apps/web
-npm run test              # vitest — 805 tests across 44 files
-npx playwright test       # 119 tests across 9 files
+npm run test              # vitest — 866 tests across 46 files
+npx playwright test       # 122 tests across 10 files
 ```
 
 ### Test Structure
@@ -713,20 +728,21 @@ services/<service>/
 
 # Frontend
 apps/web/
-├── tests/
-│   ├── unit/
-│   └── components/
-└── e2e/
+├── src/__tests__/         # vitest suites (colocated by area)
+└── e2e/                   # Playwright, 10 spec files
     ├── auth.spec.ts
-    ├── content.spec.ts
-    └── subscription.spec.ts
+    ├── admin.spec.ts
+    └── content-contract.spec.ts
 
 # Repo root
 tests/
-├── integration/           # 87 live-stack tests
-└── contract/
+├── integration/           # 110 live-stack tests across 8 modules
+└── contract/              # 84 tests across 12 files
     └── test_route_drift.py
 ```
+
+> Frontend vitest suites live under `apps/web/src/**/__tests__/`, **not**
+> `apps/web/tests/` — that directory does not exist.
 
 ---
 
@@ -766,11 +782,10 @@ with that audience (`settings.JWT_AUDIENCE`) or python-jose raises
 it rate-limits proxied requests (keyed by user `sub` or IP) but does not
 reject them itself; each backend service enforces auth at its own boundary.
 
-Note that a correct audience check is necessary but not sufficient: 8 services
-still verify against a shared HS256 secret rather than the JWKS, so an attacker
-can supply a correctly-audienced token they minted themselves. See
-[Token Verification Schemes](#token-verification-schemes--currently-split-migration-incomplete)
-and **#941**.
+A correct audience check is necessary but not sufficient on its own — the key
+material must also be the RS256 public key from the JWKS, not a shared secret.
+That is now the case everywhere; see
+[Token Verification](#token-verification--single-scheme-jwksrs256).
 
 ### Rate Limiting
 Sliding window algorithm preventing abuse (enforced in the gateway's
@@ -786,18 +801,28 @@ Unique identifier tracking a request through all services and all logs, enabling
 
 ## CI/CD Pipeline
 
-The CI pipeline (GitHub Actions) runs **54 jobs** on every push to main:
+The CI pipeline (GitHub Actions) defines **17 jobs** and runs on every push and
+every pull request:
 
-| Stage | Jobs | Tools |
-|---|---|---|
-| Lint | 1 (Backend) + 1 (Frontend) | ruff, black, mypy, ESLint, Prettier |
-| Unit Tests | 16 (15 services + SDK) | pytest, Vitest |
-| Integration | 1 | pytest + httpx |
-| Contract | 1 | pytest |
-| Frontend E2E | 1 | Playwright |
-| Build | 17 (16 services + frontend) | Docker |
-| Security | 1 | Trivy |
-| Helm | 1 | helm lint |
+| Job | Tools |
+|---|---|
+| `lockfile-integrity` | declared dependency floors vs. the lockfiles |
+| `supply-chain-guard` | pinned actions + scanner suppressions |
+| `backend-lint` | ruff, black, mypy |
+| `helm-lint` | helm lint/template + chart policy tests |
+| `backend-test` | pytest + pytest-cov, 15-service matrix, 85% floor |
+| `backend-sdk-test` | pytest over `packages/sdk` |
+| `backend-route-contract` | `pytest tests/contract -q` |
+| `compose-smoke` | the dev stack, real health probes |
+| `frontend-ci` | ESLint, tsc, vitest, production build |
+| `frontend-e2e` | Playwright — **blocking** |
+| `docker-build-smoke`, `docker-build-frontend-smoke` | Docker |
+| `security-scan` | Trivy, Semgrep, CodeQL |
+| `build-images`, `build-frontend` | push to GHCR |
+| `deploy-staging`, `deploy-production` | EKS, gated on the above |
+
+There is **no `Integration` job.** `tests/integration/` runs only when you run
+it explicitly against a live stack.
 | Deploy | 2 | skipped (no AWS creds) |
 
 **Total time**: ~15-20 minutes

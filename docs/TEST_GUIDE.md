@@ -2,7 +2,7 @@
 
 Comprehensive reference for writing, running, and debugging tests across the Wildframe platform.
 
-**Last Updated**: September 27, 2026
+**Last Updated**: October 14, 2026
 
 ---
 
@@ -26,10 +26,10 @@ Comprehensive reference for writing, running, and debugging tests across the Wil
 | Backend unit / route | **pytest** + **pytest-asyncio** (`--asyncio-mode=auto`) | De facto Python test framework, async-native |
 | HTTPX | **httpx** (ASGITransport / TestClient) | In-process app testing |
 | Mocking | **unittest.mock** (`AsyncMock`, `MagicMock`, `patch`) + **pytest-mock** (`mocker` fixture) | Stub external dependencies |
-| Coverage | **pytest-cov** | Track line + branch coverage; CI enforces a 95% floor |
+| Coverage | **pytest-cov** | Track line + branch coverage; CI enforces an 85% floor (`COVERAGE_FLOOR`) |
 | Frontend unit | **Vitest** | Fast, ESM-native, Jest-compatible API |
-| Frontend E2E | **Playwright** | 119 tests across 9 spec files / 15 routes — blocking in the `frontend-e2e` CI job |
-| Contract | **pytest** + static analysis | `tests/contract/` — 24 frontend↔backend route drift tests |
+| Frontend E2E | **Playwright** | 122 tests across 10 spec files / 15 routes — blocking in the `frontend-e2e` CI job |
+| Contract | **pytest** + static analysis | `tests/contract/` — 84 tests across 12 files (route drift, shared-secret JWT, committed-key, archive sandbox, scrape targets, …) |
 | Load | **Locust** | Harness at `load-tests/`, not yet run in CI |
 
 ---
@@ -69,7 +69,7 @@ Test files **must** start with `test_`. Pytest auto-discovers them.
 
 ```bash
 for svc in services/*/; do
-  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+  (cd "$svc" && PYTHONPATH="$PWD" pytest tests --asyncio-mode=auto) || exit 1
 done
 ```
 
@@ -199,14 +199,14 @@ open htmlcov/index.html
 
 ### Target thresholds
 
-Every service currently sits at **97–99%** coverage. CI runs coverage per
-service (`--cov=app`) and **fails the build below a 95% floor**
-(`--cov-fail-under="${COVERAGE_FLOOR:-95}"`), so coverage must not drop.
+CI runs coverage per service (`--cov=app`) and **fails the build below an 85%
+floor** — `--cov-fail-under="${COVERAGE_FLOOR:-85}"` in
+`.github/workflows/ci-cd.yml`. Export `COVERAGE_FLOOR` to move the bar locally.
 
 ```bash
 cd services/auth-service
-pytest tests --cov=app --cov-report=term-missing:skip-covered \
-  --cov-fail-under=95 --asyncio-mode=auto
+COVERAGE_FLOOR=85 pytest tests --cov=app --cov-report=term-missing:skip-covered \
+  --cov-fail-under="${COVERAGE_FLOOR:-85}" --asyncio-mode=auto
 ```
 
 ---
@@ -217,7 +217,7 @@ pytest tests --cov=app --cov-report=term-missing:skip-covered \
 
 Since Aug 2026 the repo ships a cross-service integration suite that runs
 against the **real dockerized stack** through the Caddy proxy (HTTPS). 110
-tests across 7 modules + `conftest.py`:
+tests across 8 modules + `conftest.py`:
 
 - `test_gateway_auth.py` — edge auth matrix through the gateway (expired /
   wrong-audience / malformed tokens, public vs. protected routes) and the
@@ -235,6 +235,8 @@ tests across 7 modules + `conftest.py`:
   (search `/ready` regression).
 - `test_pipeline_idempotency.py` — media-pipeline job start/get now require
   a verified JWT; repeated `start` calls are idempotent.
+- `test_token_type_separation.py` — a refresh token is rejected at every
+  service boundary that accepts an access token, not only at the gateway.
 
 ```bash
 # From repo root — stack must be up; skips itself if the stack is down
@@ -254,7 +256,7 @@ poetry run pytest tests/integration -q    # ~12 min
 The `frontend-e2e` CI job runs Playwright against the dockerized stack and is
 **blocking**.
 
-**Test Suites** (`apps/web/e2e/`, 9 spec files):
+**Test Suites** (`apps/web/e2e/`, 10 spec files):
 - `auth.spec.ts` — login, signup, protected-route redirects
 - `home.spec.ts`, `browse.spec.ts` — landing and catalogue
 - `watch.spec.ts` — playback page: movie, series, seasons/episodes
@@ -262,6 +264,8 @@ The `frontend-e2e` CI job runs Playwright against the dockerized stack and is
 - `billing.spec.ts` — subscription page
 - `creator.spec.ts` — creator pages
 - `admin.spec.ts` — admin console and its sub-routes
+- `content-contract.spec.ts` — fixture-vs-backend payload drift guard
+  (re-reads the fixture DTOs the mocked API serves)
 
 **Run locally:**
 ```bash
@@ -280,14 +284,15 @@ cd apps/web
 npx playwright test --reporter=github
 ```
 
-**Test count:** **119 tests across 9 spec files**, covering **15 routes**
+**Test count:** **122 tests across 10 spec files**, covering **15 routes**
 (`/`, `/login`, `/signup`, `/browse`, `/watch/[id]`, `/account`, `/my-list`,
 `/billing`, `/creator`, `/admin`, `/admin/users`, `/admin/alerts`,
 `/admin/audit`, `/admin/config`, `/admin/flags`).
 
 **Configuration:** `apps/web/playwright.config.ts`
 - Base URL: `https://localhost:3000` (HTTPS with self-signed certs)
-- Single browser: Chromium (CI), multi-browser locally
+- One Playwright project, `chromium`, defined unconditionally — there is no
+  multi-browser matrix, locally or in CI
 - Web server: Starts `npm run dev` automatically
 - Dev TLS material is produced by `scripts/generate-dev-certs.sh`, which the
   config invokes automatically
@@ -304,23 +309,29 @@ Static analysis test that validates frontend API calls match backend routes:
 pytest tests/contract -q
 ```
 
-24 tests verifying frontend paths resolve to registered backend routes.
+**84 tests across 12 files**, all passing. The suite is wider than its name
+suggests:
 
-> ⚠️ **One known failure.** `test_frontend_paths_resolve_to_backend_routes`
-> currently reports ~26 unresolved paths, all of which are mock URL literals in
-> `apps/web/src/api/__tests__/admin.test.ts` and
-> `apps/web/src/api/__tests__/client.data.test.ts`. The scan at
-> `tests/contract/test_route_drift.py:152` globs all of `apps/web/src` without
-> excluding `__tests__`. Excluding test fixtures the scan reports **0**
-> unresolved paths, so there is no real route drift — the fix belongs in the
-> contract test's file filter.
+| File | What it pins |
+|---|---|
+| `test_route_drift.py` | frontend API paths resolve to registered backend routes |
+| `test_no_shared_secret_jwt_verification.py` | no `jwt.decode` against a shared secret in any service |
+| `test_no_committed_private_key.py` | no private key material committed to the tree |
+| `test_archive_sandbox.py` | no-archive paths are not extracted |
+| `test_compose_smoke_contract.py` | the compose smoke job probes what it claims to |
+| `test_prometheus_scrape_targets.py`, `test_metrics_scrape_credentials.py` | scrape targets resolve and are not credential-free leaks |
+| `test_caddy_plaintext_listener.py` | the plain-HTTP dev listener stays dev-only |
+| `test_otel_fastapi_constraint_alignment.py` | the SDK/OTel version floor stays aligned across manifests |
+| `test_mypy_policy_findings.py`, `test_ci_venv_cache_invalidation.py` | repo policy: no grandfathered mypy findings, no stale-venv cache key |
+| `test_message_board_integrity.py` | the shared agent `Message-board.md` keeps its union-merge attribute and does not lose appends |
+
 Known frontend-only paths are documented in `tests/contract/test_route_drift.py`.
 
 ### Smoke test (after deployment)
 
 ```bash
-curl https://localhost:8000/health
-curl -X POST https://localhost:8000/auth/api/v1/auth/login \
+curl -sk https://localhost:8000/health
+curl -sk -X POST https://localhost:8000/auth/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"${WILDFRAME_DEMO_EMAIL:-demo@wildframe.com}\",\"password\":\"${WILDFRAME_DEMO_PASSWORD:-<your-demo-password>}\"}"
 # password is env-driven; see scripts/seed_demo.py — never use a committed fixed demo password

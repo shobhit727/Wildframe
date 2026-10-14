@@ -5,7 +5,7 @@ pointer to the file. Files marked **current** describe how the platform is
 actually built today; files marked **historical** are retained for project
 history and are not release declarations (see `STATUS.md`).
 
-**Last updated**: September 27, 2026
+**Last updated**: October 14, 2026
 
 ---
 
@@ -17,7 +17,7 @@ history and are not release declarations (see `STATUS.md`).
 | [`STATUS.md`](STATUS.md) | Current implementation and deployment status, remaining production work, and the Aug 2026 security/QA hardening record (closed audit issues, integration suite, test totals). |
 | [`AGENTS.md`](AGENTS.md) | Agent/developer instructions: source of truth for how the repo is actually built — setup, service list, ports, HTTPS/TLS, code conventions, common patterns, and pitfalls. |
 | [`SECURITY.md`](SECURITY.md) | Vulnerability reporting policy (private reporting process). |
-| [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) | Test commands and current stats: 6,217 backend unit/route tests, 694 SDK, 24 contract, 110 live-stack integration tests, 805 frontend vitest tests, 119 Playwright e2e tests. |
+| [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) | **Canonical test-count source.** Test commands and dated stats: 6,943 backend unit/route tests, 795 SDK, 84 contract, 110 live-stack integration, 866 frontend vitest, 122 Playwright e2e. Link here rather than repeating a count. |
 | [`docs/INDEX.md`](docs/INDEX.md) | Curated index of the current operational documentation (superset: this file covers everything, including history). |
 | [`DOCS_INDEX.md`](DOCS_INDEX.md) | This file — every `.md` in the repo with summaries. |
 
@@ -46,7 +46,11 @@ history and are not release declarations (see `STATUS.md`).
 | [`docs/OVERVIEW.md`](docs/OVERVIEW.md) | Older documentation overview and reading order (historical). |
 | [`docs/DOCUMENTATION_GUIDE.md`](docs/DOCUMENTATION_GUIDE.md) | How to write docs for humans and AI: principles, structure, templates. |
 | [`docs/QUICK_LOCAL_SETUP.md`](docs/QUICK_LOCAL_SETUP.md) | Short local setup checklist. |
-| [`docs/INDEX.md`](docs/INDEX.md) | Curated index of current operational docs (see above). |
+| [`docs/COMPLIANCE_MASTER_PLAN.md`](docs/COMPLIANCE_MASTER_PLAN.md) | Compliance work plan (COPPA/DPDP/GDPR/CCPA). Its "shipped" column is a **claim, not a verified inventory** — endpoints marked delivered were 404 at audit time and are now marked explicitly. |
+| [`docs/COMPLIANCE_FOUNDATION_PLAN.md`](docs/COMPLIANCE_FOUNDATION_PLAN.md) | Compliance foundation plan that precedes the master plan. |
+| [`docs/GO_LIVE.md`](docs/GO_LIVE.md) | Go-live checklist. |
+| [`docs/INTERNAL_AUTHZ.md`](docs/INTERNAL_AUTHZ.md) | Internal service-to-service authorization reference. |
+| [`docs/TIMEOUT_ORDERING.md`](docs/TIMEOUT_ORDERING.md) | Timeout propagation and ordering notes. **Partly aspirational**: it describes a reverse-proxy `proxy_read_timeout` and a `WithTimeout` wrapper that do not exist in the source. |
 
 ---
 
@@ -68,6 +72,12 @@ history and are not release declarations (see `STATUS.md`).
 | [`STARTUP_GUIDE.md`](STARTUP_GUIDE.md) | Early startup guide (12-service era). |
 | [`TEST_GUIDE.md`](TEST_GUIDE.md) | Older testing guide with direct-port curl examples (superseded by `docs/TEST_GUIDE.md`). |
 | [`TESTING_GUIDE.md`](TESTING_GUIDE.md) | Historical manual-testing guide; header notes it predates the current layout and test layout. |
+| [`CLOSED_ISSUES_AUDIT.md`](CLOSED_ISSUES_AUDIT.md) | Audit of issues already closed at the time (Aug 2026). Its "0 open issues" and CI-run tallies describe that snapshot and are not current — the tracker has open items. |
+| [`CLOSED_ISSUES_AUDIT_FULL.md`](CLOSED_ISSUES_AUDIT_FULL.md) | Longer version of the above; same caveat. |
+| [`CODEBASE_LEARNING_OUTLINE.md`](CODEBASE_LEARNING_OUTLINE.md) | Learning-oriented walkthrough outline of the codebase. |
+| [`GITHUB_ISSUES_CODE_AUDIT_2026-09-26.md`](GITHUB_ISSUES_CODE_AUDIT_2026-09-26.md) | Dated code audit against GitHub issues, 2026-09-26. |
+| [`TODO-full.md`](TODO-full.md) | Full TODO inventory, dated 2026-09-26. (There is no `TODO.md`.) |
+| [`web_audit_report.md`](web_audit_report.md) | Dated frontend audit. **Superseded in part**: its "no Content-Security-Policy header" finding no longer holds — `apps/web/src/proxy.ts` now sets CSP with a nonce. |
 
 ---
 
@@ -94,7 +104,6 @@ history and are not release declarations (see `STATUS.md`).
 
 | File | Summary |
 |---|---|
-| [`load-tests/README.md`](load-tests/README.md) | Locust load-test suite against the API gateway (`:8000`): setup and run commands. |
 | [`PROJECT_MEMORY/00_Project_Overview.md`](PROJECT_MEMORY/00_Project_Overview.md) | Project memory: overview of the Wildframe platform. |
 | [`PROJECT_MEMORY/12_Todo_List_Backlog.md`](PROJECT_MEMORY/12_Todo_List_Backlog.md) | Engineering backlog (pre-audit list; Priority 1/2 landed — see header note). |
 | [`PROJECT_MEMORY/13_Bug_Tracker.md`](PROJECT_MEMORY/13_Bug_Tracker.md) | Bug tracker with severity definitions. |
@@ -116,4 +125,57 @@ history and are not release declarations (see `STATUS.md`).
   `FINAL_*REPORT.md`, `QUICKSTART.md`, `START_HERE.md`, `STARTUP_GUIDE.md`)
   are **not** release declarations — verify against `README.md`, `STATUS.md`,
   and GitHub Actions results instead.
-- The executable CI/CD definition is `.github/workflows/ci-cd.yml`.
+- The executable CI/CD definition is `.github/workflows/ci-cd.yml` — 17 jobs (count it; it changes).
+- Test counts are canonical in [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) and
+  are dated. Link to it; do not copy a count into a second file.
+
+---
+
+## Agent / process files (not product documentation)
+
+| File | Summary |
+|---|---|
+| [`AGENT_COORDINATION.md`](AGENT_COORDINATION.md) | Multi-agent workflow on a shared branch: path claims, verified git failure modes, `/tmp` hygiene, subagent rules. |
+| [`ONBOARDING.md`](ONBOARDING.md) | The path through this repo: what to do in what order, which commands actually work, and the traps that produce wrong conclusions. |
+| [`oner-task.md`](oner-task.md) | What a human still owes: decisions, review, blocked work, deliberate limitations. |
+| [`Message-board.md`](Message-board.md) | Append-only shared coordination log for concurrent agents. Lives on the working branch, not on `main`. |
+| [`spawn-board.md`](spawn-board.md) | Per-worktree agent spawn board. |
+| [`apps/web/AGENTS.md`](apps/web/AGENTS.md) | Frontend-specific agent instructions. |
+| [`skills/verify-against-running-stack/SKILL.md`](skills/verify-against-running-stack/SKILL.md) | Skill: prove a change works against the running stack, not just the suite. |
+| [`skills/wildframe-service-change/SKILL.md`](skills/wildframe-service-change/SKILL.md) | Skill: adding/changing a route, schema, repository query or cross-service call. |
+| [`skills/shared-tree-coordination/SKILL.md`](skills/shared-tree-coordination/SKILL.md) | Skill: editing the shared branch safely. |
+
+---
+
+## scripts/ and load-tests
+
+| File | Summary |
+|---|---|
+| [`scripts/README.md`](scripts/README.md) | What each helper script does and when to run it. |
+| [`scripts/dev/README.md`](scripts/dev/README.md) | Developer-only helper scripts. |
+| [`load-tests/README.md`](load-tests/README.md) | Locust load-test suite against the API gateway (`:8000`): setup and run commands. **Local only — no CI job runs it.** |
+
+---
+
+## Undeclared secondary issue tracker
+
+`.github/issues/*.md` is a second, undeclared issue tracker: referenced by no
+document and by no workflow. Two of its five entries are factually wrong about
+current code — do not act on them without re-verifying against the source.
+
+| File | Summary |
+|---|---|
+| [`001-eval-exec-in-scripts.md`](.github/issues/001-eval-exec-in-scripts.md) | Claims an `eval`/`exec` usage in `scripts/`. |
+| [`002-redis-asyncio-from_url-await-misuse.md`](.github/issues/002-redis-asyncio-from_url-await-misuse.md) | Claims `await redis.from_url(...)` is a runtime error. It is correct as written, and the repo's own tests defend it. |
+| [`003-hardcoded-secrets-and-demo-credentials.md`](.github/issues/003-hardcoded-secrets-and-demo-credentials.md) | Hardcoded-secret findings. |
+| [`004-jwt-import-inconsistencies.md`](.github/issues/004-jwt-import-inconsistencies.md) | Claims a bare `import jwt` in api-gateway that does not exist. |
+| [`005-todo-fixme-technical-debt-inventory.md`](.github/issues/005-todo-fixme-technical-debt-inventory.md) | TODO/FIXME inventory. |
+
+---
+
+## Other package docs
+
+| File | Summary |
+|---|---|
+| [`packages/sdk/wildframe_compliance/README.md`](packages/sdk/wildframe_compliance/README.md) | Shared compliance library README. |
+| [`apps/web/certificates/README.md`](apps/web/certificates/README.md) | Explains the gitignored local dev certificates and how to regenerate them. |

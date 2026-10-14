@@ -1,3 +1,10 @@
+> [!WARNING]
+> **Historical document.** Its service count (13/14 microservices), port list
+> and "10 documents consolidated into 4" claim describe the repo at the time it
+> was written, not today (15 services). Kept for history only.
+>
+> Current entry points: `README.md`, then `docs/INDEX.md` and `DOCS_INDEX.md`.
+
 # Wildframe Documentation Overview
 
 Quick reference guide to what's included in the Wildframe platform and current project status.

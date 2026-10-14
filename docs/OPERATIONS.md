@@ -415,7 +415,10 @@ kubectl get nodes -n wildframe-prod
 kubectl get pods -n wildframe-prod --field-selector=status.phase!=Running
 
 # Monitor error rates
-curl http://prometheus:9090/api/v1/query?query=rate(http_requests_total{status=~"5.."}[5m])
+# NOTE: quote the whole URL. Unquoted, bash strips the inner quotes and the
+# braces, and the query arrives malformed.
+curl -G http://prometheus:9090/api/v1/query \
+  --data-urlencode 'query=rate(http_requests_total{status=~"5.."}[5m])'
 
 # Check resource utilization
 kubectl top nodes

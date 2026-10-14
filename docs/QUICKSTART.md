@@ -99,13 +99,13 @@ All services should show `Up` / `healthy`.
 
 ```bash
 # API gateway health
-curl https://localhost:8000/health
+curl -sk https://localhost:8000/health
 
 # Auth service health
-curl https://localhost:8001/health
+curl -sk https://localhost:8001/health
 
 # Content service health
-curl https://localhost:8003/health
+curl -sk https://localhost:8003/health
 ```
 
 A healthy response looks like:
@@ -172,7 +172,7 @@ on shadowed `app.*` imports):
 ```bash
 # All 15 services + SDK
 for svc in services/*/; do
-  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+  (cd "$svc" && PYTHONPATH="$PWD" pytest tests --asyncio-mode=auto) || exit 1
 done
 
 # One service
@@ -193,10 +193,10 @@ poetry run pytest tests/integration -q
 ```bash
 cd apps/web
 
-# Unit tests (Vitest) — 805 tests across 44 files
+# Unit tests (Vitest) — 866 tests across 46 files
 npx vitest run
 
-# E2E tests (Playwright) — 119 tests across 9 files, 15 routes
+# E2E tests (Playwright) — 122 tests across 10 files, 15 routes
 npm run dev         # in separate terminal
 npx playwright test
 ```
@@ -278,7 +278,15 @@ docker compose -f deployments/docker-compose.dev.yml logs -f auth-service
 ```
 
 **Port already in use?**
-Edit the host port mapping in `deployments/docker-compose.dev.yml`.
+The app services publish **no host ports** — only the `caddy` service does. To
+remap a port you must change **both**:
+
+1. the `ports:` entry under `caddy:` in `deployments/docker-compose.dev.yml`
+   (e.g. `- 8001:8001`), and
+2. the matching `https://localhost:<port>` block in
+   `infrastructure/caddy/Caddyfile`.
+
+Editing only one leaves the two disagreeing and the route unreachable.
 
 **Stale Docker state?**
 ```bash
@@ -288,9 +296,11 @@ docker builder prune -a
 
 **Need to nuke everything?**
 ```bash
-docker compose -f deployments/docker-compose.dev.yml down -v
-./start_services.sh
+docker compose -f deployments/docker-compose.dev.yml up -d --build
 ```
+
+`./start_services.sh` is **not** a supported alternative: it hardcodes
+`/home/phoenix/Desktop/wildframe` and cannot run from another clone.
 
 ---
 

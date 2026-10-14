@@ -56,26 +56,35 @@ push main
     +--> in-cluster /health checks
 ```
 
-## CI Pipeline Details (15 jobs, several matrixed)
+## CI Pipeline Details (17 jobs, several matrixed)
 
-`.github/workflows/ci-cd.yml` defines 15 jobs. `Backend Test`,
-`Docker Build Smoke`, and `Build & Push` fan out over a 15-service matrix, and
-`Backend Lint` runs mypy per service.
+`.github/workflows/ci-cd.yml` defines **17 jobs**. `backend-test`,
+`docker-build-smoke`, `build-images` and `backend-lint` fan out over a
+**15-service** matrix.
 
-| Stage | Jobs | Tools |
-|---|---|---|
-| Supply chain | 1 | `verify-supply-chain.py` (action pinning, scanner suppressions) + 4 unit tests |
-| Lint | 1 (Backend) + 1 (Frontend) | ruff, black, mypy, ESLint, Prettier |
-| Unit Tests | 16 (15 services + SDK) | pytest, Vitest |
-| Contract | 1 | pytest (`tests/contract`, 24 route drift tests) |
-| Frontend E2E | 1 | Playwright — 119 tests across 9 files, 15 routes (blocking) |
-| Build | 17 (15 services + frontend + web) | Docker |
-| Security | 1 | Trivy, Semgrep, CodeQL |
-| Helm | 1 | helm lint (+ default/staging/production rendering) |
-| Deploy | 2 | requires AWS OIDC + environment secrets |
+| Job | Tools |
+|---|---|
+| `lockfile-integrity` | declared dependency floors vs. the lockfiles |
+| `supply-chain-guard` | `verify-supply-chain.py` (action pinning, scanner suppressions) + 4 unit tests |
+| `backend-lint` | ruff, black, mypy |
+| `helm-lint` | helm lint + default/staging/production rendering + chart policy tests |
+| `backend-test` | pytest + pytest-cov, 15-service matrix |
+| `backend-sdk-test` | pytest over `packages/sdk` |
+| `backend-route-contract` | pytest (`tests/contract`, 84 tests across 12 files) |
+| `compose-smoke` | the dev stack, real health probes |
+| `frontend-ci` | ESLint, tsc, vitest, production build |
+| `frontend-e2e` | Playwright — 122 tests across 10 files, 15 routes (blocking) |
+| `docker-build-smoke`, `docker-build-frontend-smoke` | Docker |
+| `security-scan` | Trivy, Semgrep, CodeQL |
+| `build-images`, `build-frontend` | push to GHCR |
+| `deploy-staging`, `deploy-production` | requires AWS OIDC + environment secrets |
 
-Per-service coverage is enforced at a **95% floor** (`--cov-fail-under`); the
-services currently sit at 97–99%.
+> **There is no `Integration` job.** `tests/integration/` (110 tests) runs only
+> when invoked explicitly against a live stack. Any table listing an
+> "Integration" CI stage is wrong.
+
+Per-service coverage is enforced at an **85% floor**
+(`--cov-fail-under="${COVERAGE_FLOOR:-85}"`).
 
 **Total time**: ~15-20 minutes
 

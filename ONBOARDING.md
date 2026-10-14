@@ -60,10 +60,15 @@ A healthy service answering `/health` proves almost nothing — three of them re
 
 This is the most important thing on this page.
 
-CI was fully green — 39 jobs, zero failures — at the exact moment the website rendered
+CI was fully green — every job passing — at the exact moment the website rendered
 a blank page, account creation was broken, and five services could not start. The
-Playwright suite passed 119/121 because **every spec mocks the API**. The Docker jobs
+Playwright suite passed because **every spec mocks the API**. The Docker jobs
 build images and never run one.
+
+The workflow defines **17 jobs** (`.github/workflows/ci-cd.yml`, re-counted
+2026-10-14 — it changed while this page was being corrected, which is the point:
+a job count quoted in prose is stale the moment someone adds a gate). A green
+run means seventeen gates passed, not that the product works.
 
 So:
 

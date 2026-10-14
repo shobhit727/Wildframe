@@ -45,7 +45,7 @@ docker compose -f deployments/docker-compose.dev.yml up -d
 # Note: no Alembic in this repo — schema changes are applied by hand to the
 # dev DBs (see docs/OPERATIONS.md "Database Migrations"). This command is
 # historical and does not exist in the services.
-# docker-compose exec auth-service alembic upgrade head
+# docker compose -f deployments/docker-compose.dev.yml exec auth-service alembic upgrade head
 
 # Start frontend
 npm run dev --workspace=apps/web
@@ -276,14 +276,14 @@ npx playwright test --reporter=github
 | Backend unit | pytest + pytest-asyncio | `services/*/tests/` |
 | HTTP client | httpx (ASGITransport) | In-process app testing |
 | Mocking | unittest.mock, pytest-mock | Stub external dependencies |
-| Coverage | pytest-cov | Line + branch coverage, 95% CI floor |
+| Coverage | pytest-cov | Line + branch coverage, 85% CI floor (`COVERAGE_FLOOR`) |
 | Frontend unit | Vitest | `apps/web/src/**/__tests__/` (colocated) |
 | Frontend component | Vitest + Testing Library | `apps/web/src/components/**/__tests__/` |
 | Frontend E2E | Playwright | `apps/web/e2e/` |
 
 ### Playwright E2E Tests
 
-**Test Suites:** 9 spec files (`apps/web/e2e/`)
+**Test Suites:** 10 spec files (`apps/web/e2e/`)
 - `auth.spec.ts` — login, signup, protected-route redirects
 - `home.spec.ts`, `browse.spec.ts` — landing and catalogue
 - `watch.spec.ts` — playback: movie, series, seasons/episodes
@@ -316,13 +316,13 @@ npx playwright test --reporter=github
 - HTTPS errors ignored (self-signed certs)
 - Timeout: 300s for web server startup
 
-**Test count:** **119 tests across 9 spec files**, covering **15 routes**.
+**Test count:** **122 tests across 10 spec files**, covering **15 routes**.
 The `frontend-e2e` CI job is **blocking**.
 
 ### Vitest Unit/Component Tests
 
 ```bash
-npm run test            # vitest — 805 tests across 44 files
+npm run test            # vitest — 866 tests across 46 files
 npm run test:coverage   # vitest --coverage
 ```
 
@@ -481,8 +481,8 @@ pip list --outdated
 ### Database Connection Failed
 ```bash
 # Check PostgreSQL
-docker-compose ps postgres
-docker-compose logs postgres
+docker compose -f deployments/docker-compose.dev.yml ps postgres
+docker compose -f deployments/docker-compose.dev.yml logs postgres
 
 # Check connection
 PGPASSWORD=wildframe_dev_password psql -h localhost -p 5432 -U wildframe -d auth_db
@@ -517,15 +517,35 @@ sudo systemctl restart docker   # or restart Docker Desktop
 
 ```bash
 docker compose -f deployments/docker-compose.dev.yml up --build admin-service
-curl https://localhost:8006/health
+curl -sk https://localhost:8006/health   # -k: the dev cert is self-signed
 ```
 
 - [ ] Run unit tests (project-wide)
 
 ```bash
-./run_tests.sh
-# or
-pytest -q
+# The supported way — works from any clone, any machine:
+for svc in services/*/; do
+  (cd "$svc" && PYTHONPATH="$PWD" pytest tests --asyncio-mode=auto) || exit 1
+done
+```
+
+> ⚠️ **These four root helper scripts are broken and are being kept only
+> until their owner fixes them.** They are shell files, not documentation, so
+> this audit did not edit them (see the report). Verified 2026-10-14:
+>
+> | Script | Defect |
+> |---|---|
+> | `run_tests.sh` | hardcodes `PROJECT_ROOT="/home/phoenix/Desktop/wildframe"`; covers only 4 services |
+> | `run_all_tests.sh` | same hardcoded path; names 5 service directories that do not exist (`services/search`, `services/recommendation`, `services/billing`, `services/analytics`, `services/notification` — the real names are `search-service`, `recommendation-service`, `billing-service`, `analytics-service`, `notification-service`); runs `app/tests` where the tests live in `tests/` |
+> | `start_services.sh` | hardcoded path |
+> | `backend-quickstart.sh` | hardcoded path; claims "14 containers" |
+>
+> **Use the documented commands instead — they work on any machine.** The
+> scripts would need `$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)`, the
+> pattern `scripts/generate-dev-certs.sh` already uses.
+
+```bash
+./run_tests.sh    # broken — see above
 ```
 
 - [ ] Open and inspect service code you want to work on
@@ -557,12 +577,16 @@ redis-cli FLUSHDB
 ### Docker Issues
 ```bash
 # Clean up
-docker-compose down -v
+docker compose -f deployments/docker-compose.dev.yml down -v
 docker system prune
 
 # Rebuild
-docker-compose up --build
+docker compose -f deployments/docker-compose.dev.yml up --build
 ```
+
+> **Use `docker compose` (v2), never `docker-compose` (v1).** Only the v2
+> plugin is installed. There is also **no root `docker-compose.yml`** — the
+> `-f deployments/docker-compose.dev.yml` is required, not optional.
 
 ---
 

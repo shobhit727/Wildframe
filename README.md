@@ -80,7 +80,7 @@ Prerequisites:
 - Docker and Docker Compose
 - Python 3.13
 - Node.js 20+
-- Poetry 1.8.3
+- Poetry 2.4.1 (the version CI installs — see `POETRY_VERSION` in `.github/workflows/ci-cd.yml`)
 
 Start the development stack:
 
@@ -126,23 +126,31 @@ For service-specific development, see `docs/DEVELOPMENT.md` and `docs/QUICKSTART
 
 The CI workflow is the primary reproducible validation environment. For local testing, see:
 
-- `docs/TEST_GUIDE.md`
-- `TESTING_GUIDE.md`
-- `HOW_TO_RUN_TESTS.md`
+- **`HOW_TO_RUN_TESTS.md`** — the canonical source for commands *and* test counts.
+- `docs/TEST_GUIDE.md` — how to write and debug tests, and the test stack's shape.
+
+Root `TESTING_GUIDE.md` and `TEST_GUIDE.md` are **historical** (see
+`DOCS_INDEX.md`); do not follow their commands.
 
 ### Backend Unit Tests
 
 Backend unit/route tests run per service (a combined `pytest services/` sweep
-from the repo root breaks on shadowed `app.*` imports). **6,217 tests across
-the 15 services**, all green:
+from the repo root breaks on shadowed `app.*` imports). **6,943 collected
+across the 15 services** as of 2026-10-14 — see `HOW_TO_RUN_TESTS.md` for the
+per-service table and for the one suite that does not currently parse:
 
 ```bash
 for svc in services/*/; do
-  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+  (cd "$svc" && PYTHONPATH="$PWD" pytest tests --asyncio-mode=auto) || exit 1
 done
 ```
 
-Shared SDK tests (**694**) span four directories and run from the repo root:
+`PYTHONPATH="$PWD"` is what CI sets and what `auth-service`,
+`content-service` and `streaming-service` need; without it pytest resolves
+imports against the wrong path.
+
+Shared SDK tests (**795**) span the SDK's test directories and run from the repo
+root:
 
 ```bash
 PYTHONPATH="$PWD/packages/sdk" python -m pytest -c pyproject.toml \
@@ -153,8 +161,8 @@ PYTHONPATH="$PWD/packages/sdk" python -m pytest -c pyproject.toml \
   --asyncio-mode=auto
 ```
 
-Per-service coverage is **97–99%**; CI enforces a **95% floor**
-(`--cov-fail-under`) and fails the build below it.
+CI enforces an **85% per-service coverage floor**
+(`--cov-fail-under="${COVERAGE_FLOOR:-85}"`) and fails the build below it.
 
 ### Integration Tests
 
@@ -171,24 +179,23 @@ poetry run pytest tests/integration -q    # ~12 min
 
 ### Contract Tests
 
-Route drift detection (frontend-to-backend path validation) — 24 tests,
-blocking in the `backend-route-contract` CI job:
+**84 tests across 12 files**, blocking in the `backend-route-contract` CI job:
 
 ```bash
 pytest tests/contract -q
 ```
 
-24 tests verifying frontend paths resolve to registered backend routes. One is
-currently failing: the scanner globs all of `apps/web/src` without excluding
-`__tests__`, so it reads mock URLs from the frontend test files. Scanned over
-production source only, there is no drift.
+It starts with route drift — frontend API paths must resolve to registered
+backend routes — but also enforces that no service verifies JWTs with a shared
+secret, that no private key is committed, and several compose/metrics/policy
+invariants. All 84 pass.
 
 ### Frontend Tests
 
 ```bash
 cd apps/web
 
-# Unit tests (Vitest) — 805 tests across 44 files
+# Unit tests (Vitest) — 866 tests across 46 files
 npm run test
 
 # E2E tests (Playwright)
@@ -200,7 +207,7 @@ npx playwright test      # Terminal 2
 
 The `frontend-e2e` CI job is **blocking**.
 
-**Test Suites:** 9 spec files (`apps/web/e2e/`)
+**Test Suites:** 10 spec files (`apps/web/e2e/`)
 - `auth.spec.ts` — login, signup, protected-route redirects
 - `home.spec.ts`, `browse.spec.ts` — landing and catalogue
 - `watch.spec.ts` — playback: movie, series, seasons/episodes
@@ -224,7 +231,7 @@ npx playwright test
 npx playwright test --reporter=github
 ```
 
-**Test count:** **119 tests across 9 spec files**, covering **15 routes**.
+**Test count:** **122 tests across 10 spec files**, covering **15 routes**.
 Dev TLS material comes from `scripts/generate-dev-certs.sh`, which the
 Playwright config runs automatically.
 

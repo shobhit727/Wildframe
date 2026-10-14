@@ -391,17 +391,25 @@ Highlights:
   `refunded_amount`; repaired by hand (no migration framework) and the webhook
   flow is now idempotent.
 
-Test totals (re-measured on `audit/fix-open-github-issues`): **6,217** backend
-unit/route tests across the 15 services + **694** shared SDK tests + **24**
-static route-contract tests (CI) + **4** supply-chain guard tests + **110**
-live-stack integration tests + **805** frontend vitest tests across 44 files +
-**119** Playwright e2e tests across 9 files covering 15 routes. Per-service
-coverage is 97–99% with a 95% floor enforced in CI; mypy reports 0 errors
-across all 15 services.
+Test totals (re-measured 2026-10-14 on `audit/fix-open-github-issues`; the
+per-suite breakdown and the commands that regenerate it live in
+[`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md)): **6,943** backend unit/route
+tests collected across the 15 services + **795** shared SDK tests + **84**
+contract/supply-chain contract tests across 12 files (CI) + **4** supply-chain
+guard tests + **110** live-stack integration tests across 8 modules + **866**
+frontend vitest tests across 46 files + **122** Playwright e2e tests across 10
+spec files covering 15 routes. CI enforces an **85% per-service coverage
+floor** (`COVERAGE_FLOOR`); mypy reports 0 errors across all 15 services.
 
-One known open failure: `tests/contract/test_route_drift.py::
-test_frontend_paths_resolve_to_backend_routes` fails because it globs all of
-`apps/web/src` without excluding `__tests__` and therefore reads mock URL
-literals from the frontend test files. Excluding fixtures, the scan finds **0**
-unresolved paths, so there is no real frontend↔backend route drift.
+The contract suite is green — the previously reported
+`test_frontend_paths_resolve_to_backend_routes` failure is fixed: the scan now
+excludes `__tests__`, so it no longer reads mock URL literals from the frontend
+test files.
+
+**One measurement caveat.** The 877 collected for `auth-service` excludes
+`tests/test_telemetry.py` (15 tests), which imports
+`opentelemetry-exporter-otlp-proto-grpc`. That is a declared dependency in
+`services/auth-service/pyproject.toml` which CI installs; it was absent from
+the environment this was measured in. See `HOW_TO_RUN_TESTS.md` for how to
+reproduce the number.
  
