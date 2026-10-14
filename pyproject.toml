@@ -58,9 +58,19 @@ python-multipart = ">=0.0.6,<0.0.33"
 python-keycloak = ">=3.8,<8.0"
 
 # Observability
-opentelemetry-api = "^1.20.0"
-opentelemetry-sdk = "^1.20.0"
-opentelemetry-exporter-jaeger = "^1.20.0"
+# The API/SDK floor is 1.43.0 and must move with the 0.64b0 instrumentation
+# below: 0.64b0 instrumentations require semantic-conventions==0.64b0, and every
+# SDK below 1.43.0 pins semantic-conventions to an older 0.4x, so a lower floor
+# resolves to a set that cannot install. See issue #977.
+opentelemetry-api = "^1.43.0"
+opentelemetry-sdk = "^1.43.0"
+# Spans ship over OTLP, matching wildframe_observability. The Jaeger exporter is
+# discontinued upstream at 1.21.0 with no later release and was removed from
+# this manifest; keeping it declared shipped a dead, EOL package into the root
+# lockfile that the Trivy fs scan reads, and nothing in the tree imports it.
+# Jaeger has ingested OTLP natively since 1.35, so the same instance still
+# receives the spans.
+opentelemetry-exporter-otlp = "^1.43.0"
 opentelemetry-instrumentation-fastapi = "^0.64b0"
 opentelemetry-instrumentation-sqlalchemy = "^0.64b0"
 opentelemetry-instrumentation-redis = "^0.64b0"

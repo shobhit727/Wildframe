@@ -38,6 +38,49 @@ env:
     uploads-service admin-service
 
 jobs:
+  lockfile-integrity:
+    name: Lockfile Integrity (#977)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # Deliberately dependency-free. This job must be able to fail on a bad
+      # lockfile, and it must not inherit a broken venv from anywhere else.
+      - name: Assert the OpenTelemetry floor in every lockfile
+        run: python .github/scripts/check-lockfile-floors.py
+
+      # `poetry check --lock` only compares the content-hash against the
+      # package's OWN pyproject.toml, so it cannot see a stale transitive
+      # constraint. Running both is the point: the floor script covers what the
+      # hash cannot, and this covers the SDK packages the service matrix never
+      # installs. `poetry check` is offline -- it reads the two files and
+      # compares -- so this costs no network and no install.
+      - name: Install Poetry
+        uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1
+        with:
+          version: ${{ env.POETRY_VERSION }}
+
+      - name: Assert every lockfile matches its manifest
+        run: |
+          set -euo pipefail
+          failed=0
+          for d in . services/*/ packages/sdk/*/; do
+            [ -f "$d/poetry.lock" ] || continue
+            if ! (cd "$d" && poetry check --lock); then
+              echo "::error::stale lockfile: $d -- run 'poetry lock' there"
+              failed=1
+            fi
+          done
+          exit "$failed"
+
   supply-chain-guard:
     name: Supply Chain Guard (#809)
     runs-on: ubuntu-latest
@@ -414,6 +457,44 @@ jobs:
         env:
           COMPOSE_PROJECT_NAME: wildframe-ci-${{ github.run_id }}
         run: bash scripts/compose-smoke.sh
+
+      # `continue-on-error: true` above makes this job report `success` whether
+      # the stack came up or not, so the job status alone cannot tell a reader
+      # whether the application worked. A green check that means "we stopped
+      # looking" is the failure mode AGENTS.md 28b warns about, so the verdict
+      # is stated where it cannot be misread. This changes nothing about what
+      # blocks a merge; promoting the job itself is issue #979's open decision.
+      - name: Report the Compose smoke verdict
+        if: always()
+        run: |
+          set -uo pipefail
+          log_file="${RUNNER_TEMP}/wildframe-compose-smoke.log"
+          # The script writes the marker as its last statement, so an absent
+          # marker means it died before the verdict -- a failure, not a skip.
+          # Unanchored at the start on purpose: log() prefixes every line with
+          # "[<utc timestamp>] ", so an anchored '^COMPOSE_SMOKE_RESULT=PASS$'
+          # never matches and this step would report FAIL on a healthy stack.
+          if [ -f "$log_file" ] && grep -q 'COMPOSE_SMOKE_RESULT=PASS$' "$log_file"; then
+            verdict="PASS"
+          else
+            verdict="FAIL"
+          fi
+          {
+            echo "## Compose Runtime Smoke: ${verdict}"
+            echo ""
+            if [ "$verdict" = "FAIL" ]; then
+              echo "**Advisory job: the stack did not come up clean.** The check"
+              echo "above is green only because it is \`continue-on-error\`; the"
+              echo "compose smoke itself failed. See the \`compose-smoke-*\` artifact."
+            else
+              echo "All Compose services healthy; schema bootstrap and the five"
+              echo "endpoint probes passed. Advisory only -- this gates nothing."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$verdict" = "FAIL" ]; then
+            echo "::warning title=Compose Runtime Smoke failed::the stack did not come up clean; this check is green only because it is continue-on-error"
+            exit 1
+          fi
 
       - name: Upload Compose smoke diagnostics
         if: always()

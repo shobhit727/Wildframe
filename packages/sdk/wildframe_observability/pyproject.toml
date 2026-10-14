@@ -39,8 +39,14 @@ opentelemetry-instrumentation = "^0.64b0"
 opentelemetry-instrumentation-fastapi = "^0.64b0"
 opentelemetry-instrumentation-asgi = "^0.64b0"
 # Traces ship over OTLP. The Jaeger exporter was discontinued upstream at 1.21.0
-# with no later release, and it is incompatible with SDK 1.43.0, so it was not a
-# choice between it and OTLP. Jaeger has ingested OTLP natively since 1.35.
+# with no later release, so keeping it meant pinning a dead package into every
+# lockfile the Trivy fs scan reads. Jaeger has ingested OTLP natively since 1.35,
+# so the same Jaeger instance still receives the spans.
+#
+# Correcting a claim this comment used to make: the exporter was NOT incompatible
+# with SDK 1.43.0. opentelemetry-exporter-jaeger-thrift 1.21.0 declares
+# `opentelemetry-sdk >=1.11,<2.0`, which 1.43.0 satisfies. The reason for moving
+# to OTLP is that the exporter is discontinued, nothing more.
 opentelemetry-exporter-otlp = "^1.43.0"
 prometheus-client = "^0.18.0"
 starlette = ">=0.27.0"
