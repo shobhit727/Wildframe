@@ -57,32 +57,36 @@ async def lifespan(app: FastAPI):
     # recommendations never reference removed or unpublished titles (#228).
     await start_event_subscriber()
 
-    yield
-
-    # Shutdown (#426): stop accepting new requests, drain in-flight, close clients
-    logger.info(f"Shutting down {settings.SERVICE_NAME}")
-    app.state.shutting_down = True
-    _shutdown_event.set()
-
-    # Wait for in-flight requests to complete (bounded)
+    # Wrap the served period so an exception raised while the app is serving
+    # cannot propagate past the teardown and leak the subscriber, the catalog
+    # client and the engine (#863).
     try:
-        async with asyncio.timeout(_MAX_DRAIN_SECONDS):
-            while True:
-                async with _in_flight_lock:
-                    if _in_flight_requests == 0:
-                        break
-                await asyncio.sleep(0.1)
-    except asyncio.TimeoutError:
-        logger.warning(
-            "Shutdown drain timeout after %ds; %d requests still in flight",
-            _MAX_DRAIN_SECONDS,
-            _in_flight_requests,
-        )
+        yield
+    finally:
+        # Shutdown (#426): stop accepting new requests, drain in-flight, close clients
+        logger.info(f"Shutting down {settings.SERVICE_NAME}")
+        app.state.shutting_down = True
+        _shutdown_event.set()
 
-    await stop_event_subscriber()
-    await close_catalog_client()
-    await DatabaseManager.close()
-    logger.info("Shutdown complete")
+        # Wait for in-flight requests to complete (bounded)
+        try:
+            async with asyncio.timeout(_MAX_DRAIN_SECONDS):
+                while True:
+                    async with _in_flight_lock:
+                        if _in_flight_requests == 0:
+                            break
+                    await asyncio.sleep(0.1)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Shutdown drain timeout after %ds; %d requests still in flight",
+                _MAX_DRAIN_SECONDS,
+                _in_flight_requests,
+            )
+
+        await stop_event_subscriber()
+        await close_catalog_client()
+        await DatabaseManager.close()
+        logger.info("Shutdown complete")
 
 
 def create_app() -> FastAPI:

@@ -33,11 +33,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     else:
         logger.info("Database connection established")
 
-    yield
-
-    # Shutdown
-    logger.info(f"Shutting down {settings.SERVICE_NAME}")
-    await db_manager.close()
+    # Wrap the served period so an exception raised while the app is serving
+    # cannot propagate past the teardown and leak the async engine (#863).
+    try:
+        yield
+    finally:
+        logger.info(f"Shutting down {settings.SERVICE_NAME}")
+        await db_manager.close()
 
 
 def create_app() -> FastAPI:

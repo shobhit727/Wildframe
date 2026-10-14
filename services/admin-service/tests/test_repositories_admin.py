@@ -2,27 +2,23 @@
 
 Two things are asserted here beyond ordinary CRUD:
 
-1. ``app/repositories/__init__.py`` executes ``admin.py`` through
-   ``importlib.util.spec_from_file_location("admin_repos_impl", ...)`` at
-   import time, so the module is loaded under a *second* name that is never
-   registered in ``sys.modules``. The production service imports the classes
-   from ``app.repositories.admin`` instead. ``TestDoubleLoadHazard`` pins that
-   fact and the consequences of it.
+1. ``TestSingleRegistry`` pins the #868 invariant: ``app/repositories/__init__.py``
+   and ``app/models/__init__.py`` are plain re-export modules, so every name the
+   package publishes is the *same* class object production imports and there is
+   exactly one declarative registry in the process.
 2. The remaining repository methods the existing suite never calls
    (``get_by_content_id``, ``list_moderated_users`` with a status filter,
    ``list_by_severity``, ``list_by_resource``) and the append-only audit-log
    guards.
 """
 
-import importlib.util
-import pathlib
 import sys
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.models.admin import AdminAuditLog, AuditLogAppendOnlyError
+from app.models.admin import AdminAuditLog, AuditLogAppendOnlyError, Base
 from app.repositories import (
     AdminAuditLogRepository,
     ContentModerationRepository,
@@ -31,76 +27,79 @@ from app.repositories import (
     UserModerationRepository,
 )
 
-SERVICE_ROOT = pathlib.Path(__file__).resolve().parents[1]
-REPO_MODULE_PATH = SERVICE_ROOT / "app" / "repositories" / "admin.py"
-MODEL_MODULE_PATH = SERVICE_ROOT / "app" / "models" / "admin.py"
-
-
-def _load_third_copy(name: str, path: pathlib.Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
 
 @pytest.fixture
 async def session(tmp_path):
     """A real async SQLite session with the admin tables created.
 
-    ``app.models.admin`` is imported directly (not via the importlib-loaded
-    ``app.models`` package) so the ORM classes the repositories query are the
-    same objects whose metadata created the tables.
+    ``Base`` is the production declarative base from ``app.models.admin``, so
+    the ORM classes the repositories query are exactly the ones whose metadata
+    created the tables. Loading a private second copy here (as this fixture
+    once did) would recreate the duplicate registry #868 removed.
     """
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'admin.db'}")
     async with engine.begin() as conn:
-        await conn.run_sync(
-            _load_third_copy("admin_models_direct", MODEL_MODULE_PATH).Base.metadata.create_all
-        )
+        await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
         yield db
     await engine.dispose()
 
 
-class TestDoubleLoadHazard:
-    """Documents the double-load that ``app/repositories/__init__.py`` performs."""
+class TestSingleRegistry:
+    """#868: one module, one class object, one declarative registry.
 
-    def test_package_export_is_not_the_module_the_service_uses(self):
+    ``app/repositories/__init__.py`` and ``app/models/__init__.py`` used to exec
+    their real modules through ``importlib.util.spec_from_file_location`` at
+    import time. ``exec_module`` never registers the module in ``sys.modules``,
+    so every re-exported name was a *second* class object: the package export
+    was not the class the service instantiates, ``isinstance`` across the two
+    copies was ``False``, and the second copy's ``Base`` was a second
+    SQLAlchemy declarative registry.
+
+    The SQL layer stayed green only because both copies declare the same
+    table names, so the duplication was invisible to the existing suite.
+    These tests pin the invariant that makes it impossible again.
+    """
+
+    def test_package_export_is_the_class_the_service_instantiates(self):
         import app.repositories.admin as production_module
         import app.services.admin as service_module
 
-        # The class the service actually instantiates:
-        assert service_module.UserModerationRepository is (
-            production_module.UserModerationRepository
+        assert UserModerationRepository is production_module.UserModerationRepository
+        assert service_module.UserModerationRepository is production_module.UserModerationRepository
+
+    def test_reexported_classes_live_in_an_importable_module(self):
+        # ``mock.patch`` resolves its target through importlib, so a class whose
+        # ``__module__`` is not in ``sys.modules`` cannot be patched at all.
+        assert UserModerationRepository.__module__ == "app.repositories.admin"
+        assert sys.modules["app.repositories.admin"].UserModerationRepository is (
+            UserModerationRepository
         )
-        # The class the package re-exports is a *different* object:
-        assert UserModerationRepository is not production_module.UserModerationRepository
 
-    def test_re_exported_classes_report_a_module_name_absent_from_sys_modules(self):
-        # exec_module does not register the module, so the classes are
-        # unreachable by name from sys.modules and cannot be patched there.
-        assert UserModerationRepository.__module__ == "admin_repos_impl"
+    def test_no_stray_exec_module_aliases_remain(self):
         assert "admin_repos_impl" not in sys.modules
+        assert "admin_models_impl" not in sys.modules
 
-    def test_models_suffer_the_same_hazard(self):
+    def test_model_package_shares_the_production_declarative_registry(self):
         import app.models as model_package
         import app.models.admin as model_module
 
-        assert model_package.UserModeration is not model_module.UserModeration
-        assert model_package.Base is not model_module.Base
-        assert model_package.UserModeration.__module__ == "admin_models_impl"
-        assert "admin_models_impl" not in sys.modules
+        # Two Base classes meant two MetaData objects. Anything that builds a
+        # schema from ``app.models.Base`` -- conftest's ``db_session`` does
+        # exactly that -- was creating tables in a registry that the
+        # production models were not part of.
+        assert model_package.Base is model_module.Base
+        assert model_package.Base.metadata is model_module.Base.metadata
+        assert model_package.UserModeration is model_module.UserModeration
 
-    def test_isinstance_across_the_two_copies_fails(self):
+    def test_isinstance_holds_across_the_package_and_module_paths(self):
         from app.repositories.admin import UserModerationRepository as Production
 
         production_instance = Production.__new__(Production)
-        assert isinstance(production_instance, Production)
-        assert not isinstance(production_instance, UserModerationRepository)
+        assert isinstance(production_instance, UserModerationRepository)
 
-    def test_orm_table_mapping_nevertheless_resolves(self):
-        # The hazard is inert at the SQL layer: both model copies map the same
-        # table name, so a query built from either copy hits the same rows.
+    def test_orm_table_mapping_resolves_through_one_registry(self):
         import app.models as model_package
         import app.models.admin as model_module
 
@@ -112,10 +111,19 @@ class TestDoubleLoadHazard:
             == select(model_module.UserModeration).compile().string
         )
 
+    def test_schema_built_from_the_package_base_covers_production_models(self):
+        """The end-to-end payoff: ``from app.models import Base`` must now be
+        the registry the production models are mapped in."""
+        import app.models as model_package
+        import app.models.admin as model_module
+
+        production_tables = set(model_module.Base.metadata.tables)
+        assert "user_moderations" in production_tables
+        assert set(model_package.Base.metadata.tables) == production_tables
+
     async def test_repository_still_persists_through_the_service_wired_session(self, session):
-        # End-to-end sanity: the copy the service holds writes real rows.
-        service_repo = UserModerationRepository.__new__(UserModerationRepository)
-        service_repo.db = session
+        # End-to-end sanity: the class the service holds writes real rows.
+        service_repo = UserModerationRepository(session)
         row = await service_repo.create("u-1", "suspended", "spam", "admin-1")
         await session.commit()
         assert row.id is not None

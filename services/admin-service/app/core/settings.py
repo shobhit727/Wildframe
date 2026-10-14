@@ -74,17 +74,31 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
-        """Fail fast when running outside development with default insecure secrets.
+        """Fail fast when running outside development with unsafe configuration.
 
-        Two complementary hardening layers are enforced here. The explicit
-        per-setting chain below rejects missing values, known-insecure
-        credentials and secrets, and short JWT keys. The upstream production
-        guard additionally rejects empty or whitespace-only secrets and its
-        ``default_secrets`` list; every entry on that list
-        ("your-secret-key-change-in-production", "dev-secret-key",
-        "dev-secret-key-change-in-production") is a member of
-        KNOWN_INSECURE_JWT_SECRETS, so it stays enforced without duplicating
-        the list here.
+        This validator is the whole of admin-service's production guard, and
+        it is not backed by a second upstream layer. ``ComplianceSettingsMixin``
+        supplies compliance configuration and helpers only: it defines no
+        ``default_secrets`` list and runs no secret validation, so nothing
+        here can be relied on to catch a value this validator misses.
+
+        The checks actually performed are exactly the branches below:
+
+        * ``DATABASE_URL`` is set and free of
+          KNOWN_INSECURE_DB_CREDENTIALS;
+        * ``REDIS_URL`` is set;
+        * ``KAFKA_BOOTSTRAP_SERVERS`` is set.
+
+        ``JWT_SECRET_KEY`` is deliberately *not* checked here. It is a legacy
+        field: verification uses RS256/JWKS and never reads the secret, and
+        ``test_legacy_jwt_secret_is_optional_under_rs256_jwks`` pins that a
+        production config may leave it unset. KNOWN_INSECURE_JWT_SECRETS
+        exists to identify the development default (and to keep tests honest),
+        not as an enforced production check.
+
+        If a rejection is ever added here, update this docstring in the same
+        change -- an overstating docstring is what led reviewers to believe
+        the local checks were redundant (#882).
         """
         if self.ENVIRONMENT in DEV_ENVIRONMENTS:
             return self

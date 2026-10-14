@@ -10,7 +10,6 @@ state builds a throwaway instance via ``create_app()``.
 """
 
 import asyncio
-import contextlib
 import runpy
 import sys
 from unittest.mock import AsyncMock
@@ -302,32 +301,29 @@ def test_request_id_header_is_propagated(monkeypatch):
 
 
 @pytest.mark.unit
-async def test_lifespan_does_NOT_dispose_engine_when_served_block_raises(monkeypatch):
-    """KNOWN BUG — app/main.py:36-40.
+async def test_lifespan_disposes_engine_when_served_block_raises(monkeypatch):
+    """#863: the served period must be wrapped in try/finally.
 
-    ``lifespan`` is ``yield`` followed by ``await db_manager.close()`` with no
-    ``try``/``finally`` around the yield. When anything raises inside the
-    served block, the exception is thrown *into* the generator at the yield and
-    propagates straight out, so line 40 never executes and the async engine is
-    never disposed -- a connection-pool leak on any shutdown that errors.
+    ``lifespan`` was ``yield`` followed by ``await db_manager.close()`` with no
+    ``try``/``finally`` around the yield. When anything raises inside the served
+    block, the exception is thrown *into* the generator at the yield and
+    propagates straight out, so the teardown line never executes and the async
+    engine is never disposed -- a connection-pool leak on any shutdown that
+    errors. ``search-service`` already had the correct shape; this now matches.
 
-    This test pins the CURRENT (buggy) behaviour so the regression is visible.
-    If ``lifespan`` is ever hardened with a try/finally, this test fails and
-    must be inverted to ``assert close.await_count == 1``.
+    The original exception must still reach the caller; the fix must not
+    swallow it to guarantee cleanup.
     """
     close = AsyncMock()
     monkeypatch.setattr(db_manager, "health_check", AsyncMock(return_value=True))
     monkeypatch.setattr(db_manager, "close", close)
     app = main_module.create_app()
 
-    with contextlib.suppress(RuntimeError):
+    with pytest.raises(RuntimeError, match="failure inside the served block"):
         async with main_module.lifespan(app):
             raise RuntimeError("failure inside the served block")
 
-    assert close.await_count == 0, (
-        "expected the current leaky behaviour; if this now passes with 1 "
-        "the lifespan was fixed and this assertion should be flipped"
-    )
+    close.assert_awaited_once()
 
 
 @pytest.mark.unit

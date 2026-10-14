@@ -6,8 +6,11 @@ secret, so every rejection branch is asserted individually, plus the
 development-default path that the whole dev stack relies on.
 """
 
+import inspect
+
 import pytest
 from pydantic import ValidationError
+from wildframe_compliance.settings import ComplianceSettingsMixin
 
 from app.core import settings as settings_mod
 from app.core.settings import (
@@ -99,6 +102,49 @@ class TestProductionRejections:
         settings = Settings(**_prod(JWT_SECRET_KEY=None))
         assert settings.JWT_ALGORITHM == "RS256"
         assert settings.JWT_SECRET_KEY is None
+
+
+class TestValidatorDocstringMatchesReality:
+    """#882: the docstring must not credit an upstream guard that does not exist.
+
+    ``validate_production_secrets`` claimed a second, "upstream" hardening
+    layer supplied by ``ComplianceSettingsMixin`` -- a ``default_secrets``
+    list plus a validator that rejects empty or whitespace-only secrets. No
+    such list or validator exists on the mixin, so the docstring overstated the
+    defence-in-depth and invited the next reviewer to delete the local checks
+    on the assumption that something upstream still covered them.
+    """
+
+    def test_the_mixin_really_has_no_default_secrets_list(self):
+        # Pins the fact the docstring must not contradict.
+        assert not hasattr(ComplianceSettingsMixin, "default_secrets")
+
+    def test_the_mixin_really_has_no_secret_validator(self):
+        # The mixin carries compliance configuration and helpers only; it
+        # validates no secrets at all.
+        assert not any("secret" in name.lower() for name in vars(ComplianceSettingsMixin)), sorted(
+            vars(ComplianceSettingsMixin)
+        )
+
+    def test_the_validator_docstring_claims_no_whitespace_secret_rejection(self):
+        # No branch rejects an empty or whitespace-only value, so the docstring
+        # must not advertise one. This is a plain behavioural check: the old
+        # docstring claimed it, the corrected one must not repeat it.
+        doc = (inspect.getdoc(Settings.validate_production_secrets) or "").lower()
+        assert "whitespace" not in doc
+
+    def test_the_validator_docstring_disclaims_the_mixin_secret_guard(self):
+        # A corrective docstring must still *name* the mixin while saying it
+        # contributes no secret validation -- otherwise the next reader keeps
+        # believing an upstream guard covers what these branches do not.
+        doc = inspect.getdoc(Settings.validate_production_secrets) or ""
+        assert "ComplianceSettingsMixin" in doc
+        assert "runs no secret validation" in doc
+
+    def test_the_validator_docstring_describes_the_guard_that_exists(self):
+        # Every branch the docstring advertises must actually be here.
+        doc = inspect.getdoc(Settings.validate_production_secrets) or ""
+        assert "KNOWN_INSECURE_DB_CREDENTIALS" in doc
 
 
 class TestGetSettings:

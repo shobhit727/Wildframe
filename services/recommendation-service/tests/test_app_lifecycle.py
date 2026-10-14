@@ -653,12 +653,14 @@ class TestLifespan:
         main_mod._in_flight_requests = 0
 
     @pytest.mark.asyncio
-    async def test_an_exception_in_the_served_period_skips_shutdown(self, lifecycle):
-        """DEFECT (reported, not fixed): ``lifespan`` has no try/finally around
-        ``yield``, so an exception raised while the app is serving propagates
-        straight past the shutdown sequence and leaks the subscriber, the
-        catalog client and the engine. ``search-service`` wraps its ``yield``
-        in try/finally; this one does not.
+    async def test_an_exception_in_the_served_period_still_releases_resources(self, lifecycle):
+        """#863: the ``yield`` must be wrapped in try/finally.
+
+        An exception raised while the app is serving is thrown into the
+        generator at the yield point; without a ``finally`` it propagates
+        straight past the shutdown sequence and leaks the event subscriber,
+        the catalog client and the engine. The original exception must still
+        reach the caller -- the fix must not swallow it.
         """
         app = create_app()
 
@@ -666,10 +668,10 @@ class TestLifespan:
             async with main_mod.lifespan(app):
                 raise RuntimeError("request blew up")
 
-        main_mod.stop_event_subscriber.assert_not_awaited()
-        main_mod.close_catalog_client.assert_not_awaited()
-        lifecycle.close.assert_not_awaited()
-        assert app.state.shutting_down is False
+        main_mod.stop_event_subscriber.assert_awaited_once()
+        main_mod.close_catalog_client.assert_awaited_once()
+        lifecycle.close.assert_awaited_once()
+        assert app.state.shutting_down is True
 
     @pytest.mark.asyncio
     async def test_shutdown_state_is_visible_to_the_middleware(self, lifecycle):
