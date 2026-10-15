@@ -1181,3 +1181,73 @@ real dev certificate: `NODE_EXTRA_CA_CERTS` returned 200 with verification on,
 the old bypass returned 200 while accepting a rogue cert, and the default trust
 store failed. The mechanism is proven; the Caddy-serves-that-cert assumption is
 inferred from `generate-dev-certs.sh`, not observed.
+
+### The age gate now refuses everything (owner decision needed, #1023)
+
+The gateway age gate was dead code — `check_age_gate` was called only from
+tests and `age_middleware` was never registered. It is now wired (#671670c8),
+fail-closed.
+
+**Consequence to decide on:** `TokenManager.create_access_token` emits no
+`age_verified` / `is_minor` claims. auth-service's `POST /age/verify` returns
+them in a *response body* that nothing mints into a token. So **every
+age-restricted request is currently refused, including the live
+`/content/restricted` route.**
+
+Three options:
+1. Accept it until auth-service mints the claims (fail-closed, but the
+   children's catalogue is unplayable today).
+2. Add a trusted-proxy escape hatch so an upstream verifier can assert age.
+3. Mint the claims in auth-service — different repo, and the token schema
+   changes.
+
+It is reversible in one place (`age_claim_from_token`).
+
+### `POST /api/v1/reindex` is an unauthenticated write in production
+
+Found by the content-service agent while enumerating the write surface; not in
+any issue. `/api/v1/reindex` is mounted with no auth dependency. It is recorded
+in `KNOWN_UNAUTHENTICATED_WRITES` in
+`services/content-service/tests/test_production_auth_surface.py`, with a test
+asserting that allowlist only shrinks — **not** gated, because that is a
+production behaviour change and `test_routes.py::TestReindexEndpoints`
+exercises it unauthenticated, so gating it today breaks that suite.
+
+Owner decision: who may trigger a reindex?
+
+### auth-service: three real test gaps found by mutation testing
+
+Diagnosis only; not fixed. Full detail in
+`PROJECT_MEMORY/MUTATION_TESTING_REPORT.md`.
+
+1. **Nothing asserts the lockout window.** `self.lockout_minutes = 15` →
+   `15*365*24` survives the full suite. Tests hand-set `locked_until` rather
+   than driving the lockout path, so a one-year lockout is indistinguishable
+   from 15 minutes.
+2. **`tests/test_repositories.py:252` and `:262`** —
+   `test_create_rolls_back_and_reraises` / `test_update_rolls_back_and_reraises`
+   assert only `pytest.raises`. Deleting `await self.rollback()` from
+   `UserRepository.create` / `.update` survives.
+3. **`tests/test_auth_routes_gaps.py:409`** —
+   `test_rollback_is_called_on_registration_failure` contains **no assertions at
+   all**. It cannot fail.
+
+All three are the same root cause, and the correct pattern already exists in the
+repo at `tests/test_database.py:217` (`session.rollback.assert_awaited_once()`).
+
+**Judgement call for the owner on #3:** delete it or repair it? An assertion-free
+test that has been contributing to a green suite for a while is a question about
+intent, not something to decide silently.
+
+Also: `reset_login_attempts` deleting `user.locked_until = None` survives, but
+`is_locked` compares against now, so a stale past value is harmless. Low impact.
+
+### Gateway CI has no redis service, so the live-Lua tests skip
+
+`tests/test_rate_limiter_lua.py` runs the production Lua against real Redis
+because 46 FakeRedis tests were re-implementing it. CI defines a `postgres`
+service and no `redis`, so those 6 tests skip there. A 7th always-runs test pins
+the script text as an explicitly-weaker proxy.
+
+Closing it properly means adding a `redis:` service to the gateway job in
+`.github/workflows/ci-cd.yml` — not a service change, and not done.
