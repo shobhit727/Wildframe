@@ -11,10 +11,10 @@ from jose import jwk, jwt
 from wildframe_auth.verifier import verify_token as verify_shared_token
 
 from app.middleware import (
+    AgeGateMiddleware,
     AuthenticationMiddleware,
     LoadBalancer,
     ServiceRegistry,
-    age_middleware,
     get_current_user,
     get_optional_user,
     get_shared_client,
@@ -453,14 +453,62 @@ async def test_load_balancer_short_circuits_for_an_unknown_service():
 
 
 # ---------------------------------------------------------------------------
-# age_middleware
+# AgeGateMiddleware
 # ---------------------------------------------------------------------------
 
 
-async def test_age_middleware_adds_a_vary_header_for_jurisdiction_caches():
-    async def call_next(request):
-        return Response(content=b"ok")
+async def _ok(_request):
+    return Response(content=b"ok")
 
-    response = await age_middleware(_request(), call_next)
+
+async def _run_gate(request, call_next=_ok):
+    return await AgeGateMiddleware(app=None).dispatch(request, call_next)
+
+
+async def test_age_gate_middleware_adds_a_vary_header_for_jurisdiction_caches(auth):
+    """The Vary contract, now on a path the gate actually serves.
+
+    The old test asserted this header on `/content/api/v1/titles`, which the
+    gate does not touch. `AgeGateMiddleware` sets Vary where it means something:
+    on an age-restricted response (#1023). The token is a real RS256 token and
+    the `auth` fixture verifies it with the real shared verifier -- the only
+    thing stubbed is the JWKS *fetch*.
+    """
+    token = _token(age_verified=True, is_minor=False)
+    request = _request(
+        path="/content/restricted/film-1", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    response = await _run_gate(request)
+
+    assert response.status_code == 200
     assert response.headers["Vary"] == "X-Jurisdiction, X-Age-Verified"
+    assert response.body == b"ok"
+
+
+async def test_age_gate_middleware_refuses_an_unverified_restricted_path(auth):
+    """What the pass-through it replaced did *not* do (#1023)."""
+    token = _token()  # a valid access token, but no age claim on it
+    request = _request(path="/maturity/film", headers={"Authorization": f"Bearer {token}"})
+
+    response = await _run_gate(request)
+
+    assert response.status_code == 403
+    assert b"Age verification required" in response.body
+
+
+async def test_age_gate_middleware_refuses_an_unauthenticated_restricted_path(auth):
+    request = _request(path="/purchase/checkout")
+
+    response = await _run_gate(request)
+
+    assert response.status_code == 403
+    assert b"Age verification required" in response.body
+
+
+async def test_age_gate_middleware_leaves_an_unrestricted_path_alone(auth):
+    """No Vary, no claim, no 403 -- the gate is not a blanket refusal."""
+    response = await _run_gate(_request())
+    assert response.status_code == 200
+    assert "Vary" not in response.headers
     assert response.body == b"ok"

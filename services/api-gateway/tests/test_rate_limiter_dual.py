@@ -355,7 +355,16 @@ async def test_burst_not_enforced_for_non_expensive():
 
 
 @pytest.mark.asyncio
-async def test_upload_finalize_burst():
+async def test_upload_finalize_burst_limit_applies_only_to_finalize_paths():
+    """Pinned under its own name (#879): this covers the BURST limit only.
+
+    The test used to be called `test_upload_finalize_burst` and that was true
+    -- it set `_burst_upload_finalize` and nothing else -- but the name read as
+    though it covered the whole finalize special case, so the fixed-window
+    half (`RATE_LIMIT_UPLOAD_FINALIZE`) stayed untested and mutating it
+    survived. The window limit is pinned by
+    `test_upload_finalize_window_limit` below.
+    """
     from app.middleware import RateLimiter
 
     redis = FakeRedis()
@@ -369,6 +378,69 @@ async def test_upload_finalize_burst():
     assert await limiter.check_rate_limit("uploads", "/complete", ip=ip) is True
     assert await limiter.check_rate_limit("uploads", "/complete", ip=ip) is False
     assert await limiter.check_rate_limit("uploads", "", ip=ip) is True
+
+
+@pytest.mark.asyncio
+async def test_upload_finalize_window_limit():
+    """#879: the finalize *fixed window* is a separate limit, not the uploads one.
+
+    `RATE_LIMIT_UPLOAD_FINALIZE` (60) is its own window: it is not
+    `RATE_LIMIT_UPLOAD_CREATE`, and it only applies to the finalize paths. The
+    burst test above never touched it, so removing the special case in
+    `_get_limit` -- or reading the wrong setting -- changed nothing observable.
+    """
+    from app.middleware import RateLimiter
+
+    redis = FakeRedis()
+    limiter = RateLimiter(redis)
+    limiter.limits["uploads"] = 100  # the ordinary uploads window
+    limiter._upload_finalize_limit = 2  # RATE_LIMIT_UPLOAD_FINALIZE
+    limiter.burst_limits["uploads"] = 100
+    limiter._burst_upload_finalize = 100  # not what this test is about
+    limiter.concurrency_limits["uploads"] = 100
+    limiter._concurrency_upload_finalize = 100
+    ip = "8.8.8.8"
+
+    assert await limiter.check_rate_limit("uploads", "/complete", ip=ip) is True
+    assert await limiter.check_rate_limit("uploads", "/abort", ip=ip) is True
+    # Third finalize request exhausts the finalize window, not the uploads one.
+    assert await limiter.check_rate_limit("uploads", "/complete", ip=ip) is False
+    # The ordinary uploads path has its own, much larger, budget.
+    assert await limiter.check_rate_limit("uploads", "", ip=ip) is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/complete", "/abort"])
+async def test_upload_finalize_window_limit_applies_to_both_finalize_paths(path):
+    """A special case that only remembered one of its two paths is a special case."""
+    from app.middleware import RateLimiter
+
+    redis = FakeRedis()
+    limiter = RateLimiter(redis)
+    limiter.limits["uploads"] = 100
+    limiter._upload_finalize_limit = 1
+    limiter.burst_limits["uploads"] = 100
+    limiter._burst_upload_finalize = 100
+    limiter.concurrency_limits["uploads"] = 100
+    limiter._concurrency_upload_finalize = 100
+    ip = "9.9.9.9"
+
+    assert await limiter.check_rate_limit("uploads", path, ip=ip) is True
+    assert await limiter.check_rate_limit("uploads", path, ip=ip) is False
+
+
+@pytest.mark.asyncio
+async def test_the_finalize_window_is_not_the_uploads_window():
+    """The two settings must be distinguishable, or the special case is a no-op."""
+    from app.core.settings import settings
+
+    from app.middleware import RateLimiter
+
+    limiter = RateLimiter(FakeRedis())
+    assert limiter._upload_finalize_limit == settings.RATE_LIMIT_UPLOAD_FINALIZE
+    # If these were equal, every test above would still pass with the special
+    # case deleted -- which is exactly how it went untested.
+    assert limiter._upload_finalize_limit != limiter.limits["uploads"]
 
 
 # ---------------------------------------------------------------------------

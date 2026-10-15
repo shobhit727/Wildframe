@@ -200,19 +200,44 @@ def test_age_gate_uppercases_a_lowercase_jurisdiction_header():
     assert result["jurisdiction"] == "IN"
 
 
-@pytest.mark.parametrize(
-    ("jurisdiction", "minor_age"),
-    sorted(JURISDICTION_MINOR_AGE.items()),
-)
-def test_age_gate_minor_age_table_is_used_for_each_jurisdiction(jurisdiction, minor_age):
+@pytest.mark.parametrize("jurisdiction", sorted(JURISDICTION_MINOR_AGE))
+def test_no_jurisdiction_based_minor_denial_is_implemented(jurisdiction):
+    """KNOWN GAP (#1023) -- asserted honestly instead of papered over.
+
+    The previous version of this test claimed the minor-age table was "used":
+    it parametrised over the table and then asserted ``minor_age > 0`` about
+    the very value it had been handed. The number never reaches a decision --
+    `check_age_gate` interpolates it into a log line and returns a payload
+    that does not contain it, so a *verified minor* is admitted in every listed
+    jurisdiction, at every listed age.
+
+    This now states the gap. It will go red the moment someone implements a
+    per-jurisdiction policy, which is correct: that is a legal decision, not a
+    refactor, and it should be made deliberately.
+    """
     result = check_age_gate(
         _Request("/maturity/x"),
         x_age_verified="true",
         x_is_minor="true",
         x_jurisdiction=jurisdiction,
     )
-    assert result["jurisdiction"] == jurisdiction
-    assert minor_age > 0
+
+    assert result is not None, "a verified minor was refused"
+    assert result["is_minor"] is True
+    assert "minor_age" not in result, "the table value is supposed to stay out of the decision"
+
+
+@pytest.mark.parametrize("jurisdiction", ["ZZ", "", None])
+def test_an_unknown_jurisdiction_changes_nothing_either(jurisdiction):
+    """Same gap, for a jurisdiction the table does not mention at all."""
+    result = check_age_gate(
+        _Request("/maturity/x"),
+        x_age_verified="true",
+        x_is_minor="true",
+        x_jurisdiction=jurisdiction,
+    )
+    assert result is not None
+    assert result["is_minor"] is True
 
 
 # --------------------------------------------------------------------------

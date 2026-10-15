@@ -14,7 +14,7 @@ from typing import Any, cast
 import httpx
 import redis.asyncio as redis
 from fastapi import HTTPException, Request, Response, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from wildframe_auth import JWKSUnavailableError, JWTError, verify_token_with_jwks
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -71,6 +71,11 @@ _SECURITY_SENSITIVE_HEADERS = frozenset(
 # X-Forwarded-For / X-Real-IP are replaced with trusted values.
 # X-User-* identity headers are dropped entirely.
 # X-Correlation-ID / X-Request-ID are always regenerated server-side.
+#
+# X-Age-Verified / X-Is-Minor (#1023): these are the values the age gate reads,
+# so a client able to send them is a client that can age-gate itself open. They
+# are stripped here and re-asserted by AgeGateMiddleware from the verified
+# bearer token, which is the only source the gate accepts.
 _STRIP_HEADERS = frozenset(
     {
         "x-forwarded-for",
@@ -80,6 +85,8 @@ _STRIP_HEADERS = frozenset(
         "x-user-roles",
         "x-correlation-id",
         "x-request-id",
+        "x-age-verified",
+        "x-is-minor",
     }
 )
 
@@ -1081,11 +1088,124 @@ async def get_optional_user(request: Request) -> dict | None:
     return await auth_middleware.verify_token(request)
 
 
-async def age_middleware(request: Request, call_next):
-    """Middleware that propagates age claims from JWT to upstream headers."""
-    # In prod, decode JWT and inject X-Age-Verified, X-Is-Minor
-    # For now, pass through and let age_gate enforce
-    response = await call_next(request)
-    # Add Vary to help caches
-    response.headers["Vary"] = "X-Jurisdiction, X-Age-Verified"
-    return response
+class AgeGateMiddleware(BaseHTTPMiddleware):
+    """The age gate, on the request path (#1023).
+
+    Replaces `age_middleware`, which was a pass-through that set `Vary` and
+    never called `check_age_gate` -- and was not registered in `create_app`
+    either. So `/maturity/*`, `/purchase` and `/content/restricted` were not
+    age-gated at runtime while 16 unit tests called `check_age_gate` directly
+    and passed. A unit test cannot see that; see test_age_gate_wiring.py.
+
+    The claim comes from the **verified bearer token** and nowhere else. The
+    JWT decode is real (the docstring's "in prod" deferral was stale): it uses
+    the same shared JWKS verifier as `AuthenticationMiddleware`, so it adds no
+    crypto of its own.
+
+    Policy chosen for the two questions the owner left open -- both are
+    deliberately the conservative reading and both are reversible in one place:
+
+    1. **Absent claim -> refused.** An unknown age is treated as a gate hit.
+    2. **Client-asserted claim -> refused.** `X-Age-Verified` is stripped at
+       the edge, so a forged header is not proof and cannot be forwarded to an
+       upstream that might trust it. What the upstream finally receives is the
+       value derived from the token, which replaces any client value.
+
+    Consequence, stated plainly: auth-service does not currently put
+    `age_verified` / `is_minor` in the access token (POST /age/verify returns
+    them in a response body that nothing mints into a token), so until it does,
+    every age-restricted request is refused. That is the fail-closed default,
+    not an accident; relaxing it is a one-line change to
+    `age_claim_from_token` once the owner decides the policy.
+    """
+
+    def __init__(self, app):
+        super().__init__(app)
+        from app.core.settings import settings
+
+        self._jwks_url = settings.JWT_JWKS_URL
+        self._audience = settings.JWT_AUDIENCE
+        self._issuer = settings.JWT_ISSUER
+
+    async def _verified_claims(self, request: Request) -> dict | None:
+        """Verify the bearer token, or return None.
+
+        None means "no usable claim", for every reason: no header, a non-bearer
+        scheme, a bad token, or JWKS being unreachable. All of them fail
+        closed at the gate below; none of them raise into the request path.
+        """
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return None
+        try:
+            scheme, token = auth_header.split()
+            if scheme.lower() != "bearer":
+                return None
+            return await verify_token_with_jwks(
+                token,
+                audience=self._audience,
+                issuer=self._issuer,
+                url=self._jwks_url,
+                leeway=60,
+            )
+        except (JWTError, JWKSUnavailableError, ValueError, TypeError):
+            # Same posture as AuthenticationMiddleware.verify_token: an
+            # unverifiable token is not an error here, it is an absent claim.
+            logger.warning("Age gate token verification failed", exc_info=True)
+            return None
+
+    async def dispatch(self, request: Request, call_next):
+        from app.core.age_gate import age_claim_from_token, check_age_gate, is_age_restricted
+
+        if not is_age_restricted(request.url.path):
+            return await call_next(request)
+
+        claims = await self._verified_claims(request)
+        x_age_verified, x_is_minor = age_claim_from_token(claims)
+        try:
+            check_age_gate(
+                request,
+                x_age_verified=x_age_verified,
+                x_is_minor=x_is_minor,
+                # Jurisdiction is a caller hint: it only reaches a log line
+                # today (see the KNOWN GAP on JURISDICTION_MINOR_AGE) and is
+                # not used to grant or refuse access.
+                x_jurisdiction=request.headers.get("X-Jurisdiction"),
+            )
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+        # check_age_gate has already refused everything that is not exactly
+        # "true", so reaching here means the token carried a verified claim.
+        # A missing minor claim is stated explicitly ("false") rather than left
+        # as a silent "unknown" downstream, and the value the upstream finally
+        # sees is the one derived here -- never the client's, which the edge
+        # has already stripped.
+        self._assert_claim_upstream(
+            request, cast(str, x_age_verified), x_is_minor if x_is_minor is not None else "false"
+        )
+
+        response = await call_next(request)
+        # Only where it means something: a response to an age-restricted path
+        # varies by jurisdiction and age claim.
+        response.headers["Vary"] = "X-Jurisdiction, X-Age-Verified"
+        return response
+
+    @staticmethod
+    def _assert_claim_upstream(request: Request, verified: str, is_minor: str) -> None:
+        """Replace any age headers on the request with the gateway's own.
+
+        HeaderSanitizerMiddleware already removed the client's copies (it runs
+        outside this middleware); the filter here makes the "whatever arrives
+        upstream is ours" property local to the gate as well.
+        """
+        headers = [
+            (k, v)
+            for k, v in request.scope["headers"]
+            if k.lower() not in (b"x-age-verified", b"x-is-minor")
+        ]
+        headers.append((b"x-age-verified", verified.encode()))
+        headers.append((b"x-is-minor", is_minor.encode()))
+        request.scope["headers"] = headers
+        if hasattr(request, "_headers"):
+            del request._headers

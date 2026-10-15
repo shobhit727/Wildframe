@@ -15,6 +15,7 @@ from app.api.gateway_routes import router as gateway_router
 from app.core.security_headers import SECURITY_HEADERS
 from app.core.settings import settings
 from app.middleware import (
+    AgeGateMiddleware,
     AuthenticationMiddleware,
     BodyLimitMiddleware,
     HeaderSanitizerMiddleware,
@@ -115,9 +116,18 @@ def create_app() -> FastAPI:
     # Middleware order (last added = first executed):
     # 1. BodyLimitMiddleware (enforces limits before routing)
     # 2. HeaderSanitizerMiddleware (strips/rewrites headers)
-    # 3. CORSMiddleware
-    # 4. Observability (added by wire_observability)
+    # 3. AgeGateMiddleware (added first => innermost => runs *after* the
+    #    sanitizer, so it can only see age headers the edge has not stripped,
+    #    and the headers it asserts upstream survive to the proxy route)
+    # 4. CORSMiddleware
+    # 5. Observability (added by wire_observability)
 
+    # AgeGateMiddleware (#1023): `check_age_gate` had 16 green unit tests and
+    # no production caller -- the old `age_middleware` pass-through was never
+    # registered either -- so /maturity/*, /purchase and /content/restricted
+    # were not age-gated at runtime. Registered here, and asserted through the
+    # ASGI app in test_age_gate_wiring.py.
+    app.add_middleware(AgeGateMiddleware)
     app.add_middleware(BodyLimitMiddleware)
     app.add_middleware(HeaderSanitizerMiddleware)
 
