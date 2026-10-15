@@ -9836,3 +9836,122 @@ clean tree.
 SDK 1.43.0". The lockfile disproves it — jaeger-thrift 1.21.0 requires
 `opentelemetry-sdk >=1.11,<2.0`. The real reason is EOL. §20 still carries the
 wrong claim; not mine to edit.
+
+## 2026-10-13 — mutation testing, and fixing what it found
+
+Five subagents: one to run the mutation pass auth-service was missing, four to
+fix what the first pass found. All baselines re-verified by me afterwards —
+including **auth-service back at exactly 891 passed / 1 skipped** after being
+mutated, which is the check that matters most when a harness edits source.
+
+Everything below is in `PROJECT_MEMORY/MUTATION_TESTING_REPORT.md`.
+
+### The headline: a CRITICAL control that was not wired
+
+`check_age_gate` was referenced **only in test files**. `age_middleware` was a
+pass-through that never called it and was not registered in `app/main.py` at
+all. `/maturity/*`, `/purchase` and `/content/restricted` were **not age-gated
+at runtime** while 16 unit tests called the function directly and passed.
+`age_gate.py:38` documented itself as "called from proxy middleware".
+
+A child-safety control, absent from the request path, under a green suite. Now
+wired (`671670c8`) with 16 tests that drive the real ASGI app — commenting out
+the single `add_middleware` line fails 11 of them.
+
+**Read the consequence before you touch it.** It fails closed, and
+`create_access_token` mints no age claims, so **every age-restricted request is
+refused today**, including the live `/content/restricted` route. Reversible in
+one place (`age_claim_from_token`). Owner decision, in `oner-task.md`.
+
+### 12 mutation-surviving gaps closed — every one a test, none a code fix
+
+A mutant applied to production code that the suite did not catch. Each new test
+has a red proof.
+
+- **The ads write surface.** The router is deliberately unmounted because
+  `create_ad` has no auth — a decision that lived only in a commit message.
+  Mutating `main.py` to mount it survived with 446 green. Now asserted over the
+  OpenAPI as a *property*, so migrating to HTTPBearer or mounting a properly
+  authenticated router stays green.
+- **The rate limiter's Lua was never executed.** 46 FakeRedis tests
+  re-implemented the script, including its own `>= limit`. Mutating production's
+  `>=` to `>` survived. Now runs the real script against real Redis — 6 tests
+  red under the mutant while all 46 old ones pass.
+- Two tests named `..._rolls_back` that never checked rollback.
+- A media-pipeline test asserting that `content.packaged` is not published,
+  where the job fails in an earlier stage and **the guard is never evaluated**.
+- `total: "12.5"` — **I had written into the brief that this records a wrong
+  invoice. It does not.** The guard is alive; the truncation is what the *mutant*
+  does. The agent verified it and corrected me. Test added anyway.
+
+### auth-service mutation run (previously cut off)
+
+**85.5%.** The four recently-changed areas — 72-byte cap, DSAR 401, chunked 413,
+`is_locked` tz-normalisation — were all caught, including the live 413 path.
+Three real gaps survive: **nothing asserts the lockout window** (`15` →
+`15*365*24` is undetectable because tests hand-set `locked_until`), two
+`..._rolls_back` tests that assert only `pytest.raises`, and
+`test_rollback_is_called_on_registration_failure`, which has **no assertions at
+all**. The correct pattern already exists at `tests/test_database.py:217`
+(`session.rollback.assert_awaited_once()`).
+
+### The detector I shipped last session was less good than I said
+
+13 blind-spot classes were written against it; **13 were missed**. It reported
+0 findings on a file where no test could fail. Sharpest: its `swallowed` tier
+matched handler *names*, so `except AssertionError: pass` — the most direct
+possible swallow — was invisible, and `contextlib.suppress` was claimed in its
+docstring while being structurally undetectable. Both fixed; now matched on
+caught types, with `contextlib.suppress(ValueError)` correctly still clean.
+
+**One rule I built, measured, and removed:** flagging `assert f(5) == f(5)`. It
+produced 20 findings on this repo, every one a sound test — singleton
+assertions, no-caching assertions, fresh-uuid assertions — and zero defects.
+Telling a typo from a caching test needs to know whether the callee is pure.
+Two of the 20 are now pinned known-good so nobody "fixes" them back.
+
+Finding set stayed byte-identical at 61: none lost, none invented. Mutation
+battery 12/12.
+
+### New findings, not in any issue
+
+- **`POST /api/v1/reindex` is an unauthenticated write in production.** Found
+  while enumerating the content write surface. Allowlisted with a test asserting
+  the list only shrinks; not gated, because that breaks a suite exercising it
+  unauthenticated. Owner decision.
+- **CI has no redis service**, so the 6 live-Lua tests skip there. Closing it
+  means adding a redis service to the gateway job.
+
+### What I got wrong in this session, for the next agent
+
+- I wrote a claim into an agent's brief that `total: "12.5"` was a live money
+  bug. It was not. The agent checked instead of complying, and the gap was
+  still worth closing. **A brief is not evidence — say what you verified and
+  what you assumed.**
+- I called "61 vacuous tests" a measure of whether a test can fail. It is a
+  measure of whether a test body contains a reachable assertion. 13 probe
+  classes later proved the difference.
+- `ruff format` reflows at 120 while the repo is black at 100. CI gates
+  `ruff check` + `black --check` and never `ruff format`. Running it would
+  rewrite unrelated code across every file.
+
+### The patterns worth carrying
+
+1. **A test can pin the defect.** `test_services_gaps.py` asserted the stub path
+   completed — that assertion *was* issue #1000. `presentational.test.tsx`
+   asserted the label was absent — that assertion *was* #966. If a test goes red
+   when you fix a bug, read the test before you "fix" it.
+2. **Do not mock the layer the defect lives in.** 46 gateway tests asserted
+   against a Python re-implementation of the production Lua. Every one was
+   green and none of them could see the script.
+3. **A subset run cannot prove a gap.** Two agents produced false survivors
+   because the file holding the real tests was outside their scoped set. Both
+   only caught it by re-running the full suite. Treat phase 1 as triage, never
+   as evidence.
+4. **A control is mandatory.** "Nothing survived" and "my harness does not
+   work" are the same output. Every agent here ran a mutation it expected to
+   be caught.
+5. **Watch for green that means "nothing ran".** `pytest` exiting 4 because
+   `--cov` flags had no plugin, and `node verify-csp-live.mjs` exiting 0 because
+   running a module directly never calls its default export, both looked like
+   passes.
