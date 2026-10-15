@@ -37,8 +37,8 @@ test still passes. Neither is a *passed* expectation: ``pytest.skip``,
 
 WHY THE SEVERITY TIERS EXIST
 ----------------------------
-The two tiers are ranked by how easily a reviewer dismisses them, not by how
-often they occur:
+The first two tiers are ranked by how easily a reviewer dismisses them, not by
+how often they occur:
 
   ``decorative``  The body is a single statement or a docstring. It reads as an
                   unfinished placeholder, so a human skips it. Cheap to fix.
@@ -50,20 +50,81 @@ often they occur:
                   records a test of exactly this shape passing against a
                   completely broken build.)
 
-A ``swallowed`` tag is attached when a ``try``/``except: pass`` or
-``contextlib.suppress`` sits inside a test that *does* assert -- the assert is
-reachable, but the construct can neutralise it and hide a regression.
+The remaining two tiers are ranked by certainty. Both mean the test *does*
+reach an assertion, so neither shows up in a naive token scan:
+
+``swallowed``
+  The test reaches an assertion, but a construct inside it can carry the
+  failure away. The question asked is **what the handler catches**, not what the
+  handler is called: ``except AssertionError:`` is the most direct way to
+  neutralise a test's own assertion and was invisible to an earlier version of
+  this script, while ``except ValueError:`` cannot catch an ``AssertionError``
+  and is left alone. Tuples (``except (AssertionError, ValueError)``) and
+  ``A | B`` catches are inspected per member, and ``contextlib.suppress(...)``
+  is followed even though it parses as ``ast.With`` rather than ``ast.Try``.
+
+``unfalsifiable``
+  The test reaches an assertion, and the assertion still cannot fail. Three
+  shapes are decided statically, all of them proven rather than guessed:
+
+    tautology            ``assert f(5) == f(5)`` -- both sides identical
+    self-computed        ``expected = got; assert got == expected`` -- the
+                         expectation is an alias of the value under test, so it
+                         moves with it
+    decided-by-branch    ``if got is None: assert got == "..."`` -- the guard
+                         already fixes the outcome, so the assert is either
+                         guaranteed true or guaranteed false
 
 LIMITATIONS -- read before quoting a number
 --------------------------------------------
-  * Helper resolution is same-module only, by default. A test that delegates
-    every check to a helper in another module is reported vacuous. Pass
-    ``--follow-imports`` to extend the search across the directory tree.
-  * Assertions inside a **fixture** are not credited to the test. A test whose
+These are **known blind spots**, not hypotheticals. A probe file containing one
+instance of each class below was written and the pre-fix detector reported
+**0 findings on it**. Do not cite this tool as a measure of "can this test fail"
+without carrying these caveats:
+
+  * **Inverted assertions are not detected.** ``assert service.thing() is None``
+    -- an assertion that is green only when production is broken -- looks
+    identical to a correct one to a syntax-level scan. Catching it needs
+    expected-output analysis (what the function is documented to return), which
+    is not available statically. Every such test is reported only if it happens
+    to assert nothing at all.
+  * **Mock *configuration* is not distinguished from mock *behaviour*.**
+    ``mock.return_value = X`` followed by ``assert mock.call_args is None`` is
+    reported clean, because it asserts. Whether the assertion observes
+    production or merely restates what the test itself just set requires
+    knowing the mock's role, which this scan does not model.
+  * **Cross-module helpers need a flag -- and the flag has a limit.** A test
+    that delegates every check to a helper in another module is reported
+    vacuous. ``--follow-imports`` extends the search, but only across files the
+    scan already collects, i.e. ``test_*.py`` / ``*_test.py``. A helper in a
+    *utility* module (``helpers.py``, ``conftest.py``, a production module) is
+    still not indexed, and that test is still reported -- verified, not assumed.
+    Even when it resolves, lookup is by *name*, so two helpers sharing a name
+    are indistinguishable.
+  * **A repeated call is not reported, deliberately.**
+    ``assert f(5) == f(5)`` reads like the tautology it usually is, but the
+    same *syntax* is how this repo tests caching, singletons and freshness --
+    ``assert DatabaseManager() is DatabaseManager()``,
+    ``assert create_app() is not create_app()``, ``assert Event(...).event_id !=
+    Event(...).event_id``. An AST-equality rule for this shape was implemented
+    and measured: **20 findings on this repo, every one a sound test, zero
+    defects.** Telling the typo from the singleton test needs to know whether
+    the callee is pure, which a syntax scan cannot. The tier therefore covers
+    ``assert x == x`` on a bare name, where the binding is read twice and there
+    is no re-evaluation that could make the two sides differ.
+  * **The branch analysis is a bounded proof, not a solver.** It derives facts
+    only from single-operator comparisons, ignores ``assert not <compare>``,
+    refuses to reason about ``in``/``not in`` (they are not symmetric), and
+    goes silent the moment a variable is rebound inside the branch. A test that
+    decides its own outcome in a way this cannot express is reported clean.
+  * **Self-computed expectations follow plain alias assignment only.**
+    ``expected = got`` and chains of it. An expectation built by a call
+    (``expected = transform(got)``) is not tracked.
+  * **Assertions inside a fixture are not credited to the test.** A test whose
     only check happens in its fixture is reported vacuous. That is usually right
     -- the fixture runs whether or not the test needs it -- but not always.
-  * ``__test__ = False`` modules and unparseable files are reported separately
-    under ``--report`` so neither inflates nor hides the headline count.
+  * **``__test__ = False`` modules and unparseable files** are reported
+    separately under ``--report`` so neither inflates nor hides the count.
 
 USAGE
 -----
@@ -117,6 +178,44 @@ PYTEST_ASSERT_OWNERS = frozenset({"raises", "warns", "deprecated_call", "fail"})
 
 #: Guards recursion on the helper graph; a cycle must terminate.
 MAX_HELPER_DEPTH = 6
+
+#: Exception classes that can carry an ``AssertionError`` away from a failing
+#: assertion. ``Exception`` and ``BaseException`` belong here because
+#: ``AssertionError`` is a subclass of them.
+ASSERTION_CATCHERS = frozenset({"AssertionError", "Exception", "BaseException"})
+
+#: The op under which the same comparison fact is false.
+_NEGATED_OP = {
+    "==": "!=",
+    "!=": "==",
+    "is": "is not",
+    "is not": "is",
+    "<": ">=",
+    "<=": ">",
+    ">": "<=",
+    ">=": "<",
+    "in": "not in",
+    "not in": "in",
+}
+
+#: Operators for which ``a op b`` implies ``b op a``. Deliberately excludes
+#: ``in``/``not in``: ``x in y`` says nothing about ``y in x``, and treating them
+#: as symmetric turns a correct membership assert into "this always fails".
+_SYMMETRIC_OPS = frozenset({"==", "!=", "<", ">", "<=", ">=", "is", "is not"})
+
+#: ``ast`` comparison-operator node -> spelling.
+_OP_NAMES = {
+    ast.Eq: "==",
+    ast.NotEq: "!=",
+    ast.Lt: "<",
+    ast.LtE: "<=",
+    ast.Gt: ">",
+    ast.GtE: ">=",
+    ast.Is: "is",
+    ast.IsNot: "is not",
+    ast.In: "in",
+    ast.NotIn: "not in",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -206,20 +305,139 @@ def _is_mock_or_unittest_assert(call: ast.Call) -> bool:
     return name.startswith(ASSERT_ATTR_PREFIX) or name in FAIL_NAMES
 
 
-def _has_swallowing_exception_handler(node: ast.AST) -> bool:
-    """True if *node* contains a handler that can discard a failure.
+def _dotted(node: ast.AST) -> str:
+    """``"a.b.c"`` for a Name/Attribute chain, ``""`` for anything else."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return ""
+    parts.append(node.id)
+    return ".".join(reversed(parts))
 
-    Matches ``except:``, ``except Exception:`` and ``contextlib.suppress`` --
-    the three shapes that turn a failing assert into a passing test.
+
+def _caught_names(handler_type: ast.expr | None) -> frozenset[str] | None:
+    """Exception classes a handler catches; ``None`` means "cannot tell".
+
+    ``None`` covers a bare ``except:`` (which catches everything) and any shape
+    whose class list cannot be read. Callers treat it as catch-all, which is
+    the direction that keeps a finding rather than losing one.
+    """
+    if handler_type is None:
+        return None
+    if isinstance(handler_type, ast.Tuple):
+        names: set[str] = set()
+        for elt in handler_type.elts:
+            members = _caught_names(elt)
+            if members is None:
+                return None
+            names |= members
+        return frozenset(names)
+    # `except ValueError | TypeError:` -- a PEP 604 union, which is a BinOp and
+    # not a Tuple. Missing this was the same bug one syntax level down.
+    if isinstance(handler_type, ast.BinOp) and isinstance(handler_type.op, ast.BitOr):
+        left = _caught_names(handler_type.left)
+        right = _caught_names(handler_type.right)
+        if left is None or right is None:
+            return None
+        return left | right
+    dotted = _dotted(handler_type)
+    if not dotted:
+        return None
+    # `except builtins.AssertionError` must land in the same set as the bare
+    # name, so index the final component alongside the full dotted path.
+    return frozenset({dotted, dotted.rsplit(".", 1)[-1]})
+
+
+def _catches_assertion(names: frozenset[str] | None) -> bool:
+    """Can a handler catching *names* carry an ``AssertionError`` away?
+
+    ``Exception`` and ``BaseException`` are in the set because
+    ``AssertionError`` is a subclass of them -- the reason they swallow an
+    assertion is the inheritance, not that the name looks broad.
+    """
+    if names is None:
+        return True
+    return bool(names & ASSERTION_CATCHERS)
+
+
+#: ``with contextlib.suppress(ValueError):`` -- a distinct sentinel rather than
+#: ``None``, because "this with-item is not a suppress at all" and "this is a
+#: suppress whose caught set cannot be named" are opposite conclusions.
+_NOT_A_SUPPRESS = object()
+
+
+def _suppressed_names(node: ast.expr) -> frozenset[str] | None | object:
+    """Classes given to ``contextlib.suppress(...)``.
+
+    Accepts ``contextlib.suppress(E)``, ``ctx.suppress(E)`` and
+    ``from contextlib import suppress`` -> ``suppress(E)``. Returns
+    ``_NOT_A_SUPPRESS`` when the with-item is something else entirely, an empty
+    frozenset for a bare ``suppress()`` (which suppresses nothing, and so is
+    correctly *not* a swallow), and ``None`` when the arguments cannot be named.
+    """
+    if not isinstance(node, ast.Call):
+        return _NOT_A_SUPPRESS
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        if func.attr != "suppress":
+            return _NOT_A_SUPPRESS
+        # Qualified by `contextlib` or by an alias of it. Anything else --
+        # `self.suppress(...)`, `db.suppress(...)` -- is some other object.
+        if _dotted(func.value) not in ("", "contextlib"):
+            return _NOT_A_SUPPRESS
+    elif isinstance(func, ast.Name):
+        if func.id != "suppress":
+            return _NOT_A_SUPPRESS
+    else:
+        return _NOT_A_SUPPRESS
+
+    names: set[str] = set()
+    for arg in node.args:
+        members = _caught_names(arg)
+        if members is None:
+            return None
+        names |= members
+    return frozenset(names)
+
+
+def _has_swallowing_exception_handler(node: ast.AST) -> bool:
+    """True if *node* contains a construct that can discard a failed assertion.
+
+    This asks **what the handler catches**, not what the handler is called.
+    Matching on the name was a measured defect, not a theoretical one: the old
+    matcher tested the caught name against
+    ``("Exception", "BaseException", "suppress", "pytest.skip")``, so
+
+        ``except AssertionError:``          MISSED  -- the most direct swallow
+        ``except (AssertionError, ValueError):``   MISSED  -- a tuple is one name
+        ``contextlib.suppress(AssertionError)``     MISSED  -- an ``ast.With``
+
+    while ``except ValueError:`` would have been reported had its name ever been
+    added to the list, despite being unable to catch a failed assertion.
+
+    Two shapes are examined:
+
+    * ``ast.Try`` handlers, with tuple and ``A | B`` catches unpacked. A handler
+      swallows when the caught set contains ``AssertionError`` (directly or via
+      ``Exception``/``BaseException``, of which it is a subclass), or when it is
+      bare and therefore catches everything.
+    * ``contextlib.suppress(...)``. It parses as ``ast.With``, so a walk over
+      ``ast.Try`` alone can never see it -- which is why the module docstring's
+      claim that this function handles ``suppress`` was wrong. ``suppress(AssertionError)``
+      is a swallow; ``suppress(ValueError)`` is not.
     """
     for child in ast.walk(node):
         if isinstance(child, ast.Try):
-            for handler in child.handlers:
-                if handler.type is None:  # bare except:
-                    return True
-                exc = _callee_name(handler.type) if isinstance(handler.type, ast.Call) else None
-                name = exc or (handler.type.id if isinstance(handler.type, ast.Name) else "")
-                if name in ("Exception", "BaseException", "suppress", "pytest.skip"):
+            if any(_catches_assertion(_caught_names(h.type)) for h in child.handlers):
+                return True
+        elif isinstance(child, (ast.With, ast.AsyncWith)):
+            for item in child.items:
+                names = _suppressed_names(item.context_expr)
+                if names is _NOT_A_SUPPRESS:
+                    continue
+                if _catches_assertion(names):  # type: ignore[arg-type]
                     return True
     return False
 
@@ -269,6 +487,251 @@ def _local_helper_calls(func: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterato
         for node in ast.walk(stmt):
             if isinstance(node, ast.Call):
                 yield node
+
+
+# ---------------------------------------------------------------------------
+# Assertions that are present but cannot fail
+# ---------------------------------------------------------------------------
+
+
+def _store_names(node: ast.AST) -> Iterator[str]:
+    """Names this statement *binds* (not merely reads)."""
+    for n in ast.walk(node):
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
+            yield n.id
+        elif isinstance(n, ast.ExceptHandler) and n.name:
+            # `except ValueError as e:` binds a plain string, not a Name node.
+            yield n.name
+
+
+def _is_self_tautology(node: ast.Assert) -> str | None:
+    """``assert got == got`` on a bare name -- the assertion cannot fail.
+
+    **Only bare ``Name`` operands qualify, and that restriction is the whole
+    point.** The obvious generalisation -- "both sides are the same expression,
+    so compare their ASTs" -- was tried first and produced **20 findings on this
+    repo, every one of them a sound test and none of them a defect**:
+
+        assert DatabaseManager.get_engine() is DatabaseManager.get_engine()  # caching
+        assert DatabaseManager() is DatabaseManager()                        # singleton
+        assert Event(topic="t", key="1").event_id != Event(...).event_id    # fresh uuid
+        assert create_app() is not create_app()                              # not cached
+
+    A repeated *call* is two evaluations, and testing that they are equal (it is
+    cached), or that they differ (it is fresh), is exactly what those tests are
+    for. Distinguishing that from a typo like ``assert broken.compute(5) ==
+    broken.compute(5)`` needs to know whether the callee is pure, which is not
+    available to a syntax scan. So the call case is left alone on purpose; see
+    LIMITATIONS.
+    """
+    test = node.test
+    if not isinstance(test, ast.Compare) or len(test.ops) != 1:
+        return None
+    left = test.left
+    if not isinstance(left, ast.Name):
+        return None
+    for comparator in test.comparators:
+        if isinstance(comparator, ast.Name) and comparator.id == left.id:
+            return "compares a name with itself, so it cannot fail"
+    return None
+
+
+def _self_computed_assertion(func: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
+    """``expected = got; assert got == expected`` -- the expectation moves with got.
+
+    Only plain alias assignment is followed (``expected = got`` and chains of
+    it). A name rebound anywhere drops the chain, so the realistic variant
+
+        got = compute(); expected = got; got = other(); assert got == expected
+
+    is correctly left alone -- ``expected`` still holds the *first* value.
+    """
+    aliases: dict[str, str] = {}
+
+    def root(name: str) -> str:
+        seen: set[str] = set()
+        while name in aliases and name not in seen:
+            seen.add(name)
+            name = aliases[name]
+        return name
+
+    def forget(name: str) -> None:
+        aliases.pop(name, None)
+        for key in [k for k, v in aliases.items() if v == name]:
+            aliases.pop(key)
+
+    for stmt in func.body:
+        for name in _store_names(stmt):
+            forget(name)
+        if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
+            target, value = stmt.targets[0], stmt.value
+            if isinstance(target, ast.Name) and isinstance(value, ast.Name):
+                aliases[target.id] = root(value.id)
+        for node in ast.walk(stmt):
+            if not isinstance(node, ast.Assert):
+                continue
+            test = node.test
+            if not isinstance(test, ast.Compare) or len(test.ops) != 1:
+                continue
+            if not isinstance(test.left, ast.Name):
+                continue
+            if any(
+                isinstance(c, ast.Name) and root(c.id) == root(test.left.id)
+                for c in test.comparators
+            ):
+                return (
+                    "expectation is derived from the value under test, " "so the assert cannot fail"
+                )
+    return None
+
+
+def _guard_facts(expr: ast.expr) -> list[tuple[str, ast.expr, ast.expr]]:
+    """Comparisons guaranteed true whenever *expr* is true.
+
+    One-directional on purpose: it derives only facts that hold on **every**
+    path through the expression, so an unrecognised shape yields an empty list
+    and the check stays silent rather than guessing. ``a or b`` yields nothing
+    -- neither disjunct's facts hold unconditionally -- and ``a and b`` yields
+    the intersection, which does.
+    """
+    if isinstance(expr, ast.Compare) and len(expr.ops) == 1:
+        op = _OP_NAMES.get(type(expr.ops[0]))
+        if op is None:
+            return []
+        return [(op, expr.left, expr.comparators[0])]
+    if isinstance(expr, ast.UnaryOp) and isinstance(expr.op, ast.Not):
+        return _negate_facts(_guard_facts(expr.operand))
+    if isinstance(expr, ast.BoolOp) and isinstance(expr.op, ast.And):
+        sets = [_guard_facts(v) for v in expr.values]
+        return [f for f in sets[0] if all(f in s for s in sets[1:])] if sets else []
+    return []
+
+
+def _negate_facts(
+    facts: list[tuple[str, ast.expr, ast.expr]],
+) -> list[tuple[str, ast.expr, ast.expr]]:
+    return [(neg, lhs, rhs) for op, lhs, rhs in facts if (neg := _NEGATED_OP.get(op))]
+
+
+def _pinned_constants(
+    facts: list[tuple[str, ast.expr, ast.expr]],
+) -> dict[str, tuple[object, str]]:
+    """Variables the guard fixes to a constant, as ``dump -> (value, op)``."""
+    pinned: dict[str, tuple[object, str]] = {}
+    for op, left, right in facts:
+        if op not in ("is", "is not", "==", "!="):
+            continue
+        if isinstance(right, ast.Constant) and not isinstance(left, ast.Constant):
+            pinned.setdefault(ast.dump(left), (right.value, op))
+        elif isinstance(left, ast.Constant) and not isinstance(right, ast.Constant):
+            pinned.setdefault(ast.dump(right), (left.value, op))
+    return pinned
+
+
+def _constants_equal(left: object, right: object) -> bool:
+    """Constant equality, using Python's own ``==`` so we never over-claim.
+
+    This function feeds both "always true" and "always false" verdicts, so a
+    false "not equal" would be a false-positive finding. ``True == 1`` being
+    ``True`` in Python keeps us on the safe side of that.
+    """
+    try:
+        return bool(left == right)
+    except Exception:  # pragma: no cover - ast.Constant holds only primitives
+        return True
+
+
+def _branch_assertion_reason(
+    node: ast.Assert,
+    facts: list[tuple[str, ast.expr, ast.expr]],
+    pinned: dict[str, tuple[object, str]],
+    rebound: set[str],
+) -> str | None:
+    """Reason string when the guard has already decided this assertion's outcome."""
+    test = node.test
+    if not isinstance(test, ast.Compare) or len(test.ops) != 1:
+        return None  # `assert False`, a bare `assert x`, ...
+    op = _OP_NAMES.get(type(test.ops[0]))
+    if op is None:
+        return None
+    left, right = test.left, test.comparators[0]
+    if any(isinstance(n, ast.Name) and n.id in rebound for n in (left, right)):
+        return None  # the branch reassigns it, so the guard no longer pins it
+
+    lk, rk = ast.dump(left), ast.dump(right)
+    holds = {(o, ast.dump(lhs), ast.dump(rhs)) for o, lhs, rhs in facts}
+    # Restated by the guard: true whatever the code under test does. Swapped
+    # operands count too -- `if a == b: assert b == a` says the same thing --
+    # which is why `_SYMMETRIC_OPS` gates both directions.
+    if (op, lk, rk) in holds or (op in _SYMMETRIC_OPS and (op, rk, lk) in holds):
+        return "restates the branch condition, so it cannot fail"
+    negated = _NEGATED_OP.get(op)
+    if negated is not None and negated in _SYMMETRIC_OPS:
+        if (negated, lk, rk) in holds or (negated, rk, lk) in holds:
+            return "contradicts the branch condition, so it always fails"
+
+    # The guard pins one operand to a constant; the assert compares that same
+    # operand against another constant. `if got is None: assert got == "x"`
+    # lands here -- `None == "x"` is false on every run.
+    for key, const_node in ((lk, right), (rk, left)):
+        pin = pinned.get(key)
+        if pin is None or not isinstance(const_node, ast.Constant):
+            continue
+        value, _pin_op = pin
+        same = _constants_equal(value, const_node.value)
+        if op in ("==", "is"):
+            if not same:
+                return "contradicts the branch condition, so it always fails"
+        elif op in ("!=", "is not") and same:
+            return "restates the branch condition, so it cannot fail"
+    return None
+
+
+def _decided_by_branch(func: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
+    """``if got is None: assert got == "..."`` -- the guard decides the assert.
+
+    Walks ``ast.If`` rather than statements, so a guard nested anywhere in the
+    body counts. The ``else`` branch is handled by negating the guard's facts;
+    an ``elif`` is skipped here and picked up on its own as a nested ``If``.
+    """
+    for node in ast.walk(func):
+        if not isinstance(node, ast.If):
+            continue
+        facts = _guard_facts(node.test)
+        if not facts:
+            continue
+        branches = [(facts, node.body)]
+        if node.orelse and not any(isinstance(n, ast.If) for n in node.orelse):
+            branches.append((_negate_facts(facts), node.orelse))
+        for guard_facts, body in branches:
+            pinned = _pinned_constants(guard_facts)
+            rebound: set[str] = set()
+            for stmt in body:
+                for sub in ast.walk(stmt):
+                    if isinstance(sub, ast.Assert):
+                        reason = _branch_assertion_reason(sub, guard_facts, pinned, rebound)
+                        if reason:
+                            return reason
+                rebound.update(_store_names(stmt))
+    return None
+
+
+def _unfalsifiable_reason(func: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
+    """Why *func*'s assertions cannot fail, if that is the problem.
+
+    Each check decides its class by proof, not by pattern-matching on names:
+    an assertion it cannot show to be constant is left alone. The three classes
+    it cannot decide -- an inverted assertion, a mock *configuration* assert,
+    and a cross-module helper -- are listed in the module docstring's
+    LIMITATIONS rather than approximated here.
+    """
+    for stmt in func.body:
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Assert):
+                reason = _is_self_tautology(node)
+                if reason:
+                    return reason
+    return _self_computed_assertion(func) or _decided_by_branch(func)
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +829,26 @@ def scan_file(
         result.test_functions += 1
 
         if _body_signal(func, table):
-            if _has_swallowing_exception_handler(func):
+            # Two different reasons a test can reach an assertion and still not
+            # be able to fail. `unfalsifiable` is ranked first because it is
+            # decided by proof -- the assertion's outcome is fixed whatever the
+            # code under test does -- whereas `swallowed` means the handler
+            # *can* discard the failure, which depends on what actually raises.
+            unfalsifiable = _unfalsifiable_reason(func)
+            swallowed = _has_swallowing_exception_handler(func)
+            if unfalsifiable:
+                result.findings.append(
+                    Finding(
+                        path=rel,
+                        lineno=func.lineno,
+                        name=func.name,
+                        severity="unfalsifiable",
+                        reason=unfalsifiable,
+                        swallowed=swallowed,
+                        statements=len(func.body),
+                    )
+                )
+            elif swallowed:
                 result.findings.append(
                     Finding(
                         path=rel,
@@ -493,6 +975,83 @@ def test_assert_inside_with():
     import contextlib
     with contextlib.suppress(ValueError):
         assert 1 == 1
+
+def test_narrow_handler_does_not_swallow_an_assertion():
+    # The negative half of the swallowed fix. `ValueError` cannot catch the
+    # AssertionError an assert raises, so this handler cannot discard the
+    # failure and the test is fine. Matching on handler *names* could not tell
+    # this apart from `except AssertionError:` -- it needs the caught types.
+    try:
+        assert service.thing() is not None
+    except ValueError:
+        pass
+
+def test_suppress_of_an_unrelated_error_is_not_a_swallow():
+    # `contextlib.suppress(ValueError)` parses as ast.With and suppresses
+    # nothing an assert can raise. Must NOT be reported, or the fix over-corrects
+    # into flagging every legitimate suppress.
+    import contextlib
+    with contextlib.suppress(ValueError):
+        assert compute(5) == 6
+
+def test_narrow_tuple_handler_does_not_swallow_either(service):
+    # The negative half of the tuple fix, and the case that kills the mutant
+    # which removes tuple unpacking: with unpacking gone, a tuple falls through
+    # to "cannot tell", which `_catches_assertion` treats as catch-all, so this
+    # would be flagged as a swallow it is not.
+    try:
+        assert service.thing() is not None
+    except (ValueError, KeyError):
+        pass
+
+
+def test_assert_comparing_two_different_things(service):
+    # Not a tautology: the two sides are different expressions.
+    assert service.compute(5) == 6
+
+def test_assert_with_an_independently_computed_expectation(service):
+    # Not self-computed: `expected` is built by a call, not aliased to `got`.
+    got = service.thing()
+    expected = service.other()
+    assert got == expected
+
+def test_recomputed_value_is_not_an_alias(service):
+    # The realistic variant of the self-computed shape. `expected` still holds
+    # the FIRST result, so this assert can genuinely fail and must stay clean.
+    got = service.thing()
+    expected = got
+    got = service.other()
+    assert got == expected
+
+def test_branch_that_does_not_decide_the_assertion(service):
+    # The guard does not pin `got` to a constant, and `got` is rebound inside
+    # the branch anyway. The assert is reachable and can fail.
+    got = service.thing()
+    if got is None:
+        got = service.fallback()
+    assert got is not None
+
+def test_branch_that_rebinds_then_asserts(service):
+    # `if result is None: result = ""` rebinds before the assert, so the guard no
+    # longer pins `result` to None and `result == ""` is a real check.
+    #
+    # The rebound value and the asserted constant must both be Constants, or this
+    # case stops testing the rebind tracking: with `result = []` the comparison
+    # operand is a Dict, the constant-pinning path skips it anyway, and a
+    # mutant that deletes the rebind check survives. That was found by running
+    # the battery, not by reading this.
+    result = service.thing()
+    if result is None:
+        result = ""
+        assert result == ""
+
+def test_alternating_branches_keep_the_assert_alive(service):
+    got = service.thing()
+    if got is None:
+        got = service.fallback()
+    else:
+        got = service.other()
+    assert got is not None
 """
 
 _KNOWN_BAD = '''
@@ -543,6 +1102,88 @@ def test_asserts_but_a_truly_bare_except_can_swallow_it():
         assert service.thing() is not None
     except:
         pass
+
+
+def test_asserts_but_an_assertion_error_handler_can_swallow_it():
+    # The most direct swallow there is: catch the exact exception an assert
+    # raises. Matching handler *names* against ("Exception", "BaseException",
+    # ...) cannot see it, because "AssertionError" is not in that list.
+    try:
+        assert service.thing() is not None
+    except AssertionError:
+        pass
+
+
+def test_asserts_but_a_tuple_handler_can_swallow_it():
+    # A tuple catch is one ast.Tuple node holding two classes. The old matcher
+    # read it as a single name and matched neither member.
+    try:
+        assert service.thing() is not None
+    except (AssertionError, ValueError):
+        pass
+
+
+def test_asserts_but_contextlib_suppress_can_swallow_it():
+    # contextlib.suppress parses as ast.With, so a walk over ast.Try alone
+    # never sees it -- which is why the module docstring used to claim it was
+    # handled when it was not. Same hazard, different syntax.
+    import contextlib
+    with contextlib.suppress(AssertionError):
+        assert service.thing() is not None
+
+
+def test_asserts_the_same_expression_against_itself(broken):
+    # Tautology on a bare name: one binding read twice, no re-evaluation, so
+    # the comparison is decided before either side is fetched.
+    got = broken.compute(5)
+    assert got == got
+
+
+def test_two_calls_must_be_cached(service):
+    # NOT a tautology, and the detector must keep quiet. `DatabaseManager() is
+    # DatabaseManager()` is a real singleton test -- it fails if the cache
+    # breaks. An AST-equality rule flagged 20 such tests in this repo and found
+    # no defects; `_is_self_tautology` documents that measurement.
+    assert service.build() is service.build()
+
+
+def test_two_calls_must_be_fresh(service):
+    # The mirror image: asserting two evaluations *differ* is how freshness and
+    # uniqueness are tested. Also must stay clean.
+    assert service.next_id() != service.next_id()
+
+
+def test_expectation_is_aliased_from_the_value_under_test(service):
+    # The assertion holds whatever `got` holds, so it can never fail.
+    got = service.thing()
+    expected = got
+    assert got == expected
+
+
+def test_assert_contradicts_the_branch_that_guards_it(service):
+    # Under the guard `got` *is* None, so `None == "must not be None"` is false
+    # on every run: the branch decides the outcome before the assert is read.
+    got = service.thing()
+    if got is None:
+        assert got == "must not be None"
+
+
+def test_assert_contradicts_the_branch_with_swapped_operands(service):
+    # The same contradiction with the operands written the other way round, so
+    # it is only reachable through the symmetry rule. Neither operand is a
+    # constant, so the constant-pinning path cannot cover this one.
+    got = service.thing()
+    limit = service.limit()
+    if got == limit:
+        assert limit != got
+
+
+def test_assert_restates_the_branch_with_swapped_operands(service):
+    # `if a == b: assert b == a` says the same thing the guard already said.
+    got = service.thing()
+    limit = service.limit()
+    if got == limit:
+        assert limit == got
 '''
 
 # A module that opts out of collection entirely. It lives in its own file
@@ -565,6 +1206,16 @@ _KNOWN_BAD_EXPECTED = (
     # passes either way. It must still be *reported*, just under `swallowed`.
     "test_asserts_but_a_bare_except_can_swallow_it",
     "test_asserts_but_a_truly_bare_except_can_swallow_it",
+    # The three shapes the old handler-name matcher provably missed.
+    "test_asserts_but_an_assertion_error_handler_can_swallow_it",
+    "test_asserts_but_a_tuple_handler_can_swallow_it",
+    "test_asserts_but_contextlib_suppress_can_swallow_it",
+    # The three assertion shapes that are present but cannot fail.
+    "test_asserts_the_same_expression_against_itself",
+    "test_expectation_is_aliased_from_the_value_under_test",
+    "test_assert_contradicts_the_branch_that_guards_it",
+    "test_assert_contradicts_the_branch_with_swapped_operands",
+    "test_assert_restates_the_branch_with_swapped_operands",
 )
 _KNOWN_GOOD_EXPECTED = (
     "test_has_assert",
@@ -579,6 +1230,23 @@ _KNOWN_GOOD_EXPECTED = (
     "test_assert_inside_if",
     "test_assert_inside_with",
     "test_runs_code_without_asserting",
+    # Negative halves. Each is the near-miss of a new check, and each is the
+    # case that proves the check is a proof rather than a pattern match: a
+    # detector that flags all of these is worse than one that flags none.
+    "test_narrow_handler_does_not_swallow_an_assertion",
+    "test_narrow_tuple_handler_does_not_swallow_either",
+    "test_suppress_of_an_unrelated_error_is_not_a_swallow",
+    "test_assert_comparing_two_different_things",
+    "test_assert_with_an_independently_computed_expectation",
+    "test_recomputed_value_is_not_an_alias",
+    "test_branch_that_does_not_decide_the_assertion",
+    "test_branch_that_rebinds_then_asserts",
+    "test_alternating_branches_keep_the_assert_alive",
+    # A repeated call is a caching/freshness test, not a tautology. These two
+    # pin the narrowing of `_is_self_tautology` to bare names; an AST-equality
+    # rule flagged 20 real tests in this repo and found no defects.
+    "test_two_calls_must_be_cached",
+    "test_two_calls_must_be_fresh",
 )
 
 
@@ -654,6 +1322,52 @@ def _run_self_test() -> int:
                 "a bare-except-swallowed assertion should be tagged 'swallowed', got "
                 f"{by_name.get('test_asserts_but_a_bare_except_can_swallow_it')!r}"
             )
+
+        # Each of the swallowed shapes the old handler-name matcher missed. Named
+        # individually rather than looped over a constant, because the failure
+        # this guards against is precisely the one where a new case is added to
+        # the fixture and only the old set is still checked.
+        for name in (
+            "test_asserts_but_a_truly_bare_except_can_swallow_it",
+            "test_asserts_but_an_assertion_error_handler_can_swallow_it",
+            "test_asserts_but_a_tuple_handler_can_swallow_it",
+            "test_asserts_but_contextlib_suppress_can_swallow_it",
+        ):
+            if by_name.get(name) != "swallowed":
+                failures.append(f"{name} should be tagged 'swallowed', got {by_name.get(name)!r}")
+
+        # The three assertion shapes that are present but cannot fail. These are
+        # the checks the pre-fix version had no tier for at all.
+        for name in (
+            "test_asserts_the_same_expression_against_itself",
+            "test_expectation_is_aliased_from_the_value_under_test",
+            "test_assert_contradicts_the_branch_that_guards_it",
+        ):
+            if by_name.get(name) != "unfalsifiable":
+                failures.append(
+                    f"{name} should be tagged 'unfalsifiable', got {by_name.get(name)!r}"
+                )
+
+        # The tier alone is not enough to isolate these three. `assert got == got`
+        # is matched by BOTH the tautology check and the self-computed check --
+        # a bare name resolves to itself -- so disabling the tautology check
+        # still leaves the test reported, and a battery run on severity alone
+        # calls that mutant killed when it is not. Asserting the *reason* is what
+        # makes each case name the check it was written for; this was found by
+        # a mutant that survived, not by reading the code.
+        by_reason = {f.name: f.reason for f in res.findings}
+        for name, expected_fragment in (
+            ("test_asserts_the_same_expression_against_itself", "with itself"),
+            ("test_expectation_is_aliased_from_the_value_under_test", "derived from the value"),
+            ("test_assert_contradicts_the_branch_that_guards_it", "contradicts the branch"),
+        ):
+            reason = by_reason.get(name, "")
+            if expected_fragment not in reason:
+                failures.append(
+                    f"{name} should be reported for the reason containing "
+                    f"{expected_fragment!r}, got {reason!r} -- if a neighbouring check "
+                    "is shadowing it, this case is not testing what it claims"
+                )
 
         # The fixture must land in `fixtures`, not in the denominator: counting
         # it would both invent a vacuous test and inflate the total.
@@ -731,7 +1445,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--severity",
         action="append",
         dest="severities",
-        choices=("decorative", "unasserted", "swallowed"),
+        choices=("decorative", "unasserted", "swallowed", "unfalsifiable"),
         help="restrict output to these tiers; repeatable",
     )
     parser.add_argument(
@@ -765,7 +1479,7 @@ def render_text(result: ScanResult) -> str:
     if not result.findings:
         lines.append("  none found -- every scanned test reaches an assertion")
 
-    for sev in ("unasserted", "decorative", "swallowed"):
+    for sev in ("unfalsifiable", "unasserted", "decorative", "swallowed"):
         group = by_sev.get(sev)
         if not group:
             continue
