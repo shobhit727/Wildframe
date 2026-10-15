@@ -248,6 +248,63 @@ class TestPayoutTransitionsMatchEnum:
         with pytest.raises(InvalidStateTransitionError):
             validate_transition("accrued", "paid", PAYOUT_TRANSITIONS)
 
+    # -- completeness of the table itself -----------------------------------
+    #
+    # Everything above checks individual edges. Adding an edge nobody asked for
+    # changes none of them: ACCRUED -> COMPLETED and FAILED -> COMPLETED are both
+    # "reachable" and "enum-valued", so the whole class above stayed green while
+    # the table grew a transition that marks money transferred when no Stripe
+    # transfer was ever initiated. These assert what the table must NOT contain.
+
+    @pytest.mark.parametrize("status", [PayoutStatus.ACCRUED, PayoutStatus.FAILED])
+    def test_a_payout_cannot_be_marked_transferred_without_a_transfer(self, status):
+        # COMPLETED means "a Stripe Connect transfer succeeded". From ACCRUED the
+        # transfer has not been started; from FAILED the attempt errored. Either
+        # way the ledger would claim a creator was paid, and the reconciliation
+        # against Stripe's balance would never balance.
+        assert PayoutStatus.COMPLETED not in PAYOUT_TRANSITIONS[status]
+        with pytest.raises(InvalidStateTransitionError):
+            validate_transition(status, PayoutStatus.COMPLETED, PAYOUT_TRANSITIONS)
+
+    def test_a_payout_cannot_jump_backwards_to_accrued(self):
+        # ACCRUED is the bottom of the payout lifecycle; nothing returns to it.
+        assert PayoutStatus.ACCRUED not in PAYOUT_TRANSITIONS[PayoutStatus.TRANSFERRING]
+        assert PayoutStatus.ACCRUED not in PAYOUT_TRANSITIONS[PayoutStatus.FAILED]
+        with pytest.raises(InvalidStateTransitionError):
+            validate_transition(PayoutStatus.FAILED, PayoutStatus.ACCRUED, PAYOUT_TRANSITIONS)
+
+    def test_completed_payout_can_only_stay_completed(self):
+        # Terminal through the public guard, not only as a table row: whatever
+        # reads this table must be unable to move a paid row again.
+        assert (
+            validate_transition(PayoutStatus.COMPLETED, PayoutStatus.COMPLETED, PAYOUT_TRANSITIONS)
+            is None
+        )
+        for target in PayoutStatus:
+            if target is PayoutStatus.COMPLETED:
+                continue
+            with pytest.raises(InvalidStateTransitionError):
+                validate_transition(PayoutStatus.COMPLETED, target, PAYOUT_TRANSITIONS)
+
+    def test_every_entry_is_a_real_payout_status_member(self):
+        # Stronger than the value comparison above: a bare "completed" string
+        # satisfies `in {s.value for s in PayoutStatus}` but is not a PayoutStatus,
+        # so validate_transition would not normalise it the same way and the row
+        # would silently differ from its neighbours.
+        bad_targets = {
+            src.value: [t for t in targets if not isinstance(t, PayoutStatus)]
+            for src, targets in PAYOUT_TRANSITIONS.items()
+            if any(not isinstance(t, PayoutStatus) for t in targets)
+        }
+        assert not bad_targets, f"PAYOUT_TRANSITIONS has non-member targets: {bad_targets}"
+        bad_keys = [src for src in PAYOUT_TRANSITIONS if not isinstance(src, PayoutStatus)]
+        assert not bad_keys, f"PAYOUT_TRANSITIONS has non-member keys: {bad_keys}"
+
+    def test_the_table_has_exactly_one_row_per_payout_status(self):
+        # No duplicate enum keys hiding behind dict construction, and no row
+        # silently shadowing another.
+        assert len(PAYOUT_TRANSITIONS) == len(PayoutStatus)
+
 
 # ---------------------------------------------------------------------------
 # Thin accessors and transaction helpers

@@ -31,9 +31,11 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import httpx
 import wildframe_auth
 from fastapi import HTTPException
 from jose import JWTError, jwt
+from jose.exceptions import ExpiredSignatureError
 
 import app.api.routes as routes
 import app.security.manager as manager
@@ -371,6 +373,86 @@ class TestBadTokenIsStillNone:
         assert issubclass(UnknownKidError, JWTError)
         assert not issubclass(UnknownKidError, JWKSUnavailableError)
         assert issubclass(JWKSUnavailableError, JWTError)
+
+
+class TestTheExceptionListStaysNarrow:
+    """``verify_token``'s ``except`` clauses are a boundary, not a convenience.
+
+    ``manager.verify_token`` ends in three handlers: ``JWKSUnavailableError``
+    re-raises, ``ExpiredSignatureError`` and ``JWTError`` return ``None``.
+    Everything else falls off the end and propagates. That narrowness is the
+    whole point of the ``JWKSUnavailableError`` split above -- but nothing
+    asserted it, so appending a bare ``except Exception: return None`` to the
+    chain left the entire suite green while silently re-folding every outage
+    and every bug in the verifier into "your token was invalid". The caller
+    would then answer 401 for a token it never actually checked.
+
+    ``verify_token_with_jwks`` is replaced here because a non-``JWTError`` is
+    precisely what the real verifier is careful *not* to raise: its fetch path
+    converts any transport failure into ``JWKSUnavailableError`` (see
+    ``wildframe_auth.verifier._jwks_or_unavailable``). The code under test --
+    the ``try``/``except`` chain in ``manager.verify_token`` -- is not mocked,
+    and the surrounding tests in this file keep the real verifier in the path.
+    """
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            pytest.param(httpx.ConnectTimeout("auth-service did not respond"), id="transport"),
+            pytest.param(httpx.ReadError("connection reset mid-body"), id="read-error"),
+            pytest.param(RuntimeError("key cache poisoned"), id="programming-error"),
+            pytest.param(TypeError("jwks resolver returned None"), id="wrong-shape"),
+        ],
+    )
+    async def test_a_non_jwt_error_propagates_instead_of_becoming_none(self, monkeypatch, error):
+        async def boom(*_args, **_kwargs):
+            raise error
+
+        monkeypatch.setattr(manager, "verify_token_with_jwks", boom)
+
+        with pytest.raises(type(error)) as exc:
+            await TokenManager.verify_token(_mint())
+
+        # Not merely "some exception escaped" -- it must be the *same* error,
+        # so a handler that wrapped it in something else is still caught.
+        assert exc.value is error
+
+    async def test_a_jwt_error_is_still_none_so_the_boundary_is_pinned_from_both_sides(
+        self, monkeypatch
+    ):
+        """The negative case, or the test above passes for a handler that raises everything.
+
+        Both halves live in one test on purpose: the property is "only JWT
+        failures become ``None``", and either half alone is satisfiable by a
+        ``verify_token`` that always raises or one that always returns ``None``.
+        """
+
+        async def boom(*_args, **_kwargs):
+            raise JWTError("signature does not verify")
+
+        monkeypatch.setattr(manager, "verify_token_with_jwks", boom)
+
+        assert await TokenManager.verify_token(_mint()) is None
+
+    async def test_an_expired_signature_is_still_none(self, monkeypatch):
+        async def boom(*_args, **_kwargs):
+            raise ExpiredSignatureError("token has expired")
+
+        monkeypatch.setattr(manager, "verify_token_with_jwks", boom)
+
+        assert await TokenManager.verify_token(_mint()) is None
+
+    async def test_a_jwks_outage_still_propagates(self, monkeypatch):
+        """Pins the one handler that re-raises, so the list cannot be loosened."""
+        from wildframe_auth import JWKSUnavailableError
+
+        async def boom(*_args, **_kwargs):
+            raise JWKSUnavailableError("jwks unavailable")
+
+        monkeypatch.setattr(manager, "verify_token_with_jwks", boom)
+
+        with pytest.raises(JWKSUnavailableError):
+            await TokenManager.verify_token(_mint())
 
 
 # ---------------------------------------------------------------------------

@@ -10,7 +10,8 @@ degrades gracefully, so they are asserted on real aiosqlite rather than mocks
 wherever the database can produce the failure itself.
 """
 
-from unittest.mock import AsyncMock
+from contextlib import contextmanager
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -43,6 +44,38 @@ async def _seed_profile(session: AsyncSession, user_id):
     session.add(profile)
     await session.commit()
     return profile
+
+
+@contextmanager
+def _rollback_spy(session: AsyncSession):
+    """Count ``session.rollback`` calls while still performing the real one.
+
+    Spying on the *session* rather than on ``repo.rollback`` keeps the
+    repository's own handler under test. ``wraps`` rather than a bare
+    ``AsyncMock`` so the transaction is genuinely rolled back inside the
+    ``with`` block: a spy that only counted calls would leave the fixture's
+    session holding a failed transaction and make the rest of the test
+    meaningless.
+
+    Note what this does *not* claim. An earlier draft also asserted the
+    session was usable after the failure, on the theory that SQLAlchemy raises
+    ``PendingRollbackError`` while a failed flush is unresolved. Measured on
+    this aiosqlite version it does not -- the query succeeds either way -- so
+    that assertion would have been green against code that never rolled back
+    at all, which is the exact failure mode this section exists to prevent.
+    """
+    spy = AsyncMock(wraps=session.rollback)
+    with patch.object(session, "rollback", spy):
+        yield spy
+
+
+def _assert_rolled_back_once(spy: AsyncMock, repo: str) -> None:
+    assert spy.await_count == 1, (
+        f"{repo} must roll the transaction back exactly once when a unique "
+        f"constraint fires; session.rollback was awaited {spy.await_count} times. "
+        f"A repository that re-raises without rolling back leaves the caller "
+        f"holding a poisoned transaction."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -279,8 +312,14 @@ async def test_preference_create_default_rolls_back_on_a_duplicate_user(
     await repo.create_default(user_id)
     await session.commit()
 
-    with pytest.raises(IntegrityError):
-        await repo.create_default(user_id)
+    with _rollback_spy(session) as rollback:
+        with pytest.raises(IntegrityError):
+            await repo.create_default(user_id)
+
+    # The ``pytest.raises`` above was the whole of this test until now, so
+    # deleting the ``await self.rollback()`` from ``create_default`` left the
+    # suite green. The name promises a rollback; this is what makes it one.
+    _assert_rolled_back_once(rollback, "UserPreferenceRepository.create_default")
 
 
 async def test_preference_update_returns_none_for_an_unknown_user(session: AsyncSession):
@@ -349,8 +388,13 @@ async def test_subscription_create_default_rolls_back_on_a_duplicate_user(
     await repo.create_default(user_id)
     await session.commit()
 
-    with pytest.raises(IntegrityError):
-        await repo.create_default(user_id)
+    with _rollback_spy(session) as rollback:
+        with pytest.raises(IntegrityError):
+            await repo.create_default(user_id)
+
+    # See the preference test above: the raise alone proved nothing about the
+    # rollback this test is named for.
+    _assert_rolled_back_once(rollback, "UserSubscriptionProfileRepository.create_default")
 
 
 async def test_subscription_update_tier_returns_none_for_an_unknown_user(

@@ -878,6 +878,49 @@ class TestContentLifecycleAgainstPostgres:
         )
         assert rows == [DEFAULT_CAST_ROLE]
 
+    async def test_adding_the_same_cast_member_twice_keeps_one_association_row(self, db_session):
+        """The duplicate guard in ``add_cast_member`` is load-bearing.
+
+        ``app/services/__init__.py`` guards the association insert with
+        ``if member not in content.cast_members``. Every other cast test adds a
+        *fresh* slug, so the collection is empty and the guard is never false
+        when it should be -- replacing the condition with ``if True:`` left the
+        whole suite green.
+
+        What an unguarded second insert actually does is worth being precise
+        about: ``content_cast`` carries
+        ``UniqueConstraint("content_id", "cast_id", "role")``, so it does not
+        quietly accumulate two rows. It trips the constraint and the add
+        raises. Either way the guard is the only thing making the add
+        idempotent, so this asserts the outcome -- the second call succeeds,
+        resolves to the same cast member, and leaves exactly one association
+        row.
+        """
+        service = ContentService(db_session)
+        content = await service.create_content(_content_request(slug=f"cast-{uuid4().hex[:8]}"))
+        request = CastMemberCreateRequest(name="Keanu Reeves", slug=f"keanu-{uuid4().hex[:8]}")
+
+        first = await service.add_cast_member(content.id, request)
+        second = await service.add_cast_member(content.id, request)
+
+        assert first is not None
+        assert second is not None
+        # Resolved from the slug, not a second CastMember row.
+        assert second.id == first.id
+
+        rows = (
+            await db_session.execute(
+                select(
+                    content_cast_association.c.cast_id,
+                    content_cast_association.c.role,
+                )
+                .where(content_cast_association.c.content_id == content.id)
+                .order_by(content_cast_association.c.cast_id)
+            )
+        ).all()
+        assert rows == [(first.id, DEFAULT_CAST_ROLE)]
+        assert [m.id for m in await service.list_cast(content.id)] == [first.id]
+
     async def test_standalone_cast_member_crud(self, db_session):
         service = ContentService(db_session)
         member = await service.create_cast_member(

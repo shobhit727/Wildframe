@@ -16,6 +16,10 @@ These tests pin the containment:
 * the all-``stub`` adapter set is unaffected -- there the stubs never wrote a
   file, so there is nothing to lose and dev/test flows keep working.
 
+It also pins the two things the #1000 containment rested on but never asserted:
+which stage the failure is blamed on, and that a port which never declared
+``durable`` at all is treated as non-durable rather than trusted.
+
 The fakes are reused from ``test_pipeline_state_machine`` and ``_service`` from
 ``test_services_gaps``, the same helpers the orchestrator tests already share.
 """
@@ -42,6 +46,42 @@ def _registry() -> object:
     return registry
 
 
+def _registry_without_upload() -> object:
+    """The same tail with the upload stage trimmed out.
+
+    Real registries are built from a configured stage list, so a deployment can
+    legitimately lack ``s3_upload``; the blame message must not then name a stage
+    that never ran.
+    """
+    registry = _fresh_registry()
+    registry.register(CountingStage("ffmpeg_multi_bitrate_encode", success_event="content.encoded"))
+    registry.register(CountingStage("publish", success_event="content.published"))
+    return registry
+
+
+class DurableStorage:
+    """A storage port that declares the durability contract and honours it."""
+
+    durable = True
+
+    async def upload(self, local_path: str, storage_key: str) -> str:
+        return f"s3://wildframe-media/{storage_key}"
+
+
+class UndeclaredStorage:
+    """A storage port that never declared ``durable`` at all.
+
+    Deliberately NOT a subclass of ``ObjectStorage``: inheriting it would also
+    inherit ``durable = False``, and the whole point here is to exercise the
+    ``getattr(storage, "durable", False)`` *default*, which only a port with no
+    such attribute can reach. This mirrors the adapter-swapping the ports dict
+    allows -- a replacement port need not have inherited the ABC.
+    """
+
+    async def upload(self, local_path: str, storage_key: str) -> str:
+        return f"s3://wildframe-media/{storage_key}"
+
+
 def _write_manifest(work_root: str, job_id) -> str:
     """Write a packaged artifact into the job sandbox, as the ffmpeg packager does."""
     hls_dir = os.path.join(work_root, str(job_id), "hls")
@@ -59,6 +99,77 @@ def test_stub_object_storage_is_not_a_durable_port():
     regression tests here start passing for the wrong reason.
     """
     assert StubObjectStorage().durable is False
+
+
+async def test_a_port_that_never_declared_durability_is_not_trusted(tmp_path):
+    """The ``getattr(storage, "durable", False)`` *default* must fail closed.
+
+    Every other test here uses ``StubObjectStorage``, which *inherits*
+    ``durable = False`` from the ``ObjectStorage`` ABC. Swapping the default for
+    ``True`` therefore changed nothing they could observe, and a port that never
+    declared the contract at all was silently trusted -- exactly the failure the
+    gate exists to prevent.
+
+    ``UndeclaredStorage`` has no ``durable`` attribute, so this is the only shape
+    that reaches the default.
+    """
+    storage = UndeclaredStorage()
+    assert not hasattr(storage, "durable"), "the premise: this port declares nothing"
+
+    repo = FakeJobRepo()
+    work_root = tmp_path / "work"
+
+    with (
+        patch.object(settings, "MEDIA_PIPELINE_ADAPTERS", "ffmpeg"),
+        patch.object(settings, "PIPELINE_WORK_ROOT", str(work_root)),
+        patch.object(settings, "PIPELINE_QUARANTINE_ROOT", str(tmp_path / "quarantine")),
+    ):
+        service = _service(repo, _registry())
+        service._ports["object_storage"] = storage
+        job = await service.start_job(
+            content_id=uuid4(), upload_session_id=uuid4(), storage_key="media/a/clip.mp4"
+        )
+        master = _write_manifest(str(work_root), job.id)
+        result = await service.advance(job.id)
+        await service.drain_outbox()
+
+    topics = [event.topic for event in service.publisher.sent]
+
+    assert (
+        result.status == PipelineJobStatus.FAILED
+    ), "a storage port that never declared durability must not be assumed to store anything"
+    assert PUBLISHED not in topics
+    assert os.path.isfile(master), "the only copy of the media must survive"
+
+
+async def test_a_durable_port_completes_the_job_under_real_adapters(tmp_path):
+    """Control: the gate reads the attribute, it does not just always say no.
+
+    Without this the test above also passes if ``_storage_is_durable`` ignored
+    the port entirely.
+    """
+    repo = FakeJobRepo()
+    work_root = tmp_path / "work"
+
+    with (
+        patch.object(settings, "MEDIA_PIPELINE_ADAPTERS", "ffmpeg"),
+        patch.object(settings, "PIPELINE_WORK_ROOT", str(work_root)),
+        patch.object(settings, "PIPELINE_QUARANTINE_ROOT", str(tmp_path / "quarantine")),
+    ):
+        service = _service(repo, _registry())
+        service._ports["object_storage"] = DurableStorage()
+        job = await service.start_job(
+            content_id=uuid4(), upload_session_id=uuid4(), storage_key="media/a/clip.mp4"
+        )
+        master = _write_manifest(str(work_root), job.id)
+        result = await service.advance(job.id)
+        await service.drain_outbox()
+
+    topics = [event.topic for event in service.publisher.sent]
+
+    assert result.status == PipelineJobStatus.COMPLETED
+    assert PUBLISHED in topics
+    assert not os.path.exists(master), "a durable store means the sandbox is expendable"
 
 
 async def test_real_adapters_cannot_complete_a_job_whose_media_was_never_stored(tmp_path):
@@ -92,6 +203,76 @@ async def test_real_adapters_cannot_complete_a_job_whose_media_was_never_stored(
         "the encoded/packaged media is the only copy when nothing was stored; "
         "it must survive so an operator can recover or re-run it"
     )
+
+
+async def test_the_durability_failure_is_blamed_on_the_upload_that_ran(tmp_path):
+    """The DLQ names ``s3_upload`` when the registry actually ran it.
+
+    Nothing asserted the blamed stage on this path, so inverting the
+    ``"s3_upload" in job.stage_versions`` check left every test green while the
+    operator's DLQ named a stage that had not failed -- or, worse, named
+    ``publish`` for a run whose real fault was the upload.
+
+    ``current_stage``, the DLQ payload's ``stage`` and the dedupe ``dlq_key`` all
+    come from the same ``blame`` value, so all three are checked: the key is
+    what a retry-deduping consumer matches on.
+    """
+    repo = FakeJobRepo()
+    work_root = tmp_path / "work"
+
+    with (
+        patch.object(settings, "MEDIA_PIPELINE_ADAPTERS", "ffmpeg"),
+        patch.object(settings, "PIPELINE_WORK_ROOT", str(work_root)),
+        patch.object(settings, "PIPELINE_QUARANTINE_ROOT", str(tmp_path / "quarantine")),
+    ):
+        service = _service(repo, _registry())
+        job = await service.start_job(
+            content_id=uuid4(), upload_session_id=uuid4(), storage_key="media/a/clip.mp4"
+        )
+        _write_manifest(str(work_root), job.id)
+        result = await service.advance(job.id)
+        await service.drain_outbox()
+
+    dlq = [event for event in service.publisher.sent if event.topic == DLQ]
+
+    assert result.status == PipelineJobStatus.FAILED
+    assert "s3_upload" in result.stage_versions, "the upload stage really did run"
+    assert result.current_stage == "s3_upload"
+    assert len(dlq) == 1
+    assert dlq[0].payload["stage"] == "s3_upload"
+    assert dlq[0].payload["dlq_key"] == f"{job.id}:s3_upload"
+
+
+async def test_the_durability_failure_falls_back_to_publish_when_no_upload_ran(tmp_path):
+    """A trimmed registry without ``s3_upload`` must not be blamed on it.
+
+    The other half of the same conditional: naming a stage that never executed
+    sends an operator to the wrong log line.
+    """
+    repo = FakeJobRepo()
+    work_root = tmp_path / "work"
+
+    with (
+        patch.object(settings, "MEDIA_PIPELINE_ADAPTERS", "ffmpeg"),
+        patch.object(settings, "PIPELINE_WORK_ROOT", str(work_root)),
+        patch.object(settings, "PIPELINE_QUARANTINE_ROOT", str(tmp_path / "quarantine")),
+    ):
+        service = _service(repo, _registry_without_upload())
+        job = await service.start_job(
+            content_id=uuid4(), upload_session_id=uuid4(), storage_key="media/a/clip.mp4"
+        )
+        _write_manifest(str(work_root), job.id)
+        result = await service.advance(job.id)
+        await service.drain_outbox()
+
+    dlq = [event for event in service.publisher.sent if event.topic == DLQ]
+
+    assert result.status == PipelineJobStatus.FAILED
+    assert "s3_upload" not in result.stage_versions, "the upload stage never ran"
+    assert result.current_stage == "publish"
+    assert len(dlq) == 1
+    assert dlq[0].payload["stage"] == "publish"
+    assert dlq[0].payload["dlq_key"] == f"{job.id}:publish"
 
 
 async def test_the_manifest_survives_a_replayed_advance(tmp_path):

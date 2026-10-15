@@ -626,6 +626,46 @@ def test_a_stage_success_resets_the_breaker():
     service._check_circuit_breaker("encode")  # no raise
 
 
+async def test_a_successful_advance_clears_the_breaker_it_incurred():
+    """The ``advance()`` call site, not just the helper.
+
+    ``test_a_stage_success_resets_the_breaker`` above calls
+    ``_record_stage_success`` directly, so deleting the call inside the stage
+    loop (``app/services.py``) left the suite green -- a stage that failed, then
+    recovered, kept its failure count and eventually tripped a breaker that no
+    longer reflected reality. Ten unrelated transient failures over a long
+    deployment, each recovered, would take a healthy stage offline.
+
+    The breaker counts *consecutive* exhausted stages, so this drives the real
+    sequence: one job whose ``flaky`` stage exhausts its attempts (counter -> 1),
+    then a second job on the same stage name that succeeds.
+    """
+    repo = FakeJobRepo()
+    broken = _fresh_registry()
+    broken.register(CountingStage("flaky", fail_times=99))
+    service = _service(repo, broken, max_attempts=2)
+
+    first = await service.start_job(content_id=uuid4(), upload_session_id=uuid4(), storage_key="k")
+    failed = await service.advance(first.id)
+
+    assert failed.status == PipelineJobStatus.FAILED
+    assert service._circuit_breaker["flaky"] == 1, "the exhausted stage was counted"
+
+    # The dependency recovers; the next job on the same stage name must succeed.
+    recovered = _fresh_registry()
+    recovered.register(CountingStage("flaky"))
+    service.registry = recovered
+    second = await service.start_job(
+        content_id=uuid4(), upload_session_id=uuid4(), storage_key="k2"
+    )
+    done = await service.advance(second.id)
+
+    assert done.status == PipelineJobStatus.COMPLETED
+    assert (
+        service._circuit_breaker["flaky"] == 0
+    ), "a stage that succeeded must not stay penalised by an earlier failure"
+
+
 # ---------------------------------------------------------------------------
 # Disk quota.
 # ---------------------------------------------------------------------------

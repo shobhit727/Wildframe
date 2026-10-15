@@ -12,7 +12,7 @@ write endpoint is not a side effect of making the module importable.
 
 import importlib
 import os
-from contextlib import ExitStack
+from contextlib import ExitStack, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -113,6 +113,35 @@ async def client(session):
     application.dependency_overrides[get_db] = _override_get_db
     async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as ac:
         yield ac
+
+
+@asynccontextmanager
+async def independent_reader(engine_url: str):
+    """A session on its **own** engine, for reads that must not see the writer.
+
+    The ``session`` fixture above is handed straight to ``get_db``, so every
+    existing read-back in this file goes out over the same connection that
+    issued the write. On that connection a ``flush()`` is indistinguishable
+    from a ``commit()``: the row is in the transaction, the identity map and
+    the session can see it, and nothing says whether anyone else can.
+
+    A second engine guarantees a different connection, and PostgreSQL's READ
+    COMMITTED isolation means it only ever sees committed rows. So "is this row
+    visible to somebody else?" is a question this context manager can answer
+    and the shared session cannot.
+    """
+    engine = create_async_engine(
+        make_url(engine_url).set(drivername="postgresql+asyncpg"), echo=False
+    )
+    try:
+        async with engine.begin() as conn:
+            for base in BASES:
+                await conn.run_sync(base.metadata.create_all)
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with factory() as fresh:
+            yield fresh
+    finally:
+        await engine.dispose()
 
 
 # ------------------------------------------------------------------ rights router
@@ -410,6 +439,40 @@ class TestAdsRouter:
         stored = await session.get(AdConfig, UUID(response.json()["id"]))
         assert stored.consent_gated is False
         assert stored.tcf_required is False
+
+    async def test_create_ad_commits_so_another_connection_can_read_the_row(
+        self, client, engine_url
+    ):
+        """The row must be committed, not merely flushed.
+
+        Every other read-back in this class uses ``session`` -- the very session
+        ``get_db`` handed to the handler -- so ``await db.flush()`` on its own
+        satisfies all of them: the pending INSERT sits in the writing
+        transaction and is readable from that connection. Deleting the
+        ``await db.commit()`` from ``create_ad`` therefore left the whole suite
+        green while an ad config created over HTTP was invisible to every other
+        connection, and lost outright on rollback.
+
+        Read it back the way a different process would: a separate engine, so a
+        different connection, where only committed rows exist.
+        """
+        content_id = uuid4()
+
+        response = await client.post("/ads", json={"content_id": str(content_id)})
+
+        assert response.status_code == 201
+        ad_id = UUID(response.json()["id"])
+
+        async with independent_reader(engine_url) as reader:
+            stored = await reader.get(AdConfig, ad_id)
+
+        assert stored is not None, (
+            "the ad config is not visible to another connection: create_ad flushed "
+            "but never committed, so the row exists only inside the request's "
+            "transaction and is discarded on rollback"
+        )
+        assert stored.content_id == content_id
+        assert stored.consent_gated is True
 
     @pytest.mark.parametrize(
         "payload",

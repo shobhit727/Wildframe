@@ -336,6 +336,33 @@ class TestInvoicePaid:
         await _handle_invoice_paid(_event("invoice.paid", {"id": None, "total": 100}), svc)
         svc.inv_repo.create.assert_not_awaited()
 
+    async def test_invoice_without_id_is_not_recorded_even_when_attributable(self):
+        """The guard itself, on a payload that would otherwise be recorded.
+
+        The test above carries no ``lines``, so the attribution loop is empty and
+        ``create`` is skipped whether or not the guard exists -- which is why
+        deleting ``if not stripe_invoice_id: return`` left the suite green. This
+        payload *is* attributable to a user, so nothing but the guard stands
+        between it and a row persisted with ``stripe_invoice_id = None``: every
+        future invoice for that user would then collide on the dedupe constraint
+        (or, absent the unique index, double-record) and no operator could trace
+        the row back to a Stripe invoice.
+        """
+        svc = _service_mock()
+        await _handle_invoice_paid(
+            _event(
+                "invoice.paid",
+                {
+                    "id": None,
+                    "total": 100,
+                    "currency": "usd",
+                    "lines": {"data": [{"metadata": {"user_id": str(uuid4())}}]},
+                },
+            ),
+            svc,
+        )
+        svc.inv_repo.create.assert_not_awaited()
+
     async def test_already_recorded_invoice_is_skipped(self):
         svc = _service_mock()
         svc.inv_repo.get_by_stripe_invoice_id = AsyncMock(return_value=SimpleNamespace(id=uuid4()))
@@ -512,6 +539,45 @@ class TestInvoicePaidCurrencyMinorUnits:
         svc, event = self._svc_for("usd", total, invoice_id="in_poison")
         await _handle_invoice_paid(event, svc)
         svc.inv_repo.create.assert_not_awaited()
+
+    @pytest.mark.parametrize("total", ["12.5", 12.5, "12.50", "0.5", 100.5, "12.0001"])
+    async def test_fractional_total_is_refused_not_truncated(self, total):
+        """The one payload the parse guard above cannot catch.
+
+        Every case in ``test_unusable_total_is_rejected_without_raising`` dies at
+        ``Decimal(str(raw_total))``, so the integrality check that follows was
+        never evaluated. This one parses cleanly and is *not* a whole number of
+        minor units, which is the only thing standing between it and
+        ``int(total_minor)`` -- and ``int(Decimal("12.5"))`` is ``12``, so
+        without the check a 12.5-unit invoice would be recorded as exactly 12
+        units ($0.12): a paid invoice with the wrong amount on it, silently, with
+        no error anywhere. Silent misstatement beats a crash for an attacker or a
+        bad Stripe integration and is the reason the check exists.
+        """
+        svc, event = self._svc_for("usd", total, invoice_id="in_fractional")
+        await _handle_invoice_paid(event, svc)
+        svc.inv_repo.create.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        "total, expected",
+        [
+            ("12.0", Decimal("0.12")),  # twelve minor units written as a decimal
+            (12.0, Decimal("0.12")),  # a float that stringifies that way
+            ("0012", Decimal("0.12")),  # zero padding
+            ("1e2", Decimal("1.00")),  # scientific notation for 100 minor units
+        ],
+    )
+    async def test_a_whole_number_written_as_a_decimal_is_accepted(self, total, expected):
+        """Control: the check is on the value, not on the text.
+
+        "12.0" *is* twelve minor units. Rejecting any total containing a "." would
+        also refuse it, and the refusal tests above would still pass -- so pin the
+        boundary explicitly, in both directions.
+        """
+        svc, event = self._svc_for("usd", total, invoice_id="in_whole")
+        await _handle_invoice_paid(event, svc)
+        svc.inv_repo.create.assert_awaited_once()
+        assert svc.inv_repo.create.call_args.kwargs["amount"] == expected
 
     async def test_unsupported_currency_is_rejected_without_raising(self):
         svc, event = self._svc_for("xyz", 1000, invoice_id="in_badcur")
