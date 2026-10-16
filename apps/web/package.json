@@ -25,12 +25,12 @@
     "@radix-ui/react-tabs": "^1.0.0",
     "@tanstack/react-query": "^5.103.2",
     "@tanstack/react-query-devtools": "^5.0.0",
-    "axios": "^1.6.0",
+    "axios": "^1.20.0",
     "clsx": "^2.0.0",
     "dashjs": "^5.2.1",
     "date-fns": "^4.4.0",
     "hls.js": "^1.7.1",
-    "next": "^16.3.6",
+    "next": "^16.3.8",
     "react": "^19.0.0-rc",
     "react-dom": "^19.0.0-rc",
     "sonner": "^2.0.8",
@@ -62,7 +62,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "vite": "^7.0.0",
-    "vitest": "^4.1.10"
+    "vitest": "^5.0.5"
   },
   "overrides": {
     "sharp": "^0.35.4"
