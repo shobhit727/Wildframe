@@ -9955,3 +9955,122 @@ battery 12/12.
    `--cov` flags had no plugin, and `node verify-csp-live.mjs` exiting 0 because
    running a module directly never calls its default export, both looked like
    passes.
+
+## 2026-10-13 — second test-quality pass: the other 9 services
+
+The first mutation pass covered 7 services plus the SDK. **Nine had no coverage
+at all**, and nobody had independently checked whether the tests the first pass
+produced actually work. Four more subagents. Full detail in
+`PROJECT_MEMORY/TEST_QUALITY_AUDIT_2.md`.
+
+**The generalisation, and it is the useful part:** a mutant that survives the
+full suite means *either* production is correct but unprotected, *or*
+**production is wrong and the suite is green**. The second case is common enough
+that it was the headline of this pass.
+
+### Shipped-green production bugs (14). Filed: #1024 #1025 #1026 #1027 #1028
+
+- **streaming entitlement bypass.** Deleting `require_manifest_session` from
+  `GET /manifests/{id}` leaves 376 tests green — any authenticated user can
+  fetch any manifest by UUID. The sibling episode route has the identical guard
+  **and is tested**; that is precisely why this one is invisible. Compounded by
+  an untested `Cache-Control: public, max-age=3600`.
+- **search: a token with no `role` claim becomes an admin.** `or "user"` →
+  `or "admin"` survives 398 tests, live proof of GRANTED `role='admin'`. `arv`
+  defaults to 0 and `ADMIN_ROLE_VERSION = 0`, so a token carrying only `sub`
+  reaches the index-mutating routes.
+- **recommendation: `disliked_genres` silently dropped** — the route validates
+  and passes it, the service discards it. A user can never express a dislike.
+- **recommendation: a regression the code comment says was already fixed** can be
+  reverted and the suite stays green.
+- **recommendation: `test_cache_set_uses_jittered_ttl` asserts `240<=ttl<=360`
+  and the fixed TTL is 300** — inside its own range. Removing the jitter is
+  satisfied by the assertion meant to detect it.
+- **auth: a case-mismatched email can never obtain a verification token.**
+- **auth: MFA brute-force caps unpinned** (100x ships green); **JWKS accepts a
+  1024-bit key**; **nothing asserts the lockout window** (15 → 15*365*24).
+- **streaming: a missing `arv` is read as the admin version.**
+- **streaming: signed-URL signing and verification duplicate the HMAC message**
+  instead of sharing it, and have drifted — dropping `episode_id` ships green.
+- **moderation: the entire DMCA surface is dead code** (#1026). Note #870 was
+  fixed last session against a route that is unreachable; that fix currently
+  governs nothing.
+- **uploads: a cleanup failure is swallowed** — exactly the orphan its docstring
+  says must never happen.
+- **search: the Kafka offset commit's partition is never tested.**
+- **notification: truncation limits duplicated across two files and untied**; a
+  900-char title survives.
+
+### The CI gap, verified
+
+The 6 live Redis Lua tests **do not run in CI**: `backend-test` declares only a
+`postgres` service. With Redis stopped: 1 passed, 6 skipped — so in CI the
+behavioural claim is carried by a literal substring assertion on the script text.
+And one of those tests is **not hermetic**: it hardcodes an account id and never
+releases its lease, so an immediate re-run fails on leftover state.
+
+### The previous round's tests: 11 of 12 VERIFIED
+
+Attacked with mutations applied by the reviewer rather than trusted from the
+author. Two results worth repeating:
+
+- The ads auth-surface test is **stronger than claimed** — the reviewer ran the
+  inverse mutation (mount the router *with* `Depends(get_current_user)`) and it
+  stays green, so a legitimately authenticated router is not a false positive.
+- But `test_rate_limiter_dual.py`'s `FakeRedis` **is** blind to the Lua (48
+  passed under the Lua mutation) and carries **no note saying so**, in the same
+  directory as the file that exists to fix exactly that. Document the trap or
+  someone will trust it again.
+
+### A flaky kill — a test that catches a mutation one run in five is not catching it
+
+A moderation mutant (`signed=True` → `signed=False`) was caught in **20 of 25
+runs**, because the kill depends on the top bit of a random `uuid4()`.
+
+### False survivors, three times out of four
+
+Every occurrence was the same mistake: the file holding the real assertions was
+outside the agent's scoped selection. One agent's *first control mutation
+survived* for exactly that reason. One agent also ran phase-2 batches
+concurrently and produced two false **CAUGHT**s whose failure text came from the
+other batch's mutation. Its rule, worth keeping:
+
+> Contamination can only ADD failures, so SURVIVED verdicts are always
+> trustworthy; CAUGHT verdicts from a concurrent run are not.
+
+### Equivalence verified rather than assumed
+
+Five apparent gaps were disproved and are reported as equivalents, not coverage
+holes: a column `onupdate=`, a redundant `redis_url is None` guard, an attribute
+that does not exist, a `startswith("Bearer ")` whose outcome is equivalent, and a
+`_cursor_secret()` comparison that *looks* tautological but is load-bearing (a
+broken process-cache returns fresh random bytes).
+
+### The classes that actually dominate repo-wide
+
+Mechanical tautologies are largely **absent** — most suites use hand-written
+fakes, not Mocks. The two real classes are:
+
+1. **Named for something it does not test.** `..._rolls_back` asserting only
+   `pytest.raises` (auth ×2, user ×2, notification ×1); `test_get_manifest`
+   against a no-op mock; a `get_for_update` test that compiles its own `select()`
+   and never calls the repository.
+2. **Mocks the layer the defect lives in.** 46 gateway tests re-implementing the
+   Redis Lua; moderation's `FakeStrikeRepo.lock_creator` being a no-op append,
+   which makes the real advisory lock invisible; notification's `MagicMock`
+   session being structurally unable to model one poisoned by an IntegrityError.
+
+One large cluster of pure noise: `moderation-service/tests/test_models.py` has
+~50 assertions that assign a literal to a plain attribute and assert it reads
+back. **Zero production code runs** — proven by defaulting `DMCATakedown.reason`
+to an attacker-controlled value and re-running those six files: 14 passed.
+`test_creators_final2.py` and `test_creators_final3.py` are byte-for-byte
+duplicates.
+
+### Scores for the previously uncovered services
+
+creators 100%, uploads 96%, analytics 94%, search 96%, notification 92%,
+auth 86.8%, streaming 80.5%, recommendation 75.9%, **moderation 72%**.
+
+**Not covered:** auth `privacy.py` (464 lines), `age.py` (106), `SecretCipher`;
+streaming's HMAC seam has 1 mutant covered of many.
