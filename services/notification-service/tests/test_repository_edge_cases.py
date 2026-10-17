@@ -15,7 +15,7 @@ connection.
 
 import json
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
@@ -44,6 +44,33 @@ def _winner(delivery_status: str = "sent") -> MagicMock:
     return row
 
 
+class _RecordingSession:
+    """A real ``AsyncSession`` plus a record of the calls made on it, in order.
+
+    The point of the recording is order; the point of delegating to a real
+    session is that a real session is the only thing that knows what a flush
+    failure *does* to it. A ``MagicMock`` cannot be poisoned, so it cannot tell
+    you that a re-SELECT run before the rollback raises
+    ``PendingRollbackError`` -- which is the entire reason the rollback has to
+    come first.
+    """
+
+    def __init__(self, session: AsyncSession):
+        self._session = session
+        self.calls: list[str] = []
+
+    def __getattr__(self, name: str):
+        attribute = getattr(self._session, name)
+        if not callable(attribute):
+            return attribute
+
+        def record(*args, **kwargs):
+            self.calls.append(name)
+            return attribute(*args, **kwargs)
+
+        return record
+
+
 # ---------------------------------------------------------------------------
 # create - unique-index race
 # ---------------------------------------------------------------------------
@@ -64,22 +91,65 @@ async def test_create_returns_the_winners_row_when_the_insert_loses_the_race():
     assert notif is winner
 
 
-async def test_create_rolls_back_before_re_reading_after_an_integrity_error():
-    """The session must be usable again before the re-SELECT runs."""
-    session = MagicMock()
-    session.add = MagicMock()
-    session.flush = AsyncMock(side_effect=IntegrityError("UNIQUE", {}, Exception("dup")))
-    session.rollback = AsyncMock()
-    winner = _winner()
+async def test_create_rolls_back_before_re_reading_after_an_integrity_error(session: AsyncSession):
+    """The session must be usable again before the re-SELECT runs.
 
-    repo = NotificationRepository(session)
-    repo.get_by_event_id = AsyncMock(side_effect=[None, winner])
+    The previous version of this test used ``MagicMock`` and asserted only
+    ``session.rollback.assert_awaited_once()``, which proves the rollback
+    happened *somewhere*, not that it happened *first*. Reversing the two lines
+    in ``repositories.create`` left all 302 tests green, and on a real session
+    that ordering raises ``PendingRollbackError`` -- so the blind spot was over
+    the one thing the test claims to be about.
 
-    notif, created = await repo.create(uuid4(), "T", "M", event_id=uuid4())
+    Two independent mechanisms, either of which is enough:
 
-    session.rollback.assert_awaited_once()
+    * the calls are recorded on a **real** ``AsyncSession``, so the assertion is
+      about the actual sequence rather than about mock bookkeeping;
+    * the re-SELECT runs as **real SQL** against that session, so if the rollback
+      had not already cleaned the transaction the database call itself would
+      raise, and the test could not reach its assertions at all.
+    """
+    winner_user = uuid4()
+    winner_event = uuid4()
+    # A committed row is the "winner" the lost race must find on the re-SELECT.
+    winner = Notification(
+        user_id=winner_user,
+        title="first",
+        message="first",
+        channel="in-app",
+        event_id=winner_event,
+    )
+    session.add(winner)
+    await session.commit()
+
+    recording = _RecordingSession(session)
+    repo = NotificationRepository(recording)
+
+    # The pre-check must miss the winner (that is what losing the race looks
+    # like), but the re-SELECT must be the real query against the real session.
+    real_get_by_event_id = repo.get_by_event_id
+    lookups: list[UUID] = []
+
+    async def get_by_event_id(event_id: UUID):
+        lookups.append(event_id)
+        if len(lookups) == 1:
+            return None
+        return await real_get_by_event_id(event_id)
+
+    repo.get_by_event_id = get_by_event_id
+
+    notif, created = await repo.create(winner_user, "second", "second", event_id=winner_event)
+
+    # The rollback happens, and it happens before the re-SELECT.
+    assert recording.calls == ["add", "flush", "rollback", "execute"], (
+        "expected the rollback to precede the re-SELECT; recorded order was " f"{recording.calls}"
+    )
+    # And the re-SELECT genuinely ran on a session the flush failure had not
+    # poisoned -- a MagicMock could not have told us either way.
+    assert len(lookups) == 2
     assert created is False
-    assert notif is winner
+    assert notif.id == winner.id
+    assert notif.title == "first"
 
 
 async def test_create_reraises_when_the_winner_vanished():

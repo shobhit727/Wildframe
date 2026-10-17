@@ -949,6 +949,198 @@ async def test_cleanup_upload_with_nothing_to_abort(s3_client):
     client.abort_multipart_upload.assert_not_called()
 
 
+class TestCleanupFailureClassification:
+    """Which storage failures count as "already gone" and which must propagate.
+
+    ``S3StoragePort.cleanup_upload`` documents a two-way contract: only a
+    *confirmed missing* resource is success; anything else propagates "so the
+    caller keeps ``storage_cleaned_at`` unset and the reaper retries; swallowing
+    it would mark the session cleaned while the bytes stayed in the bucket
+    forever."
+
+    Only the swallowing half was tested. ``test_upload_failure_paths.py`` patches
+    ``cleanup_upload`` itself, so the adapter's error *classification* -- the
+    ``_is_missing_resource`` / ``_is_missing_upload`` calls that decide which
+    failures are tolerated -- was never exercised. Replacing the ``raise`` in the
+    adapter with ``pass`` therefore left the whole suite green, and the failure
+    it would cause is invisible by construction: the row says cleaned, the
+    reaper stops retrying, and the bytes stay in the bucket until a human
+    notices a bill.
+    """
+
+    @staticmethod
+    def _coded(code: str, status: int = 400) -> FakeClientError:
+        """A provider error whose ``Error.Code`` is a real S3 code, not a number."""
+        error = FakeClientError(status, code)
+        error.response["Error"]["Code"] = code
+        return error
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("code", "status"),
+        [
+            pytest.param("AccessDenied", 403, id="access-denied"),
+            pytest.param("InvalidBucketName", 400, id="bad-request"),
+            pytest.param("InternalError", 500, id="server-side"),
+            pytest.param("SlowDown", 503, id="throttled"),
+            pytest.param("409", 409, id="bare-4xx-code"),
+        ],
+    )
+    async def test_a_delete_failure_that_is_not_a_confirmed_miss_propagates(
+        self, s3_client, code, status
+    ):
+        """Every one of these must reach the caller.
+
+        None of them is a proof of absence: the object may still be there, and
+        reporting success would leave the bytes in the bucket with a session row
+        saying they are gone.
+        """
+        client, _ = s3_client
+        client.delete_object.side_effect = self._coded(code, status)
+        port = _s3_port()
+
+        with pytest.raises(FakeClientError) as exc:
+            await port.cleanup_upload(session_id=str(uuid4()), chunk_keys=["p"], final_key="f")
+
+        assert exc.value.response["Error"]["Code"] == code
+
+    @pytest.mark.asyncio
+    async def test_a_delete_failure_with_no_http_response_at_all_propagates(self, s3_client):
+        """A transport-level error has no ``response`` to classify.
+
+        Treating "I could not tell what happened" as "it is already gone" is the
+        exact inversion this adapter must not make.
+        """
+        client, _ = s3_client
+        client.delete_object.side_effect = ConnectionResetError("socket died")
+        port = _s3_port()
+
+        with pytest.raises(ConnectionResetError, match="socket died"):
+            await port.cleanup_upload(session_id=str(uuid4()), chunk_keys=["p"], final_key="f")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("code", "status"),
+        [
+            pytest.param("NoSuchKey", 404, id="NoSuchKey-404"),
+            pytest.param("NoSuchBucket", 404, id="NoSuchBucket-404"),
+            pytest.param("NotFound", 404, id="NotFound-404"),
+            pytest.param("404", 404, id="bare-404-code"),
+        ],
+    )
+    async def test_a_confirmed_missing_object_is_swallowed(self, s3_client, code, status):
+        """The tolerated half: re-running cleanup on an already-cleaned session."""
+        client, _ = s3_client
+        client.delete_object.side_effect = self._coded(code, status)
+        port = _s3_port()  # must not raise
+
+        await port.cleanup_upload(session_id=str(uuid4()), chunk_keys=["gone"], final_key="f")
+
+    @pytest.mark.asyncio
+    async def test_a_404_status_is_a_proof_of_absence_even_with_an_odd_code(self, s3_client):
+        """Documented boundary of the classification, not an accident of it.
+
+        ``_is_missing_resource`` tolerates on the code *or* on a 404 status. A
+        404 from the object store is a proof of absence whatever the body says,
+        so an unfamiliar code paired with a 404 is still "already gone". Pinned
+        so that tightening this rule later is a deliberate change: the alternative
+        (tolerating nothing but the four known codes) would make a MinIO or
+        Ceph proxy that normalises codes into the retry path forever.
+        """
+        client, _ = s3_client
+        client.delete_object.side_effect = self._coded("SomethingNewAndUnmapped", 404)
+        port = _s3_port()  # must not raise
+
+        await port.cleanup_upload(session_id=str(uuid4()), chunk_keys=["gone"], final_key="f")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("code", "status"),
+        [
+            pytest.param("AccessDenied", 403, id="access-denied"),
+            pytest.param("InternalError", 500, id="server-side"),
+            pytest.param("NoSuchUpload", 404, id="already-gone-upload"),
+            pytest.param("404", 404, id="bare-404-code"),
+        ],
+    )
+    async def test_abort_classification_matches_the_delete_rule(self, s3_client, code, status):
+        """An abort failure that is not a confirmed miss must propagate too.
+
+        The multipart upload is the expensive half to leak: its parts are billed
+        until aborted, and nothing else in the flow cancels one.
+        """
+        client, _ = s3_client
+        client.abort_multipart_upload.side_effect = self._coded(code, status)
+        port = _s3_port()
+
+        if code in ("NoSuchUpload", "404"):
+            await port.cleanup_upload(
+                session_id=str(uuid4()), chunk_keys=[], final_key="f", upload_id="u1"
+            )  # must not raise
+        else:
+            with pytest.raises(FakeClientError) as exc:
+                await port.cleanup_upload(
+                    session_id=str(uuid4()), chunk_keys=[], final_key="f", upload_id="u1"
+                )
+            assert exc.value.response["Error"]["Code"] == code
+
+    @pytest.mark.asyncio
+    async def test_one_missing_object_does_not_stop_the_remaining_deletes(self, s3_client):
+        """Tolerating a miss must not skip the objects after it.
+
+        Cleanup runs over parts *and* the final key; abandoning the loop at the
+        first 404 would leave the final object behind on a partially-cleaned
+        session.
+        """
+        client, _ = s3_client
+        port = _s3_port()
+        deleted: list[str] = []
+
+        def delete(Bucket, Key):
+            deleted.append(Key)
+            if Key == "p0":
+                raise self._coded("NoSuchKey", 404)
+
+        client.delete_object.side_effect = delete
+
+        await port.cleanup_upload(session_id=str(uuid4()), chunk_keys=["p0", "p1"], final_key="f")
+
+        assert deleted == ["p0", "p1", "f"]
+
+    @pytest.mark.asyncio
+    async def test_duplicate_keys_are_deleted_once(self, s3_client):
+        client, _ = s3_client
+        deleted: list[str] = []
+        client.delete_object.side_effect = lambda Bucket, Key: deleted.append(Key)
+
+        await _s3_port().cleanup_upload(
+            session_id=str(uuid4()), chunk_keys=["p0", "p0", "p1"], final_key="f"
+        )
+
+        assert deleted == ["p0", "p1", "f"]
+
+    @pytest.mark.asyncio
+    async def test_a_propagated_delete_failure_is_not_reported_as_a_clean_session(self, s3_client):
+        """The adapter and the service contract, composed.
+
+        ``test_upload_failure_paths.py`` proves the service half by patching
+        ``cleanup_upload``; ``test_storage_ports.py`` proves the adapter half.
+        This one wires the two together so the documented outcome -- a raised
+        failure, never a silent success -- is asserted end to end.
+        """
+        client, _ = s3_client
+        client.delete_object.side_effect = self._coded("AccessDenied", 403)
+        port = _s3_port()
+
+        with pytest.raises(FakeClientError):
+            await port.cleanup_upload(session_id=str(uuid4()), chunk_keys=["p"], final_key="f")
+
+        # Nothing about a failed cleanup may look like success to a caller:
+        # the port returns None on the tolerated path and raises here, so there
+        # is no "cleaned" value to set ``storage_cleaned_at`` from.
+        assert not hasattr(port, "cleaned")
+
+
 # ---------------------------------------------------------------------------
 # The persisted-UploadId design, driven through the real service.
 # ---------------------------------------------------------------------------

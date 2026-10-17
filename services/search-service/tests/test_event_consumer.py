@@ -284,8 +284,16 @@ def consumer_env(monkeypatch):
     return MagicMock(es=es, catalog=catalog, factory=factory, built=built)
 
 
-def _envelope(topic: str, payload: dict, partition: int = 0, offset: int = 0) -> _Msg:
-    """A Kafka message whose value is a real ``DomainEvent`` serialization."""
+def _envelope(topic: str, payload: dict, *, partition: int, offset: int) -> _Msg:
+    """A Kafka message whose value is a real ``DomainEvent`` serialization.
+
+    ``partition`` is required and keyword-only on purpose. It used to default to
+    0 and no call site passed it, so every message in the suite arrived on
+    partition 0 -- which meant the commit assertions were satisfied just as well
+    by ``TopicPartition(msg.topic, 0)`` as by the correct
+    ``TopicPartition(msg.topic, msg.partition)``. An off-by-one on partition
+    means skipping or replaying events in a multi-partition topic.
+    """
     from wildframe_events import DomainEvent
 
     event = DomainEvent(topic=topic, key=f"key:{payload.get('content_id')}", payload=payload)
@@ -303,8 +311,8 @@ class TestConsumerLoop:
         def capture_first(*topics, **kwargs):
             consumer = _FakeConsumer(*topics, **kwargs)
             consumer.messages = [
-                _envelope("content.published", {"content_id": content_id}, offset=41),
-                _envelope("content.deleted", {"content_id": content_id}, offset=42),
+                _envelope("content.published", {"content_id": content_id}, partition=2, offset=41),
+                _envelope("content.deleted", {"content_id": content_id}, partition=5, offset=42),
             ]
             consumer_env.built.append(consumer)
             return consumer
@@ -323,14 +331,15 @@ class TestConsumerLoop:
         assert consumer.kwargs["auto_offset_reset"] == "earliest"
         assert consumer.topics == TOPICS
 
-        # Offsets are committed one past the processed message, per partition.
+        # Offsets are committed one past the processed message, against the
+        # partition that message actually arrived on -- neither is a constant.
         committed = [
             (next(iter(offsets)).topic, next(iter(offsets)).partition, list(offsets.values())[0])
             for offsets in consumer.commits
         ]
         assert committed == [
-            ("content.published", 0, 42),
-            ("content.deleted", 0, 43),
+            ("content.published", 2, 42),
+            ("content.deleted", 5, 43),
         ]
         assert es_index.await_count == 1
         assert es_delete.await_count == 1
@@ -349,7 +358,7 @@ class TestConsumerLoop:
         def capture(*topics, **kwargs):
             consumer = _FakeConsumer(*topics, **kwargs)
             consumer.messages = [
-                _envelope("content.published", {"content_id": content_id}, offset=7),
+                _envelope("content.published", {"content_id": content_id}, partition=1, offset=7),
             ]
             consumer_env.built.append(consumer)
             return consumer
@@ -457,3 +466,131 @@ class TestConsumerLoop:
         assert consumer_env.built == []
         assert services_mod.ContentCatalogClient is catalog_factory
         consumer_env.catalog.aclose.assert_not_awaited()
+
+
+class TestConsumerLoopCommitPartition:
+    """The committed offset must be recorded against the partition the message
+    arrived on.
+
+    ``_envelope`` used to default ``partition`` to 0 and every call site passed
+    only ``offset=``, so every message in the suite arrived on partition 0 and
+    the existing commit assertion (``"content.published", 0, 42``) was equally
+    satisfied by a hardcoded ``TopicPartition(msg.topic, 0)``. That mutant left
+    all 398 tests green.
+
+    Committing against the wrong partition is silent and asymmetric in a real
+    multi-partition topic: an offset belonging to partition 3 recorded against
+    partition 0 makes partition 0 skip ahead (events dropped, never indexed) and
+    leaves partition 3 replaying from its last committed position (events
+    re-applied). Nothing raises; the index is quietly wrong.
+    """
+
+    @staticmethod
+    def _commits(consumer: _FakeConsumer) -> list[tuple[str, int, int]]:
+        return [
+            (next(iter(offsets)).topic, next(iter(offsets)).partition, list(offsets.values())[0])
+            for offsets in consumer.commits
+        ]
+
+    async def _drive(self, consumer_env, messages: list[_Msg]) -> _FakeConsumer:
+        import aiokafka
+
+        def capture(*topics, **kwargs):
+            consumer = _FakeConsumer(*topics, **kwargs)
+            consumer.messages = messages
+            consumer_env.built.append(consumer)
+            return consumer
+
+        with pytest.MonkeyPatch.context() as ctx:
+            ctx.setattr(aiokafka, "AIOKafkaConsumer", capture)
+            await run_content_sync_consumer(consumer_env.es)  # must not raise
+        return consumer_env.built[-1]
+
+    @pytest.mark.asyncio
+    async def test_a_message_on_a_high_partition_is_committed_against_that_partition(
+        self, consumer_env
+    ):
+        content_id = str(uuid4())
+
+        consumer = await self._drive(
+            consumer_env,
+            [_envelope("content.published", {"content_id": content_id}, partition=7, offset=3)],
+        )
+
+        assert self._commits(consumer) == [("content.published", 7, 4)]
+
+    @pytest.mark.asyncio
+    async def test_each_message_is_committed_against_its_own_partition(self, consumer_env):
+        """Interleaved partitions: the commit tracks the message, not the topic."""
+        published, deleted = str(uuid4()), str(uuid4())
+
+        consumer = await self._drive(
+            consumer_env,
+            [
+                _envelope("content.published", {"content_id": published}, partition=0, offset=0),
+                _envelope("content.published", {"content_id": published}, partition=4, offset=0),
+                _envelope("content.deleted", {"content_id": deleted}, partition=2, offset=11),
+            ],
+        )
+
+        assert self._commits(consumer) == [
+            ("content.published", 0, 1),
+            ("content.published", 4, 1),
+            ("content.deleted", 2, 12),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_commit_dict_holds_exactly_one_partition_the_message_arrived_on(
+        self, consumer_env
+    ):
+        """A stray or duplicated TopicPartition in the commit map advances the
+        group's position on a partition that was never consumed."""
+        content_id = str(uuid4())
+
+        consumer = await self._drive(
+            consumer_env,
+            [_envelope("content.deleted", {"content_id": content_id}, partition=5, offset=42)],
+        )
+
+        assert len(consumer.commits) == 1
+        offsets = consumer.commits[0]
+        assert len(offsets) == 1
+        (topic_partition,) = offsets
+        assert (topic_partition.topic, topic_partition.partition) == ("content.deleted", 5)
+
+    @pytest.mark.asyncio
+    async def test_a_later_offset_does_not_leak_into_an_earlier_commit(self, consumer_env):
+        """Offsets are per-partition, so message two's offset must not be
+        committed against message one's partition."""
+        first, second = str(uuid4()), str(uuid4())
+
+        consumer = await self._drive(
+            consumer_env,
+            [
+                _envelope("content.published", {"content_id": first}, partition=1, offset=0),
+                _envelope("content.published", {"content_id": second}, partition=1, offset=99),
+            ],
+        )
+
+        assert self._commits(consumer) == [
+            ("content.published", 1, 1),
+            ("content.published", 1, 100),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_partition_zero_is_not_special_cased(self, consumer_env):
+        """The assertion that kills ``TopicPartition(msg.topic, 0)`` on its own.
+
+        One message in this class does arrive on partition 0, so a hardcoded 0
+        looks right for it; this one is on partition 9, where a constant 0 would
+        record the group's position against a partition that was never consumed
+        and leave partition 9 replaying forever.
+        """
+        content_id = str(uuid4())
+
+        consumer = await self._drive(
+            consumer_env,
+            [_envelope("content.unpublished", {"content_id": content_id}, partition=9, offset=0)],
+        )
+
+        assert self._commits(consumer) == [("content.unpublished", 9, 1)]

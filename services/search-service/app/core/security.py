@@ -18,18 +18,60 @@ from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
+#: The role a token resolves to when it carries no ``role`` claim, or one this
+#: service does not grant. Named, and deliberately not the privileged role: the
+#: previous implementation was ``role=str(payload.get("role") or "user")``, which
+#: put the base role in a bare string literal inside a fallback expression with
+#: nothing asserting which value it held. Changing that literal to ``"admin"``
+#: is a one-token edit, and it turned every valid access token carrying only
+#: ``sub`` into an administrator -- ``arv`` also defaults to 0 and
+#: ``ADMIN_ROLE_VERSION`` is 0, so both halves of ``get_admin_identity``'s guard
+#: passed and the index-mutating routes were open to any authenticated caller.
+#: The full 398-test suite stayed green through that change.
+BASE_ROLE = "user"
+
+#: The only role that grants privileged access here, named once so it is never a
+#: default and never reached except by an exact match on the claim.
+PRIVILEGED_ROLE = "admin"
+
+#: Every role this service recognises. auth-service mints exactly these two
+#: (``role_for_email`` in its ``app/security`` returns ``"admin"`` or
+#: ``"user"`` and nothing else), which is what makes a closed set safe: an
+#: unrecognised value is not a role we granted, so it cannot be treated as one.
+#: If auth-service ever mints a third role this set is the single place to widen
+#: it, deliberately, rather than a set of call sites widening by accident.
+KNOWN_ROLES = frozenset({BASE_ROLE, PRIVILEGED_ROLE})
+
+#: The subset of :data:`KNOWN_ROLES` that grants privileged access.
+PRIVILEGED_ROLES = frozenset({PRIVILEGED_ROLE})
+
+
+def resolve_role(raw: object) -> str:
+    """Map a token's raw ``role`` claim onto a role this service recognises.
+
+    Anything absent, of the wrong JSON type, or outside :data:`KNOWN_ROLES`
+    resolves to :data:`BASE_ROLE`. Failing closed to the base role rather than
+    passing the claim through is the whole point: ``Identity.role`` is compared
+    for equality by :attr:`Identity.is_admin`, so carrying an unrecognised
+    string verbatim would mean this module's safety depended on no future
+    comparison ever being looser than the one it has today.
+    """
+    if isinstance(raw, str) and raw in KNOWN_ROLES:
+        return raw
+    return BASE_ROLE
+
 
 @dataclass(frozen=True)
 class Identity:
     """Authenticated caller derived from the bearer token, never from query params."""
 
     user_id: UUID
-    role: str = "user"
+    role: str = BASE_ROLE
     arv: int = 0
 
     @property
     def is_admin(self) -> bool:
-        return self.role == "admin"
+        return self.role in PRIVILEGED_ROLES
 
     @property
     def role_current(self) -> bool:
@@ -111,7 +153,10 @@ async def verify_token(request: Request) -> Identity | None:
             return None
         return Identity(
             user_id=UUID(str(raw_user_id)),
-            role=str(payload.get("role") or "user"),
+            # Resolved, not passed through: see ``resolve_role``. The privileged
+            # role is reachable only by an exact match on a claim the issuer
+            # actually granted.
+            role=resolve_role(payload.get("role")),
             arv=int(payload.get("arv") or 0),
         )
     except (TypeError, ValueError):

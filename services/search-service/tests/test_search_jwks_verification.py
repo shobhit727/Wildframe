@@ -86,11 +86,17 @@ def _request(headers: dict[str, str]):
     )
 
 
+#: Passed as ``role=`` to leave the ``role`` claim out of the token entirely.
+#: ``None`` cannot express that: it is a claim the verifier still carries, and
+#: the interesting case is a token whose claims simply do not mention a role.
+OMIT = object()
+
+
 def _mint(
     *,
     kid: str = "k1",
     typ: str = "access",
-    role: str = "user",
+    role: object = "user",
     exp_offset: int = 300,
     aud: str | None = None,
     iss: str | None = None,
@@ -105,12 +111,13 @@ def _mint(
         "type": typ,
         "aud": aud or settings.JWT_AUDIENCE,
         "iss": iss or settings.JWT_ISSUER,
-        "role": role,
         "arv": 0,
         "av": 0,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=15)).timestamp()) + exp_offset,
     }
+    if role is not OMIT:
+        claims["role"] = role
     claims.update(extra)
     return jwt.encode(claims, private_pem, algorithm=algorithm, headers={"kid": kid})
 
@@ -539,3 +546,131 @@ class TestRoleChecksStillApply:
 
         assert identity.user_id == UUID(sub)
         assert identity.is_admin is False
+
+
+# ---------------------------------------------------------------------------
+# Role *resolution* -- which claim values are honoured at all
+# ---------------------------------------------------------------------------
+
+
+class TestRoleClaimResolution:
+    """A missing or unrecognised ``role`` claim must never resolve to a
+    privileged role.
+
+    The regression these exist for: role came out of the token as
+    ``str(payload.get("role") or "user")`` -- the base role was a bare string
+    literal in a fallback expression, with nothing asserting which value it
+    held. Flipping that literal to ``"admin"`` is a one-token edit, and it
+    turned **every** valid token that carries only ``sub`` into an
+    administrator: ``arv`` also defaults to 0 and ``ADMIN_ROLE_VERSION`` is 0,
+    so both halves of the admin guard in ``get_admin_identity`` passed and the
+    index-mutating routes (``/reindex`` and the bulk operations) were open to
+    anyone the auth-service had issued *any* access token to.
+
+    The 398-test suite stayed green through that change, which is the whole
+    point: the guarantee was real but unprotected, and a real token carrying
+    no ``role`` claim at all is a token this service has to handle correctly
+    regardless of what auth-service currently mints.
+    """
+
+    async def test_a_token_carrying_only_sub_is_not_an_admin(self, endpoint):
+        """The exact live proof: no ``role`` claim, no privilege."""
+        identity = await verify_token(_request(_bearer(_mint(role=OMIT))))
+
+        assert identity is not None, "the token is valid; only its role is absent"
+        assert identity.role == "user"
+        assert identity.is_admin is False
+
+    async def test_a_token_carrying_only_sub_is_refused_by_the_admin_guard(self, endpoint):
+        with pytest.raises(HTTPException) as exc:
+            await get_admin_identity(_request(_bearer(_mint(role=OMIT))))
+
+        assert exc.value.status_code == 403
+        assert exc.value.detail["message"] == "Administrator privileges required"
+
+    @pytest.mark.parametrize(
+        "role",
+        [
+            pytest.param("Admin", id="capitalised"),
+            pytest.param("ADMIN", id="upper"),
+            pytest.param(" admin", id="leading-space"),
+            pytest.param("admin ", id="trailing-space"),
+            pytest.param("administrator", id="word-form"),
+            pytest.param("superuser", id="other-privileged-name"),
+            pytest.param("root", id="root"),
+            pytest.param("moderator", id="role-this-service-does-not-grant"),
+        ],
+    )
+    async def test_an_unrecognised_role_string_does_not_resolve_to_a_privileged_role(
+        self, endpoint, role
+    ):
+        """Only the exact granted strings are honoured; near-misses are not.
+
+        Case and whitespace variants are included deliberately: a matcher that
+        normalised before comparing would hand out admin to ``"Admin"``, and
+        ``role`` is compared for equality everywhere it is consumed.
+        """
+        identity = await verify_token(_request(_bearer(_mint(role=role))))
+
+        assert identity is not None
+        assert identity.role == "user"
+        assert identity.is_admin is False
+
+    async def test_an_unrecognised_role_string_is_refused_by_the_admin_guard(self, endpoint):
+        with pytest.raises(HTTPException) as exc:
+            await get_admin_identity(_request(_bearer(_mint(role="Admin"))))
+
+        assert exc.value.status_code == 403
+        assert exc.value.detail["message"] == "Administrator privileges required"
+
+    @pytest.mark.parametrize(
+        "role",
+        [
+            pytest.param(None, id="null"),
+            pytest.param("", id="empty-string"),
+            pytest.param(["admin"], id="list"),
+            pytest.param({"role": "admin"}, id="dict"),
+            pytest.param(1, id="int"),
+            pytest.param(True, id="bool"),
+        ],
+    )
+    async def test_a_non_string_role_claim_falls_back_to_the_base_role(self, endpoint, role):
+        """A role claim of the wrong JSON type is not a role."""
+        identity = await verify_token(_request(_bearer(_mint(role=role))))
+
+        assert identity is not None
+        assert identity.role == "user"
+        assert identity.is_admin is False
+
+    async def test_a_genuine_user_claim_is_preserved(self, endpoint):
+        """The fix is not "refuse everything": a real user role still resolves."""
+        identity = await verify_token(_request(_bearer(_mint(role="user"))))
+
+        assert identity.role == "user"
+        assert identity.is_admin is False
+
+    async def test_a_genuine_admin_claim_is_still_an_admin(self, endpoint):
+        identity = await get_admin_identity(_request(_bearer(_mint(role="admin"))))
+
+        assert identity.role == "admin"
+        assert identity.is_admin is True
+
+    def test_the_base_role_is_not_the_privileged_role(self):
+        """Structural backstop for the exact mutation this class exists for.
+
+        Behavioural tests above already fail if the default flips; this one
+        fails *immediately and by name* rather than as an unexpected 403 in a
+        route test, so the defect is unambiguous when someone makes that edit.
+        """
+        assert security.BASE_ROLE != security.PRIVILEGED_ROLE
+        assert security.BASE_ROLE not in security.PRIVILEGED_ROLES
+        assert security.PRIVILEGED_ROLE in security.PRIVILEGED_ROLES
+
+    def test_the_recognised_roles_are_exactly_what_auth_service_mints(self):
+        """``role_for_email`` in auth-service emits only ``admin`` or ``user``.
+
+        A closed set is safe here precisely because the producer is closed. If
+        auth-service ever mints a third role this test fails loudly, which is
+        the moment to widen the set deliberately rather than by accident.
+        """
+        assert security.KNOWN_ROLES == frozenset({"user", "admin"})
