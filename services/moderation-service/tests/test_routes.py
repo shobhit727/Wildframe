@@ -17,7 +17,7 @@ from app.api import moderation_routes
 from app.api.moderation_routes import get_moderation_service
 from app.core.settings import settings
 from app.main import app
-from app.services import ModerationError
+from app.services import DuplicateFlagError, ModerationError
 from tests._test_jwks import JWKS
 from tests._test_jwks import PRIVATE_PEM as PRIVATE_PEM
 from wildframe_auth.verifier import clear_jwks_cache
@@ -201,6 +201,34 @@ class TestFlagContent:
 
         assert response.status_code == 400
         assert "cannot flag self" in response.json()["detail"]
+
+    def test_a_duplicate_report_returns_409_not_400(self, client, service):
+        """A repeat report is a *conflict*, and the code must say so.
+
+        DuplicateFlagError subclasses ModerationError, so collapsing the two
+        handlers (or reordering them) turns this into a 400 and nothing else
+        in the suite notices: the only other error-mapping test raises the base
+        class. A client that distinguishes "you already reported this" from
+        "that request was invalid" loses that signal on 400.
+        """
+        service.flag_content = AsyncMock(
+            side_effect=DuplicateFlagError("this content was already flagged by you")
+        )
+        app.dependency_overrides[get_moderation_service] = override(service)
+
+        response = client.post(
+            "/api/v1/moderation/flags",
+            headers={"Authorization": f"Bearer {USER}"},
+            json={"content_id": str(uuid4()), "flag_reason": "other"},
+        )
+
+        assert response.status_code == 409
+        assert "already flagged by you" in response.json()["detail"]
+
+    def test_duplicate_flag_error_is_a_moderation_error(self):
+        # The 409 handler must precede the 400 one precisely because of this
+        # subclass relationship; pin it so the ordering requirement is explicit.
+        assert issubclass(DuplicateFlagError, ModerationError)
 
     def test_flag_requires_auth(self, client, service):
         app.dependency_overrides[get_moderation_service] = override(service)

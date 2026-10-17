@@ -12,9 +12,10 @@ asserted through a statement-capturing session.
 """
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.models import (
@@ -75,6 +76,18 @@ def _strike(creator_id, **overrides) -> CreatorStrike:
     return CreatorStrike(**defaults)
 
 
+def _decision(flag_id, decision, notes=None) -> ModerationDecision:
+    """A moderator action on a flag. The id is supplied so the caller can pin
+    the ordering tie-break independently of insertion order."""
+    return ModerationDecision(
+        id=uuid4(),
+        flag_id=flag_id,
+        moderator_id=uuid4(),
+        decision=decision,
+        notes=notes,
+    )
+
+
 # ---------------------------------------------------------------------------
 # ContentFlagRepository
 # ---------------------------------------------------------------------------
@@ -85,6 +98,48 @@ async def _set_created_at(session, model, row_id, moment: datetime) -> None:
     await session.execute(
         model.__table__.update().where(model.id == row_id).values(created_at=moment)
     )
+
+
+class _EmptyResult:
+    """Stands in for the result of a statement nobody needs the rows of."""
+
+    def scalar_one_or_none(self):
+        return None
+
+    def scalar_one(self):
+        return None
+
+    def scalars(self):
+        class _EmptyScalars:
+            def all(self):
+                return []
+
+            def first(self):
+                return None
+
+        return _EmptyScalars()
+
+
+class _RecordingSession:
+    """Captures the statements a repository emits, without a database.
+
+    Used for Postgres-only SQL (``FOR UPDATE``) that aiosqlite would reject or
+    silently drop. The statements recorded are the ones the repository built,
+    so this is not the "test compiles its own select()" pattern.
+    """
+
+    def __init__(self):
+        self.statements: list = []
+
+    async def execute(self, statement, params=None):
+        self.statements.append(statement)
+        return _EmptyResult()
+
+    async def get(self, *_args, **_kwargs):
+        return None
+
+    async def flush(self):
+        return None
 
 
 class TestContentFlagRepositoryCreate:
@@ -165,12 +220,32 @@ class TestContentFlagRepositoryReads:
         assert await ContentFlagRepository(session).get_for_update(uuid4()) is None
 
     async def test_get_for_update_emits_a_row_lock(self, session):
-        from sqlalchemy import select
+        """The repository itself must add ``FOR UPDATE``.
 
-        from app.models import ContentFlag as CF
+        The previous version of this test compiled its *own* ``select()`` with
+        ``.with_for_update()`` and asserted the string was present -- it never
+        called the repository, so deleting ``.with_for_update()`` from
+        ``get_for_update`` left it green. Here the statement is captured from a
+        real call.
+        """
+        recorder = _RecordingSession()
+        await ContentFlagRepository(recorder).get_for_update(uuid4())
 
-        sql = str(select(CF).where(CF.id == uuid4()).with_for_update().compile())
-        assert "FOR UPDATE" in sql.upper()
+        sql = str(recorder.statements[0].compile()).upper()
+        assert "FOR UPDATE" in sql
+
+    async def test_the_unlocked_get_does_not_emit_a_row_lock(self, session):
+        """A plain read must not serialise.
+
+        The flip side of the assertion above: if ``get`` also locked, every
+        queue read would take row locks and the distinction between the two
+        accessors would be gone.
+        """
+        recorder = _RecordingSession()
+        await ContentFlagRepository(recorder).get(uuid4())
+
+        sql = str(recorder.statements[0].compile()).upper()
+        assert "FOR UPDATE" not in sql
 
     async def test_list_pending_is_fifo_oldest_first(self, session):
         repo = ContentFlagRepository(session)
@@ -213,6 +288,13 @@ class TestContentFlagRepositoryReads:
 
 
 class TestContentFlagRepositorySave:
+    # ``save()``'s ``await self.session.flush()`` is deliberately NOT pinned by a
+    # test, because removing it is an equivalent mutant: every caller commits
+    # afterwards, and SQLAlchemy autoflushes on the next query anyway. Verified
+    # empirically -- deleting the flush leaves this whole file green. What
+    # flush does change is *when* a constraint violation surfaces (at save()
+    # rather than at commit); no test forces a violation here because every
+    # call site commits and would surface it either way. Do not re-investigate.
     async def test_save_stamps_updated_at(self, session):
         repo = ContentFlagRepository(session)
         flag = await repo.create(_flag())
@@ -392,6 +474,34 @@ class TestModerationDecisionRepository:
     async def test_list_by_flag_is_empty_for_an_unknown_flag(self, session):
         assert await ModerationDecisionRepository(session).list_by_flag(uuid4()) == []
 
+    async def test_a_flag_can_hold_only_one_decision(self, session):
+        """``uq_moderation_decision_terminal`` is UNIQUE on ``flag_id`` alone.
+
+        This is why ``list_by_flag``'s ``order_by`` is *not* observable: with at
+        most one row per flag, ascending and descending are indistinguishable.
+        A test asserting the ordering would have to either fail to set up or
+        assert something the database forbids, so the ordering is left unpinned
+        deliberately and the constraint is pinned here instead.
+
+        Worth an owner's attention separately: a table described as an audit
+        trail that can store one row per flag cannot record an escalation
+        followed by a rejection. Changing it is a schema migration, out of
+        scope for this test repair.
+        """
+        repo = ModerationDecisionRepository(session)
+        flag = _flag()
+        session.add(flag)
+        await session.flush()
+        flag_id = flag.id
+        await repo.create(_decision(flag_id, DecisionType.ESCALATE, notes="first"))
+        await session.commit()
+
+        with pytest.raises(IntegrityError):
+            await repo.create(_decision(flag_id, DecisionType.REJECT, notes="second"))
+        await session.rollback()
+
+        assert [r.notes for r in await repo.list_by_flag(flag_id)] == ["first"]
+
 
 # ---------------------------------------------------------------------------
 # CreatorStrikeRepository
@@ -479,6 +589,33 @@ class TestCreatorStrikeRepository:
         assert len(locked) == 2
         assert await repo.count_active_for_update(creator) == 2
 
+    async def test_list_active_for_update_emits_a_row_lock(self):
+        """The suspension threshold is read under a row lock; assert the SQL.
+
+        ``count_active_for_update`` exists only to serialise the threshold
+        check in ``_issue_strike``. Without the lock, two concurrent first
+        strikes each see only their own uncommitted row at READ COMMITTED and
+        both miss the threshold. The existing test only compared row *counts*,
+        which a missing lock does not change.
+        """
+        recorder = _RecordingSession()
+        await CreatorStrikeRepository(recorder).list_active_for_update(uuid4())
+        assert "FOR UPDATE" in str(recorder.statements[0].compile()).upper()
+
+    async def test_count_active_for_update_reads_through_the_locking_query(self):
+        # count_active_for_update delegates rather than running its own query;
+        # if it stopped doing so the suspension check would silently lose its
+        # lock while still returning the right count.
+        recorder = _RecordingSession()
+        assert await CreatorStrikeRepository(recorder).count_active_for_update(uuid4()) == 0
+        assert "FOR UPDATE" in str(recorder.statements[0].compile()).upper()
+
+    async def test_the_unlocked_list_active_does_not_emit_a_row_lock(self):
+        # Flip side: a plain strike listing must stay lock-free.
+        recorder = _RecordingSession()
+        await CreatorStrikeRepository(recorder).list_active(uuid4())
+        assert "FOR UPDATE" not in str(recorder.statements[0].compile()).upper()
+
     async def test_count_active_is_zero_for_an_unknown_creator(self, session):
         assert await CreatorStrikeRepository(session).count_active(uuid4()) == 0
 
@@ -513,55 +650,76 @@ class TestCreatorStrikeRepository:
 
 
 class TestLockCreator:
-    """``lock_creator`` issues Postgres-only SQL; assert what it sends."""
+    """``lock_creator`` issues Postgres-only SQL; assert what it sends.
 
-    async def test_issues_pg_advisory_xact_lock_with_a_stable_signed_key(self):
-        class _Result:
-            def __init__(self):
-                self.statements = []
+    These fixtures are fixed UUIDs, not ``uuid4()``. The previous version drew
+    a random creator and compared the sent key against
+    ``int.from_bytes(..., signed=True)`` computed the same way, so flipping
+    ``signed=True`` to ``signed=False`` in production only failed when the top
+    bit of a random byte happened to be set -- it was caught in 20 of 25 runs.
+    A fixture with the high bit explicitly set makes it fail every time.
+    """
 
-            async def execute(self, statement, params=None):
-                self.statements.append((str(statement), params))
-                return self
+    # First eight bytes are ff ff ff ff ff ff 4f ff. The signed big-endian
+    # reading is negative, and the unsigned reading differs by exactly 2**64 --
+    # an identity that is hand-derivable, so the expectation below is not just
+    # a copy of the production expression.
+    CREATOR_HIGH_BIT_SET = UUID("ffffffff-ffff-4fff-bfff-ffffffffffff")
+    # Big-endian bytes are 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01,
+    # so the first eight are all zero and the key is 0 under either reading.
+    CREATOR_HIGH_BIT_CLEAR = UUID(int=1)
 
-        class _Session:
-            def __init__(self):
-                self.result = _Result()
+    class _Session:
+        def __init__(self):
+            self.statements = []
 
-            async def execute(self, statement, params=None):
-                return await self.result.execute(statement, params)
+        async def execute(self, statement, params=None):
+            self.statements.append((str(statement), params))
 
-        creator = uuid4()
-        session = _Session()
-        repo = CreatorStrikeRepository(session)
-        await repo.lock_creator(creator)
-
-        sql, params = session.result.statements[0]
-        assert "pg_advisory_xact_lock" in sql
-        expected = int.from_bytes(creator.bytes[:8], byteorder="big", signed=True)
-        assert params == {"key": expected}
-        assert -(2**63) <= expected < 2**63
-
-    async def test_the_key_is_derived_from_the_first_eight_uuid_bytes(self):
-        class _Session:
-            def __init__(self):
-                self.params = None
-
-            async def execute(self, statement, params=None):
-                self.params = params
-
-        creator = uuid4()
-        session = _Session()
+    @staticmethod
+    async def _lock(creator):
+        session = TestLockCreator._Session()
         await CreatorStrikeRepository(session).lock_creator(creator)
-        assert session.params["key"] == int.from_bytes(
-            creator.bytes[:8], byteorder="big", signed=True
+        assert len(session.statements) == 1
+        return session.statements[0]
+
+    async def test_issues_pg_advisory_xact_lock_with_the_creator_key(self):
+        sql, params = await self._lock(self.CREATOR_HIGH_BIT_SET)
+
+        assert "pg_advisory_xact_lock" in sql
+        raw = self.CREATOR_HIGH_BIT_SET.bytes[:8]
+        # Guard the fixture itself: if these stop holding, the test below is
+        # silently vacuous again.
+        assert int.from_bytes(raw, "big", signed=True) < 0
+        assert int.from_bytes(raw, "big", signed=False) == (
+            int.from_bytes(raw, "big", signed=True) + 2**64
         )
-        # A different creator yields a different lock, so unrelated creators
-        # never serialize against each other.
-        other = uuid4()
-        session2 = _Session()
-        await CreatorStrikeRepository(session2).lock_creator(other)
-        assert session2.params["key"] != session.params["key"]
+        assert params == {"key": int.from_bytes(raw, "big", signed=True)}
+
+    async def test_the_key_is_a_signed_64_bit_integer(self):
+        # pg_advisory_xact_lock(bigint) rejects anything outside int64, so a
+        # key that could overflow would fail at the first real strike.
+        _, params = await self._lock(self.CREATOR_HIGH_BIT_SET)
+        assert -(2**63) <= params["key"] < 2**63
+
+    async def test_a_low_creator_id_keys_to_its_own_value(self):
+        # The complementary case: with the high bit clear, signed and unsigned
+        # agree, so this would pass either way. It is here so the suite covers
+        # both branches of the derivation rather than only the interesting one.
+        _, params = await self._lock(self.CREATOR_HIGH_BIT_CLEAR)
+        assert params == {"key": 0}
+
+    async def test_different_creators_never_share_a_lock(self):
+        # Unrelated creators must not serialise against each other.
+        _, first = await self._lock(self.CREATOR_HIGH_BIT_SET)
+        _, second = await self._lock(self.CREATOR_HIGH_BIT_CLEAR)
+        assert first["key"] != second["key"]
+
+    async def test_the_key_is_stable_across_calls(self):
+        # A lock key that changed per call would not lock anything.
+        _, first = await self._lock(self.CREATOR_HIGH_BIT_SET)
+        _, again = await self._lock(self.CREATOR_HIGH_BIT_SET)
+        assert first == again
 
 
 class TestRepositoryConstruction:

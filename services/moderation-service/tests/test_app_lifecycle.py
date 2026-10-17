@@ -253,21 +253,18 @@ class TestDrainOutboxWorker:
 
     async def test_publishes_pending_outbox_rows_through_a_real_service(self, monkeypatch):
         """End-to-end worker run against the real ModerationService."""
-        from uuid import uuid4
-
         from app.core.events import InMemoryEventPublisher, set_event_publisher
-        from app.models import ContentFlag, FlagReason
-        from app.repositories import ContentFlagRepository
         from app.services import ModerationService
 
         class _Session:
             def __init__(self, repo):
                 self._repo = repo
+                self.commits = 0
 
             async def commit(self):
+                self.commits += 1
                 return None
 
-        rows = {}
         ids = iter(range(1, 100))
 
         class _Repo:
@@ -306,14 +303,15 @@ class TestDrainOutboxWorker:
             assert processed == 2
             assert [e.key for e in publisher.sent] == ["a", "b"]
             assert all(e.marked for e in repo.events)
+            # The commit must be reached through the service's session, and the
+            # rows must be re-read as PENDING rather than assumed: a drain that
+            # published without marking dispatched would re-publish on every
+            # sweep, and a drain that marked before publishing would lose the
+            # event on a broker outage.
+            assert repo.session.commits == 1
+            assert [e for e in repo.events if not e.marked] == []
         finally:
             set_event_publisher(None)
-        # Touch the real models so the import graph stays exercised.
-        assert ContentFlag(flag_reason=FlagReason.SPAM).flag_reason is FlagReason.SPAM
-        assert rows == {}
-        assert uuid4() != uuid4()
-        assert _Session is not None
-        assert ContentFlagRepository is not None
 
 
 class TestCreateApp:
@@ -345,8 +343,22 @@ class TestCreateApp:
         assert create_app() is not create_app()
 
     def test_the_dmca_router_is_not_mounted(self):
-        # app/api/routes/dmca.py is implemented but never included; see
-        # test_unmounted_routers.py, which mounts it in a throwaway app.
+        """KNOWN GAP (owner decision pending) - the DMCA surface is unreachable.
+
+        ``app/api/routes/dmca.py`` implements ``POST /dmca/takedown`` and
+        ``POST /dmca/counter``, and ``app/main.py`` includes only the
+        moderation router. An entire copyright-compliance surface is dark.
+
+        This test *records* the gap; it does not endorse it. The previous
+        wording here ("the dmca router is not mounted", with a comment pointing
+        at another test) read as documentation of a deliberate decision, which
+        is what made the gap invisible in review. Whether to mount it, delete
+        it, or leave it dark is recorded as an owner decision in
+        ``oner-task.md`` -- see also ``test_unmounted_routers.py``.
+
+        If the router is ever mounted, this test turns red, which is the point:
+        a silent mount would also be a silent contract change.
+        """
         paths = set(create_app().openapi()["paths"])
         assert not [p for p in paths if p.startswith("/dmca")]
 

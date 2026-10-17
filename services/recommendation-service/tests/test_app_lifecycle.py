@@ -1115,13 +1115,30 @@ class TestCacheHelpers:
         monkeypatch.setattr(services_mod, "get_redis_client", AsyncMock(return_value=client))
         user_id = uuid4()
 
+        # Force the jitter draw so the expected TTL is exact. A single call
+        # cannot observe *variation*, so this pins that the draw is consulted
+        # and applied; the variation property itself is covered by
+        # tests/test_cache.py::test_jittered_ttl_actually_varies_between_calls.
+        from app.services import (
+            RECOMMENDATION_CACHE_JITTER_SECONDS,
+            RECOMMENDATION_CACHE_TTL_SECONDS,
+        )
+
+        monkeypatch.setattr(
+            services_mod.random, "randint", lambda low, high: RECOMMENDATION_CACHE_JITTER_SECONDS
+        )
+
         await services_mod._cache_set(user_id, [{"content_id": "a"}])
 
         key, value = client.set.await_args.args
         assert key == f"wf:rec:user:{user_id}"
         assert json.loads(value) == [{"content_id": "a"}]
-        ttl = client.set.await_args.kwargs["ex"]
-        assert 240 <= ttl <= 360
+        # The previous assertion here was ``240 <= ttl <= 360``, which the
+        # *un-jittered* TTL (300) satisfies -- so deleting the +/-60s jitter
+        # added for #456 passed the very assertion meant to detect it.
+        assert client.set.await_args.kwargs["ex"] == (
+            RECOMMENDATION_CACHE_TTL_SECONDS + RECOMMENDATION_CACHE_JITTER_SECONDS
+        )
 
     @pytest.mark.asyncio
     async def test_set_swallows_a_redis_failure(self, monkeypatch):

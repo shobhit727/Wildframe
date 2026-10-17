@@ -1,13 +1,23 @@
-"""Behavioural tests for the unmounted DMCA router.
+"""Behavioural tests for the DMCA router that production never mounts.
 
 ``app/main.py`` mounts only ``app.api.moderation_routes``; ``app/api/routes/
-dmca.py`` is implemented (26 statements) but never included, so nothing
-exercised it.
+dmca.py`` is implemented but never included.
 
-The router is mounted here into a *throwaway* ``FastAPI()`` — production
-``main.py`` is left untouched, the user explicitly chose "no refactor" — and
-driven over HTTP against a real aiosqlite session so the handlers' inserts,
-lookups and status transitions are genuinely executed.
+KNOWN GAP -- recorded, not endorsed. Both DMCA endpoints are unreachable in
+production. The previous version of this file asserted that absence under a
+test named ``TestRouterIsUnmounted``, which reads as a deliberate design
+decision and is how the gap survived review: a compliance surface being dark
+looks like a choice rather than a defect. Nothing here decides the question.
+An owner decision -- mount, delete, or leave dark -- is recorded in
+``oner-task.md``. Mounting the router into ``main.py`` would make
+``test_dmca_paths_are_not_served_by_the_production_app`` (below) fail, which
+is intended: a silent mount would be a silent contract change.
+
+To keep the handlers covered while the decision is open, the router is mounted
+here into a *throwaway* ``FastAPI()``; production ``main.py`` is left
+untouched. The handlers are then driven over HTTP against a real aiosqlite
+session, so their inserts, lookups and status transitions are genuinely
+executed.
 """
 
 from uuid import uuid4
@@ -56,6 +66,12 @@ async def _create_takedown(client, **overrides):
 
 class TestRouterIsUnmounted:
     def test_dmca_paths_are_not_served_by_the_production_app(self):
+        """KNOWN GAP: both DMCA endpoints are unreachable. See the module docstring.
+
+        The whole-path-set assertion is kept deliberately: mounting the DMCA
+        router would have to be a visible, reviewed change, not a side effect of
+        an unrelated edit to ``main.py``.
+        """
         from app.main import app as production_app
 
         served = set(production_app.openapi()["paths"])
