@@ -190,7 +190,7 @@ def authenticate_user(email: str, password: str) -> Optional[User]:
 
 ```bash
 # Clone repository
-git clone https://github.com/wildframe/wildframe.git
+git clone https://github.com/shobhit727/Wildframe.git
 cd wildframe
 
 # Create feature branch

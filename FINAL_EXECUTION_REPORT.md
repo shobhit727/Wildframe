@@ -1,3 +1,16 @@
+> [!WARNING]
+> **Historical document — superseded.** This file records a point-in-time
+> session (August 2026) and is kept only for project history. It is **not** a
+> current status report: its service counts, test counts, ports, and commands
+> are stale.
+>
+> **Current entry points:** [`README.md`](README.md) and
+> [`AGENTS.md`](AGENTS.md) for how the repo is actually built;
+> [`STATUS.md`](STATUS.md) for current state; [`DOCS_INDEX.md`](DOCS_INDEX.md)
+> for the full doc index. For running tests, use
+> [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) and
+> [`docs/TEST_GUIDE.md`](docs/TEST_GUIDE.md).
+
 # Final Execution Report - Wildframe
 
 **Date**: August 1, 2026  

@@ -1,3 +1,13 @@
+> [!WARNING]
+> **Historical document — superseded, dated the August 2026 security audit pass.** Kept only for project
+> history. It is **not** a current reference: its service counts, test counts,
+> ports, paths and commands do not describe the repo as it stands.
+>
+> **Use instead:** [`README.md`](README.md) (overview),
+> [`AGENTS.md`](AGENTS.md) (how it is actually built),
+> [`STATUS.md`](STATUS.md) (current status),
+> [`DOCS_INDEX.md`](DOCS_INDEX.md) (which document is authoritative for what).
+
 # Security Audit Fixes
 
 > **Made by ChatGPT.**
@@ -26,7 +36,8 @@ Each item closed with unit tests plus live verification against the running HTTP
 - **Event outbox / atomicity** (#61): moderation/media-pipeline state changes commit before event publication; publisher survives subscriber failures (#62, aiokafka 0.14-compatible).
 - **search-service `/ready`** (#41): returned a raw tuple and 500'd; fixed to a proper JSONResponse.
 - **Billing webhook + schema drift** (#41): `POST /api/v1/billing/webhooks/stripe` verifies the Stripe signature, is idempotent (replay returns `idempotent:true`, exactly one PAID invoice row), and the live `invoices` table was repaired by hand (no migration framework) with `stripe_invoice_id`, `currency`, `refunded_amount`.
-- **Live-stack integration suite** (#41): `tests/integration/` — 87 tests covering the gateway auth matrix + 429 flood, token lifecycle, cross-service authorization, billing webhook idempotency, contract schemas, health/readiness, and pipeline idempotency. Skips itself when the stack is down; excluded from the CI unit matrix.
+- **Live-stack integration suite** (#41): `tests/integration/` — added here, covering the gateway auth matrix + 429 flood, token lifecycle, cross-service authorization, billing webhook idempotency, contract schemas, health/readiness, pipeline idempotency, and token-type separation. Skips itself when the stack is down; excluded from the CI unit matrix.
+  *(The count written in the original entry was 87, later 93. The suite has since grown to **110 tests across 8 modules** — see `HOW_TO_RUN_TESTS.md`.)*
 - **Creators-service authorization sweep** (#43): the admin router
   (`/api/v1/admin/creators/{id}/milestones`, `.../tranches`, `.../release`,
   `.../kill`) was defined but **never mounted and had no auth dependency** —
@@ -57,8 +68,9 @@ Each item closed with unit tests plus live verification against the running HTTP
   - Tests: +5 creators-service unit tests (`TestAdminCreatorAuth`: 401/401
     garbage/403/200 admin happy path/403 release), +6 integration tests
     (gateway routing, 401/403/401-garbage/admin-200/release-403). Suite grew
-    to 93 tests; all 15 service suites (780) and the full integration suite
-    pass.
+    to 93 tests *at the time of that pass*; both that number and the
+    per-service totals move. Current, measured figures are in
+    `HOW_TO_RUN_TESTS.md`.
 - **Frontend/backend contract + route drift detection** (#44): the frontend
   call surface (48 URL literals in `apps/web/src`) is now statically checked
   against the backend route catalog derived from the gateway ServiceRegistry

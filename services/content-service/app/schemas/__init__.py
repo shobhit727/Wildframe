@@ -4,11 +4,21 @@ import re
 Pydantic v2 schemas for Content Service API requests/responses.
 """
 
-
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AfterValidator, BaseModel, Field, field_validator
+
+
+def _normalize_release_date(value: datetime | None) -> datetime | None:
+    """Normalize API release dates to the naive UTC representation used by PostgreSQL."""
+    if value is None or value.tzinfo is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
+
+
+NaiveUTCReleaseDate = Annotated[datetime | None, AfterValidator(_normalize_release_date)]
 
 
 class GenreResponse(BaseModel):
@@ -187,7 +197,7 @@ class EpisodeCreateRequest(BaseModel):
     description: str | None = None
     duration_minutes: int = Field(..., ge=1)
     thumbnail_url: str | None = None
-    release_date: datetime | None = None
+    release_date: NaiveUTCReleaseDate = None
     is_available: bool = True
 
 
@@ -198,7 +208,7 @@ class EpisodeUpdateRequest(BaseModel):
     description: str | None = None
     duration_minutes: int | None = Field(None, ge=1)
     thumbnail_url: str | None = None
-    release_date: datetime | None = None
+    release_date: NaiveUTCReleaseDate = None
     is_available: bool | None = None
 
 
@@ -209,7 +219,7 @@ class SeasonCreateRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
     poster_url: str | None = None
-    release_date: datetime | None = None
+    release_date: NaiveUTCReleaseDate = None
 
 
 class SeasonUpdateRequest(BaseModel):
@@ -218,7 +228,7 @@ class SeasonUpdateRequest(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
     poster_url: str | None = None
-    release_date: datetime | None = None
+    release_date: NaiveUTCReleaseDate = None
 
 
 class ContentCreateRequest(BaseModel):
@@ -229,7 +239,7 @@ class ContentCreateRequest(BaseModel):
     # Bounded so one row cannot bloat catalog list responses (#629 family).
     description: str = Field(..., min_length=1, max_length=5000)
     content_type: str = Field(..., pattern="^(movie|series|documentary)$")
-    release_date: datetime | None = None
+    release_date: NaiveUTCReleaseDate = None
     duration_minutes: int | None = Field(None, ge=1)
     original_language: str = Field(default="en", max_length=10)
     country: str | None = None
@@ -257,7 +267,7 @@ class ContentUpdateRequest(BaseModel):
 
     title: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
-    release_date: datetime | None = None
+    release_date: NaiveUTCReleaseDate = None
     duration_minutes: int | None = Field(None, ge=1)
     country: str | None = None
     poster_url: str | None = None

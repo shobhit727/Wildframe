@@ -8,6 +8,7 @@ event publisher, and a fake repository.
 """
 
 import hashlib
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -269,6 +270,46 @@ async def test_complete_is_idempotent_guard():
     result = await service.complete_session(session.id)
     assert result.status == UploadSessionStatus.COMPLETE
     # No new event emitted.
+
+
+@pytest.mark.asyncio
+async def test_naive_db_expiry_is_treated_as_utc_for_register_and_complete():
+    """A legacy naive DB timestamp must not trigger a naive/aware TypeError."""
+    service, _repo = make_service()
+    session, uploads = await service.create_session(
+        creator_id=uuid4(),
+        filename="clip.mp4",
+        mime="video/mp4",
+        size_bytes=5 * 1024 * 1024,
+        chunk_size=5 * 1024 * 1024,
+    )
+
+    # Simulate asyncpg returning a naive value from a legacy/manual
+    # TIMESTAMP WITHOUT TIME ZONE column; the stored wall-clock value is UTC.
+    session.expires_at = (datetime.now(UTC) + timedelta(minutes=5)).replace(tzinfo=None)
+    put_chunk(service.storage, uploads, 0, b"x" * (5 * 1024 * 1024))
+    await service.register_chunk(session_id=session.id, index=0)
+    completed = await service.complete_session(session.id)
+
+    assert completed.status == UploadSessionStatus.COMPLETE
+
+
+@pytest.mark.asyncio
+async def test_expired_naive_db_timestamp_is_rejected_as_expired():
+    """A naive past expiry remains an expiry failure, not a TypeError."""
+    service, _repo = make_service()
+    session, _uploads = await service.create_session(
+        creator_id=uuid4(),
+        filename="clip.mp4",
+        mime="video/mp4",
+        size_bytes=5 * 1024 * 1024,
+        chunk_size=5 * 1024 * 1024,
+    )
+
+    # Simulate the same legacy DB representation for an already-expired row.
+    session.expires_at = (datetime.now(UTC) - timedelta(minutes=1)).replace(tzinfo=None)
+    with pytest.raises(UploadError, match="has expired"):
+        await service.register_chunk(session_id=session.id, index=0)
 
 
 # ---------------------------------------------------------------------------

@@ -1,21 +1,31 @@
 """Exports for admin-service repositories.
-Loads concrete repository classes from ``admin.py`` using ``importlib`` so the
-module works both as a package import and when loaded via ``importlib.util``
-in the test suite.
+
+These are plain re-exports of ``app/repositories/admin.py``. They used to be
+loaded through ``importlib.util.spec_from_file_location`` + ``exec_module``
+because the module was expected to work "both as a package import and when
+loaded via ``importlib.util`` in the test suite", but ``exec_module`` does not
+register the module in ``sys.modules``, so each name below used to be a
+*second* class object distinct from the one ``app.services.admin`` imports.
+That duplicated the repository classes, broke ``isinstance`` across the two
+import paths, and made ``mock.patch("app.repositories.<Name>")`` a silent
+no-op against production code.
+
+The test-suite reason does not hold: a normal absolute import inside this file
+works identically when the file is exec'd standalone under another name.
 """
 
-import importlib.util
-import pathlib
+from app.repositories.admin import (
+    AdminAuditLogRepository,
+    ContentModerationRepository,
+    SystemAlertRepository,
+    SystemConfigRepository,
+    UserModerationRepository,
+)
 
-_admin_path = pathlib.Path(__file__).parent / "admin.py"
-_spec = importlib.util.spec_from_file_location("admin_repos_impl", _admin_path)
-assert _spec is not None and _spec.loader is not None, f"no import spec for {_admin_path}"
-_loader = _spec.loader
-_mod = importlib.util.module_from_spec(_spec)
-_loader.exec_module(_mod)
-
-UserModerationRepository = _mod.UserModerationRepository
-ContentModerationRepository = _mod.ContentModerationRepository
-SystemAlertRepository = _mod.SystemAlertRepository
-SystemConfigRepository = _mod.SystemConfigRepository
-AdminAuditLogRepository = _mod.AdminAuditLogRepository
+__all__ = [
+    "UserModerationRepository",
+    "ContentModerationRepository",
+    "SystemAlertRepository",
+    "SystemConfigRepository",
+    "AdminAuditLogRepository",
+]

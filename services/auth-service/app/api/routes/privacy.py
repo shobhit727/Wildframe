@@ -92,9 +92,9 @@ def _validate_jurisdiction(jurisdiction: str) -> str:
 )
 async def create_privacy_notice(
     request: PrivacyNoticeCreate,
-    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],  # type: ignore[assignment]
-    db: Annotated[AsyncSession, Depends(get_db)],  # type: ignore[assignment]
-    _: Annotated[UUID, Depends(require_admin)],  # type: ignore[assignment]
+    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[UUID, Depends(require_admin)],
 ) -> PrivacyNoticeResponse:
     """Create a new privacy notice version (admin only)."""
     jurisdiction = _validate_jurisdiction(request.jurisdiction)
@@ -129,7 +129,7 @@ async def create_privacy_notice(
 
 @router.get("/notices", response_model=list[PrivacyNoticeResponse])
 async def list_privacy_notices(
-    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],  # type: ignore[assignment]
+    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],
     jurisdiction: str | None = None,
 ) -> list[PrivacyNoticeResponse]:
     """List privacy notices."""
@@ -143,7 +143,7 @@ async def list_privacy_notices(
 
 @router.get("/notices/current", response_model=dict[str, PrivacyNoticeResponse])
 async def get_current_notices(
-    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],  # type: ignore[assignment]
+    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],
 ) -> dict[str, PrivacyNoticeResponse]:
     """Get current privacy notices for all jurisdictions."""
     notices = await repo.get_all_current()
@@ -155,7 +155,7 @@ async def get_privacy_notice(
     version: str,
     jurisdiction: str,
     language: str,
-    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],  # type: ignore[assignment]
+    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],
 ) -> PrivacyNoticeResponse:
     """Get a specific privacy notice by version, jurisdiction, and language."""
     jurisdiction = _validate_jurisdiction(jurisdiction)
@@ -174,9 +174,9 @@ async def update_privacy_notice(
     jurisdiction: str,
     language: str,
     request: PrivacyNoticeUpdate,
-    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],  # type: ignore[assignment]
-    db: Annotated[AsyncSession, Depends(get_db)],  # type: ignore[assignment]
-    _: Annotated[UUID, Depends(require_admin)],  # type: ignore[assignment]
+    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[UUID, Depends(require_admin)],
 ) -> PrivacyNoticeResponse:
     """Update a privacy notice (admin only)."""
     jurisdiction = _validate_jurisdiction(jurisdiction)
@@ -212,9 +212,9 @@ async def set_notice_current(
     version: str,
     jurisdiction: str,
     language: str,
-    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],  # type: ignore[assignment]
-    db: Annotated[AsyncSession, Depends(get_db)],  # type: ignore[assignment]
-    _: Annotated[UUID, Depends(require_admin)],  # type: ignore[assignment]
+    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[UUID, Depends(require_admin)],
 ) -> PrivacyNoticeResponse:
     """Set a privacy notice as the current version (admin only)."""
     jurisdiction = _validate_jurisdiction(jurisdiction)
@@ -237,9 +237,9 @@ async def deprecate_notice(
     version: str,
     jurisdiction: str,
     language: str,
-    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],  # type: ignore[assignment]
-    db: Annotated[AsyncSession, Depends(get_db)],  # type: ignore[assignment]
-    _: Annotated[UUID, Depends(require_admin)],  # type: ignore[assignment]
+    repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[UUID, Depends(require_admin)],
 ) -> PrivacyNoticeResponse:
     """Deprecate a privacy notice (admin only)."""
     jurisdiction = _validate_jurisdiction(jurisdiction)
@@ -409,8 +409,8 @@ async def grant_consent(
     user_id: UUID,
     consent_type: str,
     jurisdiction: str,
-    repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],  # type: ignore[assignment]
-    db: Annotated[AsyncSession, Depends(get_db)],  # type: ignore[assignment]
+    repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ConsentRecordResponse:
     """Grant (or re-grant) user consent."""
     jurisdiction = _validate_jurisdiction(jurisdiction)
@@ -437,8 +437,8 @@ async def grant_consent(
 @router.get("/preferences", response_model=PrivacyPreferenceCenterResponse)
 async def get_privacy_preferences(
     user_id: Annotated[UUID, Depends(get_current_user_id)],
-    notice_repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],  # type: ignore[assignment]
-    consent_repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],  # type: ignore[assignment]
+    notice_repo: Annotated[PrivacyNoticeRepository, Depends(get_privacy_notice_repo)],
+    consent_repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],
 ) -> PrivacyPreferenceCenterResponse:
     """Get privacy preference center data for current user."""
     current_notices = await notice_repo.get_all_current()

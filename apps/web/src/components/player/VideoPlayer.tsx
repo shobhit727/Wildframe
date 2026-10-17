@@ -24,11 +24,14 @@ export function VideoPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<unknown>(null);
   const cancelledRef = useRef(false);
+  // Prevent repeated timeupdate events in the same 30-second target second from issuing duplicate PATCHes.
+  const lastPersistedSecondRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const lastNonZeroVolumeRef = useRef(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [quality, setQuality] = useState('auto');
   const [showControls, setShowControls] = useState(true);
@@ -117,14 +120,52 @@ export function VideoPlayer({
         }
       }
     };
-  }, [contentId, quality, src, srcType, loadAttempt]);
+  }, [contentId, src, srcType, loadAttempt]);
+
+  const handleQualityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const nextQuality = e.target.value;
+    setQuality(nextQuality);
+
+    const player = playerRef.current as {
+      currentLevel?: number;
+      levels?: Array<{ height?: number }>;
+    } | null;
+    if (!player || !Array.isArray(player.levels) || typeof player.currentLevel !== 'number') {
+      return;
+    }
+
+    const levels = player.levels;
+
+    if (nextQuality === 'auto') {
+      // -1 delegates representation selection back to hls.js.
+      player.currentLevel = -1;
+      return;
+    }
+
+    const targetHeight = Number.parseInt(nextQuality, 10);
+    if (!Number.isFinite(targetHeight)) return;
+
+    const targetIndex = levels.reduce((bestIndex, level, index) => {
+      const bestHeight = levels[bestIndex]?.height ?? Number.POSITIVE_INFINITY;
+      const levelHeight = level.height ?? Number.POSITIVE_INFINITY;
+      return Math.abs(levelHeight - targetHeight) < Math.abs(bestHeight - targetHeight)
+        ? index
+        : bestIndex;
+    }, 0);
+
+    // Select the closest available representation without rebuilding the stream.
+    player.currentLevel = targetIndex;
+  };
 
   const handleTimeUpdate = () => {
     if (!videoRef.current) return;
     const t = videoRef.current.currentTime;
     setCurrentTime(t);
 
-    if (Math.floor(t) % 30 === 0 && Math.floor(t) > 0) {
+    const second = Math.floor(t);
+    if (second > 0 && second % 30 === 0 && lastPersistedSecondRef.current !== second) {
+      // Record the target before awaiting the request so buffering/scrubbing cannot amplify writes.
+      lastPersistedSecondRef.current = second;
       apiClient.updatePlaybackPosition(sessionId, t).catch(() => {});
     }
   };
@@ -147,16 +188,34 @@ export function VideoPlayer({
 
   const toggleMute = () => {
     if (!videoRef.current) return;
-    videoRef.current.muted = !isMuted;
-    setIsMuted(!isMuted);
+    const element = videoRef.current;
+    if (element.muted) {
+      // Restore a usable level before enabling audio when the slider is at zero.
+      if (element.volume === 0) {
+        const restoredVolume = lastNonZeroVolumeRef.current || 1;
+        element.volume = restoredVolume;
+        setVolume(restoredVolume);
+      }
+      element.muted = false;
+    } else {
+      element.muted = true;
+    }
+    setIsMuted(element.muted);
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!videoRef.current) return;
+    const element = videoRef.current;
     const v = Number(e.target.value);
-    videoRef.current.volume = v;
+    element.volume = v;
+    if (v > 0) {
+      // Keep the last nonzero level for button-based restore.
+      lastNonZeroVolumeRef.current = v;
+    }
+    // Keep element and React state synchronized with the slider.
+    element.muted = v === 0;
     setVolume(v);
-    setIsMuted(v === 0);
+    setIsMuted(element.muted);
   };
 
   const toggleFullscreen = async () => {
@@ -196,8 +255,12 @@ export function VideoPlayer({
   return (
     <div
       className="relative w-full aspect-video bg-black"
+      tabIndex={0}
+      onFocus={() => setShowControls(true)}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => {
+        // Paused playback must keep its controls discoverable and usable.
+        if (!isPlaying) return;
         if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
         controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 1500);
       }}
@@ -301,7 +364,7 @@ export function VideoPlayer({
               <select
                 id="quality"
                 value={quality}
-                onChange={(e) => setQuality(e.target.value)}
+                onChange={handleQualityChange}
                 className="bg-gray-800 text-white px-3 py-1.5 rounded border border-gray-600 text-sm focus:outline-none focus:ring-2 focus:ring-white"
                 aria-label="Video quality"
               >

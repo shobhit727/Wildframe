@@ -11,6 +11,7 @@
 # infra.postgresHost/redisHost is in-cluster or external.*.enabled is false
 # or CIDRs/FQDNs are empty. Set infra.hosts to real RDS/ElastiCache endpoints
 # and CIDRs/FQDNs to VPC ranges for NetworkPolicy egress.
+environment: production
 namespace: wildframe-production
 
 replicaCount: 2
@@ -29,6 +30,16 @@ infra:
 ingress:
   enabled: true
   host: app.wildframe.com
+
+# Key *names* inside the externally provisioned wildframe-runtime Secret, not
+# secret values. The Secret must also contain SEARCH_CURSOR_SECRET or the
+# search-service pod cannot start: Kubernetes fails a container whose
+# secretKeyRef key is absent. Must be >= 32 characters and must not be one of
+# the values search-service rejects as known-insecure. Rotation procedure is in
+# docs/DEPLOYMENT_GUIDE.md ("Runtime secrets").
+secrets:
+  existingSecret: wildframe-runtime
+  searchCursorSecretKey: SEARCH_CURSOR_SECRET
 
 external:
   postgres:

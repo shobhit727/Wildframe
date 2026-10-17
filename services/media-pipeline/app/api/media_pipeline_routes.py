@@ -13,10 +13,10 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
-from jose import jwt
 from jose.exceptions import JWTError
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from wildframe_auth import JWKSUnavailableError, verify_token_with_jwks
 
 from app.core.database import get_db
 from app.core.settings import settings
@@ -29,6 +29,41 @@ from app.services import MediaPipelineService, PipelineError
 router = APIRouter(prefix="/api/v1/pipeline", tags=["pipeline"])
 
 
+async def _decode_token(token: str) -> dict:
+    """Verify an access token against auth-service's published JWKS.
+
+    This used to hand-roll its own shared-secret HMAC decode, which made the
+    service a shared-secret verifier (#941): ``JWT_SECRET_KEY`` is a committed
+    development value and ``DEV_ENVIRONMENTS`` exempts it from the production
+    validator, so anyone with repository access could mint a token and start
+    pipeline jobs as any identity. The HS256 path is deleted rather than
+    rotated -- rotating would keep every service on one symmetric key and
+    reject genuine RS256 tokens.
+    """
+    # JWKSUnavailableError must be caught *before* JWTError: it is a JWTError
+    # subclass, and it is the branch that keeps a JWKS outage (fetch failure,
+    # or a body that is not a JWKS) a 503 instead of a 401. Everything else the
+    # verifier rejects -- bad signature, expired, wrong audience, unknown kid --
+    # stays a 401.
+    try:
+        return await verify_token_with_jwks(
+            token,
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            url=settings.JWT_JWKS_URL,
+            expected_type="access",
+        )
+    except JWKSUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Token verification is unavailable",
+        ) from exc
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from exc
+
+
 async def get_current_user_id(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> UUID:
@@ -37,30 +72,18 @@ async def get_current_user_id(
     Pipeline job creation is an authenticated, authenticated-user operation:
     an unauthenticated caller must never be able to kick off (or enumerate)
     transcoding work through the gateway.
+
+    Token-type separation (#221) -- a refresh token shares the audience but must
+    never be accepted as an access token -- is enforced by the shared verifier
+    via ``expected_type="access"``, so it can no longer be lost by editing one
+    of several hand-wired copies of this check.
     """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid authorization header",
         )
-    token = authorization.removeprefix("Bearer ")
-    try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
-        # Token-type separation (#221): refresh tokens share the audience but
-        # must never be accepted as access tokens.
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-            )
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    payload = await _decode_token(authorization.removeprefix("Bearer "))
     sub = payload.get("sub") or payload.get("user_id")
     if sub is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
@@ -137,7 +160,7 @@ async def start_job(
             idempotency_key=request.idempotency_key,
             creator_id=current_user,
         )
-        job = await service.advance(job.id)  # type: ignore[arg-type]
+        job = await service.advance(job.id)
     except PipelineError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _job_to_response(job)
@@ -152,6 +175,10 @@ async def get_job(
     """Get a pipeline job's status plus its full stage-log audit trail."""
     job = await service.job_repo.get(job_id)
     if job is None:
+        raise HTTPException(status_code=404, detail="Pipeline job not found")
+    # Authorize before loading logs: job metadata and its stage trail are the
+    # caller's own. 404 (not 403) so a stranger cannot probe job existence.
+    if (job.context or {}).get("_creator_id") != str(current_user):
         raise HTTPException(status_code=404, detail="Pipeline job not found")
     logs = await service.log_repo.list_for_job(job_id)
     return JobDetailResponse(
@@ -195,8 +222,14 @@ async def start_transcoding(
     content_id: Annotated[UUID, Body(...)],
     source_url: Annotated[str, Body(...)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
-    """Legacy entry point: create a TranscodingJob (compatibility)."""
+    """Legacy entry point: create a TranscodingJob (compatibility).
+
+    Authenticated like the canonical surface; the legacy rows carry no owner,
+    so this only guarantees the caller is signed in, not that they own the
+    content. The compatibility surface should be retired.
+    """
     service = MediaPipelineService(PipelineJobRepository(db), PipelineStageLogRepository(db))
     job = await service.start_transcoding(content_id, source_url)
     return {"job_id": str(job.id), "status": "pending"}
@@ -206,8 +239,13 @@ async def start_transcoding(
 async def get_transcoding_status(
     content_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: Annotated[UUID, Depends(get_current_user_id)],
 ):
-    """Legacy entry point: fetch a TranscodingJob by content id."""
+    """Legacy entry point: fetch a TranscodingJob by content id (authenticated).
+
+    Legacy jobs have no creator column, so ownership cannot be enforced here;
+    retire this route rather than widening it.
+    """
     service = MediaPipelineService(PipelineJobRepository(db), PipelineStageLogRepository(db))
     job = await service.get_job_status(content_id)
     if not job:

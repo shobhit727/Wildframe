@@ -48,7 +48,7 @@ class UserConsentRepository:
             select(UserConsentRecord)
             .where(
                 UserConsentRecord.user_id == user_id,
-                UserConsentRecord.granted == True,
+                UserConsentRecord.granted.is_(True),
                 UserConsentRecord.withdrawn_at.is_(None),
             )
             .order_by(UserConsentRecord.created_at.desc())

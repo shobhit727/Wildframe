@@ -2,9 +2,11 @@ import base64
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 
+
 def _b64(n: int) -> str:
     b = n.to_bytes((n.bit_length() + 7) // 8, "big")
     return base64.urlsafe_b64encode(b).decode().rstrip("=")
+
 
 _priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 PRIVATE_PEM = _priv.private_bytes(

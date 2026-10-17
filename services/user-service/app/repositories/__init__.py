@@ -124,7 +124,7 @@ class UserDeviceRepository(BaseRepository):
         """Get all devices for a user."""
         stmt = select(UserDevice).where(UserDevice.user_id == user_id)
         if active_only:
-            stmt = stmt.where(UserDevice.is_active == True)
+            stmt = stmt.where(UserDevice.is_active.is_(True))
         stmt = stmt.order_by(UserDevice.last_active_at.desc(), UserDevice.id.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -141,7 +141,7 @@ class UserDeviceRepository(BaseRepository):
                     setattr(device, key, value)
 
             if any(k in kwargs for k in ["is_active", "ip_address"]):
-                device.last_active_at = datetime.now(UTC)  # type: ignore[assignment]
+                device.last_active_at = datetime.now(UTC)
 
             await self.flush()
             logger.info(f"Updated device: {device_id}")
@@ -250,11 +250,13 @@ class UserSubscriptionProfileRepository(BaseRepository):
                 return None
 
             # Update tier and related limits
-            subscription.subscription_tier = new_tier  # type: ignore[assignment]
-            subscription.max_concurrent_streams = 1 if new_tier == "free" else (2 if new_tier == "basic" else 4)  # type: ignore[assignment]
-            subscription.can_download = new_tier != "free"  # type: ignore[assignment]
-            subscription.can_use_4k = new_tier == "premium"  # type: ignore[assignment]
-            subscription.ad_free = new_tier != "free"  # type: ignore[assignment]
+            subscription.subscription_tier = new_tier
+            subscription.max_concurrent_streams = (
+                1 if new_tier == "free" else (2 if new_tier == "basic" else 4)
+            )
+            subscription.can_download = new_tier != "free"
+            subscription.can_use_4k = new_tier == "premium"
+            subscription.ad_free = new_tier != "free"
 
             await self.flush()
             logger.info(f"Updated subscription tier for user {user_id} to {new_tier}")

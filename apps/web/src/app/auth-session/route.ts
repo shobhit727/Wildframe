@@ -1,11 +1,66 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://localhost:8000';
 import { buildRefreshCookieHeader, REFRESH_COOKIE_MAX_AGE, REFRESH_COOKIE_NAME as REFRESH_COOKIE } from '@/utils/authCookie';
 
+/**
+ * Base URL of auth-service for calls made from inside this container.
+ *
+ * This is deliberately a *server-only* setting, and it is deliberately not
+ * NEXT_PUBLIC_API_URL. Two different addresses serve two different callers and
+ * one variable cannot correctly serve both:
+ *
+ *   - Browser code must reach the public TLS gateway, derived at runtime from
+ *     the host the page was served on (see src/api/client.ts). Caddy only
+ *     allowlists the browser origin there, and NEXT_PUBLIC_* is inlined into the
+ *     client bundle, so anything set here is visible to the browser anyway.
+ *   - This route handler runs server-side, inside the `web` container, where
+ *     `localhost:8000` is the web container itself and nothing listens. The
+ *     docker-network address is http://auth-service:8000.
+ *
+ * Keying the server-side fallback on the public variable is what produced the
+ * 502 `auth_unreachable` on GET/DELETE /auth-session: with NEXT_PUBLIC_API_URL
+ * unset it fell back to https://localhost:8000, which inside the container is a
+ * connection refusal. A successful registration set the cookie, so client-side
+ * navigation worked, but every hard reload of a protected route bounced the user
+ * to /login.
+ *
+ * Targets auth-service directly rather than the gateway, matching how every
+ * other service in this repo makes internal calls (see AUTH_SERVICE_URL and
+ * JWT_JWKS_URL in deployments/docker-compose.dev.yml). Routing through the
+ * gateway would also put every server-side refresh into one shared, IP-keyed
+ * /auth/* rate-limit budget, since these calls carry no access token and the
+ * limiter falls back to client IP — every user's refreshes would draw on the
+ * same bucket from the single web container address.
+ *
+ * The gateway's `/auth` path prefix is dropped here because that segment is
+ * routing metadata the gateway strips before forwarding; auth-service serves
+ * these routes itself at /api/v1/auth/*.
+ */
+const AUTH_SERVICE_URL = (process.env.AUTH_SERVICE_URL || 'http://auth-service:8000').replace(/\/+$/, '');
+
 const COOKIE_MAX_AGE = REFRESH_COOKIE_MAX_AGE;
-const REFRESH_ENDPOINT = `${API_BASE_URL}/auth/api/v1/auth/refresh`;
+const REFRESH_ENDPOINT = `${AUTH_SERVICE_URL}/api/v1/auth/refresh`;
+const LOGOUT_ENDPOINT = `${AUTH_SERVICE_URL}/api/v1/auth/logout`;
+
+/**
+ * Upper bound on the accepted refresh token, in characters.
+ *
+ * This exists to reject absurd input, not to encode a real token size: JWT
+ * length is a function of the claim set and the signing algorithm, so any
+ * tight bound silently breaks authentication the day auth-service adds a
+ * claim or changes algorithm. A previous 512-char cap rejected every real
+ * RS256 refresh token auth-service issues (745 chars today), turning a
+ * successful 201 registration into "Could not create the account".
+ *
+ * 2048 gives ~2.7x headroom over the current token and still keeps the
+ * Set-Cookie comfortably inside the 4096-byte per-cookie ceiling browsers
+ * enforce (JWT base64url characters are never percent-expanded, so the
+ * value's encoded length equals its character length). An absent token and
+ * an oversized one are reported separately — conflating them sends the next
+ * debugger looking for a missing token that was present all along.
+ */
+const MAX_REFRESH_TOKEN_LENGTH = 2048;
 
 /**
  * POST /auth-session
@@ -21,8 +76,17 @@ export async function POST(request: NextRequest) {
   }
 
   const token = body?.refresh_token;
-  if (typeof token !== 'string' || !token || token.length > 512) {
+  if (typeof token !== 'string' || !token) {
     return NextResponse.json({ error: 'missing_refresh_token' }, { status: 400 });
+  }
+  if (token.length > MAX_REFRESH_TOKEN_LENGTH) {
+    return NextResponse.json(
+      {
+        error: 'refresh_token_too_large',
+        max_length: MAX_REFRESH_TOKEN_LENGTH,
+      },
+      { status: 413 },
+    );
   }
 
   const res = NextResponse.json({ ok: true });
@@ -127,7 +191,7 @@ export async function DELETE(request: NextRequest) {
   const authorization = request.headers.get('Authorization');
   try {
     if (raw) {
-      const response = await secureFetch(`${API_BASE_URL}/auth/api/v1/auth/logout`, {
+      const response = await secureFetch(LOGOUT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: decodeURIComponent(raw) }),
@@ -137,7 +201,7 @@ export async function DELETE(request: NextRequest) {
       }
     }
     if (authorization) {
-      const response = await secureFetch(`${API_BASE_URL}/auth/api/v1/auth/logout`, {
+      const response = await secureFetch(LOGOUT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: authorization },
         body: 'null',
@@ -155,17 +219,28 @@ export async function DELETE(request: NextRequest) {
 }
 
 /**
- * HTTPS fetch that trusts the project's self-signed dev certificate.
+ * Fetch that tolerates the project's self-signed dev certificate.
  *
- * Next's bundled fetch ignores NODE_EXTRA_CA_CERTS in its server worker, so
- * server-side calls to the TLS gateway fail verification. When the dev cert
- * exists we do a raw node:https request with an explicit CA; otherwise this
- * is a plain fetch (production, publicly-trusted certs).
+ * The internal default (http://auth-service:8000) is plain HTTP on the docker
+ * network, so it needs no CA at all. A self-signed cert only ever comes into
+ * play when AUTH_SERVICE_URL is overridden to an https:// address, which is the
+ * host-side `next dev` case against the TLS gateway. Next's bundled fetch
+ * ignores NODE_EXTRA_CA_CERTS in its server worker, so that case does a raw
+ * node:https request with an explicit CA; otherwise this is a plain fetch
+ * (production, publicly-trusted certs).
+ *
+ * The scheme check is load-bearing rather than defensive: node:https throws
+ * `Protocol "http:" not supported. Expected "https:"` for an http:// URL, so
+ * branching on the mere presence of the dev cert would break the internal path
+ * for anyone running with certificates mounted.
  */
 async function secureFetch(
   url: string,
   init: { method: string; headers: Record<string, string>; body: string },
 ): Promise<Response> {
+  if (!url.startsWith('https://')) {
+    return fetch(url, { ...init, cache: 'no-store' });
+  }
   const fs = await import('node:fs');
   const path = await import('node:path');
   const certPath = path.join(process.cwd(), 'certificates', 'localhost.pem');

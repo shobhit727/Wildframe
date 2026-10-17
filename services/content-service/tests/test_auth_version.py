@@ -9,9 +9,16 @@ from jose import jwt
 
 from app.api.routes import _require_identity
 from app.core.settings import settings
+from tests._test_jwks import PRIVATE_PEM
 
 
 def _token(av=2, arv=0, sub=None, token_type="access"):
+    """A genuine RS256 access token over the in-memory keypair in ``_test_jwks``.
+
+    These tests are about the auth-version comparison that runs *after* the
+    signature is verified, so the token must survive that first gate. The
+    conftest JWKS stub serves the matching public key.
+    """
     sub = sub or str(uuid4())
     payload = {
         "sub": sub,
@@ -23,7 +30,10 @@ def _token(av=2, arv=0, sub=None, token_type="access"):
         "exp": datetime.now(UTC) + timedelta(minutes=15),
         "iat": datetime.now(UTC),
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM), sub
+    return (
+        jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"}),
+        sub,
+    )
 
 
 def _mock_client(resp=None, exc=None):

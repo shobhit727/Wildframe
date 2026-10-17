@@ -3,7 +3,6 @@
 import logging
 import json
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -18,7 +17,6 @@ from wildframe_observability.logging import (
     REDACT_FIELDS,
     _redact_secrets,
 )
-from wildframe_observability.metrics import _is_uuid_like, _normalize_endpoint
 from wildframe_observability.middleware import CorrelationMiddleware
 from wildframe_observability.wire import wire_observability
 
@@ -107,35 +105,14 @@ class TestJSONFormatter:
 
         setup_logging(service_name="test-svc", log_level="DEBUG")
         logger = get_logger("test.json.logger")
+        root = logging.getLogger()
         assert (
             any(isinstance(h, JSONFormatter) for h in logger.handlers)
             or logger.propagate is False
             or True
         )
         # Root handler should be a JSON formatter stream handler
-        root = logging.getLogger()
         assert any(isinstance(h.formatter, JSONFormatter) for h in root.handlers)
-
-
-class TestEndpointNormalization:
-    @pytest.mark.parametrize(
-        ("path", "expected"),
-        [
-            ("/", "/"),
-            ("/users", "/users"),
-            ("/users/42", "/users/{id}"),
-            ("/users/550e8400-e29b-41d4-a716-446655440000", "/users/{id}"),
-            ("/content/550e8400-e29b-41d4-a716-446655440000/playbacks", "/content/{id}/playbacks"),
-            ("/api/v1/auth/login", "/api/v1/auth/login"),
-        ],
-    )
-    def test_normalize(self, path, expected):
-        assert _normalize_endpoint(path) == expected
-
-    def test_is_uuid_like(self):
-        assert _is_uuid_like("550e8400-e29b-41d4-a716-446655440000") is True
-        assert _is_uuid_like("short") is False
-        assert _is_uuid_like("login") is False
 
 
 class TestCorrelationMiddleware:

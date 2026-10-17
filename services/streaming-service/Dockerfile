@@ -39,6 +39,7 @@ COPY services/streaming-service /app
 
 # Copy SDK directly into app
 COPY packages/sdk/wildframe_observability /app/wildframe_observability
+COPY packages/sdk/wildframe_auth/wildframe_auth /app/wildframe_auth
 
 # Create logs directory
 RUN mkdir -p logs
@@ -72,6 +73,7 @@ COPY services/streaming-service /app
 
 # Copy SDK directly into app
 COPY packages/sdk/wildframe_observability /app/wildframe_observability
+COPY packages/sdk/wildframe_auth/wildframe_auth /app/wildframe_auth
 
 # Create logs directory and set permissions
 RUN mkdir -p logs && chown -R appuser:appuser /app

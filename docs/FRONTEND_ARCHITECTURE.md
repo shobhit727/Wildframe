@@ -44,12 +44,11 @@ apps/web/
 │   ├── api/             # Axios client + endpoint helpers
 │   ├── types/           # TypeScript types mirroring backend DTOs
 │   ├── utils/           # Pure helpers (formatters, guards)
-│   ├── config/          # Environment + feature flags
 │   ├── constants/       # Strings, enums
-│   └── middleware.ts    # Next.js middleware (auth redirect, headers)
+│   └── proxy.ts         # Next.js proxy (CSP nonce, auth redirect, verb gate)
 ├── public/
 ├── e2e/                 # Playwright E2E tests
-├── tests/               # Vitest unit/component tests
+├── src/__tests__/       # Vitest suites (inside src, not a sibling of it)
 ├── tailwind.config.ts
 ├── next.config.ts
 ├── playwright.config.ts
@@ -197,20 +196,26 @@ Theme is driven by `next-themes` and exposed via CSS variables so dark mode is a
   resolves; page-level guards read `isAuthenticated` on mount and would
   otherwise bounce freshly-authenticated users (AdminGate → /login →
   middleware → /browse).
-- `src/middleware.ts` redirects unauthenticated requests away from `/account`, `/billing`, `/my-list`, and `/watch`.
+- `src/proxy.ts` redirects unauthenticated requests away from `/browse`, `/watch`, `/my-list`, `/account`, `/billing`, and `/creator`. It also sets the `Content-Security-Policy` header (nonce-based in production) and rejects non-GET verbs on page routes.
 - The Axios client automatically refreshes on 401 once per request, then surfaces the error.
 
 ```ts
-// middleware.ts
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+// proxy.ts  (abridged — read the file, not this sketch)
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
-const PROTECTED = ["/account", "/billing", "/my-list", "/watch"];
+const protectedRoutes = ['/browse', '/watch', '/my-list', '/account', '/billing', '/creator'];
 
-export function middleware(req: NextRequest) {
-  const hasSession = req.cookies.has("wildframe_session");
-  if (PROTECTED.some((p) => req.nextUrl.pathname.startsWith(p)) && !hasSession) {
-    return NextResponse.redirect(new URL("/login", req.url));
+export default function proxy(request: NextRequest) {
+  // Presence of the HttpOnly '__Host-wf_refresh' cookie is an optimistic route
+  // hint, NOT authentication.
+  const token = request.cookies.get('__Host-wf_refresh')?.value;
+  const { pathname } = request.nextUrl;
+  const isProtected = protectedRoutes.some(
+    (r) => pathname === r || pathname.startsWith(`${r}/`),
+  );
+  if (isProtected && !token) {
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 }
 ```
@@ -249,8 +254,8 @@ export function HlsPlayer({ src, onTimeUpdate }: Props) {
 
 | Layer | Tool | Where |
 |---|---|---|
-| Unit | **Vitest** | `tests/unit/**` |
-| Component | **Vitest** + **Testing Library** | `tests/components/**` |
+| Unit | **Vitest** | `src/**/__tests__/**` |
+| Component | **Vitest** + **Testing Library** | `src/components/**/__tests__/**` |
 | E2E | **Playwright** | `e2e/**` |
 
 ```bash
@@ -261,10 +266,14 @@ npm run test:e2e        # playwright test
 
 ### Playwright E2E Tests
 
-**Test Suites:** 3 test files (9 tests total)
-- `e2e/auth.spec.ts` — Authentication flow (login, signup, protected route redirects)
-- `e2e/content.spec.ts` — Content library, content detail, search pages
-- `e2e/subscription.spec.ts` — Subscription page access
+**Test Suites:** 10 spec files (`apps/web/e2e/`)
+- `auth.spec.ts` — login, signup, protected-route redirects
+- `home.spec.ts`, `browse.spec.ts` — landing and catalogue
+- `watch.spec.ts` — playback: movie, series, seasons/episodes
+- `account.spec.ts`, `my-list.spec.ts` — account and My List
+- `billing.spec.ts` — subscription page
+- `creator.spec.ts` — creator pages
+- `admin.spec.ts` — admin console and its sub-routes
 
 **Run locally:**
 ```bash
@@ -272,6 +281,7 @@ npm run test:e2e        # playwright test
 npm run dev
 
 # Terminal 2: Run Playwright tests
+npx playwright install --with-deps chromium   # first run only
 npx playwright test
 ```
 
@@ -282,17 +292,20 @@ npx playwright test --reporter=github
 
 **Configuration:** `playwright.config.ts`
 - Base URL: `https://localhost:3000` (HTTPS with self-signed certs)
-- Single browser: Chromium (CI), multi-browser locally
+- One project, `chromium`, defined unconditionally — no multi-browser matrix
 - Web server: Starts `npm run dev` automatically
+- Dev TLS material is produced by `scripts/generate-dev-certs.sh`, which the
+  config invokes automatically
 - HTTPS errors ignored (self-signed certs)
 - Timeout: 300s for web server startup
 
-**Test count:** 9 tests total (3 test files × 3 tests each)
+**Test count:** **122 tests across 10 spec files**, covering **15 routes**. The
+`frontend-e2e` CI job is **blocking**.
 
 ### Vitest Unit/Component Tests
 
 ```bash
-npm run test            # vitest
+npm run test            # vitest — 866 tests across 46 files
 npm run test:coverage   # vitest --coverage
 ```
 

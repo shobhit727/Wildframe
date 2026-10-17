@@ -4,9 +4,10 @@ import {
   clearTokens,
   getAccessToken,
   normalizeContent,
+  normalizeSearchContentDocument,
   setTokens,
 } from '@/api/client';
-import type { BackendContent } from '@/types';
+import type { BackendContent, BackendContentListItem } from '@/types';
 
 describe('token helpers', () => {
   const access = 'access.token.value';
@@ -56,12 +57,70 @@ describe('normalizeContent', () => {
     duration_minutes: 118,
     release_date: '2024-05-01',
     audience_score: 87,
+    is_premium: false,
   };
+
+
+  it('normalizes the exact content-list response shape', () => {
+    const listItem: BackendContentListItem = {
+      id: 'list-1',
+      title: 'Catalog Only',
+      slug: 'catalog-only',
+      description: 'Only fields returned by ContentListResponse.',
+      content_type: 'movie',
+      poster_url: null,
+      imdb_rating: 8.1,
+      audience_score: 81,
+      is_premium: false,
+      genres: [{ id: 'g1', name: 'Drama', slug: 'drama' }],
+    };
+
+    const normalized = normalizeContent(listItem);
+    expect(normalized.title).toBe('Catalog Only');
+    expect(normalized.rating).toBe(8.1);
+    expect(normalized.matchPercentage).toBe(81);
+    expect(normalized.duration).toBe(0);
+  });
+
+  it('normalizes search-service content documents', () => {
+    const payload = normalizeSearchContentDocument({
+      id: 'search-1',
+      title: 'Search Result',
+      description: 'From the Elasticsearch document shape.',
+      content_type: 'movie',
+      genres: ['Drama'],
+      actors: [],
+      director: '',
+      release_year: 2025,
+      rating: 76,
+      status: 'published',
+    });
+
+    // `normalizeSearchContentDocument` returns the backend DTO: it synthesises a
+    // slug, leaves artwork null, and maps the document's string genres onto
+    // `BackendGenre`. `matchPercentage` and the genre-name list are UI-level
+    // fields on `Content` and only exist once `normalizeContent` has run, so
+    // assert the DTO and the UI type separately.
+    expect(payload.slug).toBe('search-result');
+    expect(payload.poster_url).toBeNull();
+    expect(payload.genres).toEqual([{ id: 'drama', name: 'Drama', slug: 'drama' }]);
+
+    const normalized = normalizeContent(payload);
+    expect(normalized.matchPercentage).toBe(76);
+    expect(normalized.genre).toBe('Drama');
+    expect(normalized.genres).toEqual(['Drama']);
+  });
 
   it('maps genre names arrays', () => {
     const c = normalizeContent(movie);
     expect(c.genre).toBe('sci-fi');
     expect(c.genres).toEqual(['sci-fi', 'action']);
+  });
+
+  it('keeps audience score scales separate for stars and Match', () => {
+    const normalized = normalizeContent(movie);
+    expect(normalized.rating).toBe(8.7);
+    expect(normalized.matchPercentage).toBe(87);
   });
 
   it('maps series content_type to show type', () => {

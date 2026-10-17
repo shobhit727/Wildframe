@@ -5,7 +5,7 @@ fakes). These tests exercise the HTTP layer: routing, request validation,
 response serialization, and error mapping (ModerationError -> 400/409).
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -13,13 +13,36 @@ import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
 
+from app.api import moderation_routes
 from app.api.moderation_routes import get_moderation_service
 from app.core.settings import settings
 from app.main import app
-from app.services import ModerationError
+from app.services import DuplicateFlagError, ModerationError
+from tests._test_jwks import JWKS
+from tests._test_jwks import PRIVATE_PEM as PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
+
+
+@pytest.fixture(autouse=True)
+def _stub_jwks(monkeypatch):
+    """Replace the JWKS *fetch* seam only.
+
+    The routes still verify real RS256 signatures through ``wildframe_auth``;
+    only the outbound HTTP call is replaced, so these tests cannot pass because
+    a verifier was stubbed out.
+    """
+
+    async def fetch(_url):
+        return JWKS
+
+    monkeypatch.setattr("wildframe_auth.verifier.fetch_jwks", fetch)
+    clear_jwks_cache()
+    yield
+    clear_jwks_cache()
 
 
 def make_token(*, sub: str, role: str, token_type: str = "access", arv: int = 0) -> str:
+    now = datetime.now(UTC)
     return jwt.encode(
         {
             "sub": sub,
@@ -27,11 +50,33 @@ def make_token(*, sub: str, role: str, token_type: str = "access", arv: int = 0)
             "type": token_type,
             "aud": settings.JWT_AUDIENCE,
             "iss": settings.JWT_ISSUER,
+            "av": 0,
             "arv": arv,
+            "iat": now,
+            "exp": now + timedelta(minutes=15),
         },
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
+        PRIVATE_PEM,
+        algorithm="RS256",
+        headers={"kid": "k1"},
     )
+
+
+CREATOR = uuid4()
+
+
+@pytest.fixture(autouse=True)
+def stub_content_owner(monkeypatch):
+    """Resolve content ownership from a stub, not a live content-service.
+
+    The flag route derives the strike target server-side; a reporter-supplied
+    creator is no longer accepted, so the HTTP tests must supply the lookup.
+    """
+
+    async def _resolve(_content_id):
+        return CREATOR
+
+    monkeypatch.setattr(moderation_routes, "resolve_content_owner", _resolve)
+    return CREATOR
 
 
 ADMIN = make_token(sub=str(uuid4()), role="admin")
@@ -157,6 +202,34 @@ class TestFlagContent:
         assert response.status_code == 400
         assert "cannot flag self" in response.json()["detail"]
 
+    def test_a_duplicate_report_returns_409_not_400(self, client, service):
+        """A repeat report is a *conflict*, and the code must say so.
+
+        DuplicateFlagError subclasses ModerationError, so collapsing the two
+        handlers (or reordering them) turns this into a 400 and nothing else
+        in the suite notices: the only other error-mapping test raises the base
+        class. A client that distinguishes "you already reported this" from
+        "that request was invalid" loses that signal on 400.
+        """
+        service.flag_content = AsyncMock(
+            side_effect=DuplicateFlagError("this content was already flagged by you")
+        )
+        app.dependency_overrides[get_moderation_service] = override(service)
+
+        response = client.post(
+            "/api/v1/moderation/flags",
+            headers={"Authorization": f"Bearer {USER}"},
+            json={"content_id": str(uuid4()), "flag_reason": "other"},
+        )
+
+        assert response.status_code == 409
+        assert "already flagged by you" in response.json()["detail"]
+
+    def test_duplicate_flag_error_is_a_moderation_error(self):
+        # The 409 handler must precede the 400 one precisely because of this
+        # subclass relationship; pin it so the ordering requirement is explicit.
+        assert issubclass(DuplicateFlagError, ModerationError)
+
     def test_flag_requires_auth(self, client, service):
         app.dependency_overrides[get_moderation_service] = override(service)
 
@@ -196,6 +269,33 @@ class TestFlagContent:
         )
 
         assert service.flag_content.await_args.kwargs["reporter_id"] != forged_id
+
+    def test_strike_target_comes_from_content_service_not_the_body(
+        self, client, service, stub_content_owner
+    ):
+        """A reporter must not be able to aim a strike at a creator of their choice.
+
+        The strike (and the automatic suspension behind it) is issued against the
+        creator that content-service says owns the content, so a body field
+        naming another creator is ignored.
+        """
+        app.dependency_overrides[get_moderation_service] = override(service)
+        attacker_chosen = str(uuid4())
+
+        response = client.post(
+            "/api/v1/moderation/flags",
+            headers={"Authorization": f"Bearer {USER}"},
+            json={
+                "content_id": str(uuid4()),
+                "flag_reason": "copyright",
+                "content_creator_id": attacker_chosen,
+            },
+        )
+
+        assert response.status_code == 201
+        resolved = service.flag_content.await_args.kwargs["content_creator_id"]
+        assert resolved == stub_content_owner
+        assert str(resolved) != attacker_chosen
 
 
 class TestQueue:

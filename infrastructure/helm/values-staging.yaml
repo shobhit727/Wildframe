@@ -1,3 +1,4 @@
+environment: staging
 namespace: wildframe-staging
 
 replicaCount: 1

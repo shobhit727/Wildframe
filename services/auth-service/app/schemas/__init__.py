@@ -5,11 +5,34 @@ Implements Pydantic models for input validation and API contracts.
 
 import re
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.security import COMMON_PASSWORDS
+from app.security import COMMON_PASSWORDS, PASSWORD_MAX_LENGTH, normalize_email
+
+# Every address that identifies an account passes through this type, so the
+# canonical form is established once, here, instead of at each place that
+# happens to compare or look one up.
+#
+# The repository already canonicalised on write and on lookup (#161), but
+# ``verify-email`` compared the *canonical* stored address and the token's
+# ``email`` claim against the **raw** request string. Pydantic's ``EmailStr``
+# lowercases the domain but preserves the local part's case, so a user who
+# registered as ``Mixed.Case@Example.com`` stored ``mixed.case@example.com``,
+# was issued a token for it, and was then refused forever with "Token email
+# does not match requested email" -- a silent 400 with no way to verify.
+#
+# Fixing that at the two comparison sites would have left the next caller to
+# re-derive the rule (and ``resend-verification`` had already re-derived it as
+# ``.strip().lower()``, which is *not* the repository's rule: ``casefold`` and
+# ``lower`` disagree on ``ß``). Canonicalising the request once makes every
+# handler compare canonical-to-canonical.
+#
+# Validated *before* canonicalised, so malformed input is still a 422 exactly
+# as before -- this changes the spelling of an accepted address, nothing else.
+CanonicalEmailStr = Annotated[EmailStr, AfterValidator(normalize_email)]
 
 
 class TokenResponse(BaseModel):
@@ -47,9 +70,27 @@ def validate_password_strength(v: str) -> str:
     passphrases like "correct-horse-battery-staple-42!". A two-class minimum
     blocks single-class passwords and the breach-list check blocks common
     credentials (#164).
+
+    The hard maximum is measured in **bytes**, not characters (#849). bcrypt
+    ignores everything past 72 bytes of input, so 72 bytes is the real ceiling
+    on how much of a password is ever used. Pydantic's ``max_length`` counts
+    characters, which lets a multi-byte password through validation and then
+    raise inside ``PasswordManager.hash_password`` -- where ``/register``
+    answered 400 and ``/change-password`` answered 500. Rejecting here makes it
+    a 422 on both, like every other invalid password.
+
+    We reject rather than truncate. Truncating would make any password that
+    shares its first 72 bytes with an existing one interchangeable, so
+    ``<password><anything>`` would authenticate against ``<password>``.
     """
     if len(v) < 12:
         raise ValueError("Password must be at least 12 characters")
+    encoded_length = len(v.encode("utf-8"))
+    if encoded_length > PASSWORD_MAX_LENGTH:
+        raise ValueError(
+            f"Password cannot be longer than {PASSWORD_MAX_LENGTH} bytes "
+            f"(got {encoded_length}); bcrypt ignores everything past that"
+        )
     classes = sum(
         bool(re.search(pat, v)) for pat in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^A-Za-z0-9]")
     )
@@ -70,8 +111,8 @@ class UserRegisterRequest(BaseModel):
         last_name: User's last name
     """
 
-    email: EmailStr
-    password: str = Field(..., min_length=12, max_length=128)
+    email: CanonicalEmailStr
+    password: str = Field(..., min_length=12, max_length=72)
     first_name: str | None = Field(None, max_length=100)
     last_name: str | None = Field(None, max_length=100)
 
@@ -102,7 +143,7 @@ class UserLoginRequest(BaseModel):
         device_id: Optional device identifier for multi-device tracking
     """
 
-    email: EmailStr
+    email: CanonicalEmailStr
     password: str
     device_id: str | None = Field(None, max_length=255)
 
@@ -151,6 +192,7 @@ class UserResponse(BaseModel):
     email_verified: bool
     last_login_at: datetime | None
     created_at: datetime
+    auth_version: int = 0
     role: str = "user"
 
     model_config = ConfigDict(
@@ -178,7 +220,7 @@ class ChangePasswordRequest(BaseModel):
     """
 
     current_password: str
-    new_password: str = Field(..., min_length=12, max_length=128)
+    new_password: str = Field(..., min_length=12, max_length=72)
 
     @field_validator("new_password")
     @classmethod
@@ -195,7 +237,7 @@ class VerifyEmailRequest(BaseModel):
         token: Verification token
     """
 
-    email: EmailStr
+    email: CanonicalEmailStr
     token: str
 
 
@@ -215,7 +257,7 @@ class MFALoginVerifyRequest(BaseModel):
 class ResendVerificationRequest(BaseModel):
     """Request to (re)issue an email verification token."""
 
-    email: EmailStr
+    email: CanonicalEmailStr
 
 
 class StepUpRequest(BaseModel):

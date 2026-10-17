@@ -164,15 +164,21 @@ def create_app() -> FastAPI:
         if not db_ok:
             overall = "not_ready"
 
-        try:
-            redis_client = await redis.from_url(settings.REDIS_URL)
-            await asyncio.wait_for(redis_client.ping(), timeout=2.0)
-            await redis_client.close()
-            checks["redis"] = "ok"
-        except Exception as e:  # noqa: BLE001
-            logger.error("Redis readiness check failed: %s", e)
+        redis_url = settings.REDIS_URL
+        if redis_url is None:
+            logger.error("Redis readiness check failed: REDIS_URL is not configured")
             checks["redis"] = "down"
             overall = "not_ready"
+        else:
+            try:
+                redis_client = await redis.from_url(redis_url)
+                await asyncio.wait_for(redis_client.ping(), timeout=2.0)
+                await redis_client.close()
+                checks["redis"] = "ok"
+            except Exception as e:  # noqa: BLE001
+                logger.error("Redis readiness check failed: %s", e)
+                checks["redis"] = "down"
+                overall = "not_ready"
 
         payload = {
             "status": overall,
@@ -225,6 +231,9 @@ def create_app() -> FastAPI:
     async def general_exception_handler(request: Request, exc: Exception):
         corr_id = get_correlation_id()
         logger.exception("Unhandled exception (corr=%s): %s", corr_id, exc)
+        # Headers as well as body: ServerErrorMiddleware sits above the user
+        # middleware stack, so a 500 built here never passes back through
+        # add_request_context and would otherwise arrive with no tracing header.
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -232,6 +241,7 @@ def create_app() -> FastAPI:
                 "message": "Internal server error",
                 "correlation_id": corr_id,
             },
+            headers={"X-Correlation-ID": corr_id},
         )
 
     return app

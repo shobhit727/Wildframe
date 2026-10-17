@@ -1,14 +1,15 @@
 """API routes for Streaming Service."""
 
 import inspect
+import httpx
 from typing import Annotated
 from uuid import UUID
 
-from jose import jwt
-from jose.exceptions import JWTError  # type: ignore[attr-defined]
+from jose import JWTError
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from wildframe_auth import JWKSUnavailableError, verify_token_with_jwks
 
 from app.core.database import db_manager
 from app.core.settings import settings
@@ -34,6 +35,65 @@ from app.services import StreamingService
 router = APIRouter(prefix="/api/v1", tags=["streaming"])
 
 
+async def _decode_token(token: str) -> dict:
+    # JWKSUnavailableError must be caught *before* JWTError: it is a JWTError
+    # subclass, and it is the branch that keeps a JWKS outage (fetch failure,
+    # or a body that is not a JWKS) a 503 instead of a 401. Everything else the
+    # verifier rejects — bad signature, expired, wrong audience, unknown kid —
+    # stays a 401.
+    try:
+        return await verify_token_with_jwks(
+            token,
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            url=settings.JWT_JWKS_URL,
+            expected_type="access",
+        )
+    except JWKSUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Token verification is unavailable",
+        ) from exc
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from exc
+
+
+async def _enforce_auth_version(authorization: str, payload: dict) -> None:
+    token_av = payload.get("av")
+    if type(token_av) is not int:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            response = await client.get(
+                f"{settings.AUTH_SERVICE_URL}/api/v1/auth/me",
+                headers={"Authorization": authorization},
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Auth service unavailable",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
+    if response.status_code >= 500:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Auth service unavailable",
+        )
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    try:
+        current_av = response.json()["auth_version"]
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=401, detail="Invalid token payload") from exc
+    if type(current_av) is not int:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+    if token_av != current_av:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
 async def get_current_user_id(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> UUID:
@@ -44,24 +104,8 @@ async def get_current_user_id(
             detail="Missing or invalid authorization header",
         )
     token = authorization.removeprefix("Bearer ")
-    try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-            options={"require_exp": True},
-        )
-        # Token-type separation (#221): refresh tokens share the audience but
-        # must never be accepted as access tokens.
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-            )
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    payload = await _decode_token(token)
+    await _enforce_auth_version(authorization, payload)
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
         raise HTTPException(
@@ -80,22 +124,28 @@ async def require_admin(
     authorization: Annotated[str, Header(alias="Authorization")],
 ) -> UUID:
     """Require a verified, current administrator role for operational mutations."""
-    try:
-        payload = jwt.decode(
-            authorization.removeprefix("Bearer "),
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-            options={"require_exp": True},
-        )
-        if (
-            payload.get("role") != "admin"
-            or int(payload.get("arv") or 0) != settings.ADMIN_ROLE_VERSION
-        ):
-            raise HTTPException(status_code=403, detail="Administrator privileges required")
-    except (JWTError, TypeError, ValueError):
-        raise HTTPException(status_code=401, detail="Invalid token")
+    payload = await _decode_token(authorization.removeprefix("Bearer "))
+    # `arv` must be *present and an integer*. Defaulting it to 0 (or coercing it
+    # with int()) meant a token carrying only `role: "admin"` was treated as the
+    # current admin version whenever ADMIN_ROLE_VERSION was 0 -- the default --
+    # and reached POST /manifests, /transcoding-jobs, /quality-profiles and
+    # /cdn-regions. An absent claim is no evidence the role has not been
+    # revoked, so it fails closed. `type(...) is int` rather than isinstance, so
+    # `True` cannot pass as 1.
+    role_version = payload.get("arv")
+    # `arv` must be *present and an integer*. Defaulting it to 0 (or coercing it
+    # with int()) meant a token carrying only `role: "admin"` was treated as the
+    # current admin version whenever ADMIN_ROLE_VERSION was 0 -- the default --
+    # and reached POST /manifests, /transcoding-jobs, /quality-profiles and
+    # /cdn-regions. An absent claim is no evidence the role has not been
+    # revoked, so it fails closed. `type(...) is int` rather than isinstance, so
+    # `True` cannot pass as 1.
+    is_admin = payload.get("role") == "admin"
+    has_current_role_version = (
+        type(role_version) is int and role_version == settings.ADMIN_ROLE_VERSION
+    )
+    if not (is_admin and has_current_role_version):
+        raise HTTPException(status_code=403, detail="Administrator privileges required")
     return current_user
 
 

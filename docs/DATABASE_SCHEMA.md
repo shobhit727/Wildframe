@@ -1,591 +1,236 @@
 # 📊 Database Schema Reference
 
-**Version**: 2.0.0  
-**Last Updated**: May 27, 2026  
+> ## ⚠️ Regenerated 2026-10-14 — the previous version described a schema that does not exist
+>
+> The earlier revision of this file documented 21 tables, **16 of which were
+> never created**, under a heading that listed 12 databases while the stack
+> creates 17. Writing queries against it would have failed.
+>
+> Everything below is now **derived from the SQLAlchemy models** — the same
+> metadata `scripts/init_schemas.py` passes to `create_all` — not from a
+> hand-written list. Regenerating it is a 30-second command (see "How this was
+> produced"). If a table below is wrong, the fix is in the model, not here.
 
 ## Overview
 
-Wildframe uses PostgreSQL with a **database-per-service** pattern. Each service owns its data independently, allowing horizontal scaling and service isolation.
+Wildframe runs **one PostgreSQL database per service** and no shared schema.
+There is no ORM-level cross-database foreign key anywhere: services reference
+each other's rows by ID only, and consistency is maintained by application
+logic and Kafka events.
 
-**Read Time**: 15 minutes  
-**Prerequisites**: Basic SQL and relational database knowledge
+### Where the truth lives
+
+| Question | Source of truth |
+|---|---|
+| Which databases exist | `infrastructure/database/init-databases.sql` — it creates databases, roles and grants. It contains **zero `CREATE TABLE` statements**. |
+| Which tables and columns exist | The SQLAlchemy models under `services/<svc>/app/models/` (a package) or `services/<svc>/app/models.py` (a module). |
+| What actually gets created | `scripts/init_schemas.py` → `scripts/schema_bootstrap.py`, which calls `create_all` and then reconciles missing columns. |
+| What exists in a running database | `\d <table>` against the live database. Models and database can drift; `init_schemas.py` reports what it repaired. |
+
+> **There is no migration framework.** No Alembic for this path. Schema change
+> means: change the model, run `python scripts/init_schemas.py`, and review
+> what it prints. On a populated table it refuses an undeclared column add —
+> re-run with `--allow-add <table>.<column>` only after you have confirmed the
+> table is stale rather than the column being deliberately absent.
 
 ## Table of Contents
 
-1. [Database Overview](#database-overview)
-2. [Service Databases](#service-databases)
-3. [Shared Reference Data](#shared-reference-data)
-4. [Data Flow Between Services](#data-flow-between-services)
-5. [Backup Strategy](#backup-strategy)
+1. [How this was produced](#how-this-was-produced)
+2. [Databases](#databases)
+3. [Tables by database](#tables-by-database)
+4. [Shared reference data](#shared-reference-data)
+5. [Data flow between services](#data-flow-between-services)
+6. [Backup strategy](#backup-strategy)
+7. [Migration strategy](#migration-strategy)
+8. [Performance](#performance-considerations)
+9. [Monitoring & alerts](#monitoring--alerts)
 
 ---
 
-## Database Overview
-
-### 12 Independent Databases
+## How this was produced
 
 ```
-PostgreSQL Server (Port 5432)
-├── auth_db              [2 tables]
-├── users_db             [6 tables]
-├── content_db           [6 tables]
-├── streaming_db         [4 tables]
-├── search_db            [2 tables]
-├── recommendation_db    [3 tables]
-├── billing_db           [4 tables]
-├── analytics_db         [3 tables]
-├── notification_db      [3 tables]
-├── media_db             [2 tables]
-├── admin_db             [4 tables]
-└── wildframe_db         [Master reference]
+cd services/<service>
+PYTHONPATH="$PWD:<repo>/packages/sdk/wildframe_auth:<repo>/packages/sdk/wildframe_compliance:<repo>/packages/sdk/wildframe_events" \
+  python -c "import app.models, pkgutil, importlib; \
+    from sqlalchemy.orm import DeclarativeBase; \
+    mods=[app.models]; \
+    [mods.append(importlib.import_module('app.models.'+m.name)) for m in pkgutil.iter_modules(app.models.__path__)]; \
+    bases={id(b.metadata):b for mod in mods for n in dir(mod) for b in [getattr(mod,n,None)] \
+      if isinstance(b,type) and issubclass(b,DeclarativeBase)}; \
+    t=sorted({t.name for b in bases.values() for t in b.metadata.tables.values()}); \
+    print(len(t), t)"
 ```
 
-### Connection String Format
+Two details that matter and that a naive `from app.models import Base` gets
+wrong:
 
-```
-postgresql://username:password@localhost:5432/auth_db
-postgresql://auth_user:auth_password@postgres:5432/auth_db
-```
+- **Most services keep `Base` in a module** (`app/models.py`), not a package.
+- **Seven services keep several declarative `Base` classes** — content (9),
+  admin (6), billing (5), analytics (3), moderation (3), streaming (2). Their
+  compliance tables live in separate metadata, so `create_all` on the primary
+  `Base` alone silently skips them. `scripts/schema_bootstrap.py` collects every
+  `Base` for exactly this reason (see its `collect_bases()` docstring, #980).
 
 ---
 
-## Service Databases
+## Databases
 
-### 1. Auth Database (`auth_db`)
+**17 databases**, all created by `infrastructure/database/init-databases.sql`:
 
-Purpose: Authentication and JWT token management
+| Database | Owned by | Tables |
+|---|---|---|
+| `auth_db` | auth-service | 8 |
+| `users_db` | user-service | 7 |
+| `content_db` | content-service | 20 |
+| `streaming_db` | streaming-service | 10 |
+| `search_db` | search-service | 2 |
+| `recommendation_db` | recommendation-service | 2 |
+| `billing_db` | billing-service | 14 |
+| `analytics_db` | analytics-service | 6 |
+| `notification_db` | notification-service | 2 |
+| `media_db` | media-pipeline | 6 |
+| `admin_db` | admin-service | 10 |
+| `creators_db` | creators-service | 10 |
+| `moderation_db` | moderation-service | 6 |
+| `uploads_db` | uploads-service | 3 |
+| `wildframe` | — | default database created by the image; not a service database |
+| `wildframe_db` | — | created by the same script; no service maps to it |
+| *(plus the default `postgres`)* | — | maintained by the image |
 
-#### `users_auth` Table
+**14 service databases.** `api-gateway` owns none — it is a stateless proxy.
 
-```sql
-CREATE TABLE users_auth (
-    id UUID PRIMARY KEY,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
-    email_verified BOOLEAN DEFAULT FALSE,
-    email_verified_at TIMESTAMP WITH TIME ZONE,
-    mfa_enabled BOOLEAN DEFAULT FALSE,
-    mfa_secret VARCHAR(255),
-    failed_login_attempts INT DEFAULT 0,
-    last_failed_login TIMESTAMP WITH TIME ZONE,
-    account_locked BOOLEAN DEFAULT FALSE,
-    account_locked_until TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_email (email),
-    INDEX idx_email_verified (email_verified),
-    INDEX idx_account_locked (account_locked)
-);
-```
-
-**Key Fields**:
-- `id`: UUID unique identifier across entire platform
-- `email`: Unique email (used for login)
-- `password_hash`: bcrypt hashed password (never plaintext)
-- `email_verified`: Email verification status
-- `mfa_enabled`: Multi-factor authentication enabled
-- `account_locked`: Temporary lockout after 5 failed attempts
-
-#### `refresh_tokens` Table
-
-```sql
-CREATE TABLE refresh_tokens (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES users_auth(id) ON DELETE CASCADE,
-    token_hash VARCHAR(255) NOT NULL UNIQUE,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    revoked BOOLEAN DEFAULT FALSE,
-    revoked_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_user_id (user_id),
-    INDEX idx_expires_at (expires_at)
-);
-```
-
-**Key Fields**:
-- `token_hash`: SHA256 hash of refresh token (not stored plaintext)
-- `expires_at`: Token expiration (typically 7 days)
-- `revoked`: Can be revoked before expiration
-- `revoked_at`: When token was revoked (for audit)
-
-**Relationships**:
-- `refresh_tokens.user_id` → `users_auth.id` (CASCADE delete)
+The 14→1 mapping is declared once, in the `SERVICES` dict at the top of
+`scripts/init_schemas.py`. Change a service's database name there, not in two
+places.
 
 ---
 
-### 2. Users Database (`users_db`)
+## Tables by database
 
-Purpose: User profiles, devices, preferences, watch history
+**106 tables total.** Names below are exactly the `__tablename__` values the
+models declare.
 
-#### `user_profiles` Table
+### `auth_db` — auth-service (8)
 
-```sql
-CREATE TABLE user_profiles (
-    id UUID PRIMARY KEY,
-    auth_id UUID NOT NULL UNIQUE,  -- Links to auth_db.users_auth.id
-    username VARCHAR(100) NOT NULL UNIQUE,
-    first_name VARCHAR(50),
-    last_name VARCHAR(50),
-    bio TEXT,
-    avatar_url VARCHAR(500),
-    date_of_birth DATE,
-    country VARCHAR(2),
-    language VARCHAR(5) DEFAULT 'en',
-    timezone VARCHAR(50) DEFAULT 'UTC',
-    preferences_json JSONB,
-    account_status ENUM('active', 'suspended', 'deleted') DEFAULT 'active',
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    
-    INDEX idx_username (username),
-    INDEX idx_account_status (account_status),
-    INDEX idx_created_at (created_at)
-);
-```
+`users` · `refresh_tokens` · `token_blacklist` · `login_audit` ·
+`security_audits` · `age_verifications` · `consent_records` · `privacy_notices`
 
-#### `devices` Table
+### `users_db` — user-service (7)
 
-```sql
-CREATE TABLE devices (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
-    device_name VARCHAR(100) NOT NULL,
-    device_type ENUM('phone', 'tablet', 'desktop', 'tv') NOT NULL,
-    device_os VARCHAR(50),
-    device_model VARCHAR(100),
-    app_version VARCHAR(20),
-    last_active_at TIMESTAMP WITH TIME ZONE,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_user_id (user_id),
-    INDEX idx_device_type (device_type),
-    INDEX idx_last_active_at (last_active_at)
-);
-```
+`user_profiles` · `user_devices` · `user_preferences` ·
+`user_subscription_profiles` · `user_consent_records` · `child_accounts` ·
+`dsar_requests`
 
-#### `user_sessions` Table
+> Note: `child_accounts` and `dsar_requests` have models **and** columns, but
+> the routers that serve them are not mounted — see
+> [`COMPLIANCE_MASTER_PLAN.md`](COMPLIANCE_MASTER_PLAN.md). A row in either
+> table is currently unreachable over HTTP.
 
-```sql
-CREATE TABLE user_sessions (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
-    device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-    access_token_hash VARCHAR(255) NOT NULL UNIQUE,
-    refresh_token_hash VARCHAR(255) NOT NULL UNIQUE,
-    ip_address VARCHAR(45),
-    user_agent TEXT,
-    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    last_activity_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_user_id (user_id),
-    INDEX idx_device_id (device_id),
-    INDEX idx_expires_at (expires_at),
-    INDEX idx_access_token_hash (access_token_hash)
-);
-```
+### `content_db` — content-service (20)
 
-#### `watch_history` Table
+`content` · `content_series` · `season` · `episode` · `genre` · `content_genre` ·
+`cast_member` · `content_cast` · `content_creator` · `content_rating` ·
+`content_recommendation` · `reviews` · `ad_configs` · `rights_holders` ·
+`territorial_licenses` · `content_audits` · `content_dsar_records` ·
+`content_eu` · `content_india` · `content_transfers`
 
-```sql
-CREATE TABLE watch_history (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
-    content_id VARCHAR(100) NOT NULL,  -- References content_db.movies/shows
-    content_type ENUM('movie', 'show', 'episode') NOT NULL,
-    progress_percentage FLOAT DEFAULT 0,
-    watched_duration_seconds INT,
-    total_duration_seconds INT,
-    watched_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    
-    INDEX idx_user_id (user_id),
-    INDEX idx_content_id (content_id),
-    INDEX idx_watched_at (watched_at),
-    UNIQUE (user_id, content_id)  -- One record per user+content
-);
-```
+There is no `movies`/`shows`/`seasons`/`episodes` split — a film and a series
+episode are both rows in `content`, distinguished by `content_type`, and a
+series is a row in `content_series`.
 
-#### `user_preferences` Table
+### `streaming_db` — streaming-service (10)
 
-```sql
-CREATE TABLE user_preferences (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL UNIQUE REFERENCES user_profiles(id) ON DELETE CASCADE,
-    language VARCHAR(5) DEFAULT 'en',
-    subtitle_enabled BOOLEAN DEFAULT TRUE,
-    subtitle_language VARCHAR(5) DEFAULT 'en',
-    autoplay_next BOOLEAN DEFAULT TRUE,
-    quality_preference ENUM('auto', '480p', '720p', '1080p', '4k') DEFAULT 'auto',
-    notification_enabled BOOLEAN DEFAULT TRUE,
-    email_notifications BOOLEAN DEFAULT TRUE,
-    push_notifications BOOLEAN DEFAULT TRUE,
-    marketing_emails BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_user_id (user_id)
-);
-```
+`playback_session` · `video_manifest` · `streaming_quality_profile` ·
+`streaming_statistics` · `cdn_region` · `transcoding_job` ·
+`download_session` · `content_maturity` · `drm_configs` ·
+`accessibility_configs`
 
-**Relationships**:
-- `devices.user_id` → `user_profiles.id`
-- `user_sessions.user_id` → `user_profiles.id`
-- `user_sessions.device_id` → `devices.id`
-- `watch_history.user_id` → `user_profiles.id`
-- `user_preferences.user_id` → `user_profiles.id`
+> There is no `playback_sessions`/`video_segments`/`streaming_quality_metrics`
+> split, and no row-per-segment table: video variants live as JSON on
+> `video_manifest.variants`.
 
----
+### `search_db` — search-service (2)
 
-### 3. Content Database (`content_db`)
+`search_indexes` · `search_queries`
 
-Purpose: Movie and show catalog
+`search_indexes` is a **projection cache**, not the search engine. It has no
+`tsvector` and no GIN index — search is Elasticsearch, and this table exists so
+the service can answer "what did we index?" and rebuild.
 
-#### `genres` Table
+### `recommendation_db` — recommendation-service (2)
 
-```sql
-CREATE TABLE genres (
-    id UUID PRIMARY KEY,
-    name VARCHAR(50) NOT NULL UNIQUE,
-    description TEXT,
-    slug VARCHAR(50) NOT NULL UNIQUE,
-    icon_url VARCHAR(500),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_name (name),
-    INDEX idx_slug (slug)
-);
-```
+`recommendations` · `user_preferences`
 
-#### `movies` Table
+### `billing_db` — billing-service (14)
 
-```sql
-CREATE TABLE movies (
-    id UUID PRIMARY KEY,
-    title VARCHAR(255) NOT NULL,
-    slug VARCHAR(255) NOT NULL UNIQUE,
-    description TEXT,
-    release_date DATE,
-    duration_minutes INT,
-    rating DECIMAL(3, 1),
-    rating_count INT DEFAULT 0,
-    director VARCHAR(100),
-    cast TEXT,
-    language VARCHAR(5),
-    countries TEXT,
-    genres_json JSONB,
-    poster_url VARCHAR(500),
-    backdrop_url VARCHAR(500),
-    trailer_url VARCHAR(500),
-    content_rating ENUM('G', 'PG', 'PG-13', 'R', 'NC-17') DEFAULT 'PG-13',
-    is_featured BOOLEAN DEFAULT FALSE,
-    is_available BOOLEAN DEFAULT TRUE,
-    availability_regions TEXT,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_title (title),
-    INDEX idx_slug (slug),
-    INDEX idx_rating (rating),
-    INDEX idx_is_featured (is_featured),
-    INDEX idx_release_date (release_date)
-);
-```
+`subscriptions` · `subscription_tiers` · `purchases` · `invoices` · `refunds` ·
+`stripe_webhook_events` · `billing_audits` · `commerce_records` ·
+`region_floors` · `creator_pool_entries` · `creator_pool_distributions` ·
+`milestones` · `milestone_tranches` · `payout_ledger`
 
-#### `shows` Table
+Money is stored as `numeric`, not minor units: `subscriptions.monthly_price`,
+`invoices.amount`, `purchases.price`, `refunds.amount`. The unique index on
+`invoices` is on `stripe_invoice_id`, not an internal invoice number. There is
+no `payments` table — a purchase is a row in `purchases`.
 
-```sql
-CREATE TABLE shows (
-    id UUID PRIMARY KEY,
-    title VARCHAR(255) NOT NULL,
-    slug VARCHAR(255) NOT NULL UNIQUE,
-    description TEXT,
-    first_aired DATE,
-    last_aired DATE,
-    season_count INT DEFAULT 0,
-    episode_count INT DEFAULT 0,
-    rating DECIMAL(3, 1),
-    rating_count INT DEFAULT 0,
-    creator VARCHAR(100),
-    cast TEXT,
-    language VARCHAR(5),
-    countries TEXT,
-    genres_json JSONB,
-    poster_url VARCHAR(500),
-    backdrop_url VARCHAR(500),
-    content_rating ENUM('G', 'PG', 'PG-13', 'R', 'NC-17') DEFAULT 'PG-13',
-    is_featured BOOLEAN DEFAULT FALSE,
-    is_available BOOLEAN DEFAULT TRUE,
-    availability_regions TEXT,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_title (title),
-    INDEX idx_slug (slug),
-    INDEX idx_rating (rating),
-    INDEX idx_is_featured (is_featured)
-);
-```
+> `payout_ledger` is declared on more than one declarative `Base` in this
+> service with disjoint columns, which is why the reconcile pass can merge them
+> into NOT NULL columns the primary INSERT does not supply. That is a code
+> defect, tracked separately; it is noted here because it is the one place this
+> inventory is not a clean read of the database.
 
-#### `seasons` Table
+### `analytics_db` — analytics-service (6)
 
-```sql
-CREATE TABLE seasons (
-    id UUID PRIMARY KEY,
-    show_id UUID NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
-    season_number INT NOT NULL,
-    title VARCHAR(255),
-    description TEXT,
-    episode_count INT DEFAULT 0,
-    air_date DATE,
-    poster_url VARCHAR(500),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_show_id (show_id),
-    INDEX idx_season_number (season_number),
-    UNIQUE (show_id, season_number)
-);
-```
+`events` · `content_view_events` · `content_performance_metrics` ·
+`creator_analytics_snapshots` · `tracking_consents` · `analytics_dsar_exports`
 
-#### `episodes` Table
+### `notification_db` — notification-service (2)
 
-```sql
-CREATE TABLE episodes (
-    id UUID PRIMARY KEY,
-    show_id UUID NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
-    season_id UUID NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
-    season_number INT NOT NULL,
-    episode_number INT NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    duration_minutes INT,
-    air_date DATE,
-    rating DECIMAL(3, 1),
-    rating_count INT DEFAULT 0,
-    thumbnail_url VARCHAR(500),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_show_id (show_id),
-    INDEX idx_season_id (season_id),
-    INDEX idx_air_date (air_date),
-    UNIQUE (show_id, season_number, episode_number)
-);
-```
+`notifications` · `notification_preferences`
 
-**Relationships**:
-- `movies.genres_json` and `shows.genres_json` reference `genres` by ID (JSONB array)
-- `seasons.show_id` → `shows.id`
-- `episodes.show_id` → `shows.id`
-- `episodes.season_id` → `seasons.id`
+### `media_db` — media-pipeline (6)
 
----
+`pipeline_jobs` · `pipeline_stage_logs` · `transcoding_jobs` ·
+`video_manifest` · `streaming_quality_profile` · `outbox_events`
 
-### 4. Streaming Database (`streaming_db`)
+`transcoding_jobs`/`video_manifest`/`streaming_quality_profile` also exist in
+`streaming_db`. They are **different tables in different databases** with
+different columns, not a shared table.
 
-Purpose: Video streaming and playback state
+### `admin_db` — admin-service (10)
 
-#### `playback_sessions` Table
+`admin_audit_logs` · `system_configs` · `system_alerts` ·
+`content_moderations` · `user_moderations` · `legal_documents` · `processors` ·
+`transfer_records` · `eu_compliance` · `india_compliance`
 
-```sql
-CREATE TABLE playback_sessions (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL,  -- References users_db.user_profiles.id
-    content_id VARCHAR(100) NOT NULL,
-    content_type ENUM('movie', 'show', 'episode') NOT NULL,
-    device_id UUID NOT NULL,  -- References users_db.devices.id
-    server_id VARCHAR(50),
-    rtmp_url VARCHAR(500),
-    hls_url VARCHAR(500),
-    bitrate_kbps INT DEFAULT 5000,
-    quality ENUM('480p', '720p', '1080p', '4k') DEFAULT '1080p',
-    started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ended_at TIMESTAMP WITH TIME ZONE,
-    is_active BOOLEAN DEFAULT TRUE,
-    
-    INDEX idx_user_id (user_id),
-    INDEX idx_content_id (content_id),
-    INDEX idx_started_at (started_at)
-);
-```
+### `creators_db` — creators-service (10)
 
-#### `video_segments` Table
+`creator_accounts` · `creator_onboarding` · `creator_commerce` ·
+`creator_payouts` · `creator_pool_balances` · `effective_floors` ·
+`payout_ledger` · `milestones` · `milestone_tranches` · `inbound_events`
 
-```sql
-CREATE TABLE video_segments (
-    id UUID PRIMARY KEY,
-    playback_session_id UUID NOT NULL REFERENCES playback_sessions(id) ON DELETE CASCADE,
-    segment_number INT NOT NULL,
-    segment_url VARCHAR(500) NOT NULL,
-    duration_seconds INT,
-    bandwidth_kbps INT,
-    codec VARCHAR(50),
-    resolution VARCHAR(20),
-    downloaded_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_playback_session_id (playback_session_id),
-    INDEX idx_segment_number (segment_number)
-);
-```
+### `moderation_db` — moderation-service (6)
 
-#### `streaming_quality_metrics` Table
+`content_flags` · `moderation_decisions` · `creator_strikes` ·
+`dmca_takedowns` · `review_moderation` · `outbox_events`
 
-```sql
-CREATE TABLE streaming_quality_metrics (
-    id UUID PRIMARY KEY,
-    playback_session_id UUID NOT NULL REFERENCES playback_sessions(id) ON DELETE CASCADE,
-    average_bitrate_kbps INT,
-    buffering_count INT DEFAULT 0,
-    total_buffering_seconds INT DEFAULT 0,
-    packet_loss_percentage FLOAT DEFAULT 0,
-    latency_ms INT DEFAULT 0,
-    quality_score FLOAT,  -- 0-100, calculated from metrics
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_playback_session_id (playback_session_id)
-);
-```
+### `uploads_db` — uploads-service (3)
 
----
+`upload_sessions` · `upload_chunks` · `outbox_events`
 
-### 5. Search Database (`search_db`)
+`outbox_events` appears in four services' databases (`media_db`, `moderation_db`,
+`uploads_db`, and see below). Each is its own table; the outbox pattern is
+deliberately duplicated per service so no service reads another's database.
 
-Purpose: Full-text search indexes
+### Repeated table names
 
-#### `content_search_index` Table
-
-```sql
-CREATE TABLE content_search_index (
-    id UUID PRIMARY KEY,
-    content_id VARCHAR(100) NOT NULL,
-    content_type ENUM('movie', 'show') NOT NULL,
-    title VARCHAR(255),
-    description TEXT,
-    genres TEXT,
-    cast TEXT,
-    director VARCHAR(100),
-    tsvector tsvector,  -- PostgreSQL full-text search vector
-    indexed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_content_id (content_id),
-    INDEX idx_tsvector (tsvector USING gin)  -- GIN index for FTS
-);
-```
-
----
-
-### 6. Recommendation Database (`recommendation_db`)
-
-Purpose: ML model data and recommendations
-
-#### `user_preferences_ml` Table
-
-```sql
-CREATE TABLE user_preferences_ml (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL UNIQUE,  -- References users_db.user_profiles.id
-    genre_scores JSONB,  -- {"action": 0.8, "drama": 0.5, ...}
-    actor_preferences JSONB,
-    director_preferences JSONB,
-    content_type_preferences JSONB,
-    rating_threshold FLOAT DEFAULT 6.0,
-    recently_watched_content JSONB,  -- Last 50 content IDs
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_user_id (user_id)
-);
-```
-
-#### `recommendations` Table
-
-```sql
-CREATE TABLE recommendations (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES user_preferences_ml(user_id) ON DELETE CASCADE,
-    content_id VARCHAR(100) NOT NULL,
-    content_type ENUM('movie', 'show') NOT NULL,
-    score FLOAT,  -- 0-100 confidence score
-    reason VARCHAR(255),  -- "Based on watched action movies"
-    rank INT,  -- 1, 2, 3, ... (order in recommendations)
-    generated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    viewed_at TIMESTAMP WITH TIME ZONE,
-    
-    INDEX idx_user_id (user_id),
-    INDEX idx_generated_at (generated_at),
-    INDEX idx_rank (rank)
-);
-```
-
----
-
-### 7. Billing Database (`billing_db`)
-
-Purpose: Subscription and payment management
-
-#### `subscriptions` Table
-
-```sql
-CREATE TABLE subscriptions (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL UNIQUE,  -- References users_db.user_profiles.id
-    plan ENUM('free', 'basic', 'premium', 'family') NOT NULL DEFAULT 'free',
-    status ENUM('active', 'cancelled', 'suspended', 'expired') DEFAULT 'active',
-    started_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    renews_at TIMESTAMP WITH TIME ZONE,
-    cancelled_at TIMESTAMP WITH TIME ZONE,
-    cancellation_reason TEXT,
-    stripe_subscription_id VARCHAR(255),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_user_id (user_id),
-    INDEX idx_plan (plan),
-    INDEX idx_status (status),
-    INDEX idx_renews_at (renews_at)
-);
-```
-
-#### `payments` Table
-
-```sql
-CREATE TABLE payments (
-    id UUID PRIMARY KEY,
-    subscription_id UUID NOT NULL REFERENCES subscriptions(id),
-    amount_cents INT NOT NULL,  -- In cents ($10.99 = 1099)
-    currency VARCHAR(3) DEFAULT 'USD',
-    stripe_payment_id VARCHAR(255) NOT NULL UNIQUE,
-    payment_method VARCHAR(50),  -- 'card', 'paypal', 'apple_pay'
-    status ENUM('pending', 'completed', 'failed', 'refunded') DEFAULT 'pending',
-    receipt_url VARCHAR(500),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    processed_at TIMESTAMP WITH TIME ZONE,
-    
-    INDEX idx_subscription_id (subscription_id),
-    INDEX idx_status (status),
-    INDEX idx_created_at (created_at)
-);
-```
-
-#### `invoices` Table
-
-```sql
-CREATE TABLE invoices (
-    id UUID PRIMARY KEY,
-    subscription_id UUID NOT NULL REFERENCES subscriptions(id),
-    invoice_number VARCHAR(50) NOT NULL UNIQUE,
-    amount_cents INT NOT NULL,
-    due_date DATE,
-    pdf_url VARCHAR(500),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_subscription_id (subscription_id),
-    INDEX idx_invoice_number (invoice_number)
-);
-```
+`outbox_events` (media, moderation, uploads), `payout_ledger` (billing,
+creators), `milestones` + `milestone_tranches` (billing, creators),
+`video_manifest` + `streaming_quality_profile` + `transcoding_job(s)`
+(streaming, media). **These are not shared tables.** Each service owns its own
+copy with its own columns; the name collision is a naming convention, not a
+contract. Do not write a query that assumes two of them are the same row.
 
 ---
 
@@ -593,87 +238,103 @@ CREATE TABLE invoices (
 
 ### Cross-Database References
 
-Services reference each other's data via **IDs only** (not foreign keys):
+Services reference each other's rows **by ID only**. There is no cross-database
+foreign key, and there cannot be one — PostgreSQL FKs cannot span databases.
 
 ```
-Example: Watch History
+Example: a content view recorded by analytics
 ┌─────────────────────────────┐
-│  users_db                   │
-│  watch_history              │
-│  ├─ user_id → users.id ✅  │
-│  └─ content_id → "mov_123"  │
-│      (references content_db │
-│       without FK constraint) │
-└─────────────────────────────┘
-         ↓
-┌─────────────────────────────┐
-│  content_db                 │
-│  movies                     │
-│  └─ id = "mov_123" ✅      │
+│  analytics_db               │
+│  content_view_events        │
+│  ├─ viewer_id  → auth_db    │
+│  │                users.id  │
+│  │                (no FK)    │
+│  └─ content_id  → content_db│
+│                 content.id  │
+│                 (no FK)     │
 └─────────────────────────────┘
 ```
 
 **Why not foreign keys?**
-- Improves scalability
-- Allows services to scale independently
-- Avoids cross-database constraints
-- Maintains data consistency via application logic
+
+- A FK cannot span databases in PostgreSQL at all.
+- It would couple service lifecycles and deployment order.
+- Consistency is maintained by application logic and by Kafka events instead,
+  which is also what makes a service independently deployable.
+
+The cost is real and worth stating: **a dangling ID is possible**, and nothing
+in the database will tell you. Referential integrity across services is a
+runtime and observability concern, not a constraint.
 
 ---
 
 ## Data Flow Between Services
 
-### Typical Request Flow
+### Synchronous request flow
+
+Auth is checked at the destination service, not only at the gateway — the
+gateway is a transparent proxy.
 
 ```
-1. User Registration
-   ├─ auth-service: INSERT into users_auth ✓
-   └─ user-service: INSERT into user_profiles (async event)
+1. Registration
+   POST /api/v1/auth/register  → auth-service
+   ├─ INSERT auth_db.users, refresh_tokens
+   └─ publish user.registered
 
-2. Watch Movie
-   ├─ auth-service: Validate token ✓
-   ├─ streaming-service: Create playback_session ✓
-   ├─ user-service: UPDATE watch_history (async) ✓
-   └─ recommendation-service: Update user preferences (async)
+2. Start playback
+   POST /api/v1/playback-sessions → streaming-service
+   ├─ verify JWT (RS256, aud=wildframe-api)
+   ├─ INSERT streaming_db.playback_session
+   └─ INSERT content_db row? no — read content_db? no: content-service answers
 
-3. Get Recommendations
-   ├─ auth-service: Validate token ✓
-   ├─ recommendation-service: Query recommendations table ✓
-   └─ content-service: Enrich with movie details ✓
+3. Recommendations
+   GET /api/v1/recommendations → recommendation-service
+   └─ SELECT recommendation_db.recommendations
+      then content-service enriches each id
 ```
 
-### Event-Driven Updates
+### Event-driven updates
 
-Services communicate via **Kafka events**, not direct database connections:
+Services never read each other's database. Coordination happens on Kafka. The
+topic list and the per-service produce/consume ACL are both defined in
+`packages/sdk/wildframe_events/topics.py` — `_SERVICE_ACL` is the source of
+truth for who may publish and who may subscribe, and
+`scripts/kafka_init.py` creates topics and ACLs from it.
 
 ```
-User watches movie:
-    ┌──────────────────┐
-    │ streaming-service│
-    │ (publishes event)│
-    └────────┬─────────┘
-             │ 
-        KAFKA TOPIC
-     "video.watched"
-             │
-    ┌────────▼──────────┐
-    │ user-service      │
-    │ (subscribes)      │
-    ├──────────────────┐│
-    │ Updates:         ││
-    │ • watch_history  ││
-    │ • last_watched   ││
-    └──────────────────┘│
-                        │
-    ┌────────▼──────────┐
-    │ analytics-service │
-    │ (subscribes)      │
-    ├──────────────────┐│
-    │ Logs:            ││
-    │ • viewing_time   ││
-    │ • completion %   ││
-    └──────────────────┘│
+user.registered
+    producer: auth-service
+    consumers: user-service
+                 └─ INSERT users_db.user_profiles
+
+content.uploaded
+    producer: uploads-service
+    consumers: media-pipeline, content-service
+                 media-pipeline: INSERT media_db.pipeline_jobs, then emits
+                   content.scanned → content.metadata_extracted →
+                   content.encoded → content.packaged
+                 content-service: records the upload on the content row
 ```
+
+Full topic names, in `topics.py`: `user.registered`, `user.moderated`,
+`content.uploaded`, `content.uploaded.aborted`, `content.scanned`,
+`content.metadata_extracted`, `content.encoded`, `content.packaged`,
+`content.pipeline.failed`, `content.published`, `content.unpublished`,
+`content.deleted`, `billing.checkout.session.created`,
+`billing.subscription.created`, `billing.subscription.updated`,
+`billing.subscription.cancelled`, `billing.payout.accrued`,
+`billing.payout.transferred`, `creator.onboarded`, `creator.floor.adjusted`,
+`creator.milestone.reached`, `creator.suspended`, `moderation.flagged`,
+`moderation.decision_made`.
+
+**There is no `video.watched` topic.** Watch events are recorded by
+`analytics-service` in `content_view_events`; if a flow you are tracing appears
+to need one, that is a design question, not a lookup.
+
+> **Event handlers must be idempotent.** Delivery is at-least-once, so the same
+> message can arrive twice. Services that publish from a transactional outbox
+> (`outbox_events` in `media_db`, `moderation_db`, `uploads_db`) are the ones
+> that can replay.
 
 ---
 
@@ -718,71 +379,103 @@ Transaction Logs (Continuous)
 
 ## Migration Strategy
 
-### Adding a New Table
+> **There is no migration framework on this path.** No Alembic for schema
+> creation. This section describes the actual procedure.
 
-```sql
--- 1. Create table with new columns
-ALTER TABLE movies ADD COLUMN popularity_score FLOAT;
+### Adding a column
 
--- 2. Backfill existing data
-UPDATE movies SET popularity_score = 0.5 WHERE popularity_score IS NULL;
+1. **Change the model.** Add the column to the SQLAlchemy class in
+   `services/<svc>/app/models/`.
+2. **Run the bootstrap** from the repo root:
+   ```bash
+   python scripts/init_schemas.py
+   ```
+   It calls `create_all` (which creates new *tables*) and then reconciles
+   columns: any column the model declares and the table lacks is added, and
+   each one is printed as `added column <table>.<column>`.
+3. **On a populated table an undeclared add is refused**, because the pass
+   cannot distinguish drift from a column a human deliberately dropped. Once
+   you have confirmed the table is stale rather than the column being
+   deliberately absent:
+   ```bash
+   python scripts/init_schemas.py --allow-add <table>.<column>
+   ```
+   The flag is deliberately not a committed allowlist — a drop belongs to a
+   database, not to the repo.
+4. **If the bootstrap exits 1 on a `NotNullViolationError`**, a `nullable=False`
+   column has no server default and existing rows violate it. That needs a human
+   `ALTER TABLE` (or a server default) — the reconcile pass will not invent
+   data.
+5. **Verify against the running stack**, not against the model:
+   ```bash
+   docker compose -f deployments/docker-compose.dev.yml exec postgres \
+     psql -U wildframe -d <db_name> -c "\d <table>"
+   ```
+6. **On a fresh volume** confirm the whole path: `docker compose ... down -v`
+   then `up -d` then `init_schemas.py`. A schema that only works on a populated
+   database is not verified.
 
--- 3. Add NOT NULL constraint
-ALTER TABLE movies ALTER COLUMN popularity_score SET NOT NULL;
+### Adding a table
 
--- 4. Create indexes if needed
-CREATE INDEX idx_popularity ON movies(popularity_score);
-```
+Same, minus the reconcile: `create_all` creates tables that do not exist.
+Nothing needs to change in `infrastructure/database/init-databases.sql` —
+that file creates *databases*, not tables, and contains zero `CREATE TABLE`.
 
-### Backward Compatibility
+### Backward compatibility
 
-- New columns must have defaults
-- Old code must ignore new columns
-- Careful with NOT NULL constraints
-- Deploy code changes before schema changes
+- New columns need defaults, or a backfill, before a `NOT NULL`.
+- Deploy the code that tolerates the new column before adding it.
+- Old code must ignore unknown columns — which it does, since SQLAlchemy
+  selects by name.
 
 ---
 
 ## Performance Considerations
 
+> Carried over verbatim from the previous revision. **Not re-verified** — see
+> the note at the foot of this file. The example queries reference
+> `movies` and `watch_history`, which **are not real tables**; read them as
+> query-shape illustrations, not as queries to run.
+
 ### Query Optimization
 
 ```sql
--- ❌ Slow: No index
-SELECT * FROM movies WHERE title = 'Inception';
+-- ❌ Slow: no supporting index
+SELECT * FROM content WHERE title = 'Inception';
 
--- ✅ Fast: Uses index
-SELECT * FROM movies WHERE title = 'Inception' AND is_available = TRUE;
+-- ✅ Fast: uses the (slug, title) index
+SELECT * FROM content WHERE slug = 'inception';
 
--- ❌ Slow: Full table scan
-SELECT * FROM watch_history WHERE watched_at > NOW() - INTERVAL '30 days';
+-- ❌ Slow: full table scan
+SELECT * FROM content_view_events WHERE started_at > NOW() - INTERVAL '30 days';
 
--- ✅ Fast: Uses index
-SELECT * FROM watch_history 
-WHERE user_id = '...' AND watched_at > NOW() - INTERVAL '30 days';
+-- ✅ Fast: uses the (viewer_id, started_at) index
+SELECT * FROM content_view_events
+WHERE viewer_id = '...' AND started_at > NOW() - INTERVAL '30 days';
 ```
 
 ### Caching Strategy
 
 ```
-Database Tier
-    ↓ (caches results for 1 hour)
-Redis Tier
-    ↓ (cold miss)
 Application Tier
-    ↓ (queries)
+    ↓ (cache-aside, Redis, TTL in minutes)
+Redis
+    ↓ (miss)
 PostgreSQL
 ```
 
+Redis is used for rate limiting, caching and event deduplication. It is
+**not** a source of truth: every key here must be reconstructible from
+PostgreSQL.
+
 ### Connection Pooling
 
-```
-Each Service
-├─ PgBouncer (connection pool)
-│  └─ 20 connections to PostgreSQL
-├─ Timeout: 10 minutes idle
-└─ Max clients: 1000
-```
+Each service opens an async SQLAlchemy engine against its own database. Pool
+size and timeout come from that service's `DATABASE_URL` and
+`app/core/database.py` — read them there rather than assuming a value. The dev
+stack runs a single `postgres` container with no PgBouncer in front of it, so
+the "20 connections / 1000 max clients" figures in earlier revisions described
+a production topology that is **not** what this repo deploys.
 
 ---
 
@@ -790,35 +483,53 @@ Each Service
 
 ### Key Metrics
 
-```
-Per Service Database:
-├─ Connection count (alert if > 90% max)
-├─ Query performance (p99 latency)
-├─ Disk usage (alert if > 80%)
-├─ Replication lag (alert if > 1 second)
-└─ Failed transactions (alert if > 0)
+Scrape targets are defined in `deployments/docker-compose.dev.yml` and pinned by
+`tests/contract/test_prometheus_scrape_targets.py` and
+`tests/contract/test_metrics_scrape_credentials.py`. Grafana dashboards and the
+alerting rules are provisioned under `infrastructure/monitoring/`.
+
+The alert thresholds listed in earlier revisions (connection count > 90%,
+disk > 80%, replication lag > 1s) are **not** in the repo as alert rules.
+Treat them as suggestions.
+
+### Slow-query logging
+
+```sql
+-- Session or role level; not set by this repo's compose file
+ALTER SYSTEM SET log_min_duration_statement = 1000;  -- 1 second, in ms
+SELECT pg_reload_conf();
 ```
 
-### Query Logs
-
-```
-Enable slow query logging:
-log_min_duration_statement = 1000  -- 1 second in ms
-
-Files monitored by Loki (log aggregation):
-/var/log/postgresql/postgresql.log
-```
+PostgreSQL logs are shipped to Loki. See [`MONITORING.md`](MONITORING.md) for
+the collector configuration.
 
 ---
 
 ## Resources
 
 - [PostgreSQL Docs](https://www.postgresql.org/docs/)
-- [Database Design Guide](../docs/DATABASE_DESIGN.md)
-- [API Documentation](../docs/API_DOCUMENTATION.md)
-- [Backup Procedures](../docs/OPERATIONS_GUIDE.md#backups)
+- [`init_schemas.py`](../scripts/init_schemas.py) — the bootstrap that creates these tables
+- [Schema bootstrap runner](../scripts/schema_bootstrap.py) — `create_all` + column reconcile
+- [`init-databases.sql`](../infrastructure/database/init-databases.sql) — database/role creation
+- [API Documentation](API_DOCUMENTATION.md)
+- [Backup Procedures](OPERATIONS.md)
+- [Compliance endpoint reachability](COMPLIANCE_MASTER_PLAN.md) — which of these tables are reachable over HTTP
+
+
+- [PostgreSQL Docs](https://www.postgresql.org/docs/)
+- [Database Design Guide](ARCHITECTURE.md#database-schema)
+- [API Documentation](API_DOCUMENTATION.md)
+- [Backup Procedures](OPERATIONS.md#backup-strategy)
 
 ---
 
-**Last Verified**: May 27, 2026  
-**Next Review**: June 27, 2026
+**Last verified**: 2026-10-14 — table inventory regenerated from the
+SQLAlchemy models; database list from `infrastructure/database/init-databases.sql`;
+service→database mapping from `scripts/init_schemas.py`.
+
+**Not verified in this pass:** the Backup Strategy, Performance Considerations
+and Monitoring & Alerts sections below are unchanged design guidance carried
+over from the previous revision. They were not checked against a running
+database or a backup job, and no backup tooling was found wired into the dev
+stack. Treat them as proposals until someone confirms them against the
+production runbook in [`OPERATIONS.md`](OPERATIONS.md).

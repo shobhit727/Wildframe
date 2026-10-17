@@ -84,17 +84,20 @@ def get_event_subscriber() -> EventSubscriber:
                 )
             except Exception:
                 logger.exception("failed to build Redis dedup store; dedup disabled")
+            bootstrap_servers = settings.KAFKA_BOOTSTRAP_SERVERS
+            if not bootstrap_servers:
+                raise RuntimeError("KAFKA_BOOTSTRAP_SERVERS is not configured")
             _subscriber = KafkaEventSubscriber(
-                bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                bootstrap_servers=bootstrap_servers,
                 group_id="search-service",
                 client_id="search-service",
                 dedup_store=dedup_store,
                 dlq_publisher=KafkaEventPublisher(
-                    bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                    bootstrap_servers=bootstrap_servers,
                     client_id="search-service-dlq",
                 ),
             )
-            logger.info("event subscriber: kafka (%s)", settings.KAFKA_BOOTSTRAP_SERVERS)
+            logger.info("event subscriber: kafka (%s)", bootstrap_servers)
         else:
             _subscriber = InMemoryEventSubscriber()
             logger.info("event subscriber: in-memory")

@@ -124,8 +124,13 @@ class AuthService:
                 detail="Invalid email or password",
             )
 
-        # Check if user is locked
-        if user.locked_until and user.locked_until > datetime.now(UTC):
+        # #848: use User.is_locked rather than re-deriving the comparison here.
+        # The property normalises tzinfo, so it is correct whether the stored
+        # locked_until came back from a TIMESTAMP WITH or WITHOUT TIME ZONE
+        # column. Open-coding `locked_until > datetime.now(UTC)` raised
+        # TypeError (naive vs aware) on the stored value, turning the 429 into a
+        # 500 and skipping the "locked" audit row.
+        if user.is_locked:
             logger.warning(f"Login failed: user locked: {user.email}")
             await self.audit_repo.create(
                 user_id=user.id,
@@ -138,14 +143,23 @@ class AuthService:
                 detail="Account temporarily locked due to too many failed attempts",
             )
 
-        # Moderation enforcement (#admin-suspend): a suspended/banned account
-        # is deactivated by the user.moderated consumer and rejected here.
-        if not user.is_active:
-            logger.warning(f"Login failed: account suspended: {user.email}")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account suspended",
-            )
+        # Moderation enforcement (#admin-suspend): a suspended/banned account is
+        # deactivated by the user.moderated consumer.
+        #
+        # #874: this is enforced upstream, by the `is_active IS TRUE` filter in
+        # UserRepository.get_by_email -- a suspended row is never returned, so
+        # `user` is None above and this login already failed with the generic
+        # 401 "Invalid email or password". There used to be a 403 "Account
+        # suspended" branch here, but it was unreachable: no caller could
+        # observe it, and the only tests that "covered" it mocked the lookup to
+        # hand back a row the real repository can never produce.
+        #
+        # The branch was deleted rather than made reachable on purpose. A 403
+        # is only correct if the caller has already proved they own the account;
+        # on the login endpoint they have proved nothing, so a suspended account
+        # answering 403 while an unknown address answers 401 is an account
+        # enumeration oracle. The 401 is the deliberate choice: it costs a
+        # suspended user a support ticket and keeps the two indistinguishable.
 
         # Verify password
         if not self.password_manager.verify_password(request.password, user.password_hash):
@@ -344,13 +358,11 @@ class AuthService:
                 detail="User not found",
             )
 
-        # Suspended/banned accounts cannot mint new tokens either.
-        if not user.is_active:
-            logger.warning(f"Token refresh failed: account suspended: {user.email}")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account suspended",
-            )
+        # Suspended/banned accounts cannot mint new tokens either -- enforced by the
+        # same `is_active IS TRUE` filter in UserRepository.get_by_id, so a
+        # suspended row is never returned here. This 403 was likewise dead code
+        # (#874); see the note in `login` for why the 401 above is the
+        # deliberate answer rather than a distinct "suspended" response.
 
         token_hash = self.token_manager.hash_refresh_token(refresh_token)
         stored_token = await self.token_repo.consume(token_hash)

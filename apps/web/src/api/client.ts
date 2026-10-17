@@ -5,6 +5,9 @@ import axios, { AxiosInstance } from 'axios';
 import type {
   AuthTokens,
   BackendContent,
+  BackendContentListItem,
+  BackendContentPayload,
+  BackendSearchContentDocument,
   BackendEpisode,
   BackendGenre,
   BackendSeason,
@@ -111,8 +114,54 @@ export function clearTokens(): void {
 
 // ---- Normalization: backend DTOs -> UI types ----
 
-export function normalizeContent(item: BackendContent): Content {
+/**
+ * Map the search-service Elasticsearch document to the content payload
+ * consumed by the UI. Search documents are not BackendContent objects:
+ * genres are strings and rating is the service's canonical score.
+ */
+export function normalizeSearchContentDocument(
+  item: BackendSearchContentDocument
+): BackendContentPayload {
+  const title = String(item.title || '');
+  const genres = (Array.isArray(item.genres) ? item.genres : [])
+    .filter((genre): genre is string => typeof genre === 'string' && genre.length > 0)
+    .map((name) => {
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      return { id: slug, name, slug };
+    });
+
+  const rating = Number(item.rating || 0);
+
+  return {
+    id: String(item.id || ''),
+    title,
+    slug: title.toLowerCase().replace(/\s+/g, '-'),
+    description: String(item.description || ''),
+    content_type: String(item.content_type || 'movie'),
+    status: String(item.status || 'published'),
+    poster_url: null,
+    backdrop_url: null,
+    audience_score: rating,
+    // The search document has no separate audience score: its canonical
+    // `rating` is already on the 0-100 scale, so it is both the score and the
+    // match percentage. Without this the UI's Match label reads undefined.
+    matchPercentage: rating,
+    is_premium: false,
+    genres,
+  };
+}
+
+export function normalizeContent(item: BackendContentPayload): Content {
   const type = item.content_type === 'series' || item.content_type === 'show' ? 'show' : 'movie';
+
+  // The API's audience_score is 0-100; keep the UI's existing rating field at 0-10
+  // for star displays, and expose the original scale separately for Match labels.
+  const audienceScore = Math.min(100, Math.max(0, Number(item.audience_score) || 0));
+  const imdbRating = Math.min(10, Math.max(0, Number(item.imdb_rating) || 0));
+  const hasAudienceScore = audienceScore > 0;
+  const rating = hasAudienceScore ? audienceScore / 10 : imdbRating;
+  const matchPercentage = hasAudienceScore ? audienceScore : imdbRating * 10;
+
   return {
     id: item.id,
     title: item.title,
@@ -123,7 +172,8 @@ export function normalizeContent(item: BackendContent): Content {
     backdrop: item.backdrop_url || item.poster_url || '',
     duration: item.duration_minutes || 0,
     releaseDate: item.release_date || '',
-    rating: item.audience_score || item.imdb_rating || 0,
+    rating,
+    matchPercentage,
     type: type as Content['type'],
     content_type: item.content_type,
     maturityRating: item.content_rating || undefined,
@@ -342,7 +392,9 @@ class APIClient {
     content_type?: string;
     status?: string;
     genre_id?: string;
-  } = {}): Promise<BackendContent[]> {
+  } = {}): Promise<BackendContentListItem[]> {
+    // `response_model=list[ContentListResponse]` on the content-service route --
+    // these declared fields are the whole response, not a guess.
     return this.unwrap(
       this.client.get('/content/api/v1/content', { params: { page: 1, page_size: 50, ...params } })
     );
@@ -353,6 +405,9 @@ class APIClient {
   }
 
   async getContentById(id: string): Promise<BackendContent> {
+    // `response_model=ContentResponse`. Every field `BackendContentPayload`
+    // requires is required here too, so callers can pass this straight to
+    // `normalizeContent` with no cast.
     return this.unwrap(this.client.get(`/content/api/v1/content/${id}`));
   }
 
@@ -366,27 +421,14 @@ class APIClient {
     );
   }
 
-  async searchContent(query: string): Promise<BackendContent[]> {
+  async searchContent(query: string): Promise<BackendContentPayload[]> {
     try {
       const results = await this.unwrap<{ query: string; results: Record<string, unknown>[] }>(
         this.client.get('/search/api/v1/search/query', { params: { q: query, limit: 30 } })
       );
       return results.results
-        .filter((r) => r.title)
-        .map(
-          (r): BackendContent => ({
-            id: String(r.id || r.content_id || ''),
-            title: String(r.title),
-            slug: String(r.slug || r.title || '').toLowerCase().replace(/\s+/g, '-'),
-            description: String(r.description || ''),
-            content_type: String(r.content_type || 'movie'),
-            status: 'published',
-            poster_url: r.poster ? String(r.poster) : null,
-            backdrop_url: r.backdrop ? String(r.backdrop) : null,
-            audience_score: Number(r.audience_score || r.rating || 0),
-            genres: [],
-          })
-        );
+        .filter((r) => r && r.title)
+        .map((r) => normalizeSearchContentDocument(r as unknown as BackendSearchContentDocument));
     } catch {
       const all = await this.getContentList({ page_size: 100 });
       const q = query.toLowerCase();
@@ -396,12 +438,12 @@ class APIClient {
     }
   }
 
-  async getTrending(): Promise<BackendContent[]> {
+  async getTrending(): Promise<BackendContentPayload[]> {
     try {
-      const data = await this.unwrap<{ trending: Record<string, unknown>[]; total: number }>(
+      const data = await this.unwrap<{ trending: BackendSearchContentDocument[]; total: number }>(
         this.client.get('/search/api/v1/search/trending', { params: { limit: 20 } })
       );
-      if (data.trending?.length) return data.trending as unknown as BackendContent[];
+      if (data.trending?.length) return data.trending.map(normalizeSearchContentDocument);
     } catch {
       // ignore - fall back to score-sorted catalog below
     }
@@ -409,7 +451,7 @@ class APIClient {
     return [...all].sort((a, b) => (b.audience_score || 0) - (a.audience_score || 0)).slice(0, 20);
   }
 
-  async getRecommendations(userId: string, limit = 20): Promise<BackendContent[]> {
+  async getRecommendations(userId: string, limit = 20): Promise<BackendContentPayload[]> {
     try {
       const data = await this.unwrap<{
         recommendations: { content_id: string; score: number; reason?: string }[];
@@ -427,7 +469,16 @@ class APIClient {
             }
           })
         );
-        const content = items.filter(Boolean) as BackendContent[];
+        // `filter(Boolean)` does not narrow, which is why this line previously carried
+        // an `as` cast. A type predicate is the honest form: these are per-item
+        // lookups that can individually fail, and null means "skip this one".
+        //
+        // The predicate has to name the array's *element* type (`BackendContent`),
+        // not this method's return type. A predicate's type must be assignable to
+        // its parameter's type, and `BackendContentPayload` leaves `status`
+        // optional while `ContentResponse.status` is required. `BackendContent[]`
+        // still satisfies the declared `Promise<BackendContentPayload[]>` return.
+        const content = items.filter((item): item is BackendContent => item !== null);
         if (content.length) return content;
       }
     } catch {

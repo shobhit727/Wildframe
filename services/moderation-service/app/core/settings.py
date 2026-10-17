@@ -43,12 +43,23 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     ENVIRONMENT: str = "development"
     DATABASE_URL: str | None = None
     JWT_SECRET_KEY: str | None = None
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
+    JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
     JWT_EXPIRATION_MINUTES: int = 15
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
     AUTH_SERVICE_URL: str = "http://auth-service:8000"
+
+    # Redis
     REDIS_URL: str | None = None
+    # content-service is the authority for who owns a piece of content. Strikes
+    # are issued against that resolved identity, never a request-body field.
+    # Set to http://content-service:8003 inside the docker network.
+    CONTENT_SERVICE_URL: str = "http://content-service:8003"
+    CONTENT_SERVICE_TIMEOUT_SECONDS: float = 3.0
+    CONTENT_SERVICE_MAX_CONNECTIONS: int = 10
+
+    # Logging
     LOG_LEVEL: str = "INFO"
     CORS_ALLOWED_ORIGINS: list[str] = [
         "http://localhost:3000",
@@ -72,6 +83,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str | None = None
     OUTBOX_BATCH_SIZE: int = 100
     OUTBOX_POLL_INTERVAL_SECONDS: int = 5
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod
@@ -86,17 +98,23 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     def validate_production_secrets(self) -> "Settings":
         if self.ENVIRONMENT in DEV_ENVIRONMENTS:
             return self
-        if self.DATABASE_URL is None:
+        # Every check below is ``not ...strip()`` rather than ``is None``: a
+        # blank or whitespace-only value passes ``is None`` and then sails on
+        # through the rest of the guard. A 40-space JWT_SECRET_KEY was neither
+        # ``None`` nor in the insecure list nor too short, so production booted
+        # signing tokens with a key made of nothing but spaces. Same policy as
+        # the billing-service guard (#871).
+        if self.DATABASE_URL is None or not self.DATABASE_URL.strip():
             raise ValueError(
                 "DATABASE_URL must be set explicitly when ENVIRONMENT is not development."
             )
         if any(credential in self.DATABASE_URL for credential in KNOWN_INSECURE_DB_CREDENTIALS):
             raise ValueError("DATABASE_URL must not use known default credentials.")
-        if self.REDIS_URL is None:
+        if self.REDIS_URL is None or not self.REDIS_URL.strip():
             raise ValueError(
                 "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
             )
-        if self.JWT_SECRET_KEY is None:
+        if self.JWT_SECRET_KEY is None or not self.JWT_SECRET_KEY.strip():
             raise ValueError(
                 "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
             )
@@ -108,7 +126,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
             )
-        if self.KAFKA_BOOTSTRAP_SERVERS is None:
+        if self.KAFKA_BOOTSTRAP_SERVERS is None or not self.KAFKA_BOOTSTRAP_SERVERS.strip():
             raise ValueError(
                 "KAFKA_BOOTSTRAP_SERVERS must be set explicitly when ENVIRONMENT is not development."
             )

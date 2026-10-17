@@ -14,7 +14,7 @@ Wildframe is a production-grade OTT (Over-The-Top) streaming platform built on a
 
 **Key Stats**:
 - 15 microservices
-- 16 databases (database-per-service pattern)
+- 14 service databases (database-per-service) + 2 generic, in `infrastructure/database/init-databases.sql`
 - 5 infrastructure services (caching, messaging, search)
 - 4 observability services (metrics, logs, tracing, profiling)
 
@@ -52,7 +52,7 @@ Wildframe is a production-grade OTT (Over-The-Top) streaming platform built on a
          │              │             │
     ┌────▼──────────────▼─────────────▼────┐
     │    Shared Infrastructure              │
-    │  ├─ PostgreSQL (16 databases)        │
+    │  ├─ PostgreSQL (14 service + 2 generic) │
     │  ├─ Redis (caching & sessions)       │
     │  ├─ Kafka (event streaming)          │
     │  ├─ Elasticsearch (full-text search) │
@@ -515,9 +515,12 @@ Services communicate via:
 ### Schema Evolution
 
 > ⚠️ Historical note: the services do **not** use Alembic despite the
-> instructions below. There is no migration framework; schema changes are
-> applied by hand to the live dev DB and drift has been repaired manually
-> (e.g. billing `invoices`, Aug 2026). Keep model columns in sync with the
+> instructions below. There is no migration framework. `scripts/init_schemas.py`
+> is the schema authority: it runs `create_all` per service and then
+> reconciles any column the models declare that the live table lacks, so a
+> model that gains a column no longer needs a hand-written `ALTER TABLE`
+> against every existing database (that drift is what broke every
+> content-service listing in #980). Keep model columns in sync with the
 > running stack.
 
 Use Alembic for database migrations:
@@ -564,6 +567,50 @@ enforces auth at its own boundary.
 - Refresh Token: 7 days, HttpOnly cookie, rotated on use
 - `python-jose` library, RS256 signing
 
+### Token Verification — single scheme (JWKS/RS256)
+
+> **Historical.** An earlier revision of this section described a split scheme
+> in which eight services still verified HS256 tokens against the shared
+> `JWT_SECRET_KEY`, and called it an open release blocker tracked as **#941**.
+> **That is no longer true.** The migration completed; do not reintroduce the
+> warning without re-verifying it against the source first.
+
+auth-service signs RS256 and publishes JWKS at `/.well-known/jwks.json`. Every
+service now verifies against that JWKS — there is one scheme, not two. The
+`algorithms` list is a closed set to RS256 in every verifier:
+
+| Location | `algorithms` |
+|---|---|
+| `packages/sdk/wildframe_auth/verifier.py` | `ALLOWED_ALGORITHMS = {"RS256"}` |
+| `services/billing-service/app/core/jwt_verifier.py` | `ALLOWED_ALG = {"RS256"}` |
+| `services/auth-service/app/security/__init__.py` (issuer) | `[settings.JWT_ALGORITHM]`, default `RS256` |
+
+There are exactly three `jwt.decode` call sites outside tests, and all three
+pass a **JWK resolved from the JWKS by `kid`**, never a shared secret. The
+header `alg` is checked against the allowed set before the signature is
+verified, so an `alg: none` or HS256 substitution fails.
+
+`tests/contract/test_no_shared_secret_jwt_verification.py` is the regression
+test that pins this — it shells out and probes every service. **17 tests, all
+passing.**
+
+`JWT_SECRET_KEY` still appears in `deployments/docker-compose.dev.yml`
+(`dev-secret-key`) and is still validated: every service's `settings.py`
+carries a `KNOWN_INSECURE_JWT_SECRETS` denylist containing that literal and
+raises unless `ENVIRONMENT` is a development environment. It is no longer used
+for *verification*, which is why its presence in the compose file is a
+configuration smell rather than the authentication bypass the old section
+claimed.
+
+`admin-service` and `streaming-service` cache JWKS per-URL with single-flight
+fetching and a negative-cache window, so an unknown-`kid` token cannot force
+unbounded egress at auth-service. Any new verifier must use
+`verify_token_with_jwks` rather than hand-wiring `get_cached_jwks` + `verify_token`
+— see **#935**.
+
+The error contract is preserved across the migration: a JWKS fetch failure is
+`503`, a bad token is `401`; see `JWKSUnavailableError` in `wildframe_auth`.
+
 ### Rate Limiting (Gateway)
 - Key: authenticated user `sub` or client IP
 - Limits: auth 5/min, search 100/min, default 1000/min
@@ -575,7 +622,13 @@ Unique identifier tracking a request through all services and logs.
 ### HTTPS/TLS
 - Caddy reverse proxy terminates TLS (self-signed dev certs)
 - Internal service-to-service HTTP on docker network
-- Only host-facing ports are TLS
+- Only host-facing ports are TLS — **with one known exception**: the dev
+  convenience listener `http://:8080` in `infrastructure/caddy/Caddyfile`
+  serves the full API (auth, uploads, admin) in **cleartext on every network
+  interface**, not just loopback. HSTS is ignored over plain HTTP, so anything
+  on the same LAN can intercept tokens. It is commented "dev only" but is bound
+  more widely than that comment implies — tracked as **#975**. It must not
+  survive into any shared or production topology.
 
 ---
 
@@ -586,51 +639,69 @@ Unique identifier tracking a request through all services and logs.
 | Layer | Tool | Where |
 |---|---|---|
 | Backend unit/route | pytest + pytest-asyncio | `services/*/tests/` |
+| Shared SDK | pytest | `packages/sdk/tests/` and each package's `tests/` |
 | HTTP client | httpx (ASGITransport) | In-process app testing |
 | Mocking | unittest.mock, pytest-mock | Stub external dependencies |
-| Coverage | pytest-cov | Line + branch coverage |
-| Frontend unit | Vitest | `apps/web/tests/` |
-| Frontend component | Vitest + Testing Library | `apps/web/tests/components/` |
+| Coverage | pytest-cov | Line + branch coverage, 85% CI floor (`COVERAGE_FLOOR`) |
+| Frontend unit | Vitest | `apps/web/src/**/__tests__/` (colocated) |
+| Frontend component | Vitest + Testing Library | `apps/web/src/components/**/__tests__/` |
 | Frontend E2E | Playwright | `apps/web/e2e/` |
 | Integration | pytest + httpx | `tests/integration/` |
 | Contract | pytest + static analysis | `tests/contract/` |
 
-### CI Pipeline (54 jobs)
+### CI Pipeline
+
+`.github/workflows/ci-cd.yml` defines **17 jobs** (several fan out over a
+service matrix). There is **no integration job** — `tests/integration/` never
+runs in CI:
 
 ```yaml
+# Repo hygiene
+- lockfile-integrity
+
 # Backend
-- Lint (ruff, black, mypy)
-- Unit tests per service (15 services + SDK)
-- Integration tests (87 tests, ~12 min)
-- Contract tests (16 route drift tests)
-- Docker build smoke (15 services + frontend)
+- supply-chain-guard
+- backend-lint  (ruff, black, mypy per service)
+- helm-lint     (+ staging/production value rendering + chart policy tests)
+- backend-test       (15 services + SDK, 85% coverage floor)
+- backend-sdk-test
+- backend-route-contract  (tests/contract, 84 tests)
+- compose-smoke
 
 # Frontend
-- Lint (ESLint, Prettier)
-- Type-check (TypeScript)
-- Unit tests (Vitest)
-- E2E tests (Playwright: auth, content, subscription)
+- frontend-ci    (lint, type-check, vitest, production build)
+- frontend-e2e   (Playwright, 122 tests, blocking)
 
 # Infrastructure
-- Helm lint
-- Docker build & push (16 images)
-- Security scan (Trivy)
+- docker-build-smoke / docker-build-frontend-smoke  (15 services + frontend)
+- security-scan  (Trivy, Semgrep, CodeQL)
 
-# Deploy (skipped - requires AWS creds)
-- Staging
-- Production
+# Deploy
+- build-images / build-frontend
+- Deploy to staging / production (requires AWS OIDC + environment secrets)
 ```
+
+Per-service coverage currently sits at 97–99%.
 
 ### Running Tests Locally
 
 ```bash
-# Backend unit tests (per service)
+# Backend unit tests (per service — a combined `pytest services/` sweep from
+# the repo root breaks on shadowed `app.*` imports)
 for svc in services/*/; do
   (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
 done
 
 # Single service
 cd services/auth-service && pytest tests --asyncio-mode=auto
+
+# Shared SDK
+PYTHONPATH="$PWD/packages/sdk" python -m pytest -c pyproject.toml \
+  packages/sdk/tests/ \
+  packages/sdk/wildframe_compliance/tests/ \
+  packages/sdk/wildframe_events/tests/ \
+  packages/sdk/wildframe_observability/tests/ \
+  --asyncio-mode=auto
 
 # Integration tests (needs compose stack)
 poetry run pytest tests/integration -q
@@ -640,8 +711,8 @@ pytest tests/contract -q
 
 # Frontend
 cd apps/web
-npm run test              # vitest
-npm run test:e2e          # playwright test
+npm run test              # vitest — 866 tests across 46 files
+npx playwright test       # 122 tests across 10 files
 ```
 
 ### Test Structure
@@ -657,20 +728,21 @@ services/<service>/
 
 # Frontend
 apps/web/
-├── tests/
-│   ├── unit/
-│   └── components/
-└── e2e/
+├── src/__tests__/         # vitest suites (colocated by area)
+└── e2e/                   # Playwright, 10 spec files
     ├── auth.spec.ts
-    ├── content.spec.ts
-    └── subscription.spec.ts
+    ├── admin.spec.ts
+    └── content-contract.spec.ts
 
 # Repo root
 tests/
-├── integration/           # 87 live-stack tests
-└── contract/
+├── integration/           # 110 live-stack tests across 8 modules
+└── contract/              # 84 tests across 12 files
     └── test_route_drift.py
 ```
+
+> Frontend vitest suites live under `apps/web/src/**/__tests__/`, **not**
+> `apps/web/tests/` — that directory does not exist.
 
 ---
 
@@ -710,6 +782,11 @@ with that audience (`settings.JWT_AUDIENCE`) or python-jose raises
 it rate-limits proxied requests (keyed by user `sub` or IP) but does not
 reject them itself; each backend service enforces auth at its own boundary.
 
+A correct audience check is necessary but not sufficient on its own — the key
+material must also be the RS256 public key from the JWKS, not a shared secret.
+That is now the case everywhere; see
+[Token Verification](#token-verification--single-scheme-jwksrs256).
+
 ### Rate Limiting
 Sliding window algorithm preventing abuse (enforced in the gateway's
 `proxy_request`):
@@ -724,18 +801,28 @@ Unique identifier tracking a request through all services and all logs, enabling
 
 ## CI/CD Pipeline
 
-The CI pipeline (GitHub Actions) runs **54 jobs** on every push to main:
+The CI pipeline (GitHub Actions) defines **17 jobs** and runs on every push and
+every pull request:
 
-| Stage | Jobs | Tools |
-|---|---|---|
-| Lint | 1 (Backend) + 1 (Frontend) | ruff, black, mypy, ESLint, Prettier |
-| Unit Tests | 16 (15 services + SDK) | pytest, Vitest |
-| Integration | 1 | pytest + httpx |
-| Contract | 1 | pytest |
-| Frontend E2E | 1 | Playwright |
-| Build | 17 (16 services + frontend) | Docker |
-| Security | 1 | Trivy |
-| Helm | 1 | helm lint |
+| Job | Tools |
+|---|---|
+| `lockfile-integrity` | declared dependency floors vs. the lockfiles |
+| `supply-chain-guard` | pinned actions + scanner suppressions |
+| `backend-lint` | ruff, black, mypy |
+| `helm-lint` | helm lint/template + chart policy tests |
+| `backend-test` | pytest + pytest-cov, 15-service matrix, 85% floor |
+| `backend-sdk-test` | pytest over `packages/sdk` |
+| `backend-route-contract` | `pytest tests/contract -q` |
+| `compose-smoke` | the dev stack, real health probes |
+| `frontend-ci` | ESLint, tsc, vitest, production build |
+| `frontend-e2e` | Playwright — **blocking** |
+| `docker-build-smoke`, `docker-build-frontend-smoke` | Docker |
+| `security-scan` | Trivy, Semgrep, CodeQL |
+| `build-images`, `build-frontend` | push to GHCR |
+| `deploy-staging`, `deploy-production` | EKS, gated on the above |
+
+There is **no `Integration` job.** `tests/integration/` runs only when you run
+it explicitly against a live stack.
 | Deploy | 2 | skipped (no AWS creds) |
 
 **Total time**: ~15-20 minutes
@@ -775,7 +862,7 @@ The CI pipeline (GitHub Actions) runs **54 jobs** on every push to main:
 | `apps/web/playwright.config.ts` | E2E test config |
 | `tests/contract/test_route_drift.py` | Frontend-backend route contract |
 | `tests/integration/conftest.py` | Integration test fixtures |
-| `scripts/init_schemas.py` | Create all tables |
+| `scripts/init_schemas.py` | Create all tables + reconcile missing columns |
 | `scripts/seed_demo.py` | Demo data |
 
 ---

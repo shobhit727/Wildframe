@@ -22,7 +22,6 @@ from conftest import (
     auth_headers,
     fetch_content_id,
     ip_keyed,
-    mint_access_token,
     register_user,
 )
 
@@ -288,7 +287,10 @@ class TestCreatorsAdminAuthorization:
     def test_admin_milestone_accepted_for_admin_role_token(
         self, client: httpx.Client, creator_id: str
     ) -> None:
-        admin_token = mint_access_token(uuidlib.uuid4(), role="admin")
+        # The dev compose designates demo@wildframe.com as an admin email, so
+        # registering it yields a genuine auth-service-signed RS256 admin token.
+        admin_user = register_user(client, email="demo@wildframe.com")
+        admin_token = admin_user["access_token"]
         response = client.post(
             f"{CREATORS_SERVICE}/admin/creators/{creator_id}/milestones",
             headers=auth_headers(admin_token),

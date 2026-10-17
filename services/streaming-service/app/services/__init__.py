@@ -36,6 +36,24 @@ from app.schemas import (
 logger = logging.getLogger(__name__)
 
 
+def _signed_url_message(session_id: UUID, episode_id: UUID, expires_unix: int) -> bytes:
+    """Build the canonical signed-URL HMAC message.
+
+    Signing (``generate_signed_url``) and verification (``verify_signed_url``)
+    used to construct this message independently. Two copies of one contract is
+    how a field ends up in one and not the other, and nothing noticed: every
+    test re-implemented the message a third time, so the two functions had never
+    met. Both now go through this constructor.
+    """
+    return f"{session_id}|{episode_id}|{expires_unix}".encode()
+
+
+def _sign(message: bytes) -> str:
+    """Sign a canonical signed-URL message with the configured secret."""
+    secret = settings.PLAYBACK_URL_SIGNING_SECRET.encode()
+    return hmac.new(secret, message, hashlib.sha256).hexdigest()
+
+
 class StreamingService:
     """Service for video streaming operations."""
 
@@ -148,15 +166,15 @@ class StreamingService:
     ) -> tuple[str, datetime]:
         """Generate HMAC-signed playback URL.
 
-        Signature = HMAC(secret, session_id|episode_id|expiry)
+        Signature = HMAC(secret, session_id|episode_id|expiry), via
+        ``_signed_url_message`` — the same constructor ``verify_signed_url``
+        uses.
         """
         ttl = request.ttl_seconds or settings.PLAYBACK_URL_TTL_SECONDS
         expires_at = datetime.now(UTC) + timedelta(seconds=ttl)
         expires_unix = int(expires_at.timestamp())
 
-        message = f"{request.session_id}|{episode_id}|{expires_unix}".encode()
-        secret = settings.PLAYBACK_URL_SIGNING_SECRET.encode()
-        signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
+        signature = _sign(_signed_url_message(request.session_id, episode_id, expires_unix))
 
         # Build signed URL with query params
         signed_url = (
@@ -168,23 +186,26 @@ class StreamingService:
         return signed_url, expires_at
 
     def verify_signed_url(
-        self, session_id: UUID, content_id: UUID, signature: str, expires: int
+        self, session_id: UUID, episode_id: UUID, signature: str, expires: int
     ) -> bool:
         """Verify HMAC-signed playback URL.
 
         Checks:
-        1. Signature matches HMAC(secret, session_id|content_id|expiry)
+        1. Signature matches HMAC(secret, session_id|episode_id|expiry), built by
+           the same ``_signed_url_message`` constructor ``generate_signed_url``
+           signs with, so the two cannot drift apart
         2. Expiry not in the past
-        3. Session exists and is active
+
+        Session status/expiry is enforced separately by
+        check_session_valid_for_playback, which binds the session to the same
+        episode and, when a bearer token is present, to its owner.
         """
         # Check expiry
         if datetime.now(UTC).timestamp() > expires:
             return False
 
         # Verify signature
-        message = f"{session_id}|{content_id}|{expires}".encode()
-        secret = settings.PLAYBACK_URL_SIGNING_SECRET.encode()
-        expected_signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
+        expected_signature = _sign(_signed_url_message(session_id, episode_id, expires))
 
         return hmac.compare_digest(signature, expected_signature)
 

@@ -1,6 +1,6 @@
-import uuid
-
 """Recommendation service models."""
+
+import uuid
 
 from datetime import UTC, datetime
 from uuid import uuid4

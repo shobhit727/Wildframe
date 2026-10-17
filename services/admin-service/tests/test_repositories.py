@@ -15,8 +15,8 @@ def _load_module(name: str, path: pathlib.Path):
     return mod
 
 
-models_path = pathlib.Path(__file__).parents[2] / "app" / "models" / "__init__.py"
-repos_path = pathlib.Path(__file__).parents[2] / "app" / "repositories" / "__init__.py"
+models_path = pathlib.Path(__file__).parents[1] / "app" / "models" / "__init__.py"
+repos_path = pathlib.Path(__file__).parents[1] / "app" / "repositories" / "__init__.py"
 
 _models_mod = _load_module("admin_models", models_path)
 _repos_mod = _load_module("admin_repos", repos_path)
@@ -38,7 +38,7 @@ AdminAuditLogRepository = _repos_mod.AdminAuditLogRepository
 @pytest_asyncio.fixture
 async def db_session(tmp_path):
     """Create a fresh async SQLite DB per test file."""
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path/'test.db'}", echo=False)
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

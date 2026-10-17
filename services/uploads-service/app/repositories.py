@@ -58,7 +58,7 @@ class UploadChunkRepository:
         return list(result.scalars().all())
 
     async def save(self, session: UploadSession) -> UploadSession:
-        session.updated_at = datetime.now(UTC)  # type: ignore[assignment]
+        session.updated_at = datetime.now(UTC)
         await self.session.flush()
         return session
 
@@ -104,8 +104,8 @@ class UploadChunkRepository:
     async def mark_dispatched(self, event_id: UUID) -> None:
         row = await self.session.get(OutboxEvent, event_id)
         if row is not None:
-            row.status = OutboxEventStatus.DISPATCHED  # type: ignore[assignment]
-            row.dispatched_at = datetime.now(UTC)  # type: ignore[assignment]
+            row.status = OutboxEventStatus.DISPATCHED
+            row.dispatched_at = datetime.now(UTC)
             await self.session.flush()
 
     # -- Reaper --------------------------------------------------------------

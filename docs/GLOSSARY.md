@@ -134,7 +134,7 @@ An architecture where services communicate via events rather than direct API cal
 
 **FastAPI**
 A modern Python web framework for building async APIs with automatic documentation.
-*Used by: All 12 microservices*
+*Used by: all 15 backend services*
 
 **Federation**
 (In future phases) The ability for multiple Wildframe instances to sync and interoperate.

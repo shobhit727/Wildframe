@@ -1,5 +1,22 @@
 # Web Audit Report
 
+> ## ⚠️ HISTORICAL — dated snapshot, not current state
+>
+> This is a point-in-time frontend audit. **At least two of its findings no
+> longer hold**, and treating it as current will send you chasing defects that
+> are already fixed:
+>
+> - *"the app does not set a `Content-Security-Policy` header"* — **no longer
+>   true.** `apps/web/src/proxy.ts` now builds and attaches a CSP header with a
+>   per-request nonce (lines 17 and 71 of that file).
+> - `apps/web/src/middleware.ts` is referenced below — that file **no longer
+>   exists**; it was renamed to `apps/web/src/proxy.ts`.
+>
+> Its `/health`-style HTTP status observations were captured against one running
+> stack and were not re-verified afterwards. For current status use
+> [`README.md`](README.md), [`STATUS.md`](STATUS.md) and
+> [`docs/FRONTEND_ARCHITECTURE.md`](docs/FRONTEND_ARCHITECTURE.md).
+
 ## Runtime status summary
 
 - HTTPS homepage: reachable at https://localhost:3000/ and returning HTTP 200
@@ -61,7 +78,7 @@ Recommendation:
 
 The project includes a CSP builder utility in [apps/web/src/utils/csp.ts](apps/web/src/utils/csp.ts), which is well-structured and contains a strict production policy with nonce support. There is also a test in [apps/web/src/__tests__/security.test.ts](apps/web/src/__tests__/security.test.ts) verifying that `Content-Security-Policy` is not set in the Next config, which suggests the team intentionally moved CSP enforcement out of the config layer.
 
-However, the actual runtime app does not appear to apply CSP through the request middleware. [apps/web/src/middleware.ts](apps/web/src/middleware.ts) handles auth and route protection, but it does not set a `Content-Security-Policy` header. The app also does not appear to attach the generated CSP header in any route or top-level layout.
+However, the actual runtime app does not appear to apply CSP through the request middleware. [apps/web/src/proxy.ts](apps/web/src/proxy.ts) (named `middleware.ts` at the time of this audit) handles auth and route protection, but it does not set a `Content-Security-Policy` header. The app also does not appear to attach the generated CSP header in any route or top-level layout.
 
 Impact:
 
@@ -89,7 +106,7 @@ This is acceptable for early product presentation, but it is not yet a complete 
 
 ### 5. App is live, but some backend/frontend integration expectations remain unclear
 
-The web app depends on its API base URL configured in [apps/web/src/api/client.ts](apps/web/src/api/client.ts) and [apps/web/src/config/index.ts](apps/web/src/config/index.ts), defaulting to `https://localhost:8000`.
+The web app depends on its API base URL, defined in [apps/web/src/api/client.ts](apps/web/src/api/client.ts) as `API_BASE_URL` from `NEXT_PUBLIC_API_URL` (there is no `apps/web/src/config/` directory), defaulting to `https://localhost:8000`.
 
 The homepage works as a static marketing page without a backend connection, but authenticated browsing and playback flows depend on the upstream services being available and the gateway being reachable. The app will still need the full stack to be healthy for full functional validation.
 

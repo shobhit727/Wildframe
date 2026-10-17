@@ -78,8 +78,12 @@ class CompliancePolicy(BaseModel, ABC):
     audit_log_required: bool = True
     audit_log_retention_days: int = 2555
 
-    class Config:
-        use_enum_values = True
+    # NOTE: `use_enum_values` is deliberately NOT set. It made pydantic store the
+    # RAW value, so any policy constructed with an explicit `jurisdiction=`
+    # argument held a plain `str` instead of a `Jurisdiction` member, and
+    # `get_applicable_regulations()` (`self.jurisdiction.regulations`) raised
+    # AttributeError. Serialise at the boundary instead: `model_dump(mode="json")`
+    # or `json.dumps` both emit the plain string.
 
     @abstractmethod
     def get_applicable_regulations(self) -> list[str]:
@@ -305,6 +309,11 @@ def get_policy_for_jurisdiction(jurisdiction: Jurisdiction, **overrides: Any) ->
         # Merge: child overrides parent
         parent_dict = parent_policy.model_dump()
         parent_dict.update(policy.model_dump(exclude_unset=True))
+        # `jurisdiction` identifies the child, it is not an inherited field: the
+        # child's own value is a class default and so absent from
+        # `exclude_unset=True()`, which would otherwise let the parent's value win
+        # ('US-CA' would report 'US' and resolve the wrong regulations).
+        parent_dict["jurisdiction"] = jurisdiction
         policy = policy_class(**parent_dict)
 
     return policy

@@ -23,7 +23,8 @@ from app.models import (
     OutboxEventStatus,
     StrikeReason,
 )
-from app.services import ModerationError, ModerationService
+from app.services import DuplicateFlagError, ModerationError, ModerationService
+from app.repositories import DuplicateContentFlag
 
 # ---------------------------------------------------------------------------
 # In-memory fakes (no DB). They mirror the repository's surface just enough
@@ -32,8 +33,15 @@ from app.services import ModerationError, ModerationService
 
 
 class _NoopSession:
+    def __init__(self) -> None:
+        self.commits = 0
+        self.rollbacks = 0
+
     async def commit(self) -> None:
-        return None
+        self.commits += 1
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
 
 
 class FakeFlagRepo:
@@ -45,6 +53,14 @@ class FakeFlagRepo:
         self.session = _NoopSession()
 
     async def create(self, flag: ContentFlag) -> ContentFlag:
+        # Faithful to uq_content_flag_content_reporter: the real INSERT is an
+        # ON CONFLICT DO NOTHING against that constraint, and a conflict comes
+        # back as no row, which the repository turns into DuplicateContentFlag.
+        # Without this the service's duplicate branch -- and therefore the 409
+        # the client sees -- was unreachable from every test in this file.
+        for existing in self.flags.values():
+            if existing.content_id == flag.content_id and existing.reported_by == flag.reported_by:
+                raise DuplicateContentFlag("content already reported by this user")
         if flag.id is None:
             flag.id = uuid4()
         self.flags[flag.id] = flag
@@ -118,7 +134,30 @@ class FakeStrikeRepo:
     def __init__(self) -> None:
         self.strikes: list[CreatorStrike] = []
 
+        # Per-creator advisory lock the real repository takes before inserting a
+        # strike. This fake *enforces* the ordering rather than merely recording
+        # it: an insert for a creator that was never locked is an error here.
+        # The real pg_advisory_xact_lock serialises per creator, so a code path
+        # that inserts without locking is the bug this reproduces.
+        self.locked: list[UUID] = []
+        self.lock_calls: int = 0
+        self.create_calls: list[UUID] = []
+        self.inserts_without_lock: list[UUID] = []
+
+    async def lock_creator(self, creator_id: UUID) -> None:
+        self.locked.append(creator_id)
+        self.lock_calls += 1
+
     async def create(self, strike: CreatorStrike) -> CreatorStrike:
+        # Recorded rather than raised: the real pg_advisory_xact_lock
+        # serialises per creator, and the service must take it *before* the
+        # insert. Raising here instead would abort the decision mid-transaction
+        # and deadlock the concurrency suite's shared write lock, turning a
+        # would-be-surviving mutant into a hang rather than a readable failure.
+        # `inserts_without_lock` and `create_calls` are asserted directly.
+        if strike.creator_id not in self.locked:
+            self.inserts_without_lock.append(strike.creator_id)
+        self.create_calls.append(strike.creator_id)
         self.strikes.append(strike)
         return strike
 
@@ -193,6 +232,75 @@ async def test_flag_content_creates_flag_and_emits_event():
     assert event.status == OutboxEventStatus.PENDING
     # Nothing reaches the bus until the drain worker publishes it.
     assert service.publisher.sent == []
+
+
+@pytest.mark.asyncio
+async def test_flag_content_rejects_a_duplicate_report_and_rolls_back():
+    """A repeat report from the same user is refused, not silently re-flagged.
+
+    uq_content_flag_content_reporter makes the second INSERT a no-op, which the
+    repository reports as DuplicateContentFlag; the service translates that
+    into DuplicateFlagError and rolls the transaction back. Without this the
+    service's duplicate branch was unreachable from every test in this file,
+    because the fake never raised -- so deleting the translation, or the
+    rollback, passed the suite.
+    """
+    service, flag_repo, _, _ = make_service()
+    content_id, reporter_id = uuid4(), uuid4()
+
+    await service.flag_content(
+        content_id=content_id, flag_reason=FlagReason.SPAM, reporter_id=reporter_id
+    )
+
+    with pytest.raises(DuplicateFlagError, match="already flagged by you"):
+        await service.flag_content(
+            content_id=content_id, flag_reason=FlagReason.SPAM, reporter_id=reporter_id
+        )
+
+    # One flag, not two.
+    assert len(flag_repo.flags) == 1
+    # The failed attempt must roll back: the transaction it opened is the one
+    # that would otherwise commit a poisoned state to the caller.
+    assert flag_repo.session.rollbacks == 1
+    # And no second outbox row was enqueued for the rejected report.
+    assert len([e for e in flag_repo.events if e.topic == "content.flagged"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_different_reporter_may_flag_the_same_content():
+    """The unique constraint is per (content, reporter), not per content."""
+    service, flag_repo, _, _ = make_service()
+    content_id = uuid4()
+
+    await service.flag_content(
+        content_id=content_id, flag_reason=FlagReason.SPAM, reporter_id=uuid4()
+    )
+    await service.flag_content(
+        content_id=content_id, flag_reason=FlagReason.SPAM, reporter_id=uuid4()
+    )
+
+    assert len(flag_repo.flags) == 2
+    assert flag_repo.session.rollbacks == 0
+
+
+@pytest.mark.asyncio
+async def test_a_strike_takes_the_creator_lock_before_the_insert():
+    """The per-creator advisory lock is taken before the row is written.
+
+    Without it, two concurrent first strikes each insert uncommitted, count
+    only their own row at READ COMMITTED, and both miss the suspension
+    threshold. ``inserts_without_lock`` is the violation list; it must be
+    empty, and the call order is checked explicitly.
+    """
+    service, flag_repo, _, strike_repo = make_service()
+    creator_id = uuid4()
+    flag = _seed_flag(flag_repo, creator_id=creator_id)
+
+    await service.make_decision(flag_id=flag.id, decision=DecisionType.REJECT, moderator_id=uuid4())
+
+    assert strike_repo.locked == [creator_id]
+    assert strike_repo.create_calls == [creator_id]
+    assert strike_repo.inserts_without_lock == []
 
 
 @pytest.mark.asyncio

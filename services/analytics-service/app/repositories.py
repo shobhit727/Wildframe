@@ -156,27 +156,6 @@ class ContentPerformanceMetricsRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create(
-        self,
-        content_id: UUID,
-        views_7d: int = 0,
-        views_30d: int = 0,
-        avg_completion_pct: float = 0.0,
-        revenue_7d: float = 0.0,
-        revenue_30d: float = 0.0,
-    ) -> ContentPerformanceMetrics:
-        metrics = ContentPerformanceMetrics(
-            content_id=content_id,
-            views_7d=views_7d,
-            views_30d=views_30d,
-            avg_completion_pct=avg_completion_pct,
-            revenue_7d=revenue_7d,
-            revenue_30d=revenue_30d,
-        )
-        self.session.add(metrics)
-        await self.session.flush()
-        return metrics
-
     async def get_by_content(self, content_id: UUID) -> ContentPerformanceMetrics | None:
         stmt = select(ContentPerformanceMetrics).where(
             ContentPerformanceMetrics.content_id == content_id
@@ -206,5 +185,26 @@ class ContentPerformanceMetricsRepository:
             metrics.revenue_7d = revenue_7d
         if revenue_30d is not None:
             metrics.revenue_30d = revenue_30d
+        await self.session.flush()
+        return metrics
+
+    async def create(
+        self,
+        content_id: UUID,
+        views_7d: int = 0,
+        views_30d: int = 0,
+        avg_completion_pct: float = 0.0,
+        revenue_7d: float = 0.0,
+        revenue_30d: float = 0.0,
+    ) -> ContentPerformanceMetrics:
+        metrics = ContentPerformanceMetrics(
+            content_id=content_id,
+            views_7d=views_7d,
+            views_30d=views_30d,
+            avg_completion_pct=avg_completion_pct,
+            revenue_7d=revenue_7d,
+            revenue_30d=revenue_30d,
+        )
+        self.session.add(metrics)
         await self.session.flush()
         return metrics

@@ -119,7 +119,15 @@ export async function listAuditLogs(params: { admin_id?: string; resource_type?:
     );
     return data;
   }
-  return [] as AuditLog[];
+  if (resource_type || resource_id) {
+    // A partial resource selector is not a valid scoped route; preserve the
+    // existing empty-result behavior instead of broadening the query.
+    return [] as AuditLog[];
+  }
+  const { data } = await apiClient.client.get<AuditLog[]>('/admin/api/v1/admin/audit', {
+    params: { limit },
+  });
+  return data;
 }
 
 // ---- System stats ----

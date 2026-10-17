@@ -6,12 +6,14 @@ Orchestrates repositories and business rules.
 import logging
 from uuid import UUID
 
+from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     AnimationStyle,
     ContentStatus,
     ContentType,
+    content_cast_association,
 )
 from app.repositories import (
     CastMemberRepository,
@@ -37,6 +39,12 @@ from app.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ``content_cast.role`` is NOT NULL, so the association row cannot be written
+# without one. ``CastMemberCreateRequest`` carries no role and the frontend only
+# ever sends name/bio/slug (apps/web/src/types/index.ts), so the add path writes
+# this default rather than inventing a new request field.
+DEFAULT_CAST_ROLE = "cast"
 
 
 class ContentService:
@@ -157,6 +165,7 @@ class ContentService:
                 is_premium=request.is_premium,
                 can_download=request.can_download,
                 can_stream=request.can_stream,
+                price_usd=request.price_usd,
                 genres=genres,
             )
 
@@ -356,6 +365,13 @@ class ContentService:
     ):
         """Create a new episode."""
         try:
+            # The season must belong to the content in the path: both columns
+            # are free, so without this check an episode can straddle two
+            # unrelated catalog branches.
+            season = await self.season_repo.get_by_id(season_id)
+            if not season or season.content_id != content_id:
+                return None
+
             episode = await self.episode_repo.create(
                 content_id=content_id,
                 season_id=season_id,
@@ -369,10 +385,8 @@ class ContentService:
             )
 
             # Update season episode count
-            season = await self.season_repo.get_by_id(season_id)
-            if season:
-                episodes = await self.episode_repo.get_season_episodes(season_id)
-                season.episode_count = len(episodes)  # type: ignore[assignment]
+            episodes = await self.episode_repo.get_season_episodes(season_id)
+            season.episode_count = len(episodes)  # type: ignore[assignment]
 
             await self.content_repo.commit()
             return episode
@@ -533,7 +547,22 @@ class ContentService:
                 )
 
             if member not in content.cast_members:
-                content.cast_members.append(member)
+                # Write the association row explicitly rather than appending to
+                # ``content.cast_members``: the ORM only populates the two FK
+                # columns, leaving ``content_cast.role`` NULL, which is NOT
+                # NULL — so the append raised NotNullViolationError against real
+                # PostgreSQL on every single add (#858).
+                await self.content_repo.session.execute(
+                    insert(content_cast_association).values(
+                        content_id=content.id,
+                        cast_id=member.id,
+                        role=DEFAULT_CAST_ROLE,
+                    )
+                )
+                # ``expire_on_commit=False`` means the already-loaded collection
+                # would keep its stale (pre-insert) contents, so drop it and let
+                # the next read re-issue the selectinload.
+                self.content_repo.session.expire(content, ["cast_members"])
 
             await self.content_repo.commit()
             return member

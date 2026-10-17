@@ -1,0 +1,16 @@
+# Message-board.md is an append-only log written by several agents working in
+# the same checkout. Without a merge driver, every concurrent append collides
+# and an agent has to hand-resolve a conflict block that can span the whole
+# file -- which is how entries get dropped.
+#
+# `union` is a built-in git merge driver: on conflict it keeps both sides
+# instead of emitting markers. That is the correct semantics for a log, where
+# no entry is ever wrong, only missing. Verified against both `git merge` and
+# `git rebase`, including the case where one side adds three entries and the
+# other one.
+#
+# This does NOT protect against a lost update on a *clean* apply: if an agent
+# commits a snapshot of the board it read before someone else's push, the
+# driver never sees a conflict. tests/contract/test_message_board_integrity.py
+# catches that case by watching the entry count for regressions.
+Message-board.md merge=union

@@ -13,7 +13,7 @@ import logging
 import os
 from datetime import UTC, datetime
 
-from aiokafka import AIOKafkaConsumer  # type: ignore[import-untyped]
+from aiokafka import AIOKafkaConsumer
 
 logger = logging.getLogger(__name__)
 

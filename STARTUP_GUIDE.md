@@ -1,3 +1,16 @@
+> [!WARNING]
+> **Historical document — superseded.** This file records a point-in-time
+> session (August 2026) and is kept only for project history. It is **not** a
+> current status report: its service counts, test counts, ports, and commands
+> are stale.
+>
+> **Current entry points:** [`README.md`](README.md) and
+> [`AGENTS.md`](AGENTS.md) for how the repo is actually built;
+> [`STATUS.md`](STATUS.md) for current state; [`DOCS_INDEX.md`](DOCS_INDEX.md)
+> for the full doc index. For running tests, use
+> [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) and
+> [`docs/TEST_GUIDE.md`](docs/TEST_GUIDE.md).
+
 # 🚀 Wildframe Platform - Complete Startup Guide
 
 ## Platform Overview
@@ -25,7 +38,7 @@
 
 ### 1. Start Backend (All Services)
 ```bash
-cd /home/phoenix/Desktop/wildframe
+cd "$(git rev-parse --show-toplevel)"
 docker-compose -f deployments/docker-compose.dev.yml up -d
 ```
 
@@ -33,7 +46,7 @@ Wait 10-15 seconds for all services to initialize...
 
 ### 2. Start Frontend
 ```bash
-cd /home/phoenix/Desktop/wildframe/apps/web
+cd "$(git rev-parse --show-toplevel)/apps/web"
 npm install  # First time only
 npm run dev
 ```
@@ -49,7 +62,7 @@ npm run dev
 
 ```bash
 # Navigate to project root
-cd /home/phoenix/Desktop/wildframe
+cd "$(git rev-parse --show-toplevel)"
 
 # Start Docker Compose (14 containers)
 docker-compose -f deployments/docker-compose.dev.yml up -d
@@ -83,7 +96,7 @@ docker-compose -f deployments/docker-compose.dev.yml logs -f api-gateway
 ### Frontend Startup
 
 ```bash
-cd /home/phoenix/Desktop/wildframe/apps/web
+cd "$(git rev-parse --show-toplevel)/apps/web"
 
 # Install dependencies (first time only)
 npm install
@@ -213,7 +226,7 @@ Ctrl + C
 
 ### Stop Backend
 ```bash
-cd /home/phoenix/Desktop/wildframe
+cd "$(git rev-parse --show-toplevel)"
 docker-compose -f deployments/docker-compose.dev.yml down
 
 # To remove volumes too (reset data)
@@ -325,7 +338,7 @@ databases/
 - Modify frontend pages in `/src/app/`
 - Modify components in `/src/components/`
 - Backend services in `/services/*/`
-- See [CONTRIBUTING.md](../../docs/CONTRIBUTING.md)
+- See [CONTRIBUTING.md](docs/CONTRIBUTING.md)
 
 ### 2. Testing
 - Frontend: `npm run test` + `npm run test:e2e`
@@ -335,24 +348,24 @@ databases/
 ### 3. Deployment
 - Frontend: Vercel, Netlify, or Docker
 - Backend: Kubernetes (manifests in `/infrastructure/kubernetes/`)
-- See [DEPLOYMENT_GUIDE.md](../../docs/DEPLOYMENT_GUIDE.md)
+- See [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)
 
 ### 4. Monitoring
 - Prometheus metrics on port 9090
 - Grafana dashboard on port 3000 (also running on frontend)
 - Jaeger tracing on port 6831
-- See [OPERATIONS_GUIDE.md](../../docs/OPERATIONS_GUIDE.md)
+- See [OPERATIONS.md](docs/OPERATIONS.md)
 
 ---
 
 ## Project Documentation
 
-- [README.md](../../README.md) - Project overview
-- [FRONTEND_COMPLETE.md](../../FRONTEND_COMPLETE.md) - Frontend status
-- [DEPLOYMENT_GUIDE.md](../../docs/DEPLOYMENT_GUIDE.md) - Production deployment
-- [API_DOCUMENTATION.md](../../docs/API_DOCUMENTATION.md) - API reference
-- [ARCHITECTURE.md](../../ARCHITECTURE.md) - System design
-- [CONTRIBUTING.md](../../docs/CONTRIBUTING.md) - Development guidelines
+- [README.md](README.md) - Project overview
+- [FRONTEND_COMPLETE.md](FRONTEND_COMPLETE.md) - Frontend status
+- [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) - Production deployment
+- [API_DOCUMENTATION.md](docs/API_DOCUMENTATION.md) - API reference
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System design
+- [CONTRIBUTING.md](docs/CONTRIBUTING.md) - Development guidelines
 
 ---
 

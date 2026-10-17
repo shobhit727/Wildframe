@@ -22,8 +22,11 @@ class DatabaseManager:
     @classmethod
     async def init(cls) -> None:
         """Initialize database."""
+        database_url = settings.DATABASE_URL
+        if not database_url:
+            raise RuntimeError("DATABASE_URL is not configured")
         cls.engine = create_async_engine(
-            settings.DATABASE_URL,
+            database_url,
             echo=False,
             future=True,
             pool_size=5,

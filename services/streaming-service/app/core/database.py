@@ -37,7 +37,10 @@ class DatabaseManager:
             # NullPool; PostgreSQL lets SQLAlchemy pick its async-adapted
             # queue pool (passing the sync class to an async engine fails).
 
-            is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+            database_url = settings.DATABASE_URL
+            if not database_url:
+                raise RuntimeError("DATABASE_URL is not configured")
+            is_sqlite = database_url.startswith("sqlite")
 
             pool_kwargs: dict = (
                 {}
@@ -64,7 +67,7 @@ class DatabaseManager:
             )
 
             self._engine = create_async_engine(
-                settings.DATABASE_URL,
+                database_url,
                 echo=settings.DEBUG,
                 future=True,
                 **({"poolclass": NullPool} if is_sqlite else {}),

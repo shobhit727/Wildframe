@@ -208,7 +208,11 @@ class UploadService:
                     )
                 )
         except Exception:
-            await self.abort(session_id, reason="upload URL generation failed")
+            # Best-effort cleanup: never let a failed abort mask the real error.
+            try:
+                await self.abort(session_id, reason="upload URL generation failed")
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to abort half-initialised session %s", session_id)
             raise
 
         logger.info(
@@ -253,7 +257,7 @@ class UploadService:
             raise UploadError(
                 f"session {session_id} is {session.status.value}; no more chunks accepted"
             )
-        if datetime.now(UTC) > session.expires_at:
+        if self._is_expired(session.expires_at, datetime.now(UTC)):
             raise UploadError(f"upload session {session_id} has expired")
         if index < 0 or index >= session.total_chunks:
             raise UploadError(f"chunk index {index} out of range [0, {session.total_chunks})")
@@ -290,8 +294,8 @@ class UploadService:
 
         # First chunk moves the session into ``uploading``.
         if session.status == UploadSessionStatus.INITIATED:
-            session.status = UploadSessionStatus.UPLOADING  # type: ignore[assignment]
-        session.uploaded_chunks = await self.repo.count_chunks(session_id)  # type: ignore[assignment]
+            session.status = UploadSessionStatus.UPLOADING
+        session.uploaded_chunks = await self.repo.count_chunks(session_id)
         await self.repo.save(session)
         await self.repo.session.commit()
 
@@ -305,11 +309,24 @@ class UploadService:
         return chunk
 
     @staticmethod
+    def _is_expired(expires_at: datetime, now: datetime) -> bool:
+        """Compare upload expiry timestamps without assuming a DB timezone mode.
+
+        PostgreSQL ``TIMESTAMP WITHOUT TIME ZONE`` values can arrive as naive
+        datetimes even when the SQLAlchemy model declares a timezone-aware
+        column. Treat a naive value as UTC at this service boundary so legacy
+        or manually-created rows cannot cause a naive/aware comparison error.
+        """
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        return now > expires_at
+
+    @staticmethod
     def _expected_chunk_size(session: UploadSession, index: int) -> int:
         """Byte count a chunk must hold per the session's chunk plan."""
         if index < session.total_chunks - 1:
-            return session.chunk_size  # type: ignore[return-value]
-        return session.size_bytes - session.chunk_size * (session.total_chunks - 1)  # type: ignore[return-value]
+            return session.chunk_size
+        return session.size_bytes - session.chunk_size * (session.total_chunks - 1)
 
     # ------------------------------------------------------------------
     # complete_session
@@ -343,7 +360,7 @@ class UploadService:
             return session
         if session.status == UploadSessionStatus.ABORTED:
             raise UploadError(f"session {session_id} is aborted")
-        if datetime.now(UTC) > session.expires_at:
+        if self._is_expired(session.expires_at, datetime.now(UTC)):
             raise UploadError(f"upload session {session_id} has expired")
 
         received = await self.repo.received_indices(session_id)
@@ -365,8 +382,8 @@ class UploadService:
                 session_id=str(session_id),
                 chunk_keys=chunk_keys,
                 final_key=final_key,
-                size_bytes=session.size_bytes,  # type: ignore[arg-type]
-                mime=session.mime,  # type: ignore[arg-type]
+                size_bytes=session.size_bytes,
+                mime=session.mime,
                 upload_id=session.multipart_upload_id,
             )
         except StorageError as exc:
@@ -374,23 +391,35 @@ class UploadService:
             raise UploadError(f"storage completion failed: {exc}") from exc
 
         # Checksum: the server-computed digest is the only authority.
-        if session.checksum_sha256 and session.checksum_sha256 != final_metadata.checksum_sha256:
-            raise UploadError(
-                f"checksum mismatch for session {session_id}: expected "
-                f"{session.checksum_sha256}, storage computed "
-                f"{final_metadata.checksum_sha256}"
-            )
-        if checksum_sha256 and session.checksum_sha256 is None:
+        if session.checksum_sha256:
+            if final_metadata.checksum_sha256 is None:
+                # The session declared a digest and storage could not verify one
+                # (e.g. an object above CHECKSUM_VERIFY_MAX_BYTES uploaded
+                # without a provider checksum). Refuse rather than publish an
+                # unverifiable object or silently drop the declared digest.
+                raise UploadError(
+                    f"checksum for session {session_id} could not be verified by storage"
+                )
+            if session.checksum_sha256 != final_metadata.checksum_sha256:
+                raise UploadError(
+                    f"checksum mismatch for session {session_id}: expected "
+                    f"{session.checksum_sha256}, storage computed "
+                    f"{final_metadata.checksum_sha256}"
+                )
+        elif checksum_sha256:
             # Advisory client value without a declared expectation: ignored.
-            logger.warning(  # type: ignore[unreachable]  # type: ignore[unreachable]
+            logger.warning(
                 "ignoring client-supplied checksum for session %s (unverified)",
                 session_id,
             )
 
-        session.status = UploadSessionStatus.COMPLETE  # type: ignore[assignment]
-        session.storage_key = final_metadata.storage_key  # type: ignore[assignment]
-        session.checksum_sha256 = final_metadata.checksum_sha256  # type: ignore[assignment]
-        session.uploaded_chunks = len(received)  # type: ignore[assignment]
+        session.status = UploadSessionStatus.COMPLETE
+        session.storage_key = final_metadata.storage_key
+        session.checksum_sha256 = final_metadata.checksum_sha256
+        session.uploaded_chunks = len(received)
+        # The multipart upload is consumed by a successful completion: drop the
+        # UploadId so a later cleanup never tries to abort a completed upload.
+        session.multipart_upload_id = None
         await self.repo.save(session)
 
         # Transactional outbox: same DB transaction as the state change.
@@ -432,7 +461,7 @@ class UploadService:
 
         already_aborted = session.status == UploadSessionStatus.ABORTED
         if not already_aborted:
-            session.status = UploadSessionStatus.ABORTED  # type: ignore[assignment]
+            session.status = UploadSessionStatus.ABORTED
             await self.repo.save(session)
 
         await self._cleanup_storage(session)
@@ -456,8 +485,11 @@ class UploadService:
         Cleanup failure is logged and leaves ``storage_cleaned_at`` unset so
         the reaper retries later.
         """
+        # Same key contract as URL generation, registration and completion: a
+        # single-chunk session only ever wrote the final key.
         chunk_keys = [
-            storage_key_for(str(session.id), index) for index in range(session.total_chunks)
+            storage_key_for(str(session.id), index if session.total_chunks > 1 else None)
+            for index in range(session.total_chunks)
         ]
         final_key = storage_key_for(str(session.id), None)
         try:
@@ -470,7 +502,7 @@ class UploadService:
         except Exception:  # noqa: BLE001 - reaper retries via storage_cleaned_at
             logger.exception("storage cleanup failed for session %s; will retry", session.id)
             return
-        session.storage_cleaned_at = datetime.now(UTC)  # type: ignore[assignment]
+        session.storage_cleaned_at = datetime.now(UTC)
         await self.repo.save(session)
 
     # ------------------------------------------------------------------
@@ -489,9 +521,9 @@ class UploadService:
             try:
                 await self.publisher.publish(
                     Event(
-                        topic=row.topic,  # type: ignore[arg-type]
-                        key=row.event_key,  # type: ignore[arg-type]
-                        payload=row.payload,  # type: ignore[arg-type]
+                        topic=row.topic,
+                        key=row.event_key,
+                        payload=row.payload,
                     )
                 )
             except Exception:  # noqa: BLE001 - keep row pending for retry
@@ -501,7 +533,7 @@ class UploadService:
                     row.topic,
                 )
                 continue
-            await self.repo.mark_dispatched(row.id)  # type: ignore[arg-type]
+            await self.repo.mark_dispatched(row.id)
         await self.repo.session.commit()
         return len(rows)
 
@@ -513,7 +545,7 @@ class UploadService:
         now = datetime.now(UTC)
         touched = 0
         for session in await self.repo.expired_sessions(now):
-            session.status = UploadSessionStatus.ABORTED  # type: ignore[assignment]
+            session.status = UploadSessionStatus.ABORTED
             await self.repo.save(session)
             await self._cleanup_storage(session)
             await self.repo.enqueue_event(

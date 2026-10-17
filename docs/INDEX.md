@@ -4,6 +4,22 @@
 
 This index points to the documentation that should be used for current engineering decisions. Historical completion reports remain in the repository but are not release declarations.
 
+### Which index is which
+
+There are two, and they are not interchangeable:
+
+| File | Role |
+|---|---|
+| **`README.md`** | **The entry point.** Start here. |
+| `docs/INDEX.md` (this file) | Curated list of the *current* operational docs. |
+| `DOCS_INDEX.md` | Superset — every tracked `.md` in the repo, with current and historical files marked. |
+
+There is **no root `INDEX.md`**; it was deleted on 2026-09-27 because it claimed
+to be the entry point while duplicating these two with stale numbers.
+
+Test counts are **not** maintained here. `HOW_TO_RUN_TESTS.md` is the single
+canonical source; link to it instead of repeating a number.
+
 ## Start here
 
 - [`README.md`](../README.md) — current architecture, CI/CD, deployment requirements, and production gaps.
@@ -17,7 +33,7 @@ This index points to the documentation that should be used for current engineeri
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution conventions.
 - [`QUICKSTART.md`](QUICKSTART.md) — local setup.
 - [`TEST_GUIDE.md`](TEST_GUIDE.md) — test strategy and execution.
-- [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) — test commands.
+- [`HOW_TO_RUN_TESTS.md`](../HOW_TO_RUN_TESTS.md) — test commands.
 
 ## Architecture
 

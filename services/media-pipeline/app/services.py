@@ -59,8 +59,10 @@ Hardening (new in v2)
 * **Disk quota** — ``PIPELINE_DISK_QUOTA_BYTES`` limits per-job temp storage.
 * **Adapter selection** — ``MEDIA_PIPELINE_ADAPTERS=stub|ffmpeg`` selects
   real vs. stub ports at startup.
-* **Temp-file cleanup** — per-job work/quarantine dirs are removed on failure
-  or completion.
+* **Temp-file cleanup** — per-job work/quarantine dirs are removed on failure,
+  and on completion only when the active object-storage port is durable. A
+  non-durable port means the sandbox is the only copy of the media, so the job
+  is DLQ'd rather than published and cleaned (#1000).
 * **DLQ dedup** — ``content.pipeline.failed`` events carry a job-scoped
   ``dlq_key`` so downstream consumers can deduplicate.
 """
@@ -418,6 +420,22 @@ class MediaPipelineService:
             if os.path.isdir(job_dir):
                 shutil.rmtree(job_dir, ignore_errors=True)
 
+    def _storage_is_durable(self) -> bool:
+        """True when the active storage port really persists the uploaded bytes.
+
+        ``StubObjectStorage`` returns an ``s3://`` URI without opening the file,
+        so the job sandbox remains the only copy of the encoded media. Under the
+        all-``stub`` adapter set that costs nothing — the stub encoder and
+        packager never wrote a file either — but under a real adapter set
+        (``MEDIA_PIPELINE_ADAPTERS=ffmpeg``) the renditions, HLS playlists and
+        DASH manifest are on disk, and completing the job would delete them
+        without ever having stored them (#1000).
+        """
+        storage = self._ports.get("object_storage")
+        if storage is not None and getattr(storage, "durable", False):
+            return True
+        return settings.MEDIA_PIPELINE_ADAPTERS == "stub"
+
     # ------------------------------------------------------------------
     # start_job
     # ------------------------------------------------------------------
@@ -581,7 +599,7 @@ class MediaPipelineService:
         # Determine which stages are already done.
         done = set(job.stage_versions.keys())
 
-        job.status = PipelineJobStatus.RUNNING  # type: ignore[assignment]
+        job.status = PipelineJobStatus.RUNNING
         if job.started_at is None:
             job.started_at = datetime.now(UTC)  # type: ignore[unreachable]
         await self.job_repo.save(job)
@@ -601,19 +619,20 @@ class MediaPipelineService:
                 if stage_name in done:
                     continue
 
-                # Circuit breaker check.
-                self._check_circuit_breaker(stage_name)
-
                 stage = self.registry.get(stage_name)
                 job.current_stage = stage_name  # type: ignore[assignment]
                 # Persist the (port-stripped) ctx so resume works mid-stage.
-                job.context = {k: v for k, v in ctx.items() if not _is_port(v)}  # type: ignore[assignment]
+                job.context = {k: v for k, v in ctx.items() if not _is_port(v)}
                 await self.job_repo.save(job)
 
                 # Heartbeat the lease before a potentially long stage run.
                 await self._heartbeat_lease(job)
 
                 try:
+                    # Keep the breaker decision inside the stage error boundary.
+                    # An open breaker must fail + DLQ the job rather than escape
+                    # while the job is still RUNNING.
+                    self._check_circuit_breaker(stage_name)
                     ctx, stage_retry_time = await self._run_stage_with_retries(
                         job, stage, ctx, total_retry_time
                     )
@@ -668,7 +687,7 @@ class MediaPipelineService:
                 }
                 job.retries = 0  # type: ignore[assignment]
                 # Persist ctx (without ports) so a later advance() can resume.
-                job.context = {k: v for k, v in ctx.items() if not _is_port(v)}  # type: ignore[assignment]
+                job.context = {k: v for k, v in ctx.items() if not _is_port(v)}
                 await self.job_repo.save(job)
 
                 # Reset circuit breaker on success.
@@ -699,7 +718,30 @@ class MediaPipelineService:
                     },
                 )
 
-            job.status = PipelineJobStatus.COMPLETED  # type: ignore[assignment]
+            # Every stage ran, but the terminal transition below claims the media
+            # is stored and then deletes the job sandbox. Only make that claim
+            # when the storage port is durable: with the ffmpeg adapter set the
+            # renditions/manifests on disk are the only copy, so completing the
+            # job would destroy media that was never uploaded (#1000). DLQ it
+            # instead and leave the artifacts for an operator to recover.
+            if not self._storage_is_durable():
+                sandbox = os.path.join(settings.PIPELINE_WORK_ROOT, str(job.id))
+                # Blame the upload only if it ran; a trimmed registry would
+                # otherwise log a stage that never executed.
+                blame = "s3_upload" if "s3_upload" in job.stage_versions else "publish"
+                message = (
+                    f"cannot publish job {job.id}: the active object storage port "
+                    f"is not durable, so the encoded media was never stored; "
+                    f"artifacts left under {sandbox}"
+                )
+                logger.error(message)
+                await self._record_stage(job, blame, PipelineStageStatus.FAILED, 0, message)
+                await self._fail_job(job, blame, message)
+                # Deliberately no _cleanup_job_dirs here: the sandbox holds the
+                # only copy of the media.
+                return job
+
+            job.status = PipelineJobStatus.COMPLETED
             job.current_stage = None  # type: ignore[assignment]
             job.error = None  # type: ignore[assignment]
             await self.job_repo.save(job)
@@ -834,7 +876,7 @@ class MediaPipelineService:
 
         Includes a ``dlq_key`` for downstream deduplication.
         """
-        job.status = PipelineJobStatus.FAILED  # type: ignore[assignment]
+        job.status = PipelineJobStatus.FAILED
         job.current_stage = stage_name  # type: ignore[assignment]
         job.error = message  # type: ignore[assignment]
         await self.job_repo.save(job)
@@ -890,7 +932,7 @@ class MediaPipelineService:
             # Only recover if the job is still in a retryable state.
             if job.status == PipelineJobStatus.RUNNING and job.current_stage:
                 job.leased_by = None
-                job.leased_at = None  # type: ignore[assignment]
+                job.leased_at = None
                 job.retries = 0  # type: ignore[assignment]  # reset retries for the current stage
                 await self.job_repo.save(job)
                 logger.info("recovered stale job %s (was leased by %s)", job.id, job.leased_by)

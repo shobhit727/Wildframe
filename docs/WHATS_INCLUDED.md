@@ -1,3 +1,17 @@
+> [!WARNING]
+> **Historical document — dated June 4, 2026.** It inventories a 12-service
+> platform. The platform now has **15 services**, and the host port map, the
+> per-service endpoint counts and the CI/CD capability list below are all out
+> of date. Kept for history only.
+>
+> Current inventory: `README.md` (services), `docs/DATABASE_SCHEMA.md`
+> (databases and tables), `HOW_TO_RUN_TESTS.md` (test counts), and
+> `infrastructure/caddy/Caddyfile` (host ports).
+>
+> Specifically wrong here: "Microservices (12)" is 15; "❌ Production CI/CD
+> release pipeline (only build + test in CI today)" — CI runs Helm rendering,
+> Trivy, Semgrep, CodeQL and an EKS deploy.
+
 # 📦 What's Included
 
 A flat inventory of everything shipped in the Wildframe platform. Use this as a checklist when evaluating the project or planning what's next.

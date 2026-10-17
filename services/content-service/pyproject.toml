@@ -7,11 +7,22 @@ packages = [{ include = "app" }]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.16"
+# Trivy: PyJWT 2.13.0 carries CVE-2026-102266/102267/102268/102271/102272/102273,
+# including a CRITICAL authentication bypass via an empty HMAC key. requirements.txt
+# already required >=2.14.0, but poetry only locks what pyproject declares, so the
+# lock kept 2.13.0 and Trivy scanned that. Declared here so the lock cannot drift
+# back to the vulnerable line again.
+pyjwt = ">=2.14.0,<3.0.0"
+# Imported by app/api/routes/__init__.py for JWKS/RS256 verification. It was
+# previously undeclared, so a clean `poetry install` produced an importable
+# app that raised ModuleNotFoundError at import time and failed every test at
+# collection.
+wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 fastapi = "^0.141.0"
 uvicorn = {version = "^0.24.0", extras = ["standard"]}
 pydantic = "^2.4.2"
 pydantic-settings = "^2.0.3"
-sqlalchemy = "^2.0.20"
+sqlalchemy = { version = "^2.0.20", extras = ["asyncio"] }
 asyncpg = "^0.30.0"
 redis = "^5.0.1"
 python-jose = {version = "^3.3.0", extras = ["cryptography"]}
@@ -22,9 +33,28 @@ wildframe-observability = {path = "../../packages/sdk/wildframe_observability", 
 aiokafka = "^0.10.0"
 wildframe-compliance = {path = "../../packages/sdk/wildframe_compliance", develop = true}
 protobuf = ">=5.29.6,<6"
-opentelemetry-api = "^1.21.0"
-opentelemetry-sdk = "^1.21.0"
-opentelemetry-exporter-jaeger = "^1.21.0"
+opentelemetry-api = "^1.43.0"
+opentelemetry-sdk = "^1.43.0"
+opentelemetry-exporter-otlp-proto-grpc = "^1.43.0"
+# Declared explicitly rather than left to arrive transitively through
+# wildframe-observability, because this service calls wire_observability() and
+# wire.py imports FastAPIInstrumentor directly. The image does not pip-install
+# the SDK (the Dockerfile copies it in as source and installs only this
+# file's requirements), so an undeclared dep is simply absent at runtime and
+# the tracing import is swallowed by wire.py's best-effort handler.
+#
+# 0.64b0 is the floor, not a guess: it is the first release whose
+# _get_route_details() wraps the route `.path` access in try/except
+# AttributeError and iterates _flatten_routes(app.routes). Below it every
+# include_router route raises AttributeError and 500s. 0.50b0 and 0.55b0
+# carry byte-for-byte the same unguarded code as 0.49b2, so bumping one
+# release does not fix it. See issue #978.
+#
+# The 1.43.0 API/SDK floor must move with it: 0.64b0 instrumentations require
+# semantic-conventions==0.64b0 and every SDK below 1.43.0 pins
+# semantic-conventions to an older 0.4x, so a lower floor resolves to a set
+# that cannot install.
+opentelemetry-instrumentation-fastapi = "^0.64b0"
 setuptools = ">=84,<86"
 cryptography = ">=41.0.7,<51.0.0"
 
@@ -49,3 +79,44 @@ addopts = "--tb=short --strict-markers"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.mypy]
+# Type policy for this service (issue #970).
+#
+# This block was previously absent, so `mypy app --config-file pyproject.toml`
+# ran on mypy's defaults while the rest of the repo was held to a real policy.
+# The flags below are copied verbatim from the root pyproject.toml [tool.mypy]
+# section so this service is checked the same way the root policy describes.
+# Per-service history and the per-module overrides that follow mirror the
+# convention already used by services/auth-service (70b4d68a) and
+# services/search-service, which pin python_version to the 3.11 floor and scope
+# `follow_imports` around dependencies that ship syntax newer than that floor.
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_optional = true
+
+# `deprecated` 3.0.0 is pulled in transitively by the OpenTelemetry exporters and
+# declares its type aliases with PEP 695 `type X = ...`, which is 3.12+ syntax.
+# With python_version pinned to 3.11 above, mypy parses that dependency's source
+# with the 3.11 grammar and fails on a file this service does not own. Raising
+# python_version to 3.13 would also silence it, but that gives up checking
+# against the 3.11 floor we actually declare in requires-python. Skipping the
+# import is the accurate fix. Same fix as services/auth-service (70b4d68a).
+[[tool.mypy.overrides]]
+module = ["deprecated.*"]
+follow_imports = "skip"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "jose.*"
+ignore_missing_imports = true
+ignore_errors = true

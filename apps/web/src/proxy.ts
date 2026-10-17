@@ -24,8 +24,38 @@ export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Protect dashboard routes
-  const protectedRoutes = ['/browse', '/watch', '/my-list', '/account', '/billing'];
-  const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route));
+  const protectedRoutes = ['/browse', '/watch', '/my-list', '/account', '/billing', '/creator'];
+  // Match complete path segments so unrelated siblings such as /browsex do not inherit auth rules.
+  const isProtectedRoute = protectedRoutes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  );
+
+  // /auth-session is the app's one real mutation route (its route.ts exports
+  // POST for login and DELETE for logout), and the matcher below covers it, so
+  // the verb gate has to exempt it or sign-in and sign-out break with 405.
+  if (pathname === '/auth-session') {
+    return withCsp(NextResponse.next({ request: { headers: requestHeaders } }), csp);
+  }
+
+  // A page route has no handler for POST, PUT or DELETE, but Next serves the
+  // page for any verb, so a write against /login returns the page with a
+  // success status and a client that checks res.ok records a false success.
+  // Reject them here, before the page route, and answer OPTIONS (a CORS
+  // preflight) with 204 and an Allow header instead of the redirect it got
+  // before, which made cross-origin preflight fail on every route.
+  if (request.method === 'OPTIONS') {
+    const res = new NextResponse(null, { status: 204 });
+    res.headers.set('Allow', 'GET, HEAD, OPTIONS');
+    return withCsp(res, csp);
+  }
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    const res = NextResponse.json(
+      { error: { code: 'METHOD_NOT_ALLOWED', message: `${request.method} is not supported on this route` } },
+      { status: 405 },
+    );
+    res.headers.set('Allow', 'GET, HEAD, OPTIONS');
+    return withCsp(res, csp);
+  }
 
   if (isProtectedRoute && !token) {
     return withCsp(NextResponse.redirect(new URL('/login', request.url)), csp);

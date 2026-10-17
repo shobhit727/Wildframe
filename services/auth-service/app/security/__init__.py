@@ -1,6 +1,5 @@
 import base64
 import hashlib
-import json
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -16,7 +15,12 @@ from app.models import User
 
 logger = logging.getLogger(__name__)
 
-PASSWORD_MAX_LENGTH: int = 128
+# bcrypt silently truncates its input at 72 BYTES. Anything past that is
+# ignored, so two passwords sharing their first 72 bytes are
+# interchangeable and either one authenticates. The cap is therefore the
+# algorithm's limit, measured in bytes rather than characters -- 40
+# multi-byte characters already exceed it.
+PASSWORD_MAX_LENGTH: int = 72
 
 COMMON_PASSWORDS: frozenset[str] = frozenset(
     {
@@ -55,9 +59,13 @@ def normalize_email(email: str) -> str:
 
 
 def _encode_password(password: str) -> bytes:
-    if len(password) > PASSWORD_MAX_LENGTH:
-        raise ValueError(f"password exceeds maximum length of {PASSWORD_MAX_LENGTH} characters")
-    return password.encode("utf-8")
+    encoded = password.encode("utf-8")
+    if len(encoded) > PASSWORD_MAX_LENGTH:
+        raise ValueError(
+            f"password cannot be longer than {PASSWORD_MAX_LENGTH} bytes "
+            f"(got {len(encoded)}); bcrypt ignores everything past that"
+        )
+    return encoded
 
 
 def role_for_email(email: str | None) -> str:
@@ -275,6 +283,27 @@ class TokenManager:
 
     @staticmethod
     def hash_token(token: str) -> str:
+        """Digest a signed JWT for at-rest storage.
+
+        Never call this with a password -- use PasswordManager.hash_password,
+        which is bcrypt. SHA-256 is correct here because the preimage is a
+        high-entropy signed token, not a low-entropy secret.
+        """
+        # This hashes a high-entropy RS256-signed JWT for at-rest lookup, never a
+        # password. All call sites were traced: auth.py:116/393/543 pass the
+        # Authorization token or a verification token, services/__init__.py:280
+        # passes an MFA challenge (itself a signed JWT), :355/:407 pass refresh
+        # tokens. Every password in this service goes through
+        # PasswordManager.hash_password (bcrypt); TokenManager and PasswordManager
+        # are never cross-wired. The two sites that hash before verifying
+        # (auth.py:116, services/__init__.py:407) feed only SELECT/DELETE lookups,
+        # so no attacker-chosen string is ever stored as a digest.
+        #
+        # A slow KDF here would be a net loss: hash_token runs inside the
+        # get_current_user dependency, i.e. on every authenticated request, to
+        # protect a preimage that is already unbrute-forceable (recovering it
+        # means forging an RSA signature, not enumerating a dictionary).
+        # codeql[py/weak-sensitive-data-hashing]
         return hashlib.sha256(token.encode()).hexdigest()
 
     @staticmethod
@@ -290,27 +319,6 @@ class TokenManager:
                 raise
             logger.warning(f"Token verification failed: {e}")
             return None
-
-    @staticmethod
-    def extract_user_id(token: str) -> UUID | None:
-        try:
-            payload = jwt.decode(
-                token,
-                "",
-                algorithms=[settings.JWT_ALGORITHM],
-                options={
-                    "verify_signature": False,
-                    "verify_aud": False,
-                    "verify_iss": False,
-                    "verify_exp": False,
-                },
-            )
-            user_id_str = payload.get("user_id")
-            if user_id_str:
-                return UUID(user_id_str)
-        except (JWTError, ValueError, IndexError, UnicodeDecodeError, json.JSONDecodeError):
-            pass
-        return None
 
     def create_access_token_for_user(self, user: User) -> str:
         return TokenManager.create_access_token(user.id, user.email, user.auth_version)

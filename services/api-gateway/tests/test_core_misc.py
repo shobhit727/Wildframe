@@ -1,0 +1,319 @@
+"""Behavioural tests for the small gateway ``core/`` policy helpers.
+
+None of these modules are wired into the request path today; they are the
+policy seams the gateway keeps for jurisdiction handling (billing + privacy),
+TCF 2.0 consent, and age-gated routes. The tests pin the *decision* each
+helper makes — precedence between headers, the fallbacks, and the refusals.
+"""
+
+import time
+
+import pytest
+from fastapi import HTTPException
+
+from app.core.ads_gate import check_tcf
+from app.core.age_gate import (
+    AGE_RESTRICTED_PREFIXES,
+    JURISDICTION_MINOR_AGE,
+    check_age_gate,
+    is_age_restricted,
+)
+from app.core.billing_proxy import (
+    BILLING_RATE_LIMITS,
+    billing_rate_limit,
+    detect_billing_jurisdiction,
+)
+from app.core.privacy_proxy import (
+    _NOTICE_CACHE,
+    VALID_JURISDICTIONS,
+    clear_expired_cache,
+    get_cached_notice,
+    resolve_jurisdiction,
+    set_cached_notice,
+)
+from app.core.security_headers import SECURITY_HEADERS
+
+
+class _URL:
+    def __init__(self, path):
+        self.path = path
+
+
+class _Request:
+    def __init__(self, path):
+        self.url = _URL(path)
+
+
+@pytest.fixture(autouse=True)
+def _clear_notice_cache():
+    _NOTICE_CACHE.clear()
+    yield
+    _NOTICE_CACHE.clear()
+
+
+# --------------------------------------------------------------------------
+# billing_proxy: jurisdiction resolution
+# --------------------------------------------------------------------------
+
+
+def test_billing_jurisdiction_prefers_the_explicit_header():
+    assert detect_billing_jurisdiction("eu", "us") == "EU"
+
+
+def test_billing_jurisdiction_strips_before_upper_casing_the_header():
+    """``detect_billing_jurisdiction`` strips, then upper-cases (#866).
+
+    It previously only upper-cased, so a padded header survived verbatim and
+    missed the BILLING_RATE_LIMITS lookup. Whitespace normalisation is pinned
+    here and exhaustively in test_billing_jurisdiction.py.
+    """
+    assert detect_billing_jurisdiction("  us-ca  ") == "US-CA"
+
+
+def test_a_padded_billing_jurisdiction_keeps_its_rate_limit():
+    """Whitespace no longer costs a jurisdiction its configured limit.
+
+    This was the reported impact: a legitimate US jurisdiction dropped from 200
+    to 100 requests purely because of padding.
+    """
+    padded = detect_billing_jurisdiction("  us  ")
+    assert padded == "US"
+    assert billing_rate_limit(padded) == BILLING_RATE_LIMITS["US"] == 200
+
+
+def test_billing_jurisdiction_falls_back_to_the_geoip_country():
+    assert detect_billing_jurisdiction(None, "in") == "IN"
+
+
+def test_billing_jurisdiction_falls_back_to_global_without_any_signal():
+    assert detect_billing_jurisdiction(None, None) == "GLOBAL"
+    assert detect_billing_jurisdiction("", "") == "GLOBAL"
+
+
+def test_billing_jurisdiction_accepts_a_request_without_geoip_headers():
+    """The request object is accepted for a future GeoIP lookup but unused."""
+    assert detect_billing_jurisdiction(None, None, _Request("/billing/x")) == "GLOBAL"
+
+
+@pytest.mark.parametrize(
+    ("jurisdiction", "expected"),
+    [("EU", 100), ("US", 200), ("IN", 150), ("GLOBAL", 100), ("eu", 100)],
+)
+def test_billing_rate_limit_matches_the_published_table(jurisdiction, expected):
+    assert billing_rate_limit(jurisdiction) == expected
+
+
+def test_billing_rate_limit_case_folds_before_lookup():
+    assert billing_rate_limit("us") == BILLING_RATE_LIMITS["US"]
+
+
+def test_billing_rate_limit_defaults_to_100_for_unknown_jurisdictions():
+    assert billing_rate_limit("ZZ") == 100
+    assert billing_rate_limit("") == 100
+
+
+# --------------------------------------------------------------------------
+# ads_gate: TCF 2.0 consent
+# --------------------------------------------------------------------------
+
+
+def test_check_tcf_is_false_without_a_consent_string():
+    assert check_tcf(None) is False
+    assert check_tcf("") is False
+
+
+def test_check_tcf_is_true_for_any_non_empty_consent_string():
+    assert check_tcf("CP") is True
+    assert check_tcf(" ") is True
+
+
+# --------------------------------------------------------------------------
+# age_gate
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("path", sorted(AGE_RESTRICTED_PREFIXES))
+def test_age_restricted_prefixes_all_require_verification(path):
+    assert is_age_restricted(path) is True
+    assert is_age_restricted(path + "/detail") is True
+
+
+def test_public_paths_are_not_age_restricted():
+    for path in ("/content/catalog", "/health", "/", "/api/v1/titles"):
+        assert is_age_restricted(path) is False
+
+
+def test_age_restricted_matching_respects_the_path_segment_boundary():
+    """A sibling route that merely shares a prefix is no longer gated (#879).
+
+    This previously matched on a raw prefix, so "/maturityx" and
+    "/purchase-order/list" were 403'd purely for sharing a leading substring.
+    The over-match failed safe, but tightening it is the deliberate change this
+    test was pinned for; the boundary rule itself is covered exhaustively in
+    test_age_gate_boundary.py.
+    """
+    assert is_age_restricted("/maturityx") is False
+    assert is_age_restricted("/purchase-order/list") is False
+    assert is_age_restricted("/content/restrictedxyz") is False
+
+
+def test_age_gate_allows_unrestricted_paths_without_any_headers():
+    assert check_age_gate(_Request("/content/catalog")) is None
+
+
+@pytest.mark.parametrize("verified", [None, "", "false", "TRUE", "1"])
+def test_age_gate_blocks_restricted_paths_without_true_verification(verified):
+    with pytest.raises(HTTPException) as exc:
+        check_age_gate(_Request("/maturity/film"), x_age_verified=verified)
+    assert exc.value.status_code == 403
+    assert "Age verification required" in exc.value.detail
+
+
+def test_age_gate_allows_a_verified_adult():
+    result = check_age_gate(
+        _Request("/maturity/film"),
+        x_age_verified="true",
+        x_is_minor="false",
+        x_jurisdiction="US",
+    )
+    assert result == {"age_verified": True, "is_minor": False, "jurisdiction": "US"}
+
+
+def test_age_gate_allows_a_verified_minor_and_reports_them_as_minor():
+    result = check_age_gate(
+        _Request("/purchase/checkout"),
+        x_age_verified="true",
+        x_is_minor="true",
+        x_jurisdiction="EU",
+    )
+    assert result == {"age_verified": True, "is_minor": True, "jurisdiction": "EU"}
+
+
+def test_age_gate_defaults_the_jurisdiction_to_global():
+    result = check_age_gate(_Request("/content/restricted/x"), x_age_verified="true")
+    assert result["jurisdiction"] == "GLOBAL"
+    assert result["is_minor"] is False
+
+
+def test_age_gate_uppercases_a_lowercase_jurisdiction_header():
+    result = check_age_gate(_Request("/maturity/x"), x_age_verified="true", x_jurisdiction="in")
+    assert result["jurisdiction"] == "IN"
+
+
+@pytest.mark.parametrize("jurisdiction", sorted(JURISDICTION_MINOR_AGE))
+def test_no_jurisdiction_based_minor_denial_is_implemented(jurisdiction):
+    """KNOWN GAP (#1023) -- asserted honestly instead of papered over.
+
+    The previous version of this test claimed the minor-age table was "used":
+    it parametrised over the table and then asserted ``minor_age > 0`` about
+    the very value it had been handed. The number never reaches a decision --
+    `check_age_gate` interpolates it into a log line and returns a payload
+    that does not contain it, so a *verified minor* is admitted in every listed
+    jurisdiction, at every listed age.
+
+    This now states the gap. It will go red the moment someone implements a
+    per-jurisdiction policy, which is correct: that is a legal decision, not a
+    refactor, and it should be made deliberately.
+    """
+    result = check_age_gate(
+        _Request("/maturity/x"),
+        x_age_verified="true",
+        x_is_minor="true",
+        x_jurisdiction=jurisdiction,
+    )
+
+    assert result is not None, "a verified minor was refused"
+    assert result["is_minor"] is True
+    assert "minor_age" not in result, "the table value is supposed to stay out of the decision"
+
+
+@pytest.mark.parametrize("jurisdiction", ["ZZ", "", None])
+def test_an_unknown_jurisdiction_changes_nothing_either(jurisdiction):
+    """Same gap, for a jurisdiction the table does not mention at all."""
+    result = check_age_gate(
+        _Request("/maturity/x"),
+        x_age_verified="true",
+        x_is_minor="true",
+        x_jurisdiction=jurisdiction,
+    )
+    assert result is not None
+    assert result["is_minor"] is True
+
+
+# --------------------------------------------------------------------------
+# privacy_proxy
+# --------------------------------------------------------------------------
+
+
+def test_resolve_jurisdiction_normalises_a_known_code():
+    assert resolve_jurisdiction("  eu  ") == "EU"
+    assert resolve_jurisdiction("US-CA") == "US-CA"
+
+
+def test_resolve_jurisdiction_falls_back_to_global_for_unknown_codes():
+    """An unrecognised code must not be trusted as a jurisdiction."""
+    assert resolve_jurisdiction("atlantis") == "ATLANTIS"
+    assert resolve_jurisdiction(None) == "GLOBAL"
+    assert resolve_jurisdiction("") == "GLOBAL"
+
+
+def test_resolve_jurisdiction_passes_known_codes_through_untouched():
+    for code in VALID_JURISDICTIONS:
+        assert resolve_jurisdiction(code) == code
+
+
+def test_resolve_jurisdiction_accepts_a_request_for_future_geoip_fallback():
+    assert resolve_jurisdiction(None, _Request("/privacy/notice")) == "GLOBAL"
+
+
+def test_cached_notice_is_returned_before_the_ttl():
+    notice = {"effective": "2026-01-01", "url": "https://privacy.example/notice"}
+    set_cached_notice("EU", notice)
+
+    assert get_cached_notice("EU") == notice
+    assert get_cached_notice("US") is None
+
+
+def test_cached_notice_expires_after_the_ttl():
+    notice = {"url": "https://privacy.example/notice"}
+    set_cached_notice("EU", notice)
+    # Backdate the entry past the 300s TTL.
+    ts, data = _NOTICE_CACHE["EU"]
+    _NOTICE_CACHE["EU"] = (ts - 301, data)
+
+    assert get_cached_notice("EU") is None
+
+
+def test_set_cached_notice_replaces_the_previous_notice():
+    set_cached_notice("EU", {"url": "v1"})
+    set_cached_notice("EU", {"url": "v2"})
+    assert get_cached_notice("EU") == {"url": "v2"}
+
+
+def test_clear_expired_cache_drops_only_stale_entries():
+    set_cached_notice("EU", {"url": "fresh"})
+    set_cached_notice("US", {"url": "stale"})
+    ts, data = _NOTICE_CACHE["US"]
+    _NOTICE_CACHE["US"] = (time.time() - 301, data)
+
+    clear_expired_cache()
+
+    assert "EU" in _NOTICE_CACHE
+    assert "US" not in _NOTICE_CACHE
+
+
+def test_clear_expired_cache_on_an_empty_cache_is_a_no_op():
+    clear_expired_cache()
+    assert _NOTICE_CACHE == {}
+
+
+# --------------------------------------------------------------------------
+# security_headers
+# --------------------------------------------------------------------------
+
+
+def test_security_header_bundle_is_complete():
+    assert SECURITY_HEADERS["Strict-Transport-Security"].startswith("max-age=31536000")
+    assert SECURITY_HEADERS["Content-Security-Policy"] == "default-src 'self'"
+    assert SECURITY_HEADERS["X-Frame-Options"] == "DENY"
+    assert SECURITY_HEADERS["X-Content-Type-Options"] == "nosniff"

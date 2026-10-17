@@ -27,8 +27,7 @@ from conftest import (
     auth_headers,
     decode_jwt,
     ip_keyed,
-    mint_access_token,
-    mint_jwt,
+    malformed_rs256_token,
     register_user,
 )
 
@@ -56,12 +55,31 @@ class TestEdgeRejectsBadCredentials:
 
     def test_token_without_exp_401(self, client: httpx.Client, user_a: dict) -> None:
         """Tokens lacking an exp claim must never become permanent credentials."""
-        token = mint_jwt({"sub": user_a["user_id"], "user_id": user_a["user_id"]})
+        token = malformed_rs256_token(
+            {
+                "sub": user_a["user_id"],
+                "user_id": user_a["user_id"],
+                "iat": int(time.time()) - 1,
+                "iss": "wildframe-auth",
+                "aud": "wildframe-api",
+                "type": "access",
+            }
+        )
         response = ip_keyed(client, "get", ME_PATH, headers=auth_headers(token))
         assert response.status_code == 401
 
     def test_expired_token_401(self, client: httpx.Client, user_a: dict) -> None:
-        token = mint_access_token(user_a["user_id"], exp_delta=-300)
+        token = malformed_rs256_token(
+            {
+                "sub": user_a["user_id"],
+                "user_id": user_a["user_id"],
+                "iat": int(time.time()) - 600,
+                "exp": int(time.time()) - 300,
+                "iss": "wildframe-auth",
+                "aud": "wildframe-api",
+                "type": "access",
+            }
+        )
         response = ip_keyed(client, "get", ME_PATH, headers=auth_headers(token))
         assert response.status_code == 401
 

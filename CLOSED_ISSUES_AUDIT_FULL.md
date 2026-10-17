@@ -1,3 +1,10 @@
+> [!WARNING]
+> **Historical snapshot — generated 2026-08-22** against HEAD `dc1f52c`.
+> Companion to `CLOSED_ISSUES_AUDIT.md`, with the same caveat: its issue
+> tallies describe that date, not today, and its "54/54 jobs" CI figures
+> describe one specific past run (`ci-cd.yml` defines 17 jobs today). Kept for
+> history only.
+
 # Wildframe — Full Closed-Issues Audit (all 607)
 
 Generated 2026-08-22 against `shobhit727/Wildframe` (HEAD `dc1f52c`).
@@ -139,7 +146,7 @@ These are documented in closing comments with explicit justification (e.g. DRM, 
 ## Re-run
 
 ```bash
-cd /home/phoenix/Desktop/wildframe
+cd "$(git rev-parse --show-toplevel)"
 
 # 1. Pull closed issues
 gh api "repos/shobhit727/Wildframe/issues?state=closed&per_page=100&page=N" \
