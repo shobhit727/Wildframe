@@ -1251,3 +1251,46 @@ the script text as an explicitly-weaker proxy.
 
 Closing it properly means adding a `redis:` service to the gateway job in
 `.github/workflows/ci-cd.yml` — not a service change, and not done.
+
+### 7 "production bugs" from the mutation audit were refuted on inspection
+
+Worth recording because it is the failure mode the audit itself warns about. I
+filed #1024 (streaming entitlement), #1027 (recommendation `disliked_genres`) and
+#1028 (auth case-sensitive email) as shipped-green production bugs. When agents
+went to fix them:
+
+- **The streaming entitlement guard and its `private, no-store` header are both
+  present** — added five weeks earlier in `16391f0f`. What was true is that
+  nothing protected either line. The tests were the missing part, now added.
+- **`disliked_genres` is not dropped.** The assignment is present and correct.
+  The test written first passed, which is what proved it; deleting the lines
+  gives `assert [] == ['horror','slasher']` while the original suite stays at
+  310 passed.
+- **The auth lookup already normalises.** The real defect was one layer down —
+  `verify-email` compared a canonical stored address against a *raw* request
+  string, so a user registering as `Mixed.Case@example.com` got a token issued
+  for the lowercased address and was refused forever. Real bug, wrong location.
+
+Genuinely production bugs, confirmed and fixed: streaming's missing-`arv` admin
+bypass and the signed-URL signing/verification drift; auth's canonicalisation
+gap; search passing an unrecognised `role` claim through verbatim.
+
+**The pattern:** "the mutant survived" means *the test cannot detect the change*,
+which is not the same as *the code is wrong*. Only a live-behaviour proof
+distinguishes them, and three times here it inverted my conclusion.
+
+### Still needing an owner decision
+
+- **DMCA in moderation** (#1026): still dark, tests now labelled
+  `KNOWN GAP (owner decision pending)` rather than documenting the absence as a
+  deliberate decision. Mount, delete, or leave dark.
+  `TakedownCreate.reporter_email` is a bare `str` with no validation and no length
+  bound — harmless only because the route is not served.
+- **`uq_moderation_decision_terminal`** is a unique index on `flag_id` alone, so
+  a flag can hold only one decision. An "audit trail" that cannot record
+  escalation-then-rejection needs a schema migration.
+- **`require_admin`'s siblings**: admin-service:100/157 and content-service:197
+  have the same `int(payload.get("arv") or 0)` shape that was a real bypass in
+  streaming.
+- **CI has no redis service**, so 6 gateway tests skip. And one of them is not
+  hermetic — it hardcodes an account id and never releases its lease.
