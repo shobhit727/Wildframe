@@ -247,24 +247,99 @@ from app.repositories.privacy_repository import (
     ConsentRecordRepository as PrivacyConsentRecordRepository,
 )
 
+# ==========================================================================
+# Email canonicalisation at the repository boundary (#161).
+#
+# ``normalize_email`` already ran here, so these pass today and are the
+# regression pins for it: they are what makes "case-insensitive *everywhere*"
+# true at the layer every lookup goes through, and what would go red if a
+# future edit took the normalisation back out of ``create``/``get_by_email``.
+# ==========================================================================
+
+
+class TestUserRepositoryEmailCanonicalisation:
+    SPELLINGS = (
+        "mixed.case@example.com",
+        "Mixed.Case@Example.COM",
+        "MIXED.CASE@EXAMPLE.COM",
+        "  mixed.case@example.com  ",
+    )
+
+    async def test_create_stores_the_canonical_form(self, user_repository):
+        created = await user_repository.create(email="Mixed.Case@Example.COM", password_hash="hash")
+        await user_repository.commit()
+
+        assert created.email == "mixed.case@example.com"
+
+    async def test_lookup_is_case_and_whitespace_insensitive(self, user_repository):
+        created = await user_repository.create(email="Mixed.Case@Example.COM", password_hash="hash")
+        await user_repository.commit()
+
+        for spelling in self.SPELLINGS:
+            found = await user_repository.get_by_email(spelling)
+            assert found is not None, spelling
+            assert found.id == created.id, spelling
+
+    async def test_lookup_of_a_stored_lowercase_address_is_case_insensitive(self, user_repository):
+        created = await user_repository.create(email="already@lower.example", password_hash="hash")
+        await user_repository.commit()
+
+        assert (await user_repository.get_by_email("ALREADY@LOWER.EXAMPLE")).id == created.id
+
+    async def test_canonicalisation_does_not_collapse_distinct_addresses(self, user_repository):
+        """``mixed.case@example.com`` and ``mixedcase@example.com`` are two
+        people. Casefolding must not merge them."""
+        created = await user_repository.create(email="Mixed.Case@Example.COM", password_hash="hash")
+        await user_repository.commit()
+
+        assert await user_repository.get_by_email("mixedcase@example.com") is None
+        assert created.email == "mixed.case@example.com"
+
 
 class TestUserRepositoryErrorPaths:
     async def test_create_rolls_back_and_reraises(self, user_repository):
-        with patch.object(
-            type(user_repository.session), "flush", AsyncMock(side_effect=RuntimeError("deadlock"))
+        """The rollback is the behaviour under test, not the re-raise.
+
+        Asserting only ``pytest.raises`` leaves ``await self.rollback()``
+        deleted from ``UserRepository.create`` shipping green. Without it the
+        failed flush leaves the transaction open, so the next caller on this
+        session inherits a poisoned transaction. The same shape already exists
+        at ``tests/test_database.py`` (``session.rollback.assert_awaited_once()``).
+        """
+        rollback = AsyncMock(wraps=user_repository.session.rollback)
+
+        with (
+            patch.object(
+                type(user_repository.session),
+                "flush",
+                AsyncMock(side_effect=RuntimeError("deadlock")),
+            ),
+            patch.object(type(user_repository.session), "rollback", rollback),
         ):
-            with pytest.raises(RuntimeError):
+            with pytest.raises(RuntimeError, match="deadlock"):
                 await user_repository.create(email="rollback@example.com", password_hash="hash")
+
+        rollback.assert_awaited_once()
 
     async def test_update_unknown_user_returns_none(self, user_repository):
         assert await user_repository.update(uuid4(), first_name="X") is None
 
     async def test_update_rolls_back_and_reraises(self, test_user, user_repository):
-        with patch.object(
-            type(user_repository.session), "flush", AsyncMock(side_effect=RuntimeError("io"))
+        """As above: ``update``'s rollback was equally unpinned."""
+        rollback = AsyncMock(wraps=user_repository.session.rollback)
+
+        with (
+            patch.object(
+                type(user_repository.session),
+                "flush",
+                AsyncMock(side_effect=RuntimeError("io")),
+            ),
+            patch.object(type(user_repository.session), "rollback", rollback),
         ):
-            with pytest.raises(RuntimeError):
+            with pytest.raises(RuntimeError, match="io"):
                 await user_repository.update(test_user.id, first_name="X")
+
+        rollback.assert_awaited_once()
 
     async def test_update_ignores_unknown_attributes(self, test_user, user_repository):
         user = await user_repository.update(

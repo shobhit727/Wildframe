@@ -165,6 +165,122 @@ def _token_for(email, **claims):
     )
 
 
+class _RecordingLimiter:
+    """``allow()``'s contract, in memory, without restating any limit.
+
+    ``app.core.rate_limit.allow`` counts with ``INCR`` and denies once the
+    count *exceeds* the ``max_requests`` the caller hands it. This reproduces
+    exactly that -- and deliberately takes the ceiling from the caller instead
+    of hard-coding 30 or 10, so raising the route's literal also raises what
+    this limiter enforces and the endpoint's 429 stops appearing.
+    """
+
+    def __init__(self) -> None:
+        self.counts: dict[str, int] = {}
+        self.calls: list[dict] = []
+
+    async def __call__(self, key, *, max_requests, window_seconds, cooldown_seconds=0):
+        self.calls.append(
+            {"key": key, "max_requests": max_requests, "window_seconds": window_seconds}
+        )
+        self.counts[key] = self.counts.get(key, 0) + 1
+        return self.counts[key] <= max_requests
+
+    def asked_for(self, prefix: str) -> dict:
+        for call in self.calls:
+            if call["key"].startswith(prefix):
+                return call
+        raise AssertionError(f"no rate limit was requested for {prefix!r}; saw {self.calls}")
+
+
+# --------------------------------------------------------------------------
+# mfa/login-verify brute-force caps
+# --------------------------------------------------------------------------
+
+
+class TestMfaLoginVerifyBruteForceCaps:
+    """The per-IP and per-user ceilings on POST /mfa/login-verify.
+
+    ``test_rate_limit_key_guard.py`` pins the *key format* for these two
+    buckets; nothing pinned the *limits*, so 30 -> 3000 and 900 -> 90000 both
+    shipped green. These pin the numbers, and prove the route enforces them.
+    """
+
+    WRONG_CODE = "000000"
+
+    def _probe(self, client, account, limiter, times: int):
+        """Hammer the endpoint with a code the TOTP check rejects.
+
+        ``complete_mfa_login`` validates the code *before* it consumes the
+        challenge, so one challenge serves every attempt and a passing
+        throttle is distinguishable from a failing code check: 400 means the
+        throttle let it through, 429 means the throttle refused it. The code
+        check is stubbed out because a real 6-digit guess is right about once
+        in a million -- the audit already found one kill here that only landed
+        20 runs in 25 because of exactly this coin-flip.
+        """
+        statuses = []
+        with (
+            patch.object(auth_routes, "allow", limiter),
+            patch.object(pyotp.TOTP, "verify", return_value=False),
+        ):
+            for _ in range(times):
+                response = client.post(
+                    "/api/v1/auth/mfa/login-verify",
+                    json={"mfa_challenge": account["challenge"], "code": self.WRONG_CODE},
+                )
+                statuses.append(response.status_code)
+        return statuses
+
+    def test_per_ip_ceiling_is_30_per_15_minutes(self, client):
+        account = _mfa_ready_account(client, "mfa-cap-ip@example.com")
+        limiter = _RecordingLimiter()
+
+        self._probe(client, account, limiter, times=1)
+
+        asked = limiter.asked_for("mfa:verify:ip:")
+        # Exact equality, not a bound: 100x is the mutation that survived.
+        assert asked["max_requests"] == 30
+        assert asked["window_seconds"] == 900
+
+    def test_per_user_ceiling_is_10_per_15_minutes(self, client):
+        account = _mfa_ready_account(client, "mfa-cap-user@example.com")
+        limiter = _RecordingLimiter()
+
+        self._probe(client, account, limiter, times=1)
+
+        asked = limiter.asked_for("mfa:verify:user:")
+        assert asked["max_requests"] == 10
+        assert asked["window_seconds"] == 900
+
+    def test_the_tenth_probe_passes_and_the_eleventh_is_refused(self, client):
+        account = _mfa_ready_account(client, "mfa-cap-enforced@example.com")
+        limiter = _RecordingLimiter()
+
+        statuses = self._probe(client, account, limiter, times=11)
+
+        # The first ten get past the throttle and fail on the code instead.
+        assert statuses[:10] == [400] * 10, statuses
+        # The eleventh is refused by the throttle, not by the code.
+        assert statuses[10] == 429, statuses
+
+        assert limiter.counts[limiter.asked_for("mfa:verify:ip:")["key"]] == 11
+        assert sum(call["key"].startswith("mfa:verify:user:") for call in limiter.calls) == 11
+
+    def test_both_buckets_are_consulted_on_every_request(self, client):
+        """Deleting either gate leaves the surviving one doing the work, so
+        both keys must appear on every request."""
+        account = _mfa_ready_account(client, "mfa-cap-both-buckets@example.com")
+        limiter = _RecordingLimiter()
+
+        self._probe(client, account, limiter, times=3)
+
+        keys = [call["key"] for call in limiter.calls]
+        ip_key = limiter.asked_for("mfa:verify:ip:")["key"]
+        assert keys.count(ip_key) == 3
+        assert len([k for k in keys if k.startswith("mfa:verify:user:")]) == 3
+
+
 # --------------------------------------------------------------------------
 # _get_user_locked / get_current_user
 # --------------------------------------------------------------------------
@@ -209,6 +325,62 @@ class TestGetUserLocked:
 
 
 class TestGetCurrentUser:
+    #: Prefixes that must not be accepted as the ``Bearer `` scheme. The scheme
+    #: is case-sensitive (RFC 7235 2.1) and the trailing space is part of it.
+    NOT_BEARER = ("bearer ", "BEARER ", "Bearer", "Token ", "Basic ", "Bearer\t")
+
+    async def test_the_authorization_scheme_must_be_exactly_bearer(self, test_session):
+        """``startswith("Bearer ")`` in both the auth dependency and ``logout``.
+
+        Outcome-equivalent to a looser match for the current callers, so it was
+        a coverage gap rather than a bypass -- but a looser check is exactly how
+        ``Authorization: <token>`` or ``Authorization: Token <token>`` starts
+        being honoured, and both sites have to agree.
+        """
+        from fastapi import HTTPException
+
+        from app.models import User
+
+        user = User(
+            email="scheme@example.com",
+            password_hash=PasswordManager.hash_password(GOOD_PASSWORD),
+        )
+        test_session.add(user)
+        await test_session.commit()
+        token = TokenManager.create_access_token(user.id, user.email, 0)
+
+        assert (await auth_routes.get_current_user(test_session, f"Bearer {token}")) == user.id
+
+        for prefix in self.NOT_BEARER:
+            header = f"{prefix}{token}"
+            with pytest.raises(HTTPException) as exc_info:
+                await auth_routes.get_current_user(test_session, header)
+            assert exc_info.value.status_code == 401, header
+            assert exc_info.value.detail == "Missing or invalid authorization header", header
+
+        # A bare token with no scheme at all.
+        with pytest.raises(HTTPException) as exc_info:
+            await auth_routes.get_current_user(test_session, token)
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Missing or invalid authorization header"
+
+    async def test_logout_agrees_with_the_auth_dependency_on_the_scheme(self, client):
+        """The same prefix rule on the other site, end to end."""
+        account = _register(client, email="logout-scheme@example.com")
+        token = account["access_token"]
+
+        assert client.get("/api/v1/auth/me", headers=account["headers"]).status_code == 200
+
+        for prefix in self.NOT_BEARER:
+            response = client.post(
+                "/api/v1/auth/logout", headers={"Authorization": f"{prefix}{token}"}
+            )
+            assert response.status_code == 401, (prefix, response.status_code)
+            assert response.json()["detail"] == "Missing or invalid authorization header", prefix
+
+        # The token was never revoked by any of the rejected attempts.
+        assert client.get("/api/v1/auth/me", headers=account["headers"]).status_code == 200
+
     async def test_non_uuid_subject_is_401(self, test_session):
         from fastapi import HTTPException
 
@@ -407,16 +579,55 @@ class TestRegisterFailurePaths:
         assert "connection string" not in response.text
 
     def test_rollback_is_called_on_registration_failure(self, client):
-        with patch.object(
-            auth_routes.AuthService,
-            "register",
-            AsyncMock(side_effect=ValueError("nope")),
+        """The rollback is the assertion.
+
+        This test used to contain none: it patched the service, posted, and
+        stopped, so it could not fail -- deleting every ``await db.rollback()``
+        from the register handler left it green. Rolling back is what keeps the
+        request's session out of an open transaction, so it is pinned here the
+        way ``tests/test_database.py`` pins its own.
+        """
+        rollback = AsyncMock(return_value=None)
+
+        with (
+            patch.object(
+                auth_routes.AuthService,
+                "register",
+                AsyncMock(side_effect=ValueError("nope")),
+            ),
+            patch.object(AsyncSession, "rollback", rollback),
         ):
-            with patch.object(auth_routes, "UserRepository", wraps=auth_routes.UserRepository):
-                client.post(
-                    "/api/v1/auth/register",
-                    json={"email": "rollback@example.com", "password": GOOD_PASSWORD},
-                )
+            response = client.post(
+                "/api/v1/auth/register",
+                json={"email": "rollback@example.com", "password": GOOD_PASSWORD},
+            )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "nope"
+        rollback.assert_awaited_once()
+
+    def test_rollback_is_called_on_an_unexpected_registration_failure(self, client):
+        """Same guarantee on the 500 branch -- it also rolls back, and a
+        handler that only rolled back on the expected error would leave the
+        session dirty on the unexpected one."""
+        rollback = AsyncMock(return_value=None)
+
+        with (
+            patch.object(
+                auth_routes.AuthService,
+                "register",
+                AsyncMock(side_effect=RuntimeError("connection string leaked")),
+            ),
+            patch.object(AsyncSession, "rollback", rollback),
+        ):
+            response = client.post(
+                "/api/v1/auth/register",
+                json={"email": "rollback-500@example.com", "password": GOOD_PASSWORD},
+            )
+
+        assert response.status_code == 500
+        assert response.json() == {"detail": "Internal server error"}
+        rollback.assert_awaited_once()
 
     def test_email_is_normalised_to_lowercase(self, client):
         _register(client, email="Normalise@Example.com")
@@ -874,6 +1085,63 @@ class TestVerifyEmailFailurePaths:
 
         assert response.status_code == 422
 
+    def test_an_already_consumed_token_is_refused_before_any_write(self, client):
+        """The ``is_blacklisted(token_hash)`` pre-check, and its error *shape*.
+
+        Not a hole -- ``token_blacklist.token_hash`` is unique and the
+        IntegrityError branch still rejects a replay -- but the distinction
+        matters: the pre-check answers 400, and only reaching the INSERT would
+        let a losing race answer 500 instead. This asserts both the status and
+        that no write is attempted, so it cannot pass by way of the
+        IntegrityError branch.
+        """
+        account = _register(client, email="ve-preblacklisted@example.com")
+        token = TokenManager.create_email_verification_token(
+            _user_id_from(account), account["email"]
+        )
+        body = {"email": account["email"], "token": token}
+
+        assert client.post("/api/v1/auth/verify-email", json=body).status_code == 200
+
+        with patch.object(auth_routes.TokenBlacklistRepository, "create", AsyncMock()) as create:
+            replay = client.post("/api/v1/auth/verify-email", json=body)
+
+        assert replay.status_code == 400, replay.text
+        assert replay.json() == {"detail": "Invalid or expired verification token"}
+        create.assert_not_awaited()
+
+    def test_a_token_bound_to_the_previous_address_is_404(self, client, app_db):
+        """The second binding: ``user.email != request.email``.
+
+        Redundant with the token/payload check, so it is unreachable by any
+        request that gets past the first one -- which is exactly why nothing
+        covered it. Here the token's address matches the request but no longer
+        matches the account, so only this check can produce the 404; deleting
+        it would return 200 and mark a stale link as proof of ownership.
+        """
+        account = _register(client, email="ve-rebound@example.com")
+        user_id = _user_id_from(account)
+        token = TokenManager.create_email_verification_token(user_id, account["email"])
+        engine, factory = app_db
+
+        async def _change_address():
+            from app.models import User
+
+            async with factory() as session:
+                stored = await session.get(User, user_id)
+                stored.email = "ve-rebound-new@example.com"
+                await session.commit()
+
+        _run(_change_address())
+
+        response = client.post(
+            "/api/v1/auth/verify-email",
+            json={"email": account["email"], "token": token},
+        )
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "User not found"}
+
 
 def _mfa_ready_account(client, email: str) -> dict:
     """Register a user, enable MFA, and log in to obtain a real challenge."""
@@ -896,6 +1164,113 @@ def _user_id_from(account) -> uuid.UUID:
 
     payload = jwt.get_unverified_claims(account["access_token"])
     return uuid.UUID(payload["user_id"])
+
+
+# --------------------------------------------------------------------------
+# email canonicalisation, end to end (#161)
+# --------------------------------------------------------------------------
+
+
+class TestMixedCaseEmailVerification:
+    """An address is one identity regardless of how it was spelled.
+
+    ``UserRepository.create``/``get_by_email`` already canonicalise with
+    ``normalize_email`` (NFC + strip + casefold), so a mixed-case address
+    resolves and a mixed-case login works. ``verify-email`` was the one
+    place that compared the *canonical* stored address against the *raw*
+    request string, so an account registered as ``Mixed.Case@Example.com``
+    could obtain a token and then never spend it -- a silent 400 forever.
+
+    The canonical form is applied once, at the request boundary, so every
+    handler compares canonical-to-canonical instead of each one re-deriving
+    the rule.
+    """
+
+    def test_stored_address_is_the_canonical_form(self, client):
+        account = _register(client, email="Canonical@Example.COM")
+
+        me = client.get("/api/v1/auth/me", headers=account["headers"])
+
+        assert me.status_code == 200
+        assert me.json()["email"] == "canonical@example.com"
+
+    def test_mixed_case_resend_returns_a_token(self, client):
+        _register(client, email="Mixed.Case@Example.COM")
+
+        resend = client.post(
+            "/api/v1/auth/resend-verification", json={"email": "Mixed.Case@Example.COM"}
+        )
+
+        assert resend.status_code == 202
+        assert resend.json()["verification_token"]
+
+    def test_mixed_case_registration_can_be_verified_with_the_same_address(self, client):
+        """The defect: the user who typed ``Mixed.Case@Example.COM`` at
+        /register is handed a token at /resend-verification and then refused
+        at /verify-email, with no way to reach a verified account."""
+        account = _register(client, email="Mixed.Case@Example.COM")
+
+        resend = client.post(
+            "/api/v1/auth/resend-verification", json={"email": "Mixed.Case@Example.COM"}
+        )
+        token = resend.json()["verification_token"]
+
+        verify = client.post(
+            "/api/v1/auth/verify-email",
+            json={"email": "Mixed.Case@Example.COM", "token": token},
+        )
+
+        assert verify.status_code == 200, verify.text
+        assert verify.json() == {"message": "Email verified successfully"}
+
+        # And the account really is verified, not merely answered 200.
+        me = client.get("/api/v1/auth/me", headers=account["headers"])
+        assert me.json()["email_verified"] is True
+
+    def test_mixed_case_verification_also_works_from_the_canonical_spelling(self, client):
+        """Both spellings reach the same principal, so either verifies."""
+        account = _register(client, email="Mixed.Case@Example.COM")
+        resend = client.post(
+            "/api/v1/auth/resend-verification", json={"email": "mixed.case@example.com"}
+        )
+        token = resend.json()["verification_token"]
+
+        mixed = client.post(
+            "/api/v1/auth/verify-email",
+            json={"email": "MIXED.case@EXAMPLE.com", "token": token},
+        )
+
+        assert mixed.status_code == 200, mixed.text
+        assert account["headers"]
+
+    def test_mixed_case_address_can_log_in(self, client):
+        _register(client, email="Mixed.Case@Example.COM")
+
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"email": "  MIXED.case@EXAMPLE.com ", "password": GOOD_PASSWORD},
+        )
+
+        assert login.status_code == 200, login.text
+        assert login.json()["access_token"]
+
+    def test_a_different_account_is_still_refused(self, client):
+        """Canonicalisation must not collapse two distinct addresses.
+
+        ``mixed.case@example.com`` and ``mixedcase@example.com`` canonicalise
+        differently, and the token is still bound to one address."""
+        account = _register(client, email="Mixed.Case@Example.COM")
+        token = TokenManager.create_email_verification_token(
+            _user_id_from(account), "mixedcase@example.com"
+        )
+
+        response = client.post(
+            "/api/v1/auth/verify-email",
+            json={"email": "Mixed.Case@Example.COM", "token": token},
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Token email does not match requested email"
 
 
 # --------------------------------------------------------------------------

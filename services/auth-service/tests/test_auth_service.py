@@ -979,6 +979,75 @@ class TestLoginRemainingBranches:
         # value is naive (User.is_locked normalises tzinfo before comparing).
         assert user.is_locked is True
 
+    async def test_repeated_failures_lock_the_account_for_fifteen_minutes(
+        self, service, test_user, test_session
+    ):
+        """The *window*, not merely that the column was written.
+
+        ``test_repeated_failures_lock_the_account`` stops at
+        ``locked_until is not None``, and every other test in the suite
+        hand-sets ``locked_until`` rather than driving the lockout, so
+        ``lockout_minutes = 15`` -> a year shipped green: every user would
+        still be locked out after the first brute-force burst.
+        """
+        request = UserLoginRequest(email=test_user.email, password="WrongPass456!")
+
+        for _ in range(5):
+            with pytest.raises(HTTPException):
+                await service.login(request, ip_address="1.1.1.1")
+
+        user = await service.user_repo.get_by_email(test_user.email)
+        # Read the value back through the database, not the in-memory object,
+        # so what is asserted is the window that would actually be enforced.
+        await test_session.refresh(user)
+
+        locked_until = user.locked_until
+        assert locked_until is not None
+        # ``users.locked_until`` is a naive-timestamp column here; User.is_locked
+        # normalises either spelling, so this test does too.
+        if locked_until.tzinfo is None:
+            locked_until = locked_until.replace(tzinfo=UTC)
+
+        now = datetime.now(UTC)
+        assert (
+            now + timedelta(minutes=14) <= locked_until <= now + timedelta(minutes=16)
+        ), f"lockout window is {locked_until - now}, expected about 15 minutes"
+
+    async def test_the_lock_lifts_once_the_window_has_passed(
+        self, service, test_user, test_session
+    ):
+        """The other half of the window: a lock that never expires is as broken
+        as one that never engages."""
+        request = UserLoginRequest(email=test_user.email, password="WrongPass456!")
+
+        for _ in range(5):
+            with pytest.raises(HTTPException):
+                await service.login(request, ip_address="1.1.1.1")
+
+        user = await service.user_repo.get_by_email(test_user.email)
+        user.locked_until = datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=1)
+        await service.user_repo.commit()
+
+        # Still locked one minute out.
+        with pytest.raises(HTTPException) as still_locked:
+            await service.login(
+                UserLoginRequest(email=test_user.email, password="testpass123"),
+                ip_address="1.1.1.1",
+            )
+        assert still_locked.value.status_code == 429
+
+        # Past the window the real password works again.
+        user = await service.user_repo.get_by_email(test_user.email)
+        user.locked_until = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=1)
+        await service.user_repo.commit()
+
+        response = await service.login(
+            UserLoginRequest(email=test_user.email, password="testpass123"),
+            ip_address="1.1.1.1",
+        )
+
+        assert response.token_type == "bearer"
+
     async def test_successful_login_resets_attempts_and_stamps_last_login(self, service, test_user):
         user = await service.user_repo.get_by_email(test_user.email)
         user.login_attempts = 3

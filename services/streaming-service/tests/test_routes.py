@@ -31,7 +31,13 @@ def auth_user_id():
 
 @pytest.fixture
 def fake_service():
-    return AsyncMock()
+    svc = AsyncMock()
+    # The entitlement gate returns None (i.e. "this caller holds a matching
+    # active session") by default, so a manifest GET succeeds. Stating it here
+    # rather than inheriting an arbitrary AsyncMock means the 200 assertions
+    # below depend on that decision and the denial path is a separate test.
+    svc.require_manifest_session = AsyncMock()
+    return svc
 
 
 async def _echo_path_self(request: Request) -> UUID:
@@ -296,7 +302,13 @@ class TestManifestRoutes:
         assert response.status_code == 201
         assert response.json()["protocol"] == "hls"
 
-    def test_get_manifest(self, client, fake_service):
+    def test_get_manifest(self, client, fake_service, auth_user_id):
+        """A caller holding an active session for the asset gets the manifest.
+
+        The entitlement guard is asserted on the *call*, not just the outcome:
+        a bare AsyncMock made ``require_manifest_session`` a no-op, so deleting
+        the call from the route left this test green.
+        """
         manifest = make_manifest()
         fake_service.get_manifest = AsyncMock(return_value=manifest)
 
@@ -304,6 +316,9 @@ class TestManifestRoutes:
 
         assert response.status_code == 200
         assert response.json()["id"] == str(manifest.id)
+        fake_service.require_manifest_session.assert_awaited_once_with(
+            auth_user_id, manifest.episode_id, manifest.content_id
+        )
 
     def test_get_manifest_missing_returns_404(self, client, fake_service):
         fake_service.get_manifest = AsyncMock(return_value=None)
@@ -368,6 +383,29 @@ class TestTranscodingRoutes:
         assert response.status_code == 200
         assert len(response.json()) == 1
         fake_service.get_pending_jobs.assert_awaited_once_with(10)
+
+    @pytest.mark.parametrize("limit", [0, -1, 51, 1000])
+    def test_get_pending_jobs_limit_is_bounded_at_the_route(self, client, fake_service, limit):
+        """``Query(ge=1, le=50)`` is the only bound on this query.
+
+        ``StreamingService.get_pending_jobs`` passes ``limit`` straight through
+        to ``.limit()`` in the repository with no service-layer clamp, so this
+        route constraint is the whole defence against an unbounded result set.
+        """
+        fake_service.get_pending_jobs = AsyncMock(return_value=[])
+
+        response = client.get("/api/v1/transcoding-jobs/pending", params={"limit": limit})
+
+        assert response.status_code == 422
+        fake_service.get_pending_jobs.assert_not_called()
+
+    def test_get_pending_jobs_accepts_the_documented_limit_range(self, client, fake_service):
+        fake_service.get_pending_jobs = AsyncMock(return_value=[])
+
+        for limit in (1, 50):
+            response = client.get("/api/v1/transcoding-jobs/pending", params={"limit": limit})
+            assert response.status_code == 200
+            fake_service.get_pending_jobs.assert_awaited_with(limit)
 
     def test_update_transcoding_progress(self, client, fake_service):
         job = make_transcoding_job()

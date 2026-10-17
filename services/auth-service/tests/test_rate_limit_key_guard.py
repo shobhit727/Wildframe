@@ -585,7 +585,32 @@ def test_resend_email_has_exactly_one_caller_and_it_is_schema_validated():
         r"class ResendVerificationRequest\(BaseModel\):(.*?)\n\nclass ", schemas, re.S
     )
     assert block, "ResendVerificationRequest not found; the caller may have moved"
-    assert "email: EmailStr" in block.group(1), (
+
+    # Checked against the resolved type rather than against the source text.
+    # The literal ``email: EmailStr`` this used to grep for stopped matching
+    # when the field became ``CanonicalEmailStr``
+    # (``Annotated[EmailStr, AfterValidator(normalize_email)]``), which is the
+    # same constraint spelled differently -- so a text match was measuring the
+    # spelling, not the invariant, and would have pushed the next person into
+    # widening the field to make it pass. These two assertions cannot be
+    # satisfied by a bare ``str`` and are what the original check was for.
+    from pydantic import EmailStr, ValidationError
+
+    from app.schemas import ResendVerificationRequest
+
+    field = ResendVerificationRequest.model_fields["email"]
+    assert field.annotation is EmailStr, (
         "ResendVerificationRequest.email is no longer EmailStr, so an arbitrary"
-        " string can reach the resend:email bucket"
+        f" string can reach the resend:email bucket (got {field.annotation!r})"
     )
+    # The behaviour, not the spelling: a non-address still cannot get through.
+    # No source-text check can say this, and no future re-spelling of the
+    # annotation can talk its way past it.
+    with pytest.raises(ValidationError):
+        ResendVerificationRequest(
+            email="not-an-address",
+        )
+    assert (
+        ResendVerificationRequest.model_json_schema()["properties"]["email"].get("format")
+        == "email"
+    ), "the address is no longer validated as an address"

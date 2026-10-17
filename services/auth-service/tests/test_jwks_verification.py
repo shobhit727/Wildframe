@@ -9,6 +9,7 @@ from jose import JWTError, jwt
 from app.core.settings import settings
 from app.security import TokenManager
 from app.security.jwks import (
+    get_current_jwk,
     get_jwks,
     get_private_key_pem,
     get_public_key_pem,
@@ -459,3 +460,87 @@ def test_rsa_public_to_jwk_shape():
     assert jwk["alg"] == "RS256"
     assert "=" not in jwk["n"]
     assert jwk["e"] == "AQAB"
+
+
+# --------------------------------------------------------------------------
+# the two things test_rsa_public_to_jwk_shape cannot see: key size and the
+# base64url alphabet
+# --------------------------------------------------------------------------
+
+
+def test_generated_signing_key_is_2048_bit():
+    """``key_size=2048`` -> ``1024`` shipped green.
+
+    Shape assertions hold at any size, so nothing was pinning the modulus a
+    verifier is asked to trust. 1024 bits is factorable by anyone with a
+    few CPU-minutes, which defeats RS256 entirely.
+    """
+    from cryptography.hazmat.primitives import serialization
+
+    from app.security.jwks import _generate_keypair, _load_private_key
+
+    priv_pem, pub_pem = _generate_keypair()
+
+    assert _load_private_key(priv_pem).key_size == 2048
+    assert serialization.load_pem_public_key(pub_pem.encode()).key_size == 2048
+
+
+def test_published_jwk_advertises_a_2048_bit_modulus():
+    """The size a JWKS consumer actually reads, not the private key's."""
+    reset_cache()
+    jwk = get_current_jwk()
+
+    modulus = int.from_bytes(_decode_b64url(jwk["n"]), "big")
+
+    assert modulus.bit_length() == 2048
+
+
+def test_b64url_uint_uses_the_url_safe_alphabet():
+    """``urlsafe_b64encode`` -> ``b64encode`` shipped green.
+
+    The two encoders only differ at alphabet positions 62 and 63. The
+    configured test modulus happened to contain no such bytes, so the swap was
+    invisible. These inputs are chosen to contain both, and the first
+    assertion is the one that stops this test from passing vacuously the way
+    its predecessor did.
+    """
+    from app.security.jwks import _b64url_uint
+
+    for raw in (b"\xfb\xff\xfe\xff\xef\xff\xfe\xff", b"\xff\xff\xff\xff"):
+        standard = base64.b64encode(raw).decode()
+        # Guard the guard: if the standard alphabet really is indistinguishable
+        # here, this case proves nothing and the encoding assertions below are
+        # decoration.
+        assert "+" in standard or "/" in standard, standard
+
+        encoded = _b64url_uint(int.from_bytes(raw, "big"))
+
+        assert "+" not in encoded, encoded
+        assert "/" not in encoded, encoded
+        assert encoded == base64.urlsafe_b64encode(raw).decode().rstrip("=")
+        assert base64.urlsafe_b64decode(_pad(encoded)) == raw
+
+
+def test_jwk_modulus_never_carries_the_standard_alphabet():
+    """The same property on a real modulus, so the JWK cannot leak ``+``/``/``.
+
+    A 2048-bit modulus has 342 base64url characters, so the chance of hitting
+    neither position is about 2e-5. Ten keys makes a false failure vanishingly
+    unlikely while still failing the first time the encoder is swapped.
+    """
+    from app.security.jwks import _rsa_public_to_jwk, _load_private_key
+
+    for _ in range(10):
+        jwk = _rsa_public_to_jwk(_load_private_key(_valid_pem()).public_key(), "kid-1")
+        assert "+" not in jwk["n"]
+        assert "/" not in jwk["n"]
+
+
+def _decode_b64url(value: str) -> bytes:
+    """base64url-decode an unpadded JWK integer."""
+    return base64.urlsafe_b64decode(_pad(value))
+
+
+def _pad(value: str) -> str:
+    """Restore the padding ``_b64url_uint`` strips."""
+    return value + "=" * (-len(value) % 4)

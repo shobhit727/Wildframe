@@ -125,11 +125,26 @@ async def require_admin(
 ) -> UUID:
     """Require a verified, current administrator role for operational mutations."""
     payload = await _decode_token(authorization.removeprefix("Bearer "))
-    try:
-        role_version = int(payload.get("arv") or 0)
-    except (TypeError, ValueError):
-        role_version = -1
-    if payload.get("role") != "admin" or role_version != settings.ADMIN_ROLE_VERSION:
+    # `arv` must be *present and an integer*. Defaulting it to 0 (or coercing it
+    # with int()) meant a token carrying only `role: "admin"` was treated as the
+    # current admin version whenever ADMIN_ROLE_VERSION was 0 -- the default --
+    # and reached POST /manifests, /transcoding-jobs, /quality-profiles and
+    # /cdn-regions. An absent claim is no evidence the role has not been
+    # revoked, so it fails closed. `type(...) is int` rather than isinstance, so
+    # `True` cannot pass as 1.
+    role_version = payload.get("arv")
+    # `arv` must be *present and an integer*. Defaulting it to 0 (or coercing it
+    # with int()) meant a token carrying only `role: "admin"` was treated as the
+    # current admin version whenever ADMIN_ROLE_VERSION was 0 -- the default --
+    # and reached POST /manifests, /transcoding-jobs, /quality-profiles and
+    # /cdn-regions. An absent claim is no evidence the role has not been
+    # revoked, so it fails closed. `type(...) is int` rather than isinstance, so
+    # `True` cannot pass as 1.
+    is_admin = payload.get("role") == "admin"
+    has_current_role_version = (
+        type(role_version) is int and role_version == settings.ADMIN_ROLE_VERSION
+    )
+    if not (is_admin and has_current_role_version):
         raise HTTPException(status_code=403, detail="Administrator privileges required")
     return current_user
 
