@@ -10074,3 +10074,58 @@ auth 86.8%, streaming 80.5%, recommendation 75.9%, **moderation 72%**.
 
 **Not covered:** auth `privacy.py` (464 lines), `age.py` (106), `SecretCipher`;
 streaming's HMAC seam has 1 mutant covered of many.
+
+### [M-20261018T0630Z-swe-agent] 2026-10-18T06:30Z · agent=swe-agent · status=open
+**To:** orchestrator, verification
+**Files:** `apps/web/e2e(admin.spec.ts, fixtures.ts)`, `apps/web/src/components/player/__tests__/VideoPlayer.test.tsx`
+**Re:** wave-4 — E2E red fixed by aligning the spec with the post-`a8b95f13` UI, and the VideoPlayer fullscreen de-flake is landed.
+
+## An earlier claim in this session was disproven; the fix is opposite to it.
+
+I had planned that the bare audit path returns nothing and proposed keeping
+`fixtures.ts` bare-test assertions unchanged. Two pieces of evidence refuted it:
+
+- `git show a8b95f13` — the helper no longer returns `[]` for an unfiltered
+  call; it issues `GET /admin/api/v1/admin/audit?limit=N`.
+- `services/admin-service/app/api/routes/admin.py:413-422` — bare `/audit`
+  docstring: "Get the recent audit trail ... default limit=50".
+
+So `admin.spec.ts`'s "starts empty on arrival" was pinning the pre-`a8b95f13`
+defect, and the intercept was 404-ing under the fixture catch-all — both fixed
+in commit `d02bb7bb`, which more precisely REWRITES the test to
+"loads the recent trail on arrival without any filter".
+
+## Supplied
+
+- `fixtures.ts`: try-before-match interception of the bare audit path,
+  returning `ADMIN_AUDIT` with a comment citing `a8b95f13`; scoped paths
+  (`/audit/admin/…`, `/audit/resource/…`) untouched, catch-all 404 preserved.
+- `admin.spec.ts`: rewritten test above; combobox selectors now by accessible
+  name (`Field` wires the visible name since `9bf3f3fc`); free-text-search
+  empty state yields level-3 heading 'No entries match the current filter' +
+  'Clear filters' button. All three failure modes filed below pass because
+  they reproduce the running UI, not a rewritten UI.
+- `VideoPlayer.test.tsx`: the two fullscreen IT-passes whose reported
+  Enter/Exit deferring left out of the visibility window now assert through
+  `await waitFor(...)`, idempotent with the existing shards' style.
+
+## Verified locally before push
+
+- `npx playwright test e2e/admin.spec.ts` → **36 passed** (32.4s).
+- `npx vitest run src/components/player/__tests__/VideoPlayer.test.tsx` →
+  **47 passed** (3.8s).
+- `npm run test` → **866 passed** (46 files, 24.7s).
+- `npm run lint` → 0 errors; one pre-existing warning
+  (`watch/[id]/page.tsx:118`, not touched).
+- `next-env.d.ts` churn from the Playwright webServer run was reverted, not
+  committed.
+
+## Next
+
+- Push `d02bb7bb` + this entry; confirm CI E2E/CI frontend jobs on
+  `audit/fix-open-github-issues`.
+- CodeQL still open: no analyze workflow (default setup), so `# codeql`
+  comments are inert; the three weak-hashing sites
+  (`rate_limit.py:282`, `security/manager.py:129`, `TokenManager.hash_token`,
+  auth-service `security/__init__.py:307`) need restructures or an owner
+  dismissal. `kafka_init.py:330` belongs to the owner (already noted).
