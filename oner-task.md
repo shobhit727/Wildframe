@@ -1294,3 +1294,26 @@ distinguishes them, and three times here it inverted my conclusion.
   streaming.
 - **CI has no redis service**, so 6 gateway tests skip. And one of them is not
   hermetic — it hardcodes an account id and never releases its lease.
+
+### Trivy `private-key` alert #531 on `main` — owner decision (not a real secret)
+
+Code-scanning alert #531 is open on `refs/heads/main` @ main head
+`91b37db8251255dbabd7b5edd00e3332c57978b6`. It is a **Trivy** finding (rule
+`private-key`, category `.github/workflows/ci-cd.yml:security-scan`) pointing at
+`apps/web/certificates/localhost-key.pem` — not CodeQL.
+
+It is almost certainly the generated localhost dev cert, not a committed
+credential:
+
+- the tracked tree on `main` under `apps/web/certificates/` contains only
+  `.gitkeep` and `README.md` — **no PEM is committed**;
+- `.gitignore:181` ignores `apps/web/certificates/*.pem`; dev certs are
+  generated locally by `scripts/generate-dev-certs.sh` and never committed;
+- so Trivy saw a build-time dev artifact in the scan environment.
+
+I did not dismiss it: AGENTS.md §24.1 says a suspected secret is not mine to
+rule authorized. **Recommendation:** close #531 as a dev-artifact false positive
+once you confirm it is the generated localhost cert, and separately fix `main`,
+which is independently red (run `37361191563` at that sha failed: Security Scan,
+Frontend CI, Backend Lint, and every Backend Test job). #531 does not block PR
+#938.

@@ -10135,3 +10135,61 @@ running page, not a spec invented to pass.
   (`rate_limit.py:282`, `security/manager.py:129`, `TokenManager.hash_token`,
   auth-service `security/__init__.py:307`) need restructures or an owner
   dismissal. `kafka_init.py:330` belongs to the owner (already noted).
+
+### [M-20261018T0715Z-codeql-green] 2026-10-18T07:15Z · agent=codeql-green · status=done
+
+**PR #938 is fully green.** No code changed this wave; head is still
+`2baa798e159e4043d37b0c0961ea2ee1d749e5aa` on `audit/fix-open-github-issues`.
+
+## Evidence (live, not dossier)
+
+- `gh pr checks 938` → **46 pass, 4 skip** (the 4 are main-only deploy jobs:
+  Build & Push ×2, Deploy Staging, Deploy Production). Nothing failing.
+- CodeQL derived check `117548806882` → `status=completed`,
+  `conclusion=success` on head `2baa798e…`. It was the last red check; it is
+  now green.
+- Open code-scanning alerts on `refs/pull/938/head` → **0** (`open_count:0`).
+- `gh pr view 938` → `mergeable: MERGEABLE`, `mergeStateStatus: BLOCKED`.
+  BLOCKED is the `prod` ruleset (human review/merge gate), not a CI failure.
+  I am not merging.
+
+## Alerts #239 / #240 / #510 — already dismissed
+
+All three were confirmed live `state=dismissed`, `dismissed_reason:false
+positive`, pinned to `refs/pull/938/head` @ `2baa798e…`. No PATCH was needed
+(the historical gate said re-check live state and PATCH only if still open —
+they were not). Verdicts are already reasoned in `oner-task.md`:
+
+- `#239` / `#240` — `py/weak-sensitive-data-hashing` on `hash_token` digests
+  that are not passwords and back no auth decision.
+- `#510` — `scripts/kafka_init.py` `--command-config`; the write-before-`finally`
+  window that caused this alert was a real bug and is fixed; the remaining file
+  is 0600 and unlinked in `finally`.
+
+## Decision: NOT scrubbing the inert `# codeql[...]` comments
+
+The four directive comments (`rate_limit.py:281`, `security/manager.py:128`,
+auth-service `security/__init__.py:306`, `kafka_init.py:329`) are inert here —
+SARIF reports `suppressions: null`, so this CodeQL setup ignores them. Removing
+them is therefore a functional no-op, and shifting each sink's line number risks
+minting *fresh* alerts at the new locations, which would re-redden CodeQL for no
+gain. The real security rationale already lives in the adjacent docstrings and
+in `oner-task.md`, so the comments are harmless documentation. Left in place.
+
+## `#531` — main-scoped, escalated, not dismissed
+
+- Tool **Trivy** (not CodeQL), rule `private-key`, category
+  `.github/workflows/ci-cd.yml:security-scan`, ref `refs/heads/main` @ current
+  main head `91b37db8…`.
+- The flagged `apps/web/certificates/localhost-key.pem` is **not in the tracked
+  tree** — that dir on main holds only `.gitkeep` and `README.md`, and
+  `.gitignore:181` ignores `apps/web/certificates/*.pem`. It is a generated
+  localhost dev TLS cert (`scripts/generate-dev-certs.sh`), i.e. a non-secret
+  build-time artifact that Trivy saw during the scan.
+- Main is independently broken (run `37361191563` at that sha failed: Security
+  Scan, Frontend CI, Backend Lint, and all Backend Test jobs). `#531` does not
+  block PR #938 (different ref).
+
+Per AGENTS.md §24.1 I did not decide a `private-key` alert is safe to close.
+Recorded in `oner-task.md` for the owner with a recommendation to close as a
+dev-artifact false positive.
