@@ -24,8 +24,8 @@ You should also have at least **8 GB of free RAM** and **20 GB of free disk** fo
 ## 1. Clone the Repository
 
 ```bash
-git clone https://github.com/wildframe/platform.git
-cd platform
+git clone https://github.com/shobhit727/Wildframe.git
+cd Wildframe
 ```
 
 If you already have the project locally, just `cd` into it.
@@ -50,7 +50,20 @@ bash scripts/generate-dev-certs.sh
 # verifies: apps/web/certificates/localhost.pem and localhost-key.pem exist, SANs DNS:localhost,IP:127.0.0.1,IP:::1,IP:192.168.1.14, perms 644
 ```
 
-The generator is idempotent — re-run after deleting the files to rotate.
+The script also produces the Kafka TLS bundles and the two broker password
+files, so a single command prepares the whole dev stack:
+
+- `kafka-keystore.pem` — Kafka PEM keystore (private key + certificate
+  concatenated in one file, as Kafka's PEM keystore format requires)
+- `kafka-truststore.pem` — Kafka PEM truststore (certificate alone)
+- `kafka_keystore_password`, `kafka_key_password` — the keystore and key
+  passwords, read by `cp-kafka` from **files** rather than environment
+  variables
+
+The generator is idempotent and repairs a partially-generated state: if the
+web certs already exist it still ensures the Kafka PEM bundle and the password
+files are present, so re-running after an older checkout converges. Re-run
+after deleting the files to rotate.
 
 ## 3b. Start the Platform
 
@@ -86,13 +99,13 @@ All services should show `Up` / `healthy`.
 
 ```bash
 # API gateway health
-curl https://localhost:8000/health
+curl -sk https://localhost:8000/health
 
 # Auth service health
-curl https://localhost:8001/health
+curl -sk https://localhost:8001/health
 
 # Content service health
-curl https://localhost:8003/health
+curl -sk https://localhost:8003/health
 ```
 
 A healthy response looks like:
@@ -132,7 +145,7 @@ Open https://localhost:3000.
 There is no migration framework — create tables and seed demo content with:
 
 ```bash
-python scripts/init_schemas.py     # Base.metadata.create_all per service
+python scripts/init_schemas.py     # create_all per service, then add missing columns
 WILDFRAME_DEMO_EMAIL=demo@wildframe.com WILDFRAME_DEMO_PASSWORD='<choose-a-strong-password>' python scripts/seed_demo.py
 # WILDFRAME_DEMO_PASSWORD also accepts DEMO_PASSWORD / DEMO_PASS; if unset a random password is generated and printed once
 ```
@@ -159,7 +172,7 @@ on shadowed `app.*` imports):
 ```bash
 # All 15 services + SDK
 for svc in services/*/; do
-  (cd "$svc" && pytest tests --asyncio-mode=auto) || exit 1
+  (cd "$svc" && PYTHONPATH="$PWD" pytest tests --asyncio-mode=auto) || exit 1
 done
 
 # One service
@@ -169,7 +182,7 @@ pytest tests --asyncio-mode=auto
 
 ### Live-Stack Integration Suite
 
-Needs the compose stack up (~12 min, 87 tests):
+Needs the compose stack up (~12 min, 110 tests):
 
 ```bash
 poetry run pytest tests/integration -q
@@ -180,10 +193,10 @@ poetry run pytest tests/integration -q
 ```bash
 cd apps/web
 
-# Unit tests (Vitest)
+# Unit tests (Vitest) — 866 tests across 46 files
 npx vitest run
 
-# E2E tests (Playwright) - needs dev server running
+# E2E tests (Playwright) — 122 tests across 10 files, 15 routes
 npm run dev         # in separate terminal
 npx playwright test
 ```
@@ -226,9 +239,16 @@ docker compose -f deployments/docker-compose.dev.yml down -v
 
 ## Quick Port Reference
 
+Host ports 8000–8014 are served by Caddy over **HTTPS only** (self-signed dev
+certs). Use `https://` and `curl -k` when probing a service directly:
+
+```bash
+curl -k https://localhost:8001/health
+```
+
 | Port | Service |
 |---|---|
-| 8000 | API Gateway |
+| 8000 | API Gateway (HTTPS catch-all) |
 | 8001 | Auth |
 | 8002 | User |
 | 8003 | Content |
@@ -238,7 +258,7 @@ docker compose -f deployments/docker-compose.dev.yml down -v
 | 8007 | Recommendation |
 | 8008 | Billing |
 | 8009 | Analytics |
-| 8009 | Notification |
+| 8010 | Notification |
 | 8011 | Media Pipeline |
 | 8012 | Creators |
 | 8013 | Moderation |
@@ -258,7 +278,15 @@ docker compose -f deployments/docker-compose.dev.yml logs -f auth-service
 ```
 
 **Port already in use?**
-Edit the host port mapping in `deployments/docker-compose.dev.yml`.
+The app services publish **no host ports** — only the `caddy` service does. To
+remap a port you must change **both**:
+
+1. the `ports:` entry under `caddy:` in `deployments/docker-compose.dev.yml`
+   (e.g. `- 8001:8001`), and
+2. the matching `https://localhost:<port>` block in
+   `infrastructure/caddy/Caddyfile`.
+
+Editing only one leaves the two disagreeing and the route unreachable.
 
 **Stale Docker state?**
 ```bash
@@ -268,9 +296,11 @@ docker builder prune -a
 
 **Need to nuke everything?**
 ```bash
-docker compose -f deployments/docker-compose.dev.yml down -v
-./start_services.sh
+docker compose -f deployments/docker-compose.dev.yml up -d --build
 ```
+
+`./start_services.sh` is **not** a supported alternative: it hardcodes
+`/home/phoenix/Desktop/wildframe` and cannot run from another clone.
 
 ---
 

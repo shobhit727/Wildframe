@@ -10,12 +10,41 @@ enforcement must not block the service from serving.
 import logging
 import os
 import ssl
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 DLQ_RETENTION_MS = int(os.getenv("DLQ_RETENTION_MS", str(7 * 24 * 60 * 60 * 1000)))
 DLQ_SEGMENT_MS = int(os.getenv("DLQ_SEGMENT_MS", str(24 * 60 * 60 * 1000)))
+
+
+def _alter_configs_refusal(response: Any) -> Optional[str]:
+    """Describe the first per-resource error carried by an alter_configs reply.
+
+    ``AIOKafkaAdminClient.alter_configs`` does **not** raise when the broker
+    answers with an error code in the body — it returns the ``AlterConfigsResponse``
+    with the failure recorded per resource (aiokafka 0.14.0:
+    ``-> list[Response]``, each with ``resources`` of
+    ``(error_code, error_message, resource_type, resource_name)``). Treating a
+    non-raising call as success reports a topic as configured when the broker
+    actually refused it — an ACL denial, an unknown topic, a read-only broker.
+
+    Returns a diagnostic string for the first refusal found, or ``None`` when
+    every resource in the reply succeeded.
+    """
+    if response is None:
+        return None
+    replies = response if isinstance(response, (list, tuple)) else [response]
+    for reply in replies:
+        for resource in getattr(reply, "resources", None) or ():
+            if not isinstance(resource, (tuple, list)) or not resource:
+                continue
+            error_code = resource[0]
+            if not error_code:
+                continue  # 0 == NO_ERROR
+            error_message = resource[1] if len(resource) > 1 else None
+            return f"error_code={error_code} error_message={error_message!r}"
+    return None
 
 
 async def apply_dlq_retention(
@@ -47,7 +76,7 @@ async def apply_dlq_retention(
             ctx = ssl.create_default_context(cafile=env_ca)
             ssl_context = ctx
         elif security_protocol in ("SSL", "SASL_SSL"):
-            insecure = os.getenv("KAFKA_SSL_INSECURE", "true").lower() not in ("false", "0", "no")
+            insecure = os.getenv("KAFKA_SSL_INSECURE", "false").lower() not in ("false", "0", "no")
             if insecure:
                 ctx = ssl.create_default_context()
                 ctx.check_hostname = False
@@ -70,7 +99,7 @@ async def apply_dlq_retention(
     configured = 0
     try:
         await admin.start()
-        existing = set((await admin.list_topics()).topics)
+        existing = set(await admin.list_topics())
         missing = [t for t in dlq if t not in existing]
         if missing:
             import inspect
@@ -98,19 +127,63 @@ async def apply_dlq_retention(
             )
             configured += len(missing)
 
-        from aiokafka.admin.config_resource import ConfigResource  # type: ignore[import-untyped]
+        # Existing topics: enforce via config resource alterations.
+        from aiokafka.admin.config_resource import (  # type: ignore[import-untyped]
+            ConfigResource,
+            ConfigResourceType,
+        )
 
-        for t in dlq:
-            if t in missing:
-                continue
-            resource = ConfigResource(ConfigResource.Type.TOPIC, t)
-            resource.set_config("retention.ms", str(DLQ_RETENTION_MS))
-            resource.set_config("segment.ms", str(DLQ_SEGMENT_MS))
-            try:
-                await admin.alter_configs(resource)
+        existing_dlq = [t for t in dlq if t not in missing]
+        if existing_dlq:
+            # AlterConfigs REPLACES a topic's whole config, so describe first
+            # and merge — sending only these two keys would wipe every other
+            # setting. Topics whose describe failed are left untouched.
+            responses = await admin.describe_configs(
+                [ConfigResource(ConfigResourceType.TOPIC, t) for t in existing_dlq]
+            )
+            # ``to_object()`` turns the wire tuples into named dicts.
+            described: set[str] = set()
+            current: dict[str, dict[str, str]] = {}
+            for response in responses:
+                for res in response.to_object()["resources"]:
+                    if res["error_code"] != 0:
+                        logger.warning("could not describe %s", res["resource_name"])
+                        continue
+                    described.add(res["resource_name"])
+                    current[res["resource_name"]] = {
+                        entry["config_names"]: entry["config_value"]
+                        for entry in res["config_entries"]
+                        if not entry["read_only"] and entry["config_value"] is not None
+                    }
+            wanted = {
+                "retention.ms": str(DLQ_RETENTION_MS),
+                "segment.ms": str(DLQ_SEGMENT_MS),
+            }
+            for t in existing_dlq:
+                if t not in described:
+                    continue
+                # aiokafka 0.14.0 has no nested ``ConfigResource.Type`` enum and no
+                # ``set_config`` method: the topic scope is the module-level
+                # ``ConfigResourceType`` IntEnum, and the config map is passed to
+                # the constructor.
+                try:
+                    # ``alter_configs`` iterates its argument, so it takes a list.
+                    response = await admin.alter_configs(
+                        [ConfigResource(ConfigResourceType.TOPIC, t, {**current[t], **wanted})]
+                    )
+                except Exception:  # noqa: BLE001 - per-topic best effort
+                    # exc_info matters here: a broker ACL denial and a network
+                    # timeout are both "could not set retention", and without the
+                    # traceback the two are indistinguishable in the log.
+                    logger.warning("could not set retention on %s", t, exc_info=True)
+                    continue
+                refusal = _alter_configs_refusal(response)
+                if refusal is not None:
+                    # No exception was raised, so there is no traceback to attach;
+                    # the broker's own error code and message are the diagnostic.
+                    logger.warning("broker refused retention on %s: %s", t, refusal)
+                    continue
                 configured += 1
-            except Exception:  # noqa: BLE001 - per-topic best effort
-                logger.warning("could not set retention on %s", t)
         logger.info(
             "DLQ retention applied: %d topics at %d ms (%s)",
             configured,

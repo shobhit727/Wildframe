@@ -33,11 +33,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     else:
         logger.info("Database connection established")
 
-    yield
-
-    # Shutdown
-    logger.info(f"Shutting down {settings.SERVICE_NAME}")
-    await db_manager.close()
+    # Wrap the served period so an exception raised while the app is serving
+    # cannot propagate past the teardown and leak the async engine (#863).
+    try:
+        yield
+    finally:
+        logger.info(f"Shutting down {settings.SERVICE_NAME}")
+        await db_manager.close()
 
 
 def create_app() -> FastAPI:
@@ -105,7 +107,36 @@ def create_app() -> FastAPI:
                 pass
         return await call_next(request)
 
-    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
+    # register_metrics=False: this service registers its own token-gated
+    # /metrics below, and the SDK's public route would shadow it.
+    wire_observability(
+        app,
+        service_name=settings.SERVICE_NAME,
+        log_level=settings.LOG_LEVEL,
+        register_metrics=False,
+    )
+
+    # Gate /metrics behind admin token (#469)
+    from fastapi import Depends, Header, HTTPException
+
+    async def require_metrics_token(
+        authorization: str | None = Header(default=None, alias="Authorization"),
+    ) -> None:
+        if settings.ENVIRONMENT == "production":
+            expected = (
+                f"Bearer {settings.METRICS_TOKEN}"
+                if hasattr(settings, "METRICS_TOKEN") and settings.METRICS_TOKEN
+                else None
+            )
+            if expected is None or authorization != expected:
+                raise HTTPException(status_code=401, detail="Unauthorized")
+
+    @app.get("/metrics", dependencies=[Depends(require_metrics_token)])
+    async def gated_metrics():
+        from prometheus_client import generate_latest
+        from fastapi import Response
+
+        return Response(content=generate_latest(), media_type="text/plain")
 
     # Opaque 500 handler (#557) — never leak exception internals.
     @app.exception_handler(Exception)
