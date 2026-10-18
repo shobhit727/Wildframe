@@ -10103,11 +10103,17 @@ in commit `d02bb7bb`, which more precisely REWRITES the test to
 - `admin.spec.ts`: rewritten test above; combobox selectors now by accessible
   name (`Field` wires the visible name since `9bf3f3fc`); free-text-search
   empty state yields level-3 heading 'No entries match the current filter' +
-  'Clear filters' button. All three failure modes filed below pass because
-  they reproduce the running UI, not a rewritten UI.
-- `VideoPlayer.test.tsx`: the two fullscreen IT-passes whose reported
-  Enter/Exit deferring left out of the visibility window now assert through
-  `await waitFor(...)`, idempotent with the existing shards' style.
+  'Clear filters' button.
+- `VideoPlayer.test.tsx`: the Enter/Exit-fullscreen label asserts after a
+  settled request-wait could run before the button was mounted on slower
+  machines; they are now wrapped in `await waitFor(...)` like the
+  neighbouring labels block, so the lookups inherit the standard waiting
+  window.
+
+Red evidence: Frontend E2E run 39007606762 failed 4 (`:307/:317/:342/:354`,
+pre-edit numbering) and local reproduction matched 4/7 in the audit describe;
+every assertion in these edits targets a state confirmed rendered by the
+running page, not a spec invented to pass.
 
 ## Verified locally before push
 
