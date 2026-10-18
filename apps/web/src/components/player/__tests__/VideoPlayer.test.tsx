@@ -438,11 +438,11 @@ describe('playback controls', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
     await waitFor(() => expect(request).toHaveBeenCalled());
-    expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: 'Exit fullscreen' }));
     await waitFor(() => expect(exit).toHaveBeenCalled());
-    expect(screen.getByRole('button', { name: 'Enter fullscreen' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enter fullscreen' })).toBeInTheDocument());
   });
 
   it('still flips the label when the fullscreen request is rejected', async () => {

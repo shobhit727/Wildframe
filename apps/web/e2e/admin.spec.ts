@@ -311,20 +311,17 @@ test.describe('/admin/audit', () => {
     ).toBeVisible();
     await expect(page.getByPlaceholder('Search admin, action, resource…')).toBeVisible();
     await expect(page.getByPlaceholder('Filter by admin…')).toBeVisible();
-    await expect(page.getByRole('combobox')).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Action' })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Time range' })).toBeVisible();
   });
 
-  test('starts empty because listAuditLogs returns [] with no filter', async ({ page }) => {
-    // `listAuditLogs` in src/api/admin.ts only issues a request when
-    // `admin_id` or a resource pair is supplied, and otherwise returns [].
-    // So the audit log never loads on arrival — an admin has to already know
-    // an admin id to see anything. Pinned here as current behaviour; see the
-    // bug report.
-    await expect(
-      page.getByRole('heading', { level: 3, name: 'No audit entries' })
-    ).toBeVisible();
-    await expect(page.getByText('Actions by admins will be recorded here.')).toBeVisible();
-    await expect(page.getByText('0 entries', { exact: true })).toBeVisible();
+  test('loads the recent trail on arrival without any filter', async ({ page }) => {
+    // `listAuditLogs` issues a bare GET to /admin/api/v1/admin/audit when no
+    // admin/resource filter is supplied (a8b95f13), and the service serves the
+    // recent trail from that route. The pre-fix behaviour — a local [] return
+    // that left the log blank on arrival — was the bug that commit fixed.
+    await expect(page.getByText('user_moderation', { exact: true })).toBeVisible();
+    await expect(page.getByText('2 entries', { exact: true })).toBeVisible();
   });
 
   test('surfaces entries with action, resource and diff once an admin id is given', async ({
@@ -341,10 +338,9 @@ test.describe('/admin/audit', () => {
 
   test('filters by action type', async ({ page }) => {
     await page.getByPlaceholder('Filter by admin…').fill(ADMIN.id);
-    // The admin `Field` wrapper renders a <label> with no `htmlFor` and the
-    // control has no `id`, so the control is reachable by role only.
-    // See the accessibility bug filed against components/admin/fields.tsx.
-    await page.getByRole('combobox').selectOption('set_config');
+    // `Field` wires its label to the control with htmlFor (9bf3f3fc), so the
+    // select is reachable by accessible name rather than a bare role.
+    await page.getByRole('combobox', { name: 'Action' }).selectOption('set_config');
 
     await expect(page.getByText('set_config', { exact: true })).toBeVisible();
     await expect(page.getByText('user_moderation', { exact: true })).toHaveCount(0);
@@ -356,7 +352,8 @@ test.describe('/admin/audit', () => {
     await page.getByPlaceholder('Search admin, action, resource…').fill('Copyright');
 
     await expect(
-      page.getByRole('heading', { level: 3, name: 'No audit entries' })
+      page.getByRole('heading', { level: 3, name: 'No entries match the current filter' })
     ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Clear filters' })).toBeVisible();
   });
 });

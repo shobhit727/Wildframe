@@ -661,6 +661,9 @@ export async function mockGateway(page: Page, options: GatewayOptions = {}): Pro
     if (path === '/admin/api/v1/admin/config') return json_(ADMIN_CONFIGS);
     if (path.startsWith('/admin/api/v1/admin/audit/admin/')) return json_(ADMIN_AUDIT);
     if (path.startsWith('/admin/api/v1/admin/audit/resource/')) return json_(ADMIN_AUDIT);
+    // a8b95f13: listAuditLogs issues a bare GET when no admin/resource filter
+    // is supplied, matching GET /audit on the admin service (recent trail).
+    if (path === '/admin/api/v1/admin/audit') return json_(ADMIN_AUDIT);
 
     return json_({ detail: 'Not Found' }, 404);
   };
