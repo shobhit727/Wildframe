@@ -47,7 +47,7 @@ Development TLS certificates are **never committed**. Generate them locally:
 
 ```bash
 bash scripts/generate-dev-certs.sh
-# verifies: apps/web/certificates/localhost.pem and localhost-key.pem exist, SANs DNS:localhost,IP:127.0.0.1,IP:::1,IP:192.168.1.14, perms 644
+# verifies: apps/web/certificates/localhost.pem and localhost-key.pem exist, SANs DNS:localhost,IP:127.0.0.1,IP:::1 + this host's own addresses, perms 644
 ```
 
 The script also produces the Kafka TLS bundles and the two broker password
@@ -131,8 +131,8 @@ npm run dev
 Open https://localhost:3000.
 
 > The dev server uses a locally-generated self-signed certificate
-> (`apps/web/certificates/localhost.pem`, SANs: localhost, loopback,
-> 192.168.1.14 — never committed, see step 3). Generate with
+> (`apps/web/certificates/localhost.pem`, SANs: localhost, loopback, and this
+> host's own addresses — never committed, see step 3). Generate with
 > `bash scripts/generate-dev-certs.sh` if missing. Accept the browser warning,
 > or trust the cert. The API base URL defaults to `https://localhost:8000`
 > (Caddy → gateway); override with `NEXT_PUBLIC_API_URL` when testing from

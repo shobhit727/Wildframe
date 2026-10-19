@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Generate self-signed development TLS certificates for Wildframe.
 # Output: apps/web/certificates/localhost.pem and localhost-key.pem
-# SANs: DNS:localhost, IP:127.0.0.1, IP:::1, IP:192.168.1.14
+# SANs: DNS:localhost, IP:127.0.0.1, IP:::1, plus this host's own global-scope
+#       addresses, discovered at run time (see build_san_list).
 # Permissions: 644 (Caddy/Grafana containers read as non-root)
 # Idempotent: skips if both files already exist.
+#
+# Re-run after changing networks: the cert is only valid for the addresses the
+# host had when it was generated, and the script will not overwrite an
+# existing pair.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -101,17 +106,94 @@ fi
 
 echo "Generating self-signed dev certificates..."
 
+# The addresses this host can be reached on.
+#
+# The SAN list used to carry one developer's LAN address as a literal in this
+# file. A developer's address changes when they move networks, and on every
+# other machine that literal was simply wrong -- which made the certificate
+# invalid for the address the browser was actually connecting to, so the
+# browser refused the connection and the failure looked like a broken stack
+# rather than a wrong certificate. It was also incomplete on the machine it was
+# written on: a host with two IPv4 addresses had only one of them covered, so
+# a browser connecting via the other one failed hostname verification. The
+# list is therefore discovered at run time from the host's own interfaces.
+#
+# Detection is deliberately tolerant. It tries the tools that exist on the
+# platform and yields quietly if none of them do, because a certificate that
+# covers loopback is far better than a script that refuses to run. The
+# loopback entries are always present regardless, so the local dev stack works
+# even when detection finds nothing.
+detect_host_addresses() {
+  local raw=""
+
+  if command -v ip >/dev/null 2>&1; then
+    # Linux (iproute2): "inet 203.0.113.10/24 brd ... scope global"
+    raw="$(ip -o addr show scope global 2>/dev/null |
+      awk '{for (i = 1; i <= NF; i++) if ($i == "inet" || $i == "inet6") {split($(i + 1), a, "/"); print a[1]}}')"
+  fi
+
+  # Having the tool is not the same as having an address: a host can have
+  # `ip` and no global-scope address, so an empty result is not the end of the
+  # search. Try the next tool.
+  if [[ -z "$raw" ]] && command -v ifconfig >/dev/null 2>&1; then
+    # macOS and the BSDs
+    raw="$(ifconfig 2>/dev/null |
+      awk '/inet /{split($2, a, "/"); print a[1]} /inet6 /{split($2, a, "/"); print a[1]}')"
+  fi
+
+  if [[ -z "$raw" ]] && command -v hostname >/dev/null 2>&1; then
+    # Minimal Linux images without iproute2. `hostname -I` prints the
+    # addresses space-separated on a single line, so split them here.
+    raw="$(hostname -I 2>/dev/null | tr ' ' '\n')"
+  fi
+
+  printf '%s\n' "$raw"
+}
+
+# Build the subjectAltName value.
+#
+# Always covers DNS:localhost and both loopback addresses, then adds this
+# host's own reachable addresses. DEV_CERT_EXTRA_IPS lets a developer add an
+# address that detection cannot see -- a VPN alias, or a second NIC the
+# platform tool reports differently. It takes a comma- or space-separated list.
+build_san_list() {
+  local -a candidates=()
+  local san="DNS:localhost,IP:127.0.0.1,IP:::1"
+  local addr
+  local seen="|localhost|127.0.0.1|::1|"
+
+  while read -r addr; do
+    [[ -n "$addr" ]] && candidates+=("$addr")
+  done < <(detect_host_addresses; printf '%s\n' "${DEV_CERT_EXTRA_IPS:-}" | tr ', ' '\n\n')
+
+  for addr in "${candidates[@]}"; do
+    # An IPv6 zone index (fe80::1%eth0) is not valid in a SAN.
+    addr="${addr%%%*}"
+    case "$addr" in
+      "" | "::" | "0.0.0.0" | "::1" | 127.* | 169.254.* | fe80:*) continue ;;
+    esac
+    # Already covered, or a duplicate of an earlier interface.
+    [[ "$seen" == *"|$addr|"* ]] && continue
+    seen="$seen$addr|"
+    san="$san,IP:$addr"
+  done
+
+  printf '%s' "$san"
+}
+
+SAN_LIST="$(build_san_list)"
+
 # Try modern openssl with -addext first; fall back to config file for older versions.
 if openssl req -x509 -newkey rsa:2048 \
   -keyout "$KEY_FILE" -out "$CRT_FILE" \
   -days 365 -nodes \
   -subj "/CN=localhost" \
-  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1,IP:192.168.1.14" 2>/dev/null; then
+  -addext "subjectAltName=$SAN_LIST" 2>/dev/null; then
   :
 else
   echo "openssl -addext not supported, using config fallback..."
   TMP_CNF="$(mktemp)"
-  cat > "$TMP_CNF" <<'CNF'
+  cat > "$TMP_CNF" <<CNF
 [req]
 distinguished_name=req_distinguished_name
 x509_extensions=v3_req
@@ -119,7 +201,7 @@ prompt=no
 [req_distinguished_name]
 CN=localhost
 [v3_req]
-subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1,IP:192.168.1.14
+subjectAltName=$SAN_LIST
 CNF
   openssl req -x509 -newkey rsa:2048 \
     -keyout "$KEY_FILE" -out "$CRT_FILE" \

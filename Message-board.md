@@ -10193,3 +10193,97 @@ in `oner-task.md`, so the comments are harmless documentation. Left in place.
 Per AGENTS.md §24.1 I did not decide a `private-key` alert is safe to close.
 Recorded in `oner-task.md` for the owner with a recommendation to close as a
 dev-artifact false positive.
+
+### [M-20261019T0530Z-dev-cert-sans] 2026-10-19T05:30Z · agent=codeql-green · status=open
+
+**Branch:** `fix/dev-certs-dynamic-san` (off `main` @ `3d94f87e`).
+
+**Claim:** `scripts/generate-dev-certs.sh`, `tests/contract/conftest.py`,
+`tests/contract/test_dev_cert_sans.py`,
+`tests/contract/test_no_committed_private_key.py`, `README.md`,
+`Makefile`, `docs/QUICKSTART.md`, `apps/web/certificates/README.md`,
+`deployments/kafka-client.properties`, `scripts/dev/README.md`,
+`deployments/docker-compose.dev.yml` (one comment line),
+`Message-board.md`, `oner-task.md`.
+
+## The defect
+
+`generate-dev-certs.sh` put one developer's LAN address into the certificate's
+`subjectAltName` as a literal. That address is wrong on every other machine —
+and it was incomplete on the machine it was written on: this host has two IPv4
+addresses (`192.168.1.6` and `192.168.1.14`) and only the second was covered,
+so a browser connecting through the first failed hostname verification. The
+symptom was a TLS failure that reads like a broken stack, which is why this
+harness originally wanted a TLS bypass at all.
+
+## The fix
+
+The SAN list is now derived from the host's own global-scope addresses at run
+time (`ip` → `ifconfig` → `hostname -I`, first one present wins), with
+`DEV_CERT_EXTRA_IPS` for an address detection cannot see (VPN alias, unusual
+NIC). Loopback and `DNS:localhost` are always present, so a host with no
+global-scope address still gets a usable certificate. Both the `-addext` path
+and the config-file fallback use the same computed list.
+
+The script is still idempotent and will not overwrite an existing pair, so the
+README now says to re-run it after changing networks.
+
+## Red/green, and what the tests can fail on
+
+`tests/contract/test_dev_cert_sans.py` drives the **real** script with a fake
+`ip` on `PATH` that reports an address the host cannot have
+(`10.11.12.13`, `2001:db8:85a3::8a2e:370:7334`). That is what gives the tests
+the ability to fail: against the old script the certificate carried the
+hardcoded address and not the injected one.
+
+Reverting only the script (tests kept) and re-running:
+
+- `test_script_source_has_no_hardcoded_lan_address` — FAILED
+- `test_certificate_sans_follow_the_hosts_interfaces` — FAILED, with
+  `it covers ['127.0.0.1', '192.168.1.14', '::1']` — the old hardcode, and
+  the detected address absent
+- `test_extra_ips_env_var_extends_the_san_list` — FAILED (the override did
+  not exist)
+- 3 passed, 2 failed. Restored: **11 passed** across the two cert modules.
+
+The guard scans comments as well as code, so a literal cannot come back hidden
+in a comment. It caught one in my own first draft of the explanatory comment,
+which is why that comment now describes the old behaviour without repeating the
+address.
+
+## Also changed: a test that could not fail
+
+`test_no_committed_private_key.py::test_generate_script_produces_valid_pem_pair`
+ran its **own** inline `openssl` call and then asserted that the SAN string it
+had just passed in appeared in the result. It never ran the script, and it
+pinned the machine-specific address as an expectation. It now runs the real
+script in a sandbox and inspects the certificate that came out.
+
+## Left undone, deliberately
+
+The same literal is in `infrastructure/caddy/Caddyfile:89` (the `:3000` site
+block, which answers only for `localhost` and that one address),
+`apps/web/next.config.ts:7` (`allowedDevOrigins`), and
+`deployments/docker-compose.dev.yml` (15 `CORS_ALLOWED_ORIGINS` lines). All
+three are the same root cause and all three are recorded in `oner-task.md` with
+their line numbers. None moved here: the `:8000` gateway block is already a
+catch-all, so the certificate fix is complete on its own for the main path,
+whereas broadening the allowed-origin list is a security-relevant change for
+all fifteen services and does not belong in a certificate-SAN pull request.
+
+## Documentation that moved with the change
+
+The certificate's SAN list was written down in five more places, and each of
+them became false the moment the list became dynamic: `Makefile:13`,
+`docs/QUICKSTART.md` (two places), `apps/web/certificates/README.md:14`, and
+the comment in `deployments/kafka-client.properties:27`. `scripts/dev/README.md`
+used the same address as a "your host's IP" example, which now reads
+`https://YOUR_LAN_IP:3000`.
+
+## Note on the working tree
+
+`deployments/docker-compose.dev.yml` had an uncommitted whitespace-only edit
+(removed a blank line before the `loki:` service) that is not mine. It was
+shelved as a patch while my one-line comment change was committed, and
+re-applied afterwards as an unstaged modification. It is deliberately **not**
+in this commit.

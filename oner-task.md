@@ -1171,6 +1171,33 @@ Two things I did **not** act on:
   certificate SAN. Machine-specific, breaks every other developer's setup, and
   is the reason this harness wanted a TLS bypass in the first place. Fixing it
   properly means generating SANs from the live interface addresses.
+  **Fixed** on `fix/dev-certs-dynamic-san`: the SAN list is now derived from the
+  host's own global-scope addresses at run time, with `DEV_CERT_EXTRA_IPS` for
+  addresses detection cannot see. It was worse than "wrong on other machines" —
+  it was incomplete on the machine it was written on, where a host with two IPv4
+  addresses had only one covered, so a browser using the other one failed
+  hostname verification.
+  **Still open, same root cause:** the same literal is in three other places,
+  and until they move, a developer's LAN access is still broken on a machine
+  that is not that one:
+  - `infrastructure/caddy/Caddyfile:89` — the `:3000` site block is
+    `https://localhost:3000, https://192.168.1.14:3000`, so Caddy answers on
+    that port only for those two names. The `:8000` gateway block in the same
+    file is already a catch-all (`https://:8000`, "matches localhost AND LAN
+    IPs"), so the consistent fix is the same shape for `:3000`.
+  - `apps/web/next.config.ts:7` — `allowedDevOrigins` is
+    `["localhost", "127.0.0.1", "::1", "192.168.1.14"]`, so the Next dev server
+    only accepts those origins.
+  - `deployments/docker-compose.dev.yml` — `CORS_ALLOWED_ORIGINS` lists
+    `http(s)://192.168.1.14:3000` in **15** places (lines 539, 598, 652, 702,
+    778, 839, 884, 928, 972, 1044, 1086, 1127, 1170, 1213, 1256), so a browser
+    on any other LAN address is refused by CORS.
+
+  I left all three alone. The certificate fix is complete on its own for the
+  `:8000` catch-all path — the frontend derives its API base from the host the
+  page was served on — but the `:3000` path still needs these three, and
+  broadening the allowed-origin list is a security-relevant change for all
+  fifteen services that does not belong in a certificate-SAN pull request.
 
 One caveat on the fix I did make: `verify-csp-live.mjs` now requires the dev CA
 to exist (`scripts/generate-dev-certs.sh`) and re-execs itself with

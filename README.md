@@ -115,10 +115,13 @@ self-signed cert (`apps/web/certificates/` — never committed; run
 That one script also emits the Kafka TLS bundles (`kafka-keystore.pem`,
 `kafka-truststore.pem`) and the two broker password files, and is idempotent
 across partially-generated states.
-The cert carries SANs for `localhost`, loopback and `192.168.1.14`, so
-phones/devices on the LAN can hit `https://192.168.1.14:<port>` directly; a
-plain-HTTP mirror of the gateway also exists at `http://localhost:8080` for
-tooling that cannot trust self-signed certs.
+The cert carries SANs for `localhost`, both loopback addresses, and this
+host's own global-scope addresses, discovered when the script runs — so
+phones/devices on the LAN can hit `https://<this-host's-IP>:<port>` directly;
+a plain-HTTP mirror of the gateway also exists at `http://localhost:8080` for
+tooling that cannot trust self-signed certs. Re-run
+`bash scripts/generate-dev-certs.sh` after changing networks (delete the
+existing pair first — the script will not overwrite it).
 
 For service-specific development, see `docs/DEVELOPMENT.md` and `docs/QUICKSTART.md`.
 
