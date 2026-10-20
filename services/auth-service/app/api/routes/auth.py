@@ -177,8 +177,37 @@ async def register(
         Token response with access and refresh tokens
 
     Raises:
-        HTTPException: If email already exists or validation fails
+        HTTPException: If email already exists, validation fails, or the
+            registration attempt ceiling is reached
     """
+    # #1044: the registration attempt ceiling was configured
+    # (REGISTRATION_RATE_LIMIT_ATTEMPTS / _WINDOW) and documented, but
+    # enforced by nothing -- no counter existed for a registration attempt in
+    # Redis or anywhere else, so the only throttle on this endpoint was the
+    # api-gateway's coarse per-IP edge ceiling (5 requests per 60s over the
+    # whole /auth/* namespace, which also counts logins and session checks).
+    #
+    # The counter lives in Redis under the documented ``rl:token:<scope>``
+    # key format, so it survives a restart and is shared by every replica.
+    # The subject is the address being registered: the client IP this service
+    # observes is the proxy's address in every deployed topology, so a per-IP
+    # bucket here would cap the whole platform at three registrations per
+    # hour rather than one client at a time.
+    #
+    # The limits come from the existing ``RateLimiter.get_window_size``
+    # helper, so ``app/core/settings.py`` stays the single source of truth.
+    # The check runs before any state change: no user row, no token, no event.
+    attempts, window = rate_limiter.get_window_size("registration")
+    if not await allow(
+        f"registration:email:{request.email}",
+        max_requests=attempts,
+        window_seconds=window,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many registration attempts. Try again later.",
+        )
+
     try:
         user = await auth_service.register(request)
         await db.commit()

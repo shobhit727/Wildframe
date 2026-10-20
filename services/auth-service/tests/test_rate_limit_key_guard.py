@@ -284,6 +284,7 @@ async def test_the_namespace_is_a_closed_set():
     assert {kind.value for kind in BucketKind} == {
         "resend:ip",
         "resend:email",
+        "registration:email",
         "mfa:verify:ip",
         "mfa:verify:user",
         "mfa:setup:ip",
@@ -315,18 +316,18 @@ def test_excluding_buckets_reject_every_credential_shape():
     ``ipaddress`` and ``UUID`` are total over closed domains that contain no
     credentials, so this is exclusion rather than a heuristic. Deliberately
     does not reuse the SECRETS list, so the property is not an artefact of
-    which strings happened to be chosen. ``resend:email`` is excluded here
-    because an address is *not* distinguishable from an address-shaped
+    which strings happened to be chosen. The address buckets are excluded
+    here because an address is *not* distinguishable from an address-shaped
     secret -- see the dedicated test for that residual.
 
-    This goes through ``allow()``, not through a local re-implementation of the
-    two checks. An earlier version of this test called the helpers directly, so
-    it kept passing when the guard was spliced out of ``allow()`` entirely: it
-    was validating the helpers, not the control, while being cited as the
-    evidence that a secret cannot reach the hash.
+    This goes through ``allow()``, not through a local re-implementation of
+    the two checks. An earlier version of this test called the helpers
+    directly, so it kept passing when the guard was spliced out of
+    ``allow()`` entirely: it was validating the helpers, not the control,
+    while being cited as the evidence that a secret cannot reach the hash.
     """
     for kind in BucketKind:
-        if kind is BucketKind.RESEND_EMAIL:
+        if rate_limit._SUBJECT_VALIDATORS[kind] is rate_limit._is_email:
             continue
         # "0.0.0.0" and "::" are deliberately absent: both are valid addresses
         # (the unspecified address), so accepting them is correct. "0" and
@@ -357,15 +358,36 @@ async def test_resend_email_is_bounded_not_excluded():
 
     An address is not distinguishable from an address-shaped secret, so
     ``resend:email`` cannot exclude credentials the way the IP and UUID
-    buckets do. This is the one bucket where a secret-shaped value is still
-    accepted and digested. It is a real limitation of this design, recorded
-    here so that it is visible rather than implied, and so that closing it
-    later (keyed digest, or a typed key) shows up as a failing test.
+    buckets do. This is one of the buckets where a secret-shaped value is
+    still accepted and digested. It is a real limitation of this design,
+    recorded here so that it is visible rather than implied, and so that
+    closing it later (keyed digest, or a typed key) shows up as a failing
+    test.
     """
     client = _FakeRedis()
     with _using(client):
         assert (
             await allow(f"resend:email:{ADDRESS_SHAPED_SECRET}", max_requests=5, window_seconds=60)
+            is True
+        )
+    assert client.keys_used  # it did become key material, which is the risk
+    assert ADDRESS_SHAPED_SECRET not in client.keys_used[0]  # but never verbatim
+
+
+async def test_registration_email_is_bounded_not_excluded():
+    """The same residual applies to the registration bucket (#1044).
+
+    The registration bucket's subject is an address too, so it inherits the
+    limitation: an address-shaped secret is accepted and digested rather than
+    excluded. What keeps that safe is the caller -- see
+    ``test_registration_email_has_exactly_one_caller_and_it_is_schema_validated``.
+    """
+    client = _FakeRedis()
+    with _using(client):
+        assert (
+            await allow(
+                f"registration:email:{ADDRESS_SHAPED_SECRET}", max_requests=5, window_seconds=60
+            )
             is True
         )
     assert client.keys_used  # it did become key material, which is the risk
@@ -614,3 +636,43 @@ def test_resend_email_has_exactly_one_caller_and_it_is_schema_validated():
         ResendVerificationRequest.model_json_schema()["properties"]["email"].get("format")
         == "email"
     ), "the address is no longer validated as an address"
+
+
+def test_registration_email_has_exactly_one_caller_and_it_is_schema_validated():
+    """Turn "registration:email is a verified zero" from a comment into a test.
+
+    The registration bucket (#1044) has the same residual as
+    ``resend:email``: no address grammar can exclude an address-shaped
+    secret, so what makes it safe is that its single caller feeds it a
+    schema-validated address. ``POST /auth/register`` types the field as
+    ``CanonicalEmailStr``, so the only value that can reach the bucket is a
+    validated, normalised address.
+
+    If a second caller appears, or the field is widened to ``str``, this
+    fails and the module docstring has to be rewritten.
+    """
+    import pathlib
+
+    routes = pathlib.Path(__file__).resolve().parents[1] / "app" / "api" / "routes" / "auth.py"
+    source = routes.read_text(encoding="utf-8")
+    assert source.count("registration:email:") == 1, (
+        "registration:email now has more than one caller; its subject is no"
+        " longer guaranteed to be a schema-validated address, so the residual"
+        " is no longer a verified zero and the module docstring must change"
+    )
+
+    from pydantic import EmailStr, ValidationError
+
+    from app.schemas import UserRegisterRequest
+
+    field = UserRegisterRequest.model_fields["email"]
+    assert field.annotation is EmailStr, (
+        "UserRegisterRequest.email is no longer EmailStr, so an arbitrary"
+        f" string can reach the registration:email bucket (got {field.annotation!r})"
+    )
+    # The behaviour, not the spelling: a non-address still cannot get through.
+    with pytest.raises(ValidationError) as excinfo:
+        UserRegisterRequest(email="not-an-address", password="SecurePass123!")
+    assert any(
+        "email" in str(error["loc"]) for error in excinfo.value.errors()
+    ), "the address was not the field that failed validation"
