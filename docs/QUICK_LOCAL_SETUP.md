@@ -27,7 +27,7 @@ sudo systemctl restart docker   # or restart Docker Desktop
 
 ```bash
 docker compose -f deployments/docker-compose.dev.yml up --build admin-service
-curl https://localhost:8006/health
+curl -sk https://localhost:8006/health
 ```
 
 - [ ] Run unit tests (project-wide)

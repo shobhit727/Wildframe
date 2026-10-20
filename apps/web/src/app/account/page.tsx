@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useUser } from '@/hooks';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
@@ -40,6 +40,11 @@ export default function AccountPage() {
     firstName: '',
     lastName: '',
     email: '',
+    bio: '',
+    phone_number: '',
+    country: '',
+  });
+  const editBaselineRef = useRef({
     bio: '',
     phone_number: '',
     country: '',
@@ -98,12 +103,38 @@ export default function AccountPage() {
     onError: () => toast.error('Failed to update profile'),
   });
 
+  const beginProfileEdit = () => {
+    // Capture the values at edit start so Save can distinguish real edits from a no-op.
+    editBaselineRef.current = {
+      bio: formData.bio,
+      phone_number: formData.phone_number,
+      country: formData.country,
+    };
+    setEditingProfile(true);
+  };
+
   const handleSaveProfile = () => {
-    updateProfileMutation.mutate({
-      bio: formData.bio ?? undefined,
-      phone_number: formData.phone_number ?? undefined,
-      country: formData.country ?? undefined,
-    });
+    if (!profile) {
+      // Never submit an incomplete form when the source profile has not loaded.
+      toast.error('Profile is not available for editing');
+      return;
+    }
+
+    const editableFields = ['bio', 'phone_number', 'country'] as const;
+    const changedFields = editableFields.filter(
+      (field) => formData[field] !== editBaselineRef.current[field],
+    );
+
+    if (changedFields.length === 0) {
+      // Avoid sending a destructive no-op payload when nothing was explicitly edited.
+      toast.info('No profile changes to save');
+      return;
+    }
+
+    const payload = Object.fromEntries(
+      changedFields.map((field) => [field, formData[field]]),
+    );
+    updateProfileMutation.mutate(payload);
   };
 
   const updatePrefsMutation = useMutation({
@@ -169,7 +200,12 @@ export default function AccountPage() {
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-semibold text-white">Profile Information</h2>
                 {!editingProfile ? (
-                  <button onClick={() => setEditingProfile(true)} className="text-sm text-red-500 hover:text-red-400 flex items-center gap-1.5 transition-colors">
+                  <button
+                    onClick={beginProfileEdit}
+                    disabled={!profile}
+                    className="text-sm text-red-500 hover:text-red-400 flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={!profile ? 'Profile data must load before editing' : undefined}
+                  >
                     <PencilIcon /> Edit
                   </button>
                 ) : (
@@ -199,24 +235,59 @@ export default function AccountPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="bg-dark-800 rounded-lg p-4">
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Country</label>
-                  <p className="text-white">{profile?.country || formData.country || '—'}</p>
+              {editingProfile ? (
+                <div className="grid grid-cols-1 gap-4">
+                  <div>
+                    <label htmlFor="profile-bio" className="block text-xs font-medium text-gray-500 mb-1">Bio</label>
+                    <textarea
+                      id="profile-bio"
+                      value={formData.bio}
+                      onChange={(e) => setFormData((p) => ({ ...p, bio: e.target.value }))}
+                      rows={3}
+                      className="w-full rounded-lg bg-dark-800 border border-dark-700 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="profile-phone" className="block text-xs font-medium text-gray-500 mb-1">Phone number</label>
+                    <input
+                      id="profile-phone"
+                      type="tel"
+                      value={formData.phone_number}
+                      onChange={(e) => setFormData((p) => ({ ...p, phone_number: e.target.value }))}
+                      className="w-full rounded-lg bg-dark-800 border border-dark-700 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="profile-country" className="block text-xs font-medium text-gray-500 mb-1">Country</label>
+                    <input
+                      id="profile-country"
+                      type="text"
+                      value={formData.country}
+                      onChange={(e) => setFormData((p) => ({ ...p, country: e.target.value }))}
+                      className="w-full rounded-lg bg-dark-800 border border-dark-700 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                  </div>
                 </div>
-                <div className="bg-dark-800 rounded-lg p-4">
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Language</label>
-                  <p className="text-white capitalize">{profile?.language || preferences?.language || '—'}</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-dark-800 rounded-lg p-4">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Country</label>
+                    <p className="text-white">{profile?.country || formData.country || '—'}</p>
+                  </div>
+                  <div className="bg-dark-800 rounded-lg p-4">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Language</label>
+                    <p className="text-white capitalize">{profile?.language || preferences?.language || '—'}</p>
+                  </div>
+                  <div className="bg-dark-800 rounded-lg p-4">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Member since</label>
+                    <p className="text-white">{profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : '—'}</p>
+                  </div>
+                  <div className="bg-dark-800 rounded-lg p-4">
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Profile completion</label>
+                    <p className="text-white">{profile?.profile_completeness ?? 0}%</p>
+                  </div>
                 </div>
-                <div className="bg-dark-800 rounded-lg p-4">
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Member since</label>
-                  <p className="text-white">{profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : '—'}</p>
-                </div>
-                <div className="bg-dark-800 rounded-lg p-4">
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Profile completion</label>
-                  <p className="text-white">{profile?.profile_completeness ?? 0}%</p>
-                </div>
-              </div>
+              )}
             </div>
           </Tabs.Content>
 

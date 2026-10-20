@@ -10,5 +10,5 @@ certs-force:
 .PHONY: help
 help:
 	@echo "Targets:"
-	@echo "  certs        Generate dev TLS certs if missing (SANs localhost,127.0.0.1,::1,192.168.1.14, perms 644)"
+	@echo "  certs        Generate dev TLS certs if missing (SANs localhost,127.0.0.1,::1 + this host's own addresses, perms 644)"
 	@echo "  certs-force  Regenerate dev TLS certs (delete and recreate)"

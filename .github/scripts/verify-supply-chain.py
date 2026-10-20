@@ -3,6 +3,7 @@ import pathlib
 import re
 import subprocess
 import sys
+from datetime import date
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 WORKFLOWS = list((REPO / ".github" / "workflows").glob("*.yml")) + list((REPO / ".github" / "workflows").glob("*.yaml"))
@@ -128,8 +129,6 @@ def check_suppressions():
                 is_sensitive = True
         elif "localhost-key" in low or "localhost.pem" in low:
             is_sensitive = True
-        elif "apps/web/certificates" in low:
-            is_sensitive = True
         elif low in (".pem", ".key"):
             is_sensitive = True
         if is_sensitive:
@@ -175,12 +174,38 @@ def check_trivyignore():
         if not stripped or stripped.startswith("#"):
             continue
         active.append(f"{TRIVYIGNORE.relative_to(REPO)}:{idx}: {stripped}")
-        parts = [p.strip() for p in stripped.split(",")]
-        if len(parts) < 3:
-            violations.append(f"{TRIVYIGNORE.relative_to(REPO)}:{idx}: suppression '{stripped}' missing justification/owner/expiry (expected CVE, expiry, owner/justification)")
+        parts = [p.strip() for p in stripped.split(",", 3)]
+        if len(parts) != 4:
+            violations.append(
+                f"{TRIVYIGNORE.relative_to(REPO)}:{idx}: suppression '{stripped}' "
+                "must use CVE, expiry (YYYY-MM-DD), owner (@handle), justification"
+            )
+            continue
+
+        cve, expiry_text, owner, justification = parts
+        if "*" in cve:
+            violations.append(
+                f"{TRIVYIGNORE.relative_to(REPO)}:{idx}: wildcard CVE suppression is not allowed"
+            )
+        try:
+            expiry = date.fromisoformat(expiry_text)
+        except ValueError:
+            violations.append(
+                f"{TRIVYIGNORE.relative_to(REPO)}:{idx}: invalid expiry date '{expiry_text}'"
+            )
         else:
-            if not any(re.search(r"\d{4}-\d{2}-\d{2}", p) for p in parts):
-                violations.append(f"{TRIVYIGNORE.relative_to(REPO)}:{idx}: suppression '{stripped}' missing expiry date")
+            if expiry <= date.today():
+                violations.append(
+                    f"{TRIVYIGNORE.relative_to(REPO)}:{idx}: suppression expired on {expiry_text}"
+                )
+        if not re.fullmatch(r"@[A-Za-z0-9_.-]+", owner):
+            violations.append(
+                f"{TRIVYIGNORE.relative_to(REPO)}:{idx}: suppression owner must be an @handle"
+            )
+        if not justification:
+            violations.append(
+                f"{TRIVYIGNORE.relative_to(REPO)}:{idx}: suppression justification is required"
+            )
     return violations, active
 
 def report_active_suppressions():

@@ -292,6 +292,77 @@ class TestSignedUrlBranches:
         assert result is False
 
 
+class TestSignedUrlRoundTrip:
+    """The signing side and the verifying side must actually agree.
+
+    Every pre-existing test re-implemented the HMAC message in the test file, so
+    ``generate_signed_url`` and ``verify_signed_url`` had never met: each was
+    tested against a third copy of the message, not against the other. Drift was
+    therefore invisible -- dropping ``episode_id`` from the message survived the
+    whole suite.
+    """
+
+    @staticmethod
+    def _params(signed_url: str) -> dict[str, str]:
+        _, _, query = signed_url.partition("?")
+        return dict(pair.split("=", 1) for pair in query.split("&"))
+
+    async def test_a_generated_url_verifies(self, service):
+        from app.schemas import SignedPlaybackUrlRequest
+
+        session_id, episode_id = uuid4(), uuid4()
+        request = SignedPlaybackUrlRequest(
+            session_id=session_id, content_id=uuid4(), ttl_seconds=3600
+        )
+
+        signed_url, expires_at = service.generate_signed_url(request, episode_id)
+        params = self._params(signed_url)
+
+        assert params["session_id"] == str(session_id)
+        assert f"/api/v1/episodes/{episode_id}/manifest" in signed_url
+        # The advertised expiry and the expiry that was signed must be the same
+        # number, or the URL would be rejected on arrival.
+        assert int(params["expires"]) == int(expires_at.timestamp())
+        assert service.verify_signed_url(
+            session_id, episode_id, params["signature"], int(params["expires"])
+        )
+
+    async def test_a_signature_does_not_transfer_to_another_episode(self, service):
+        """The signature is bound to the episode, not just to the session."""
+        from app.schemas import SignedPlaybackUrlRequest
+
+        session_id, signed_for, replayed_for = uuid4(), uuid4(), uuid4()
+        request = SignedPlaybackUrlRequest(
+            session_id=session_id, content_id=uuid4(), ttl_seconds=3600
+        )
+
+        signed_url, _ = service.generate_signed_url(request, signed_for)
+        params = self._params(signed_url)
+
+        assert service.verify_signed_url(
+            session_id, signed_for, params["signature"], int(params["expires"])
+        )
+        assert not service.verify_signed_url(
+            session_id, replayed_for, params["signature"], int(params["expires"])
+        )
+
+    async def test_a_signature_does_not_transfer_to_another_session(self, service):
+        from app.schemas import SignedPlaybackUrlRequest
+
+        episode_id = uuid4()
+        session_id, other_session = uuid4(), uuid4()
+        request = SignedPlaybackUrlRequest(
+            session_id=session_id, content_id=uuid4(), ttl_seconds=3600
+        )
+
+        signed_url, _ = service.generate_signed_url(request, episode_id)
+        params = self._params(signed_url)
+
+        assert not service.verify_signed_url(
+            other_session, episode_id, params["signature"], int(params["expires"])
+        )
+
+
 class TestSessionValidityBranches:
     """Tests for session expiry/revocation checks at playback time (#76, #147, #194, #219, #251)."""
 

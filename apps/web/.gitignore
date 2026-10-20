@@ -11,3 +11,9 @@ build/
 .idea/
 *.swp
 *.swo
+# Test artifacts
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
