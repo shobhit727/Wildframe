@@ -1407,3 +1407,12 @@ This is **not** the certificate change: the same job's log shows the new
 script working on the CI runner, generating a certificate with the runner's
 own addresses (`10.1.1.154`, `172.17.0.1`) where the old script would have
 produced only the one developer's address.
+
+**One corroborating observation, and one that is not proof.** The push banner
+for this repository reported "288 vulnerabilities" earlier in the session and
+"55 vulnerabilities" later, which is consistent with a change in the
+repository's security-feature state. It is **not** evidence: the Dependabot
+alerts API still answers normally and still lists alerts in the thousands, so
+the banner's tally moved for a reason I have not established. The hard
+evidence is the code-scanning API's own 403, which is unambiguous and
+reproducible.
