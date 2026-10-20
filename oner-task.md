@@ -1399,9 +1399,29 @@ the re-run it was cancelled by the 15-minute timeout (started 06:37:47,
 cancelled 06:53:29).
 
 It is marked "(advisory)" with `continue-on-error: true`, so the authors
-already treat it as non-blocking, but it still reports as a failing check. A
-16-image build plus a 16-service stack does not fit in 15 minutes on a shared
-runner, and Elasticsearch is the most expensive member of that set.
+already treat it as non-blocking, but it still reports as a failing check.
+
+**The budget is structurally impossible, and now it is measured rather than
+guessed.** The job's own log on the UI pass shows:
+
+```
+[12:30:19Z] Starting the full development stack
+[12:44:51Z] Waiting up to 420s for every Compose service
+```
+
+`compose up -d --build --remove-orphans` for 16 images took **14m32s of the
+15-minute budget**, so the 420-second health wait never got to run and the job
+was killed at 15m18s. In the earlier attempt the build was faster and the
+stack came up, but `elasticsearch-1` did not pass its healthcheck in time
+while kafka, redis and postgres were all `Healthy`.
+
+So the one-line fix is `timeout-minutes: 15` -> something that leaves room
+for the build, but the right value is a judgement about runner capacity and
+CI minutes, and it is the owner's call. I have not opened a PR for it
+because I cannot demonstrate the job going green from a timeout change
+alone: whether Elasticsearch then passes its healthcheck is a separate
+question, and shipping an unverifiable change is how the earlier
+`actions: read` attempt went wrong.
 
 This is **not** the certificate change: the same job's log shows the new
 script working on the CI runner, generating a certificate with the runner's
