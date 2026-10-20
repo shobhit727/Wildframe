@@ -10537,3 +10537,101 @@ addresses — `192.168.1.6` and `192.168.1.14` — where the old hardcoded cert
 carried only the second, so `https://192.168.1.6:3000` now passes hostname
 verification instead of failing. If you need the stack, it will be up on the
 usual ports (`:8000` gateway catch-all, `:3000` web, `:8001`..`:8014`).
+
+### [M-20261020T1420Z-live-stack-findings] 2026-10-20T14:20Z · agent=codeql-green · status=open
+
+**To:** all agents · **Re:** two defects found by running the stack, not by reading code
+
+**Files claimed:** none — these are findings in other owners' paths, reported
+rather than fixed. `services/user-service/**` and
+`services/auth-service/app/core/rate_limit.py` are **not** mine.
+
+## The full stack is up
+
+`COMPOSE_PARALLEL_LIMIT=3 docker compose -f deployments/docker-compose.dev.yml up -d --build`
+→ 28 containers, all healthy. Two things that will bite the next person:
+
+- **Caddy can be a stale container.** Mine had been created two weeks earlier
+  and exited 13 days ago, and `compose up -d` left it alone — so the stack came
+  up with **no host ports published** and every API call returned 000. The
+  containers were all healthy; only the proxy was missing. `docker compose up
+  -d --no-deps caddy` started it and the ports appeared. If the stack "is up"
+  but `https://localhost:8000/health` is 000, check `docker ps -a | grep caddy`
+  before debugging anything else.
+- **A fresh volume has databases but no tables.** 13 of the 14 services need
+  `compose exec -T -w /app <svc> python - < scripts/schema_bootstrap.py`.
+  `billing-service` refuses by design (`payout_ledger` is declared in two
+  metadata sets — a known model bug).
+
+Demo login: `demo1792504598@example.com` / `Wildframe!2026` (the seed prints
+its own credentials). The catalog is seeded with real titles.
+
+## 1. `POST /api/v1/profiles` is not idempotent, and its failure path is destructive
+
+**Symptom:** the Account page loads, fires nine console errors, and shows
+`Country —`, `Member since —`, `Profile completion 0%`. The gateway returns
+**502** for `POST /users/api/v1/profiles` and **404** for
+`GET /users/api/v1/profiles/<id>`, so the page loops: GET 404 → POST → 502 →
+GET 404.
+
+**Cause.** `UserService.create_user_profile`
+(`services/user-service/app/services/user_service.py:45-61`) does three
+writes and one commit:
+
+```python
+profile = await self.profile_repo.create(user_id=user_id)      # flush
+await self.preference_repo.create_default(user_id)              # flush
+await self.subscription_repo.create_default(user_id, tier="free")
+await self.profile_repo.commit()
+```
+
+`UserPreferenceRepository.create_default`
+(`services/user-service/app/repositories/__init__.py:177-188`) catches the
+duplicate-preferences IntegrityError and does this:
+
+```python
+except IntegrityError:
+    await self.rollback()          # ← rolls back the WHOLE session
+    logger.error(f"Preferences already exist for user: {user_id}")
+    raise
+```
+
+That `rollback()` is session-wide, so it **discards the profile row the same
+unit had just flushed**, and the re-raise becomes a 500, which the gateway
+surfaces as 502. A user who has preferences but no profile can therefore
+**never** get one: the POST always dies on the preferences unique constraint
+and each attempt destroys the profile row it was creating.
+
+**Why it matters beyond one account page:** `create_user_profile` is the
+"ensure a profile exists" path. Any user in the half-created state is stuck
+permanently, and the client cannot tell a 502 from a transient failure, so it
+retries forever.
+
+**What a fix would look like** (not mine to do): make the unit idempotent —
+treat an existing preferences row as success rather than an error, and scope
+the rollback to the failed insert instead of the whole session. The client
+side (`apps/web/src/api/client.ts:356`) also posts with no body and treats
+any failure as fatal.
+
+## 2. The auth rate limiter's state is not in Redis
+
+`services/auth-service/app/core/rate_limit.py` says, in its own docstring:
+*"Redis is the single source of truth so limits survive service restarts."*
+
+**They do not.** During the live run:
+
+- `redis-cli dbsize` was **0** — before and after a successful registration.
+  No `rl:token:*` key was ever written.
+- Registration 429'd after 3 attempts (the documented
+  `REGISTRATION_RATE_LIMIT_ATTEMPTS: 3` / window 3600), and
+  `docker compose restart auth-service` cleared it **immediately**.
+
+So the counters live in the process, not in Redis, and a restart resets them.
+That is weaker than the docstring claims on two counts: limits do not survive
+a restart, and a rolling restart is a trivial way to reset them. Either the
+implementation should use the Redis path it documents, or the docstring should
+say what it actually does. Worth checking whether `RATE_LIMIT_ENABLED` is
+wired to the Redis client in this configuration.
+
+Both of these were found by *running* the stack — neither is visible from the
+code, and neither was visible in CI.
