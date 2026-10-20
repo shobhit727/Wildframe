@@ -1,6 +1,8 @@
 """Repository layer for User Service."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -30,6 +32,21 @@ class BaseRepository:
     async def flush(self) -> None:
         """Flush pending changes."""
         await self.session.flush()
+
+    @asynccontextmanager
+    async def _scoped_write(self) -> AsyncIterator[None]:
+        """Run the enclosed writes inside a SAVEPOINT.
+
+        ``AsyncSession.rollback()`` discards *every* pending write in the
+        session, so a helper that calls it turns one failed INSERT into a
+        failed unit of work: the rows the same unit had already written are
+        thrown away with it, and the caller is left with a session that no
+        longer holds its own work. A SAVEPOINT confines the rollback to the
+        write that actually failed and leaves the rest of the unit of work
+        intact.
+        """
+        async with self.session.begin_nested():
+            yield
 
 
 class UserProfileRepository(BaseRepository):
@@ -187,6 +204,35 @@ class UserPreferenceRepository(BaseRepository):
             logger.error(f"Preferences already exist for user: {user_id}")
             raise
 
+    async def get_or_create_default(self, user_id: UUID) -> UserPreference:
+        """Return the user's preferences, creating the defaults when they are missing.
+
+        Idempotent counterpart to :meth:`create_default`. A user that already
+        has a preferences row is not an error here -- the row is returned as
+        it is. The INSERT runs inside a SAVEPOINT, so losing a race against a
+        concurrent writer rolls back that INSERT only and leaves the rest of
+        the caller's unit of work alone.
+        """
+        existing = await self.get_by_user_id(user_id)
+        if existing is not None:
+            return existing
+        try:
+            async with self._scoped_write():
+                preference = UserPreference(user_id=user_id)
+                self.session.add(preference)
+                await self.flush()
+                logger.info(f"Created default preferences for user: {user_id}")
+                return preference
+        except IntegrityError:
+            # A concurrent writer inserted the row between the SELECT and the
+            # INSERT. The SAVEPOINT rolled back this INSERT only, so the
+            # caller's other pending writes are still there.
+            existing = await self.get_by_user_id(user_id)
+            if existing is None:
+                raise
+            logger.info(f"Preferences already exist for user: {user_id}")
+            return existing
+
     async def get_by_user_id(self, user_id: UUID) -> UserPreference | None:
         """Get preferences by user ID."""
         stmt = select(UserPreference).where(UserPreference.user_id == user_id)
@@ -235,6 +281,42 @@ class UserSubscriptionProfileRepository(BaseRepository):
             await self.rollback()
             logger.error(f"Subscription already exists for user: {user_id}")
             raise
+
+    async def get_or_create_default(
+        self, user_id: UUID, tier: str = "free"
+    ) -> UserSubscriptionProfile:
+        """Return the user's subscription profile, creating the default when missing.
+
+        Idempotent counterpart to :meth:`create_default`, with the same
+        SAVEPOINT-scoped INSERT and the same treatment of an already
+        existing row as a success rather than an error.
+        """
+        existing = await self.get_by_user_id(user_id)
+        if existing is not None:
+            return existing
+        try:
+            async with self._scoped_write():
+                subscription = UserSubscriptionProfile(
+                    user_id=user_id,
+                    subscription_tier=tier,
+                    max_concurrent_streams=1 if tier == "free" else (2 if tier == "basic" else 4),
+                    can_download=tier != "free",
+                    can_use_4k=tier == "premium",
+                    ad_free=tier != "free",
+                )
+                self.session.add(subscription)
+                await self.flush()
+                logger.info(f"Created subscription profile for user: {user_id}")
+                return subscription
+        except IntegrityError:
+            # A concurrent writer inserted the row between the SELECT and the
+            # INSERT. The SAVEPOINT rolled back this INSERT only, so the
+            # caller's other pending writes are still there.
+            existing = await self.get_by_user_id(user_id)
+            if existing is None:
+                raise
+            logger.info(f"Subscription already exists for user: {user_id}")
+            return existing
 
     async def get_by_user_id(self, user_id: UUID) -> UserSubscriptionProfile | None:
         """Get subscription by user ID."""
