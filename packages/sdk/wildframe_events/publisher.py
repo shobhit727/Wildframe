@@ -28,6 +28,7 @@ Delivery semantics
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -167,7 +168,7 @@ class KafkaEventPublisher(EventPublisher):
                 ctx = ssl.create_default_context(cafile=env_ca)
                 self.ssl_context = ctx
             elif self.security_protocol in ("SSL", "SASL_SSL"):
-                insecure = os.getenv("KAFKA_SSL_INSECURE", "true").lower() not in (
+                insecure = os.getenv("KAFKA_SSL_INSECURE", "false").lower() not in (
                     "false",
                     "0",
                     "no",
@@ -182,42 +183,59 @@ class KafkaEventPublisher(EventPublisher):
             else:
                 self.ssl_context = None
         self._producer = None
+        self._producer_lock = asyncio.Lock()
 
     async def _get_producer(self):
         """Lazy-start the Kafka producer (avoids import when not used)."""
-        if self._producer is None:
-            from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
-
-            kwargs: dict[str, Any] = {
-                "bootstrap_servers": self.bootstrap_servers,
-                "client_id": self.client_id,
-                "acks": self.acks,
-                "enable_idempotence": self.acks == "all",
-                "max_request_size": self.max_payload_bytes + 4096,
-                "value_serializer": lambda v: v.to_json().encode("utf-8"),
-                "key_serializer": lambda k: k.encode("utf-8") if k else None,
-                "security_protocol": self.security_protocol,
-            }
-            if self.ssl_context is not None:
-                kwargs["ssl_context"] = self.ssl_context
-            if self.sasl_mechanism:
-                kwargs["sasl_mechanism"] = self.sasl_mechanism
-            if self.sasl_username:
-                kwargs["sasl_plain_username"] = self.sasl_username
-            if self.sasl_password:
-                kwargs["sasl_plain_password"] = self.sasl_password
-            import inspect
-
-            try:
-                param_names = inspect.signature(AIOKafkaProducer.__init__).parameters
-            except (TypeError, ValueError):
-                param_names = {}
-            if "retries" in param_names:
-                kwargs["retries"] = self.max_retries
-                kwargs["retry_backoff_ms"] = self.retry_backoff_ms
-            self._producer = AIOKafkaProducer(**kwargs)
-            await self._producer.start()
+        async with self._producer_lock:
+            if self._producer is None:
+                producer = self._new_producer()
+                # Cache only after start() succeeds — a failed start would
+                # otherwise leave a dead producer cached for every later send.
+                await producer.start()
+                self._producer = producer
         return self._producer
+
+    def _new_producer(self):
+        """Build a configured (not yet started) AIOKafkaProducer."""
+        from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
+
+        kwargs: dict[str, Any] = {
+            "bootstrap_servers": self.bootstrap_servers,
+            "client_id": self.client_id,
+            "acks": self.acks,
+            # Idempotent producer: producer-side retries cannot create
+            # duplicate broker records (Kafka dedups by producer-id +
+            # sequence number). Requires acks=all; honoured only then.
+            "enable_idempotence": self.acks == "all",
+            # Broker-side cap: the producer refuses records larger
+            # than this instead of failing later at the broker.
+            "max_request_size": self.max_payload_bytes + 4096,
+            "value_serializer": lambda v: v.to_json().encode("utf-8"),
+            "key_serializer": lambda k: k.encode("utf-8") if k else None,
+            "security_protocol": self.security_protocol,
+        }
+        if self.ssl_context is not None:
+            kwargs["ssl_context"] = self.ssl_context
+        if self.sasl_mechanism:
+            kwargs["sasl_mechanism"] = self.sasl_mechanism
+        if self.sasl_username:
+            kwargs["sasl_plain_username"] = self.sasl_username
+        if self.sasl_password:
+            kwargs["sasl_plain_password"] = self.sasl_password
+        # ``retries``/``retry_backoff_ms`` existed in aiokafka < 0.11;
+        # newer releases rely on the idempotent producer's built-in
+        # bounded retries. Introspect so the SDK works on both.
+        import inspect
+
+        try:
+            param_names = inspect.signature(AIOKafkaProducer.__init__).parameters
+        except (TypeError, ValueError):
+            param_names = {}
+        if "retries" in param_names:
+            kwargs["retries"] = self.max_retries
+            kwargs["retry_backoff_ms"] = self.retry_backoff_ms
+        return AIOKafkaProducer(**kwargs)
 
     async def publish(self, event: DomainEvent) -> None:
         """Publish a domain event to Kafka.

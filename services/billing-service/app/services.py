@@ -17,8 +17,13 @@ State machine invariants (#190/#220/#482):
     last_stripe_event_ts prevents stale events from regressing state).
   - Invoice transitions: PENDING -> {PAID, FAILED}; FAILED -> {PAID,
     PENDING}; PAID -> REFUNDED; REFUNDED is terminal.
-  - Tranche/Payout transitions defined in TRANCHE_TRANSITIONS /
-    PAYOUT_TRANSITIONS. All mutations go through ``validate_transition``.
+  - Tranche transitions: LOCKED -> {RELEASED, REVERTED}; RELEASED and
+    REVERTED are terminal.
+  - Payout transitions: ACCRUED -> {TRANSFERRING, FAILED}; TRANSFERRING ->
+    {COMPLETED, FAILED}; FAILED -> TRANSFERRING (retry); COMPLETED is
+    terminal. Keyed by the persisted ``PayoutStatus`` enum.
+  All mutations go through ``validate_transition``, so every table must be
+  keyed by the enum its rows actually persist.
 
 Monetary invariants (#477/#478):
   - All amounts stored as Decimal (exact). Provider boundaries use
@@ -43,6 +48,7 @@ from app.models import (
     MilestoneStatus,
     MilestoneTranche,
     PayoutLedger,
+    PayoutStatus,
     Purchase,
     Refund,
     RefundStatus,
@@ -132,10 +138,21 @@ TRANCHE_TRANSITIONS: Mapping[TrancheStatus, tuple[TrancheStatus, ...]] = {
     TrancheStatus.REVERTED: (TrancheStatus.REVERTED,),
 }
 
-PAYOUT_TRANSITIONS: Mapping[str, tuple[str, ...]] = {
-    "accrued": ("accrued", "paid", "cancelled"),
-    "paid": ("paid",),
-    "cancelled": ("cancelled",),
+PAYOUT_TRANSITIONS: Mapping[PayoutStatus, tuple[PayoutStatus, ...]] = {
+    PayoutStatus.ACCRUED: (
+        PayoutStatus.ACCRUED,
+        PayoutStatus.TRANSFERRING,
+        PayoutStatus.FAILED,
+    ),
+    PayoutStatus.TRANSFERRING: (
+        PayoutStatus.TRANSFERRING,
+        PayoutStatus.COMPLETED,
+        PayoutStatus.FAILED,
+    ),
+    # COMPLETED is terminal: funds moved, nothing further may change the row.
+    PayoutStatus.COMPLETED: (PayoutStatus.COMPLETED,),
+    # FAILED retries by re-attempting the transfer, not by re-accruing.
+    PayoutStatus.FAILED: (PayoutStatus.FAILED, PayoutStatus.TRANSFERRING),
 }
 
 
@@ -259,6 +276,15 @@ class BillingService:
     # -----------------------------------------------------------------------
     # TVOD purchases
     # -----------------------------------------------------------------------
+
+    async def get_purchase_price(self, content_id: UUID) -> Decimal:
+        """Canonical server-side price for a title.
+
+        content-service is the single source of truth for TVOD pricing; the
+        client never supplies an amount. Used by the checkout route so the
+        Stripe session is priced from the same value the purchase records.
+        """
+        return await self._fetch_content_price(content_id)
 
     async def _fetch_content_details(self, content_id: UUID) -> tuple[Decimal, UUID]:
         content_service_url = "http://content-service:8000"
@@ -445,11 +471,7 @@ class BillingService:
         except Exception:
             pass
         resolved_invoice = None
-        resolved_invoice_id = invoice_id
-        if resolved_invoice_id is not None:
-            resolved_invoice = await self.inv_repo.get(resolved_invoice_id)
-            if resolved_invoice is None:
-                resolved_invoice_id = None
+        resolved_invoice_id = None
         if resolved_invoice_id is None:
             if authoritative_stripe_invoice:
                 try:
@@ -513,30 +535,50 @@ class BillingService:
                             resolved_invoice_id = inv.id
                 except Exception:
                     pass
-        if resolved_invoice_id is None or resolved_invoice is None:
-            if resolved_invoice_id is not None:
-                try:
-                    resolved_invoice = await self.inv_repo.get(resolved_invoice_id)
-                except Exception:
-                    resolved_invoice = None
-            if resolved_invoice is None:
-                refund = await self.refund_repo.create(
-                    refund_id=refund_id,
-                    charge_id=authoritative_charge or charge_id,
-                    amount=amount,
-                    currency=currency,
-                    invoice_id=None,
-                    user_id=user_id,
-                    reason=reason,
-                    status=RefundStatus.PENDING_REVIEW,
-                )
-                self._logger.warning(
-                    "Refund %s pending review: unresolved invoice charge=%s pi=%s",
-                    refund_id,
-                    authoritative_charge,
-                    authoritative_pi,
-                )
-                return refund
+        if resolved_invoice_id is None and invoice_id is not None:
+            # Stripe linkage unavailable (a routine Stripe degradation) — fall
+            # back to the caller-supplied local invoice rather than stranding a
+            # settled refund in PENDING_REVIEW with no invoice to apply against.
+            resolved_invoice = await self.inv_repo.get(invoice_id)
+            if resolved_invoice is not None:
+                resolved_invoice_id = resolved_invoice.id
+        if resolved_invoice is None:
+            refund = await self.refund_repo.create(
+                refund_id=refund_id,
+                charge_id=authoritative_charge or charge_id,
+                amount=amount,
+                currency=currency,
+                invoice_id=None,
+                user_id=user_id,
+                reason=reason,
+                status=RefundStatus.PENDING_REVIEW,
+            )
+            self._logger.warning(
+                "Refund %s pending review: unresolved invoice charge=%s pi=%s",
+                refund_id,
+                authoritative_charge,
+                authoritative_pi,
+            )
+            return refund
+        if invoice_id is not None and invoice_id != resolved_invoice_id:
+            refund = await self.refund_repo.create(
+                refund_id=refund_id,
+                charge_id=authoritative_charge or charge_id,
+                amount=amount,
+                currency=currency,
+                invoice_id=None,
+                user_id=user_id,
+                reason=reason,
+                status=RefundStatus.PENDING_REVIEW,
+            )
+            self._logger.warning(
+                "Refund %s pending review: supplied invoice %s does not match"
+                " Stripe-linked invoice %s",
+                refund_id,
+                invoice_id,
+                resolved_invoice_id,
+            )
+            return refund
         if resolved_invoice.currency.upper() != currency.upper():
             refund = await self.refund_repo.create(
                 refund_id=refund_id,
@@ -555,7 +597,11 @@ class BillingService:
                 currency,
             )
             return refund
-        applied = await self.refund_repo.apply_to_invoice(resolved_invoice_id, amount)
+        # ``resolved_invoice`` is non-None from the guard above, and every branch
+        # that sets it also sets ``resolved_invoice_id`` to its id. Reading the id
+        # off the invoice keeps the two from drifting apart and needs no extra
+        # narrowing of the parallel optional.
+        applied = await self.refund_repo.apply_to_invoice(resolved_invoice.id, amount)
         status = RefundStatus.PROCESSED if applied else RefundStatus.REJECTED
         if status == RefundStatus.REJECTED:
             self._logger.warning(
@@ -634,7 +680,9 @@ class BillingService:
         All tranches start as LOCKED. They are released one at a time as
         milestones are verified.
         """
-        if caller_id is not None and caller_id != creator_id and not caller_is_admin:
+        if caller_id is None:
+            raise MilestoneAuthorizationError("caller identity required")
+        if caller_id != creator_id and not caller_is_admin:
             raise MilestoneAuthorizationError(
                 "not authorized to create milestone for another creator"
             )
@@ -652,7 +700,7 @@ class BillingService:
         Tranche must be in LOCKED status and the milestone must not be
         KILLED. On release, a corresponding payout accrual is created.
         """
-        if caller_id is not None and not caller_is_admin:
+        if caller_id is None or not caller_is_admin:
             raise MilestoneAuthorizationError("admin privileges required")
         milestone = await self.milestone_repo.get(milestone_id)
         if not milestone:
@@ -696,7 +744,7 @@ class BillingService:
         revert. The reverted funds become available for redistribution in
         the next pool cycle.
         """
-        if caller_id is not None and not caller_is_admin:
+        if caller_id is None or not caller_is_admin:
             raise MilestoneAuthorizationError("admin privileges required")
         milestone = await self.milestone_repo.get(milestone_id)
         if not milestone:

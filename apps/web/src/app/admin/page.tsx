@@ -19,12 +19,6 @@ function formatNumber(n: number) {
   return new Intl.NumberFormat('en-US').format(n);
 }
 
-function formatUptime(hours: number) {
-  if (hours < 24) return `${Math.round(hours)}h`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ${Math.round(hours % 24)}h`;
-}
-
 export default function AdminDashboardPage() {
   const stats = useQuery({
     queryKey: ['admin', 'stats'],
@@ -66,7 +60,8 @@ export default function AdminDashboardPage() {
             <StatCard label="Total Users" value={formatNumber(s.total_users)} hint={`${formatNumber(s.active_users)} active`} trend={{ value: 4.5, positive: true }} icon={<Icons.UsersIcon />} accent="sky" />
             <StatCard label="Active Streams" value={formatNumber(Math.round(s.active_users * 0.32))} hint="last 24h" trend={{ value: 2.1, positive: true }} icon={<Icons.ActivityIcon />} accent="green" />
             <StatCard label="Open Flags" value={formatNumber(s.flagged_content)} hint={`${s.active_alerts} alerts`} trend={{ value: 1.4, positive: false }} icon={<Icons.FlagIcon />} accent="amber" />
-            <StatCard label="MRR" value={`$${formatNumber(48250)}`} hint={`uptime ${formatUptime(s.system_uptime_hours)}`} trend={{ value: 6.8, positive: true }} icon={<Icons.DollarIcon />} accent="purple" />
+            {/* MRR is unavailable until the stats API exposes a real value; never display fabricated financial data. */}
+            <StatCard label="MRR" value="Not available" hint="Not reported by admin stats" icon={<Icons.DollarIcon />} accent="purple" />
           </>
         )}
       </section>

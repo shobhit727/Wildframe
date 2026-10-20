@@ -1,15 +1,57 @@
 # 📋 API Documentation
 
-**Version**: 1.0.0  
-**Last Updated**: August 9, 2026  
-**Stability**: Production-Ready
+**Version**: 0.9 — **inaccurate, see below**  
+**Last Updated**: August 9, 2026 (content); banner added 2026-10-14  
+**Stability**: **not** production-ready as a reference
+
+> ## ⚠️ This file previously claimed to be a complete API reference. It is not.
+>
+> The earlier header said *"Complete API reference for all Wildframe
+> microservices… documents every endpoint"* and was marked
+> **Production-Ready**. Both were false, and the errors are the kind that cost
+> an integrator a day:
+>
+> - **14 of the 19 endpoints it documents return 404.** Verified 2026-10-14 by
+>   generating `openapi.json` from all 15 services and resolving every
+>   documented method+path against it.
+> - **It covers 4 of 15 services.** Nothing for search, admin,
+>   recommendation, billing, analytics, notification, media-pipeline, creators,
+>   moderation or uploads.
+> - **It omits every state-changing route** — `POST
+>   /api/v1/playback-sessions`, `POST /api/v1/purchases`, the moderation
+>   decisions, the creator onboarding, the admin actions.
+> - **Its pagination envelope is invented.** `has_next` / `has_prev` appear in
+>   no schema in any service. No service returns that shape.
+> - **Its `/search` and `/movies` paths belong to no service.** `search-service`
+>   serves `/api/v1/genres`, `/api/v1/content` and `/api/v1/reindex`;
+>   `content-service` serves `/api/v1/content` and `/api/v1/content/{id}`.
+>   Search is Elasticsearch, reached through `content-service`.
+>
+> ### The only trustworthy inventory is generated, not written
+>
+> ```bash
+> curl -sk https://localhost:8001/openapi.json   # auth-service
+> curl -sk https://localhost:8002/openapi.json   # user-service
+> curl -sk https://localhost:8003/openapi.json   # content-service
+> # 8000 is the api-gateway proxy: it exposes /health, /ready, /metrics,
+> # /gateway/health, /gateway/ready, /gateway/services, and a catch-all
+> # /{service}/... that forwards. It owns no business route.
+> ```
+>
+> Host port per service is in `infrastructure/caddy/Caddyfile`. The
+> authoritative list is what those documents contain; this file is a
+> hand-written sketch of 4 of them.
+>
+> **The sections below that carry `❌ 404` markers are wrong and are kept
+> only so the diff against the old file is reviewable. Do not code against
+> them.** The auth-service section is correct.
 
 ## Overview
 
-Complete API reference for all Wildframe microservices. This guide documents every endpoint, including request/response formats, authentication requirements, and error handling.
+A hand-written sketch of the auth, user, content and streaming APIs. It is
+**not** a reference. Read it for the auth flow and the JWT claims; get
+everything else from `openapi.json`.
 
-**Time to read**: 25 minutes  
-**Prerequisites**: Understanding of REST APIs, HTTP status codes
 
 ## Quick Links
 
@@ -601,9 +643,9 @@ The api-gateway enforces rate limits per client (authenticated user `sub` or IP)
 
 | Endpoint | Limit | Window |
 |----------|-------|--------|
-| `/auth/login` | 5 attempts | 5 minutes |
-| `/auth/register` | 3 registrations | 1 hour |
-| `/search` | 100 requests | 1 minute |
+| `/api/v1/auth/login` | 5 attempts | 5 minutes |
+| `/api/v1/auth/register` | 3 registrations | 1 hour |
+| **⚠️ `/search` — no such route.** The search limit below belonged to a path that does not exist | 100 requests | 1 minute |
 | Most other endpoints | 1000 requests | 1 minute |
 
 (Configured per service in `app/core/settings.py` — auth-service and
@@ -621,7 +663,16 @@ with a `Retry-After` header.
 
 ## Pagination
 
-Endpoints returning lists support pagination:
+> ❌ **This section is wrong.** The envelope below does not exist. `has_next`
+> and `has_prev` appear in no Pydantic schema in any of the 15 services —
+> verified by grepping `services/**/app/schemas` and `apps/web/src/types` on
+> 2026-10-14. The example path `/movies` is also not a real route.
+>
+> No service currently exposes a list endpoint with a documented pagination
+> contract. Treat list handling as per-endpoint and read the endpoint's own
+> `response_model` in `openapi.json`.
+
+The shape that was documented here, for the record:
 
 ```http
 GET /movies?limit=20&offset=40

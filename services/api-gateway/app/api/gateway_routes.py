@@ -7,7 +7,12 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from app.core.settings import settings
-from app.middleware import ServiceRegistry, get_optional_user, get_shared_client
+from app.middleware import (
+    ServiceRegistry,
+    _derive_real_ip,
+    get_optional_user,
+    get_shared_client,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -118,24 +123,32 @@ async def proxy_request(
     from app.main import rate_limiter  # late import: set in startup
 
     service_name = service.split("/")[0]
-    raw_ip = (
-        request.headers.get("x-forwarded-for")
-        or request.headers.get("x-real-ip")
-        or (request.client.host if request.client else "unknown")
-    )
-    real_ip = raw_ip.split(",")[0].strip() if "," in raw_ip else raw_ip.strip()
+    # Key the limiter on the same client address the rest of the gateway
+    # already trusts (#130). _derive_real_ip is TRUST_PROXY-gated and validates
+    # the immediate peer against TRUSTED_PROXIES before walking the
+    # X-Forwarded-For chain right-to-left, so a caller cannot pick its own
+    # bucket by sending a header; it falls back to the socket address
+    # otherwise. Reusing it is deliberate — a second, ungated derivation here
+    # is exactly how the limiter and the header sanitizer drifted apart.
+    #
+    # X-Real-IP is intentionally not consulted. It carries no chain, so there
+    # is no way to distinguish a proxy-set value from a caller-forged one, and
+    # no component in the deployed stack emits it.
+    socket_ip = request.client.host if request.client else "unknown"
+    real_ip = _derive_real_ip(socket_ip, request.headers.get("x-forwarded-for"))
     account_id = str(current_user.get("sub")) if current_user and current_user.get("sub") else None
     device_id = request.headers.get("x-device-id")
+    concurrency_lease: str | None = None
     if rate_limiter:
-        allowed = await rate_limiter.check_rate_limit(
-            service_name, path, ip=real_ip, account_id=account_id, device_id=device_id
+        allowed, concurrency_lease = await rate_limiter.acquire_rate_limits(
+            real_ip, service_name, path, account_id=account_id, device_id=device_id
         )
         if not allowed:
             raise _error_response(429, "Rate limit exceeded", request)
 
     # Forward request using shared AsyncClient (#123)
-    client = get_shared_client()
     try:
+        client = get_shared_client()
         original_host = request.headers.get("host", "")
         headers = {
             k: v for k, v in request.headers.items() if k.lower() not in _PROXY_AGENT_HEADERS
@@ -201,3 +214,13 @@ async def proxy_request(
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error proxying request to {url}{path}: {e}")
         raise _error_response(502, "Bad gateway", request)
+    finally:
+        if rate_limiter and concurrency_lease:
+            await rate_limiter.release_rate_limits(
+                concurrency_lease,
+                real_ip,
+                service_name,
+                path,
+                account_id=account_id,
+                device_id=device_id,
+            )

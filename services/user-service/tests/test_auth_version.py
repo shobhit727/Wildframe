@@ -4,24 +4,52 @@ from uuid import uuid4
 
 import httpx
 import pytest
+import wildframe_auth
 from fastapi import HTTPException
 from jose import jwt
 
 from app.api.routes import get_current_user_id
 from app.core.settings import settings
+from tests._test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
+
+
+class _Endpoint:
+    """The auth service's JWKS endpoint, as the service sees it."""
+
+    async def fetch(self, url: str):
+        return JWKS
+
+
+@pytest.fixture(autouse=True)
+def _stub_jwks_endpoint(monkeypatch):
+    """Serve the test JWKS and clear the SDK cache around every test."""
+    monkeypatch.setattr(wildframe_auth.verifier, "fetch_jwks", _Endpoint().fetch)
+    clear_jwks_cache()
+    yield
+    clear_jwks_cache()
 
 
 def _token(av=3, sub=None):
+    """Mint a real RS256 access token signed by the test JWKS key.
+
+    Signed with RS256 over the in-memory RSA key from ``tests/_test_jwks.py``,
+    because the service no longer accepts a shared-secret HS256 token at all.
+    """
     sub = sub or str(uuid4())
     payload = {
         "sub": sub,
         "type": "access",
         "av": av,
         "aud": settings.JWT_AUDIENCE,
+        "iss": settings.JWT_ISSUER,
         "exp": datetime.now(UTC) + timedelta(minutes=15),
         "iat": datetime.now(UTC),
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM), sub
+    return (
+        jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"}),
+        sub,
+    )
 
 
 def _mock_client(resp=None, exc=None):

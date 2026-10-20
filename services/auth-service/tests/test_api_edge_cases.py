@@ -259,3 +259,132 @@ class TestChangePasswordEdgeCases:
         )
 
         assert response.status_code == 422
+
+    @pytest.mark.parametrize(
+        ("new_password", "why"),
+        [
+            ("Aa1!" + "correct-horse-battery-staple-" * 2 + "éééééééééé", "accents"),
+            ("Aa1!" + "\U0001f600" * 26, "emoji"),
+        ],
+    )
+    def test_change_password_over_the_byte_cap_is_422_not_500(
+        self, client, registered, new_password, why
+    ):
+        """#849: this is where the 500 in the issue report actually reproduces.
+
+        ``/register`` wraps ``hash_password`` in a ``ValueError`` handler that
+        answers 400, but ``/change-password`` has only a blanket
+        ``except Exception`` -> 500. A password over bcrypt's 72-*byte* limit
+        that still satisfies the 72-*character* schema limit therefore reached
+        ``hash_password`` and turned a password change into a server error.
+
+        The correct answer is 422, like every other rejected password on this
+        endpoint -- it is client input, not a server fault.
+        """
+        assert len(new_password) <= 72
+        assert len(new_password.encode("utf-8")) > 72
+
+        response = client.post(
+            "/api/v1/auth/change-password",
+            json={"current_password": "SecurePass123!", "new_password": new_password},
+            headers=registered["headers"],
+        )
+
+        assert response.status_code == 422, response.text
+        assert "72 bytes" in response.text
+
+    def test_over_byte_cap_password_change_leaves_the_old_password_working(
+        self, client, registered
+    ):
+        """A rejected password change must not half-apply."""
+        over_cap = "Aa1!" + "\U0001f600" * 26
+
+        response = client.post(
+            "/api/v1/auth/change-password",
+            json={"current_password": "SecurePass123!", "new_password": over_cap},
+            headers=registered["headers"],
+        )
+        assert response.status_code == 422
+
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"email": "gapfill@example.com", "password": "SecurePass123!"},
+        )
+        assert login.status_code == 200
+
+
+# ==========================================================================
+# validate_password_strength — the NIST-style rules
+#
+# These raises are unreachable through the request schemas (Pydantic's
+# min_length / field validator run first for the length and type rules), so the
+# shared helper is asserted directly.
+# ==========================================================================
+
+
+class TestValidatePasswordStrength:
+    def test_shorter_than_twelve_characters_is_rejected(self):
+        from app.schemas import validate_password_strength
+
+        with pytest.raises(ValueError, match="at least 12 characters"):
+            validate_password_strength("Sh0rt!")
+
+    def test_single_character_class_is_rejected(self):
+        from app.schemas import validate_password_strength
+
+        with pytest.raises(ValueError, match="at least two character types"):
+            validate_password_strength("alllowercaseletters")
+
+    def test_digits_only_is_rejected(self):
+        from app.schemas import validate_password_strength
+
+        with pytest.raises(ValueError, match="at least two character types"):
+            validate_password_strength("123456789012")
+
+    def test_two_character_classes_are_enough(self):
+        from app.schemas import validate_password_strength
+
+        assert validate_password_strength("correct-horse-battery-staple") == (
+            "correct-horse-battery-staple"
+        )
+        assert validate_password_strength("lowercaseonly123") == "lowercaseonly123"
+
+    def test_breach_list_password_is_rejected(self):
+        from app.schemas import validate_password_strength
+
+        with pytest.raises(ValueError, match="too common"):
+            validate_password_strength("Password1234")
+
+    def test_breach_list_check_is_case_insensitive(self):
+        from app.schemas import validate_password_strength
+
+        with pytest.raises(ValueError, match="too common"):
+            validate_password_strength("PASSWORD12345")
+
+    def test_strong_passphrase_with_symbols_passes(self):
+        from app.schemas import validate_password_strength
+
+        assert validate_password_strength("Tr0ub4dor&3!xKcd") == "Tr0ub4dor&3!xKcd"
+
+    def test_registration_schema_enforces_the_same_rules(self):
+        from app.schemas import UserRegisterRequest
+
+        with pytest.raises(ValueError):
+            UserRegisterRequest(email="a@example.com", password="short")
+
+        with pytest.raises(ValueError):
+            UserRegisterRequest(email="a@example.com", password="Password1234")
+
+        ok = UserRegisterRequest(email="a@example.com", password="correct-horse-battery-staple")
+        assert ok.password == "correct-horse-battery-staple"
+
+    def test_change_password_schema_enforces_the_same_rules(self):
+        from app.schemas import ChangePasswordRequest
+
+        with pytest.raises(ValueError, match="too common"):
+            ChangePasswordRequest(current_password="Whatever123!", new_password="qwerty123456")
+
+        ok = ChangePasswordRequest(
+            current_password="Whatever123!", new_password="a-long-enough-passphrase"
+        )
+        assert ok.new_password == "a-long-enough-passphrase"
