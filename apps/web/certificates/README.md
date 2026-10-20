@@ -11,7 +11,8 @@ bash scripts/generate-dev-certs.sh
 make certs
 ```
 
-Output (SANs: `DNS:localhost`, `IP:127.0.0.1`, `IP:::1`, `IP:192.168.1.14`):
+Output (SANs: `DNS:localhost`, `IP:127.0.0.1`, `IP:::1`, plus this host's own
+addresses, discovered when the script runs):
 
 - `localhost.pem` — certificate (644)
 - `localhost-key.pem` — private key (644, non-sensitive sample only)

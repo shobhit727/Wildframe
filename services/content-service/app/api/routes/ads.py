@@ -6,16 +6,18 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.models.ads import AdConfig
+from app.schemas.ads import AdCreate
 
 router = APIRouter(prefix="/ads", tags=["ads"])
 
 
 @router.post("", status_code=201)
-async def create_ad(request: AdConfig, db: Annotated[AsyncSession, Depends(get_db)]) -> dict:
-    db.add(request)
+async def create_ad(request: AdCreate, db: Annotated[AsyncSession, Depends(get_db)]) -> dict:
+    config = AdConfig(**request.model_dump())
+    db.add(config)
     await db.flush()
     await db.commit()
-    return {"id": str(request.id)}
+    return {"id": str(config.id)}
 
 
 @router.get("/check")

@@ -55,7 +55,7 @@ def setup_logging(log_level: str = "INFO"):
         "formatters": {
             "json": {
                 "()": jsonlogger.JsonFormatter,
-                "format": "%(timestamp)s %(level)s %(name)s %(message)s %(correlation_id)s %(request_id)s",
+                "format": "%(asctime)s %(levelname)s %(name)s %(message)s %(correlation_id)s %(request_id)s",
             },
             "standard": {
                 "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s [correlation_id=%(correlation_id)s]",
