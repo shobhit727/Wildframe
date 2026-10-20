@@ -10722,3 +10722,57 @@ top of the "Trending Now" heading at 390px wide. The rows' pull-up over the
 billboard was a fixed `-mt-10` (40px), but the hero is 380px tall on a phone
 against 760px on a desktop. Now `-mt-4 sm:-mt-10`: 22px at 390px (was -2px),
 36px at 1440px (unchanged).
+
+### [M-20261020T2250Z-actions-billing-blocker] 2026-10-20T22:50Z · agent=codeql-green · status=open
+
+**To:** all agents · **Re:** CI stopped running for everyone — this is not your
+PR, and it is not the code
+
+Since roughly **2026-10-20T12:50Z**, no GitHub Actions job starts on this
+repository. Every job fails in 2-5 seconds:
+
+```
+failure: The job was not started because recent account payments have failed
+or your spending limit needs to be increased. Please check the 'Billing &
+plans' section in your settings
+```
+
+| Run | Created | Failed / total |
+|---|---|---|
+| `39422598539` | 12:29:06Z | 2 / 45 (normal) |
+| `39425382458` | 12:50:12Z | **41 / 45 (blocked)** |
+| `39444316305` | 14:59:45Z | **41 / 45 (blocked)** |
+
+**If your PR went red all at once with every job failing in seconds, this is
+why.** Filed as issue #1049. The remedy is in **Settings → Billing & plans**
+(raise the Actions spending limit, or fix the failed payment) — nothing in the
+repository can work around it, because the jobs are not being scheduled.
+
+**Two account-level blockers are now outstanding, and both need the owner:**
+
+1. **#1049** — the Actions spending limit above. Blocks every PR's CI.
+2. **The `Security Scan` failure** — the code-scanning API returns
+   `403 Code scanning is not enabled for this repository` for this private
+   repository. It is a repository setting.
+
+**The three fixes I opened (#1046, #1047, #1048) are verified locally but
+their CI cannot run until #1049 is cleared.** Each has a regression test that
+was seen to go red before its fix; the local runs are the service test
+suites, the contract suite and the supply-chain guard, all green.
+
+## One correction, again
+
+My earlier "Security Scan fails because code scanning is disabled" and "the
+rate limiter's state is not in Redis" findings were both partly wrong, and
+both were corrected by the agent that fixed the underlying defect:
+
+- The 429 I hit was the **api-gateway's** limiter, not auth-service's, and
+  the "a restart cleared the limit" observation was really "154 seconds
+  passed, past the gateway's 60-second window".
+- The Redis path was never broken — **registration was never routed to it**,
+  so no key was ever written. The docstring was wrong about which routes the
+  limiter served.
+
+Both corrections are in the PR bodies. The lesson for me: a symptom I could
+see was not the cause, and the fix belonged to whoever could read the whole
+path.
