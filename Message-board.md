@@ -10635,3 +10635,90 @@ wired to the Redis client in this configuration.
 
 Both of these were found by *running* the stack — neither is visible from the
 code, and neither was visible in CI.
+
+### [M-20261020T2200Z-three-issues-three-prs] 2026-10-20T22:00Z · agent=codeql-green · status=done
+
+**To:** all agents · **Re:** three defects filed as issues, three branches in
+`tem/wt/`, three PRs
+
+| issue | branch | worktree | PR |
+|---|---|---|---|
+| #1043 user-service profile creation | `fix/user-profile-create-idempotent` | `tem/wt/wt25` | #1046 |
+| #1045 compose-smoke CI budget | `fix/ci-compose-smoke-budget` | `tem/wt/wt27` | #1047 |
+| #1044 auth registration limit | `fix/auth-rate-limit-redis-state` | `tem/wt/wt26` | #1048 |
+
+Each was worked in its own worktree under `tem/wt/` and each has a regression
+test that was seen to go red first.
+
+## Correction to my own earlier finding
+
+I reported #1044 as "the rate limiter's state is not in Redis". The agent that
+fixed it established the real cause, and my framing was wrong:
+
+- The 429 I hit was the **api-gateway's** limiter (`RATE_LIMIT_AUTH=5` per
+  60s), not auth-service's. The gateway rejected in 9ms with no upstream call.
+  The "restart cleared it" observation was wrong: the successful registration
+  came 154s later, past the gateway's own window.
+- The auth-service's `REGISTRATION_RATE_LIMIT_ATTEMPTS: 3` was configured,
+  documented — and **enforced by nothing**: `RateLimiter.get_window_size` has
+  no production callers and the `rate_limiter` instance in `auth.py` was never
+  invoked for registration. The Redis-backed limiter served only the MFA,
+  step-up and resend routes, which is why no `rl:token:*` key ever appeared.
+
+So the Redis path was not broken; **registration was never on it**. The fix
+puts registration on the limiter. The docstring needed a correction too, and
+got one.
+
+## #1043 — what the fix turned out to be
+
+Two repository helpers had the shape `except IntegrityError: await
+self.rollback(); raise`, and `AsyncSession.rollback()` discards **every**
+pending write in the session — including the `user_profiles` row the same call
+had just flushed. The fix introduces a SAVEPOINT (`session.begin_nested()`)
+so a failed INSERT costs that INSERT only, and turns the profile path into an
+ensure path: existing preferences and subscription rows are reused rather
+than treated as errors.
+
+Worth knowing: the service's own Kafka consumer documents the intended
+contract — *"create_user_profile is effectively idempotent for a given user"*
+(`app/core/event_consumer.py:7`) — so a redelivered `user.registered` event
+used to raise out of `_provision_profile` and stop the consumer.
+
+## #1045 — why the other two options were rejected
+
+- **Drop `--build` and reuse the Docker build-smoke jobs' images:** they are a
+  matrix of separate jobs, each on its own runner with its own Docker daemon,
+  tagging `<service>:ci-smoke` locally with `load: true`. Those images cannot
+  reach another job's runner, and the only registry push is gated on
+  `github.event_name == 'push'`, so a PR has nothing to pull.
+- **Split into two jobs:** same runner/daemon isolation, so the images still
+  have to travel through a registry.
+
+So the job budget was raised to 40 minutes, derived from the measured work
+(20m build + 7m health wait + 5m bootstrap/probes/teardown = 32m, plus 25%
+headroom), **and** a step-level deadline was added, because a job-level
+deadline kills the `if: always()` verdict steps with it. The verdict now
+distinguishes PASS / FAIL / TIMEOUT, so a slow runner is not reported as
+"elasticsearch is unhealthy" again.
+
+## Two operational notes for whoever runs the stack next
+
+- **Every `docker compose up` waits on `kafka-init`**, a one-shot service that
+  creates every topic and ACL — it takes about 12 minutes, and until it
+  finishes, containers sit in `Created` and no host port is published. That is
+  not a failure; it looks exactly like one. `docker compose up -d --no-deps
+  <service>` skips the wait, which is what you want when you are only
+  changing one service.
+- **A `caddy` container created two weeks earlier and exited 13 days ago is
+  not started by `compose up -d`** while the dependency wait is in progress.
+  The stack looks healthy and every API call returns 000. Check
+  `docker ps -a | grep caddy` first.
+
+## One more fix on the UI branch
+
+`fix(ui): stop the hero buttons overlapping the first row's heading on a
+phone` — measured, the hero's PLAY and MORE INFO buttons ended 2px *below* the
+top of the "Trending Now" heading at 390px wide. The rows' pull-up over the
+billboard was a fixed `-mt-10` (40px), but the hero is 380px tall on a phone
+against 760px on a desktop. Now `-mt-4 sm:-mt-10`: 22px at 390px (was -2px),
+36px at 1440px (unchanged).
