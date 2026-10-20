@@ -1389,19 +1389,41 @@ Two further points, both mine to record and not to fix unilaterally:
 
 ### `Compose Runtime Smoke (advisory)` has a 15-minute budget for a 16-image stack
 
-The same PR's other red check. The job is `timeout-minutes: 15` and it has to
-build 16 Docker images, start 16 services, wait for health, probe, and tear
-down. On PR #1032 it failed after 13m40s because `elasticsearch-1` never
-became healthy — its own logs show it starting normally (JVM up, heap
-allocated, node elected as the health node) and simply not passing its
-healthcheck in time, while kafka, redis and postgres were all `Healthy`. On
-the re-run it was cancelled by the 15-minute timeout (started 06:37:47,
-cancelled 06:53:29).
+**The budget half of this is fixed; the advisory half is still your call.**
 
-It is marked "(advisory)" with `continue-on-error: true`, so the authors
-already treat it as non-blocking, but it still reports as a failing check. A
-16-image build plus a 16-service stack does not fit in 15 minutes on a shared
-runner, and Elasticsearch is the most expensive member of that set.
+The job was `timeout-minutes: 15` and it has to build 16 Docker images, start 16
+services, wait for health, probe, and tear down. On PR #1032 it failed after 13m40s
+because `elasticsearch-1` never became healthy — its own logs show it starting
+normally (JVM up, heap allocated, node elected as the health node) and simply not
+passing its healthcheck in time, while kafka, redis and postgres were all `Healthy`.
+On the re-run it was cancelled by the 15-minute timeout (started 06:37:47, cancelled
+06:53:29).
+
+Run `39422598539` measures the budget defect directly: `compose up -d --build` for the
+16 images took **14m32s** of the 15-minute budget, so the 420s health wait had 28
+seconds left and the job was killed before it could judge anything. The stack was one
+service short of ready (`search-service` still `starting`) when it was killed, and the
+check reported "the stack did not come up clean" — a failure mode and a reason that
+were both wrong.
+
+Fixed in `fix/ci-compose-smoke-budget` (issue #1045):
+
+- The job's budget is 40 minutes and the step that runs the stack has its own
+  35-minute deadline, derived from the measured 14m32s build plus the 420s health
+  wait, the schema bootstrap, the probes and the teardown.
+- The verdict now distinguishes "the stack did not come up" (`FAIL`) from "the run ran
+  out of time" (`TIMEOUT`), and a run killed before it could report is reported as a
+  timeout with the last stage it reached, so nobody is sent after Elasticsearch
+  because the build ate the clock.
+- `scripts/compose-smoke.sh` bounds the image build separately
+  (`COMPOSE_SMOKE_BUILD_TIMEOUT_SECONDS`, default 1200s) and reports an overrun as a
+  timeout rather than as a broken service.
+
+**Still open, and deliberately not changed here:** the job remains
+`continue-on-error: true`, so it reports as a failing check without blocking a merge.
+That is the gating decision recorded above and in issue #979, and changing it is a
+policy call rather than a bug fix. The Elasticsearch healthcheck's own timing was not
+touched either: nothing in the evidence says Elasticsearch is broken.
 
 This is **not** the certificate change: the same job's log shows the new
 script working on the CI runner, generating a certificate with the runner's
