@@ -104,8 +104,12 @@ export default function BrowsePage() {
               <HeroBanner items={trending.slice(0, 5)} />
             )}
 
-            {/* Rows overlay the billboard bottom */}
-            <div className="relative z-10 -mt-10 space-y-10 pb-16">
+            {/* Rows overlay the billboard bottom. The pull-up is smaller on a
+                phone: the hero is only 380px tall there (min-h-[380px]) against
+                760px on a desktop, so a fixed -mt-10 puts the first row's
+                heading on top of the hero's action buttons — measured, they
+                overlapped by 2px at 390px wide. */}
+            <div className="relative z-10 -mt-4 sm:-mt-10 space-y-10 pb-16">
               {/* Trending Row */}
               <Row title="Trending Now" items={trending} variant="backdrop" />
 
