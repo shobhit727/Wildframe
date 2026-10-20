@@ -177,7 +177,7 @@ export default function AccountPage() {
         <h1 className="text-3xl font-bold text-white mb-8">Account</h1>
 
         <Tabs.Root defaultValue="profile" className="space-y-6">
-          <Tabs.List className="flex gap-1 bg-dark-900 rounded-lg p-1 border border-dark-800 w-fit">
+          <Tabs.List className="flex flex-wrap gap-1 bg-dark-900 rounded-lg p-1 border border-dark-800 w-fit">
             {[
               { value: 'profile', label: 'Profile' },
               { value: 'subscription', label: 'Subscription' },
@@ -203,15 +203,15 @@ export default function AccountPage() {
                   <button
                     onClick={beginProfileEdit}
                     disabled={!profile}
-                    className="text-sm text-red-500 hover:text-red-400 flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="text-sm text-brand-400 hover:text-brand-300 flex items-center gap-1.5 py-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     title={!profile ? 'Profile data must load before editing' : undefined}
                   >
                     <PencilIcon /> Edit
                   </button>
                 ) : (
                   <div className="flex gap-2">
-                    <button onClick={() => setEditingProfile(false)} className="text-sm text-gray-400 hover:text-gray-200 transition-colors">Cancel</button>
-                    <button onClick={handleSaveProfile} disabled={updateProfileMutation.isPending} className="text-sm text-red-500 hover:text-red-400 font-medium transition-colors disabled:opacity-50">
+                    <button onClick={() => setEditingProfile(false)} className="text-sm text-gray-400 hover:text-gray-200 py-1.5 transition-colors">Cancel</button>
+                    <button onClick={handleSaveProfile} disabled={updateProfileMutation.isPending} className="text-sm text-brand-400 hover:text-brand-300 font-medium py-1.5 transition-colors disabled:opacity-50">
                       {updateProfileMutation.isPending ? 'Saving...' : 'Save'}
                     </button>
                   </div>
@@ -238,7 +238,7 @@ export default function AccountPage() {
               {editingProfile ? (
                 <div className="grid grid-cols-1 gap-4">
                   <div>
-                    <label htmlFor="profile-bio" className="block text-xs font-medium text-gray-500 mb-1">Bio</label>
+                    <label htmlFor="profile-bio" className="block text-xs font-medium text-muted mb-1">Bio</label>
                     <textarea
                       id="profile-bio"
                       value={formData.bio}
@@ -248,7 +248,7 @@ export default function AccountPage() {
                     />
                   </div>
                   <div>
-                    <label htmlFor="profile-phone" className="block text-xs font-medium text-gray-500 mb-1">Phone number</label>
+                    <label htmlFor="profile-phone" className="block text-xs font-medium text-muted mb-1">Phone number</label>
                     <input
                       id="profile-phone"
                       type="tel"
@@ -258,7 +258,7 @@ export default function AccountPage() {
                     />
                   </div>
                   <div>
-                    <label htmlFor="profile-country" className="block text-xs font-medium text-gray-500 mb-1">Country</label>
+                    <label htmlFor="profile-country" className="block text-xs font-medium text-muted mb-1">Country</label>
                     <input
                       id="profile-country"
                       type="text"
@@ -271,19 +271,19 @@ export default function AccountPage() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="bg-dark-800 rounded-lg p-4">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Country</label>
+                    <label className="block text-xs font-medium text-muted mb-1">Country</label>
                     <p className="text-white">{profile?.country || formData.country || '—'}</p>
                   </div>
                   <div className="bg-dark-800 rounded-lg p-4">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Language</label>
+                    <label className="block text-xs font-medium text-muted mb-1">Language</label>
                     <p className="text-white capitalize">{profile?.language || preferences?.language || '—'}</p>
                   </div>
                   <div className="bg-dark-800 rounded-lg p-4">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Member since</label>
+                    <label className="block text-xs font-medium text-muted mb-1">Member since</label>
                     <p className="text-white">{profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : '—'}</p>
                   </div>
                   <div className="bg-dark-800 rounded-lg p-4">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Profile completion</label>
+                    <label className="block text-xs font-medium text-muted mb-1">Profile completion</label>
                     <p className="text-white">{profile?.profile_completeness ?? 0}%</p>
                   </div>
                 </div>
@@ -325,7 +325,7 @@ export default function AccountPage() {
               ) : (
                 <p className="text-gray-400">No active subscription</p>
               )}
-              <Link href="/billing" className="inline-flex items-center gap-2 text-sm text-red-500 hover:text-red-400 transition-colors mt-2">
+              <Link href="/billing" className="inline-flex items-center gap-2 text-sm text-brand-400 hover:text-brand-300 py-1.5 transition-colors mt-2">
                 Change plan
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
@@ -344,7 +344,7 @@ export default function AccountPage() {
                   <div key={item.key} className={`flex items-center justify-between py-4 ${i > 0 ? 'border-t border-dark-800' : ''}`}>
                     <div>
                       <p className="text-sm font-medium text-white">{item.label}</p>
-                      <p className="text-xs text-gray-500">{item.desc}</p>
+                      <p className="text-xs text-muted">{item.desc}</p>
                     </div>
                     <button
                       onClick={() => togglePref(item.key, !value, item.label)}
@@ -381,7 +381,7 @@ export default function AccountPage() {
                             {device.is_active && <span className="text-[10px] font-medium px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded">Active</span>}
                             {device.is_trusted && <span className="text-[10px] font-medium px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded">Trusted</span>}
                           </p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-muted">
                             {device.device_type}{device.last_active_at ? ` · last active ${new Date(device.last_active_at).toLocaleDateString()}` : ''}
                           </p>
                         </div>
@@ -389,7 +389,7 @@ export default function AccountPage() {
                       {!device.is_active && (
                         <button
                           onClick={() => toast.success('Device signed out')}
-                          className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                          className="text-xs text-red-400 hover:text-red-300 py-1.5 transition-colors"
                         >
                           Remove
                         </button>

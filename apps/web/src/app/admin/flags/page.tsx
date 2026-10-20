@@ -63,7 +63,7 @@ export default function AdminFlagsPage() {
           </div>
           <div className="min-w-0">
             <p className="truncate font-mono text-xs text-white">{f.content_id.slice(0, 16)}…</p>
-            <p className="text-xs text-zinc-500">{f.content_type}</p>
+            <p className="text-xs text-muted">{f.content_type}</p>
           </div>
         </div>
       ),
@@ -99,6 +99,7 @@ export default function AdminFlagsPage() {
           <AdminButton
             variant="secondary"
             size="sm"
+            className="min-h-9"
             disabled={resolve.isPending}
             onClick={() => setPending({ flag: f, status: 'active' })}
           >
@@ -107,6 +108,7 @@ export default function AdminFlagsPage() {
           <AdminButton
             variant="ghost"
             size="sm"
+            className="min-h-9"
             disabled={resolve.isPending}
             onClick={() => setPending({ flag: f, status: 'removed' })}
           >
@@ -163,13 +165,13 @@ export default function AdminFlagsPage() {
           {rows.length} flag{rows.length === 1 ? '' : 's'}
         </p>
         <div className="flex items-center gap-2">
-          <AdminButton variant="secondary" size="sm" disabled={safePage === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+          <AdminButton variant="secondary" size="sm" className="min-h-8" disabled={safePage === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
             Previous
           </AdminButton>
           <span className="tabular-nums">
             {safePage + 1} / {pageCount}
           </span>
-          <AdminButton variant="secondary" size="sm" disabled={safePage >= pageCount - 1} onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}>
+          <AdminButton variant="secondary" size="sm" className="min-h-8" disabled={safePage >= pageCount - 1} onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}>
             Next
           </AdminButton>
         </div>

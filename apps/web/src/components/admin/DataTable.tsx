@@ -64,7 +64,7 @@ export function DataTable<T>({
                     <span className="inline-flex items-center gap-1.5">
                       {col.header}
                       {col.sortable && (
-                        <span className="inline-flex flex-col text-[10px] leading-none text-zinc-600">
+                        <span className="inline-flex flex-col text-[10px] leading-none text-muted-subtle">
                           <ChevronUpIcon
                             width={12}
                             height={12}

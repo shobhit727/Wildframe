@@ -16,7 +16,7 @@ import {
 
 const inputCls = clsx(
   'w-full rounded-lg border border-white/10 bg-zinc-900/70 px-3 py-2 text-sm text-white',
-  'placeholder:text-zinc-500 focus:border-red-500/50 focus:outline-none focus:ring-2 focus:ring-red-500/30',
+  'placeholder:text-muted focus:border-red-500/50 focus:outline-none focus:ring-2 focus:ring-red-500/30',
 );
 
 export const Label = ({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) => (
@@ -84,7 +84,7 @@ export const Field = ({
     <div>
       {child ? <Label htmlFor={controlId}>{label}</Label> : <Label>{label}</Label>}
       {child ? cloneElement(child as ReactElement<{ id?: string }>, { id: controlId }) : children}
-      {hint && !error && <p className="mt-1 text-xs text-zinc-500">{hint}</p>}
+      {hint && !error && <p className="mt-1 text-xs text-muted">{hint}</p>}
       {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
     </div>
   );

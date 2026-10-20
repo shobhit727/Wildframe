@@ -9,6 +9,54 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // The brand red has two jobs, and they need different values.
+        //
+        // `brand` (DEFAULT / 500) is #e50914: it is a FILL colour -- button
+        // backgrounds, borders, the focus ring. White on it is 4.79:1, so it
+        // passes AA for text sitting on top of it.
+        //
+        // `brand-400` is the one to use for the brand colour as TEXT. #e50914
+        // is only 4.11:1 against the page background (#0b0b0b) and 3.63:1
+        // against a raised card (#1a1a1a), so it fails WCAG AA for normal
+        // text in both places -- the wordmarks, the section eyebrows and the
+        // red links were all failing. #f94c53 is 5.80:1 and 5.13:1 on the
+        // same two backgrounds, so it passes everywhere in the app.
+        //
+        // `text-brand-400` for text, `bg-brand` / `border-brand` for fills.
+        // `tests/color-contrast.test.ts` enforces the rule and re-checks the
+        // ratios, so the value cannot silently drift back.
+        // Muted text, for the second and third levels of the type hierarchy.
+        //
+        // The stock `gray-500` (#737373) and `zinc-500` (#71717a) tokens are
+        // 3.7-4.2:1 against this app's dark surfaces, and `zinc-600`
+        // (#52525b) is 2.3:1 -- all three fail WCAG 2.1 AA for normal text.
+        // A real-browser audit of all 15 routes found 140 failing text nodes
+        // and every one of them was one of those three tokens.
+        //
+        // These are the values the app should use instead. `muted` is 5.9:1 on
+        // the lightest surface the app uses and 4.6:1 on a raised input, so it
+        // clears AA everywhere including form fields; `muted-subtle` is 5.1:1
+        // on a card, and is for the faintest labels on panels rather than on
+        // inputs. The ramp still reads as a ramp: white > gray-400 (7.7:1) >
+        // muted (5.9:1) > muted-subtle (5.1:1).
+        //
+        // The stock scales are deliberately left alone: `bg-zinc-600` is the
+        // secondary button on the admin confirm dialog, and white text on
+        // that background needs it to stay dark.
+        //
+        // `text-muted` for secondary text, `text-muted-subtle` for the
+        // faintest labels. `tests/color-contrast.test.ts` enforces both the
+        // rule and the ratios.
+        muted: {
+          DEFAULT: "#96969c",
+          subtle: "#8a8a92",
+        },
+        brand: {
+          DEFAULT: "#e50914",
+          300: "#fd7a7e",
+          400: "#f94c53",
+          500: "#e50914",
+        },
         primary: {
           50: "#f0f9ff",
           100: "#e0f2fe",

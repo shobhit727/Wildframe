@@ -50,17 +50,17 @@ export default function HomePage() {
         <div className="mx-auto flex h-20 max-w-[1800px] items-center justify-between px-5 sm:px-8 lg:px-12">
           <Link
             href="/"
-            className="text-2xl font-black tracking-[-0.05em] text-[#E50914] transition-transform duration-200 hover:scale-[1.03] sm:text-3xl"
+            className="text-2xl font-black tracking-[-0.05em] text-brand-400 transition-transform duration-200 hover:scale-[1.03] sm:text-3xl"
           >
             WILDFRAME
           </Link>
           <div className="flex items-center gap-3 sm:gap-5">
-            <Link href="/login" className="text-sm font-medium text-gray-200 transition-colors hover:text-white">
+            <Link href="/login" className="text-sm font-medium text-gray-200 py-3 transition-colors hover:text-white">
               Sign In
             </Link>
             <Link
               href="/signup"
-              className="rounded bg-[#E50914] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#f6121d]"
+              className="rounded bg-[#E50914] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-red-950/30 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#f6121d]"
             >
               Get Started
             </Link>
@@ -109,7 +109,7 @@ export default function HomePage() {
       <section className="relative border-t border-white/10 px-5 py-20 sm:px-8 lg:px-12">
         <div className="mx-auto max-w-[1500px]">
           <div className="mb-10 max-w-2xl animate-fade-in">
-            <p className="text-xs font-bold tracking-[0.25em] text-[#E50914]">BUILT FOR WATCHING</p>
+            <p className="text-xs font-bold tracking-[0.25em] text-brand-400">BUILT FOR WATCHING</p>
             <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-5xl">A cleaner way to find your next watch.</h2>
           </div>
 
@@ -123,7 +123,7 @@ export default function HomePage() {
                 <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#E50914]/10 text-xl text-[#ff3b44] transition-transform duration-300 group-hover:scale-110">
                   {feature.icon}
                 </div>
-                <p className="mt-8 text-[10px] font-bold tracking-[0.25em] text-gray-500">{feature.eyebrow}</p>
+                <p className="mt-8 text-[10px] font-bold tracking-[0.25em] text-muted">{feature.eyebrow}</p>
                 <h3 className="mt-2 text-2xl font-bold text-white">{feature.title}</h3>
                 <p className="mt-3 text-sm leading-6 text-gray-400">{feature.description}</p>
               </article>
@@ -136,7 +136,7 @@ export default function HomePage() {
       <section className="border-t border-white/10 px-5 py-20 sm:px-8 lg:px-12">
         <div className="mx-auto max-w-4xl">
           <div className="mb-10 text-center">
-            <p className="text-xs font-bold tracking-[0.25em] text-[#E50914]">FAQ</p>
+            <p className="text-xs font-bold tracking-[0.25em] text-brand-400">FAQ</p>
             <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-5xl">Questions, answered.</h2>
           </div>
           <div className="space-y-2">
@@ -158,7 +158,7 @@ export default function HomePage() {
       {/* Final call-to-action avoids the misleading membership claims in the old page. */}
       <section className="border-t border-white/10 px-5 py-24 text-center sm:px-8">
         <div className="mx-auto max-w-3xl animate-fade-in">
-          <p className="text-xs font-bold tracking-[0.25em] text-[#E50914]">WILDFRAME</p>
+          <p className="text-xs font-bold tracking-[0.25em] text-brand-400">WILDFRAME</p>
           <h2 className="mt-4 text-4xl font-black tracking-tight text-white sm:text-6xl">Ready to explore?</h2>
           <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-gray-400 sm:text-base">
             Create an account and step into the current Wildframe experience. The platform is still being built, so expect changes as new features land.
@@ -173,11 +173,11 @@ export default function HomePage() {
       </section>
 
       <footer className="border-t border-white/10 px-5 py-10 sm:px-8 lg:px-12">
-        <div className="mx-auto flex max-w-[1500px] flex-col justify-between gap-5 text-xs text-gray-500 sm:flex-row sm:items-center">
+        <div className="mx-auto flex max-w-[1500px] flex-col justify-between gap-5 text-xs text-muted sm:flex-row sm:items-center">
           <p>© {new Date().getFullYear()} Wildframe.</p>
           <div className="flex gap-5">
-            <Link href="/login" className="transition-colors hover:text-gray-300">Sign in</Link>
-            <Link href="/signup" className="transition-colors hover:text-gray-300">Create account</Link>
+            <Link href="/login" className="py-3.5 -my-3.5 transition-colors hover:text-gray-300">Sign in</Link>
+            <Link href="/signup" className="py-3.5 -my-3.5 transition-colors hover:text-gray-300">Create account</Link>
           </div>
         </div>
       </footer>
