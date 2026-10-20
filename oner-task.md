@@ -1171,6 +1171,33 @@ Two things I did **not** act on:
   certificate SAN. Machine-specific, breaks every other developer's setup, and
   is the reason this harness wanted a TLS bypass in the first place. Fixing it
   properly means generating SANs from the live interface addresses.
+  **Fixed** on `fix/dev-certs-dynamic-san`: the SAN list is now derived from the
+  host's own global-scope addresses at run time, with `DEV_CERT_EXTRA_IPS` for
+  addresses detection cannot see. It was worse than "wrong on other machines" —
+  it was incomplete on the machine it was written on, where a host with two IPv4
+  addresses had only one covered, so a browser using the other one failed
+  hostname verification.
+  **Still open, same root cause:** the same literal is in three other places,
+  and until they move, a developer's LAN access is still broken on a machine
+  that is not that one:
+  - `infrastructure/caddy/Caddyfile:89` — the `:3000` site block is
+    `https://localhost:3000, https://192.168.1.14:3000`, so Caddy answers on
+    that port only for those two names. The `:8000` gateway block in the same
+    file is already a catch-all (`https://:8000`, "matches localhost AND LAN
+    IPs"), so the consistent fix is the same shape for `:3000`.
+  - `apps/web/next.config.ts:7` — `allowedDevOrigins` is
+    `["localhost", "127.0.0.1", "::1", "192.168.1.14"]`, so the Next dev server
+    only accepts those origins.
+  - `deployments/docker-compose.dev.yml` — `CORS_ALLOWED_ORIGINS` lists
+    `http(s)://192.168.1.14:3000` in **15** places (lines 539, 598, 652, 702,
+    778, 839, 884, 928, 972, 1044, 1086, 1127, 1170, 1213, 1256), so a browser
+    on any other LAN address is refused by CORS.
+
+  I left all three alone. The certificate fix is complete on its own for the
+  `:8000` catch-all path — the frontend derives its API base from the host the
+  page was served on — but the `:3000` path still needs these three, and
+  broadening the allowed-origin list is a security-relevant change for all
+  fifteen services that does not belong in a certificate-SAN pull request.
 
 One caveat on the fix I did make: `verify-csp-live.mjs` now requires the dev CA
 to exist (`scripts/generate-dev-certs.sh`) and re-execs itself with
@@ -1317,3 +1344,75 @@ once you confirm it is the generated localhost cert, and separately fix `main`,
 which is independently red (run `37361191563` at that sha failed: Security Scan,
 Frontend CI, Backend Lint, and every Backend Test job). #531 does not block PR
 #938.
+
+### `Security Scan` is red on every PR — the repository's code scanning is off
+
+Found while verifying PR #1032 (the dev-certificate SAN fix). The `Security
+Scan` job fails on every `pull_request` event, and **not** because of any
+pull request's code:
+
+- The Trivy scan succeeds; the **SARIF upload** is refused:
+  `##[error]Please verify that the necessary features are enabled: Code
+  scanning is not enabled for this repository.`
+- The code-scanning API says the same thing about the repository itself:
+  `gh api repos/shobhit727/Wildframe/code-scanning/alerts` →
+  `403 Code scanning is not enabled for this repository.`
+  The repository is private, and GitHub's code-scanning feature is currently
+  **not enabled** for it. No workflow change can make the upload succeed.
+
+It was working recently: PR #1022 (2026-10-18 05:30Z) and PR #938 (05:25Z)
+both had every step of `Security Scan` pass, and the alerts API was readable
+during this same session. The repository's settings changed in between.
+
+**Owner action:** re-enable code scanning (GitHub Advanced Security) in the
+repository settings. Until then no PR can be green, which is why 20 Dependabot
+PRs are blocked.
+
+Two further points, both mine to record and not to fix unilaterally:
+
+- **`actions: read` may also be needed.** With only `contents: read` and
+  `security-events: write` the upload failed with `Resource not accessible by
+  integration - .../workflow-runs#get-a-workflow-run`; with `actions: read`
+  added the error moved on to the real 403, which is consistent with the
+  permission being needed for the action to resolve its own run. That is an
+  inference, not a verified fix, so PR #1038 was closed rather than shipped
+  unverified. The branch `fix/ci-sarif-upload-permissions` is kept; it is one
+  CI cycle to re-test once code scanning is back on.
+- **The Trivy step fails on its own whenever the DB has CRITICAL/HIGH
+  findings**, because the action is configured with `exit-code: 1` and
+  `severity: CRITICAL,HIGH`. The repository carries 288 open Dependabot
+  alerts, so finding something CRITICAL/HIGH is the normal case. On PR #1038
+  the scan step failed this way; on PR #1032 it passed and the upload failed
+  instead. The two failures are independent, and the gate should probably not
+  be "any CRITICAL/HIGH anywhere in the dependency tree" while the repository
+  has that many open alerts — that is a policy decision, not a bug.
+
+### `Compose Runtime Smoke (advisory)` has a 15-minute budget for a 16-image stack
+
+The same PR's other red check. The job is `timeout-minutes: 15` and it has to
+build 16 Docker images, start 16 services, wait for health, probe, and tear
+down. On PR #1032 it failed after 13m40s because `elasticsearch-1` never
+became healthy — its own logs show it starting normally (JVM up, heap
+allocated, node elected as the health node) and simply not passing its
+healthcheck in time, while kafka, redis and postgres were all `Healthy`. On
+the re-run it was cancelled by the 15-minute timeout (started 06:37:47,
+cancelled 06:53:29).
+
+It is marked "(advisory)" with `continue-on-error: true`, so the authors
+already treat it as non-blocking, but it still reports as a failing check. A
+16-image build plus a 16-service stack does not fit in 15 minutes on a shared
+runner, and Elasticsearch is the most expensive member of that set.
+
+This is **not** the certificate change: the same job's log shows the new
+script working on the CI runner, generating a certificate with the runner's
+own addresses (`10.1.1.154`, `172.17.0.1`) where the old script would have
+produced only the one developer's address.
+
+**One corroborating observation, and one that is not proof.** The push banner
+for this repository reported "288 vulnerabilities" earlier in the session and
+"55 vulnerabilities" later, which is consistent with a change in the
+repository's security-feature state. It is **not** evidence: the Dependabot
+alerts API still answers normally and still lists alerts in the thousands, so
+the banner's tally moved for a reason I have not established. The hard
+evidence is the code-scanning API's own 403, which is unambiguous and
+reproducible.

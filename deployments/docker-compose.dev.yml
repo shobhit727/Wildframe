@@ -6,7 +6,7 @@
 # encryption, multi-AZ, and ElastiCache multi-AZ with slow-log.
 
 # Dev TLS certificates: never committed. Generate before up:
-#   bash scripts/generate-dev-certs.sh   # creates apps/web/certificates/*.pem (SANs localhost,127.0.0.1,::1,192.168.1.14, perms 644)
+#   bash scripts/generate-dev-certs.sh   # creates apps/web/certificates/*.pem (SANs localhost,127.0.0.1,::1 + this host's own addresses, perms 644)
 services:
   # Compose overrides every backend listener to Uvicorn's port 8000.
   postgres:

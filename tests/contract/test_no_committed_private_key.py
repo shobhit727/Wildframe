@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import subprocess
 import stat
-import tempfile
 from pathlib import Path
 import os
 
@@ -65,65 +64,41 @@ def test_gitignore_ignores_certs():
 
 
 def test_generate_script_exists_and_executable():
-    script = REPO / "scripts/generate-dev-certs.sh"
+    script = REPO / "scripts" / "generate-dev-certs.sh"
     assert script.exists(), "generation script must exist"
     assert os.access(script, os.X_OK), "script must be executable"
     text = script.read_text()
-    assert "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1,IP:192.168.1.14" in text
+    # The SAN list is derived from the host's interfaces at run time; the
+    # loopback entries are the only constant part of it. See
+    # test_dev_cert_sans.py for the behaviour these assertions used to pin.
+    assert "DNS:localhost,IP:127.0.0.1,IP:::1" in text
     assert "chmod 644" in text
 
 
-def test_generate_script_produces_valid_pem_pair():
-    script = REPO / "scripts/generate-dev-certs.sh"
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        # Simulate isolated run: copy script and run in temp repo structure
-        # Use a fresh cert dir
-        cert_dir = tmp_path / "certs"
-        cert_dir.mkdir()
-        key = cert_dir / "localhost-key.pem"
-        crt = cert_dir / "localhost.pem"
-        cmd = [
-            "openssl",
-            "req",
-            "-x509",
-            "-newkey",
-            "rsa:2048",
-            "-keyout",
-            str(key),
-            "-out",
-            str(crt),
-            "-days",
-            "365",
-            "-nodes",
-            "-subj",
-            "/CN=localhost",
-            "-addext",
-            "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1,IP:192.168.1.14",
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        assert result.returncode == 0, result.stderr
-        cur = subprocess.run(["chmod", "644", str(key), str(crt)], capture_output=True)
-        assert cur.returncode == 0
-        assert key.exists() and crt.exists()
-        # Check PEM headers
-        assert "BEGIN PRIVATE KEY" in key.read_text()
-        assert "BEGIN CERTIFICATE" in crt.read_text()
-        # Check permissions
-        assert stat.S_IMODE(key.stat().st_mode) == 0o644
-        assert stat.S_IMODE(crt.stat().st_mode) == 0o644
-        # Check SANs
-        sans = subprocess.run(
-            ["openssl", "x509", "-noout", "-ext", "subjectAltName", "-in", str(crt)],
-            capture_output=True,
-            text=True,
-        )
-        assert sans.returncode == 0
-        out = sans.stdout
-        assert "DNS:localhost" in out
-        assert "127.0.0.1" in out
-        assert "192.168.1.14" in out
-        # script itself, when run against real repo, should be idempotent
-        # Run the real script in a sandboxed way: set env to temp dir by mocking REPO_ROOT?
-        # Instead just verify script contains idempotent check
-        assert "already exist" in script.read_text() or "skipping" in script.read_text().lower()
+def test_generate_script_produces_valid_pem_pair(generate_dev_certs):
+    """The script must actually produce the pair it promises.
+
+    This used to run its own inline ``openssl`` call and then assert that the
+    SAN it had just passed in appeared in the result -- a test that could not
+    fail, and that never ran the script at all. It now runs the real script
+    and inspects what came out.
+    """
+    cert = generate_dev_certs()
+
+    key = cert.key_path
+    crt = cert.path
+    assert key.exists() and crt.exists()
+    # Check PEM headers
+    assert "BEGIN PRIVATE KEY" in key.read_text()
+    assert "BEGIN CERTIFICATE" in crt.read_text()
+    # Check permissions
+    assert stat.S_IMODE(key.stat().st_mode) == 0o644
+    assert stat.S_IMODE(crt.stat().st_mode) == 0o644
+    # Loopback SANs are always present, whatever the host's interfaces are.
+    assert "127.0.0.1" in cert.ip_addresses
+    assert "::1" in cert.ip_addresses
+    assert "localhost" in cert.dns_names
+    # The script is idempotent: it skips generation when the pair exists.
+    assert "already exist" in (REPO / "scripts" / "generate-dev-certs.sh").read_text() or (
+        "skipping" in (REPO / "scripts" / "generate-dev-certs.sh").read_text().lower()
+    )

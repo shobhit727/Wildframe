@@ -10193,3 +10193,170 @@ in `oner-task.md`, so the comments are harmless documentation. Left in place.
 Per AGENTS.md §24.1 I did not decide a `private-key` alert is safe to close.
 Recorded in `oner-task.md` for the owner with a recommendation to close as a
 dev-artifact false positive.
+
+### [M-20261019T0530Z-dev-cert-sans] 2026-10-19T05:30Z · agent=codeql-green · status=open
+
+**Branch:** `fix/dev-certs-dynamic-san` (off `main` @ `3d94f87e`).
+
+**Claim:** `scripts/generate-dev-certs.sh`, `tests/contract/conftest.py`,
+`tests/contract/test_dev_cert_sans.py`,
+`tests/contract/test_no_committed_private_key.py`, `README.md`,
+`Makefile`, `docs/QUICKSTART.md`, `apps/web/certificates/README.md`,
+`deployments/kafka-client.properties`, `scripts/dev/README.md`,
+`deployments/docker-compose.dev.yml` (one comment line),
+`Message-board.md`, `oner-task.md`.
+
+## The defect
+
+`generate-dev-certs.sh` put one developer's LAN address into the certificate's
+`subjectAltName` as a literal. That address is wrong on every other machine —
+and it was incomplete on the machine it was written on: this host has two IPv4
+addresses (`192.168.1.6` and `192.168.1.14`) and only the second was covered,
+so a browser connecting through the first failed hostname verification. The
+symptom was a TLS failure that reads like a broken stack, which is why this
+harness originally wanted a TLS bypass at all.
+
+## The fix
+
+The SAN list is now derived from the host's own global-scope addresses at run
+time (`ip` → `ifconfig` → `hostname -I`, first one present wins), with
+`DEV_CERT_EXTRA_IPS` for an address detection cannot see (VPN alias, unusual
+NIC). Loopback and `DNS:localhost` are always present, so a host with no
+global-scope address still gets a usable certificate. Both the `-addext` path
+and the config-file fallback use the same computed list.
+
+The script is still idempotent and will not overwrite an existing pair, so the
+README now says to re-run it after changing networks.
+
+## Red/green, and what the tests can fail on
+
+`tests/contract/test_dev_cert_sans.py` drives the **real** script with a fake
+`ip` on `PATH` that reports an address the host cannot have
+(`10.11.12.13`, `2001:db8:85a3::8a2e:370:7334`). That is what gives the tests
+the ability to fail: against the old script the certificate carried the
+hardcoded address and not the injected one.
+
+Reverting only the script (tests kept) and re-running:
+
+- `test_script_source_has_no_hardcoded_lan_address` — FAILED
+- `test_certificate_sans_follow_the_hosts_interfaces` — FAILED, with
+  `it covers ['127.0.0.1', '192.168.1.14', '::1']` — the old hardcode, and
+  the detected address absent
+- `test_extra_ips_env_var_extends_the_san_list` — FAILED (the override did
+  not exist)
+- 3 passed, 2 failed. Restored: **11 passed** across the two cert modules.
+
+The guard scans comments as well as code, so a literal cannot come back hidden
+in a comment. It caught one in my own first draft of the explanatory comment,
+which is why that comment now describes the old behaviour without repeating the
+address.
+
+## Also changed: a test that could not fail
+
+`test_no_committed_private_key.py::test_generate_script_produces_valid_pem_pair`
+ran its **own** inline `openssl` call and then asserted that the SAN string it
+had just passed in appeared in the result. It never ran the script, and it
+pinned the machine-specific address as an expectation. It now runs the real
+script in a sandbox and inspects the certificate that came out.
+
+## Left undone, deliberately
+
+The same literal is in `infrastructure/caddy/Caddyfile:89` (the `:3000` site
+block, which answers only for `localhost` and that one address),
+`apps/web/next.config.ts:7` (`allowedDevOrigins`), and
+`deployments/docker-compose.dev.yml` (15 `CORS_ALLOWED_ORIGINS` lines). All
+three are the same root cause and all three are recorded in `oner-task.md` with
+their line numbers. None moved here: the `:8000` gateway block is already a
+catch-all, so the certificate fix is complete on its own for the main path,
+whereas broadening the allowed-origin list is a security-relevant change for
+all fifteen services and does not belong in a certificate-SAN pull request.
+
+## Documentation that moved with the change
+
+The certificate's SAN list was written down in five more places, and each of
+them became false the moment the list became dynamic: `Makefile:13`,
+`docs/QUICKSTART.md` (two places), `apps/web/certificates/README.md:14`, and
+the comment in `deployments/kafka-client.properties:27`. `scripts/dev/README.md`
+used the same address as a "your host's IP" example, which now reads
+`https://YOUR_LAN_IP:3000`.
+
+## Note on the working tree
+
+`deployments/docker-compose.dev.yml` had an uncommitted whitespace-only edit
+(removed a blank line before the `loki:` service) that is not mine. It was
+shelved as a patch while my one-line comment change was committed, and
+re-applied afterwards as an unstaged modification. It is deliberately **not**
+in this commit.
+
+### [M-20261020T0700Z-pr1032-ci-red] 2026-10-20T07:00Z · agent=codeql-green · status=done
+
+**PR #1032** (dev-certificate SANs, `fix/dev-certs-dynamic-san` @ `6d4225e0`) is
+**blocked on two pre-existing main-level failures**, neither caused by it.
+
+## `Security Scan` — red on every PR, because code scanning is off
+
+The Trivy scan succeeds; the SARIF upload is refused:
+
+```
+##[error]Please verify that the necessary features are enabled:
+Code scanning is not enabled for this repository.
+```
+
+and the code-scanning API says the same about the repository itself:
+
+```
+$ gh api repos/shobhit727/Wildframe/code-scanning/alerts
+403 Code scanning is not enabled for this repository.
+```
+
+The repository is private and the feature is currently off. It was on earlier
+in this same session — the alerts API answered, and PR #1022 (10-18 05:30Z)
+and PR #938 (05:25Z) both passed every step of `Security Scan`. It stopped
+between then and now, and the change is in repository settings, not in any
+commit.
+
+**This is what blocks the 20 Dependabot PRs**, and it is an owner action:
+re-enable code scanning.
+
+### The hypothesis I tested and had to throw away
+
+I assumed the upload needed `actions: read` (the job grants only `contents:
+read` and `security-events: write`, and the error names the workflow-runs
+API). I opened PR #1038 with that one-line change. The job *did* receive
+`Actions: read` — the token log shows it — and the error moved from
+`Resource not accessible by integration` to the real 403. So the permission
+is plausibly part of the path, but it fixes nothing on its own, and I cannot
+demonstrate it working in any state of the repository where the upload
+succeeds. **PR #1038 closed rather than shipped unverified.** The branch
+`fix/ci-sarif-upload-permissions` is kept for one CI cycle after code
+scanning is re-enabled.
+
+### A second, independent failure in the same job
+
+The Trivy step exits 1 whenever the vulnerability DB holds CRITICAL/HIGH
+findings (`exit-code: 1`, `severity: CRITICAL,HIGH`). With 288 open
+Dependabot alerts, that is the normal case, so the job can fail at the scan
+step before the upload is even reached. PR #1038 failed that way; PR #1032
+passed the scan and failed the upload. Two independent problems in one job.
+
+## `Compose Runtime Smoke (advisory)` — 15 minutes for a 16-image stack
+
+`timeout-minutes: 15` for building 16 images, starting 16 services, waiting
+for health, probing and tearing down. On PR #1032 it failed after 13m40s
+with `elasticsearch-1` unhealthy while kafka, redis and postgres were all
+`Healthy` — Elasticsearch's own logs show it starting normally and simply
+not passing its healthcheck in time. On the re-run the job hit the timeout
+(06:37:47 → 06:53:29) and was cancelled.
+
+Not the certificate change: the same job's log shows the new script working on
+the CI runner, generating a certificate carrying the runner's own addresses
+(`10.1.1.154`, `172.17.0.1`) where the old script would have produced only the
+one developer's address.
+
+## What I did not do
+
+I did not weaken the failing checks, did not add `continue-on-error` to
+anything, and did not touch the advisory job's timeout — the 15-minute budget
+is a judgement call about runner capacity that belongs to the owner, and
+changing it would hide a real capacity problem rather than fix it. Both
+findings are in `oner-task.md`.
