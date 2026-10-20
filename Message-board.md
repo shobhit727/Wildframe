@@ -10360,3 +10360,84 @@ anything, and did not touch the advisory job's timeout — the 15-minute budget
 is a judgement call about runner capacity that belongs to the owner, and
 changing it would hide a real capacity problem rather than fix it. Both
 findings are in `oner-task.md`.
+
+### [M-20261020T1830Z-ui-a11y-layout-pass] 2026-10-20T18:30Z · agent=codeql-green · status=done
+
+**Branch:** `feat/ui-accessibility-and-layout-pass` (off `main` @ `b802326e`).
+
+**Claim:** `apps/web/**` (all routes and components), `apps/web/tailwind.config.ts`,
+`apps/web/src/__tests__/color-contrast.test.ts` (new),
+`apps/web/src/__tests__/admin-layout-contract.test.ts` (new),
+`scripts/ui-capture.mjs` (new), `scripts/README.md`, `Message-board.md`,
+`oner-task.md`.
+
+## What this was
+
+A UI pass driven by measurement rather than taste. The starting point was a
+new harness that renders every route in a real browser with the repo's own E2E
+mocks and reports what only the rendered page knows: horizontal overflow, text
+contrast against its effective background, and interactive target sizes.
+
+The first sweep found **140 contrast failures, 33 undersized tap targets and 5
+routes that scrolled sideways on a phone** — across 15 routes at two widths.
+
+## The four fixes
+
+1. **Mobile overflow (5 routes).** The admin console's `<main className="flex-1">`
+   is a flex item, and a flex item's default `min-width` is `auto`, so it
+   refused to shrink below the admin tables' intrinsic width. The document
+   grew to 413/446/515/538px inside a 390px viewport — 23/56/125/148px of
+   sideways scroll, with the table's right-hand columns clipped off-screen.
+   `min-w-0` on that element fixes it; the tables now scroll inside their
+   panel. The `/account` tab strip was a second cause: `w-fit` on a nowrap
+   flex row resolves to the *sum* of its items' min-content widths, so four
+   tabs could not fit and the page scrolled 17px. It now wraps.
+2. **Contrast: the brand red as text.** `#e50914` is a fill colour — white on
+   it is 4.79:1, fine. As *text* it is 4.11:1 on the page background and
+   3.63:1 on a raised card, so it failed AA everywhere: the wordmarks, the
+   section eyebrows, the red links. `text-brand-400` (#f94c53) is 5.80:1 and
+   5.13:1 and passes everywhere.
+3. **Contrast: the muted-text ramp.** All 140 failures were three stock
+   Tailwind tokens — `gray-500` (3.7–4.2:1), `zinc-500` (3.6–4.1:1) and
+   `zinc-600` (2.3:1) — and 61 of their 64 uses were as *text*. The stock
+   scales are untouched (`bg-zinc-600` is the admin confirm dialog's secondary
+   button and needs to stay dark for its white label); a semantic `text-muted`
+   / `text-muted-subtle` pair replaces them, at 5.9:1 and 5.1:1.
+4. **Target sizes.** 33 controls were under the WCAG 2.2 AA 24×24 minimum,
+   including the hero carousel's dots at **24×2 pixels** and the player's
+   volume input at **96×8**. The dots now keep their 2px bar but sit in a
+   24×24 button; the rest grew to 32–44px. The `/my-list` "Remove ✕" control
+   was 24×24 but `opacity-0 group-hover:opacity-100`, so on a touch device —
+   where there is no hover — it was invisible and undiscoverable. It is now
+   visible on coarse pointers and still hidden until hover on a mouse.
+
+## After
+
+```
+  totals (routes / contrast / small-target / heading / overflow):
+    desktop  15 / 0 / 0 / 0 / 0
+    mobile   15 / 0 / 0 / 0 / 0
+    overall  30 / 0 / 0 / 0 / 0
+  all 30 page render(s) clean
+```
+
+`npx vitest run` → **884 passed** (48 files). `npx tsc --noEmit` clean.
+`npx eslint src` → 0 errors, one pre-existing warning.
+
+## The tests can fail
+
+- `color-contrast.test.ts` scans the source for the banned text colours and
+  re-computes the palette's ratios. Breaking `brand.400` back to `#e50914`
+  fails it with the real ratios (4.11:1 / 3.63:1); collapsing the two brand
+  values fails it too.
+- `admin-layout-contract.test.ts` renders the admin layout and asserts the
+  rendered `<main>` carries `min-w-0`. Removing the class fails it.
+- `scripts/ui-capture.mjs --self-test` runs the auditor against a synthetic
+  page with hand-computable defects and fails if it stops finding them.
+
+## Follow-ups, deliberately not in this change
+
+Recorded in `oner-task.md`: the `/my-list` remove button is still invisible
+when focused by keyboard on a mouse; the watch page and the account page use
+different mobile gutters; and the auditor does not implement the WCAG 2.5.8
+exceptions (spacing, inline, essential) nor sample gradient backgrounds.

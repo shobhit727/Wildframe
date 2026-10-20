@@ -68,7 +68,7 @@ export function MediaCard({ content, variant = 'poster', showProgress, showCapti
           <h3 className="truncate text-sm text-gray-200 transition-colors group-hover:text-white">
             {content.title}
           </h3>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted">
             {content.releaseDate?.split('-')[0]}
             {content.rating > 0 ? ` · ★ ${content.rating.toFixed(1)}` : ''}
           </p>

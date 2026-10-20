@@ -55,7 +55,7 @@ export function HeroBanner({ items }: HeroBannerProps) {
           {/* Type logo-ish line */}
           <span className="block text-xl font-medium text-white/90 mb-4 select-none">
             WILDFRAME&nbsp;
-            <span className="text-[#E50914]">
+            <span className="text-brand-400">
               {active.type === 'movie' ? 'ORIGINAL FILM' : 'ORIGINAL SERIES'}
             </span>
           </span>
@@ -119,11 +119,16 @@ export function HeroBanner({ items }: HeroBannerProps) {
             <button
               key={i}
               onClick={() => setActiveIndex(i)}
-              className={`h-[2px] transition-all duration-300 ${
-                i === activeIndex ? 'w-6 bg-white' : 'w-3 bg-white/40 hover:bg-white/70'
-              }`}
+              className="group flex h-6 w-6 items-center justify-center"
               aria-label={`Go to slide ${i + 1}`}
-            />
+            >
+              {/* The bar stays 2px tall; the button around it carries the hit area. */}
+              <span
+                className={`block h-[2px] transition-all duration-300 ${
+                  i === activeIndex ? 'w-6 bg-white' : 'w-3 bg-white/40 group-hover:bg-white/70'
+                }`}
+              />
+            </button>
           ))}
         </div>
       )}

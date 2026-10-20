@@ -1416,3 +1416,41 @@ alerts API still answers normally and still lists alerts in the thousands, so
 the banner's tally moved for a reason I have not established. The hard
 evidence is the code-scanning API's own 403, which is unambiguous and
 reproducible.
+
+### UI accessibility pass — what is fixed, and what is left
+
+A measured UI pass over all 15 routes (desktop and mobile, real browser, the
+repo's own E2E mocks) went from **140 contrast failures, 33 undersized tap
+targets and 5 routes scrolling sideways on a phone** to **0 / 0 / 0**. The
+work is on `feat/ui-accessibility-and-layout-pass`.
+
+Fixed: the admin console's flex child could not shrink (`min-w-0`), the
+`/account` tab strip could not fit, the brand red was used as a text colour
+(it fails AA at 4.11:1), the whole muted-text ramp was too dark for a dark UI
+(`gray-500`/`gray-600`/`zinc-500`/`zinc-600` — 140 failing text nodes between
+them), and 33 controls were under the 24×24 minimum, including the hero
+carousel's dots at 24×2 and the player's volume input at 96×8.
+
+**Still open, and why it is not in this change:**
+
+- **The `/my-list` "Remove ✕" button is still invisible when focused by
+  keyboard.** It is `opacity-0 group-hover:opacity-100`, so a keyboard focus
+  ring on a mouse device shows a focused but transparent control. The touch
+  case is fixed (visible on coarse pointers). `focus-visible:opacity-100` is
+  the one-class fix; it was left out because it changes mouse and keyboard
+  behaviour, and this change was scoped to touch.
+- **The watch page and the account page use different mobile gutters**
+  (`px-8` against `px-4`), so their content widths differ on a 390px screen
+  (326px against 358px). Neither overflows. It is a design-consistency
+  decision, not a defect.
+- **`scripts/ui-capture.mjs` does not implement the WCAG 2.5.8 exceptions**
+  (spacing, inline, essential, user-agent controls), and it does not sample
+  gradient backgrounds, `::before`/`::after` text, or container opacity. So a
+  finding is a candidate for review, not a verdict, and a clean run does not
+  prove the absence of contrast failures — it proves the absence of the ones
+  it can measure. A gradient-aware sampler would need to read pixels.
+- **The banned-token list is a test, not a lint rule.** It catches the stock
+  Tailwind colours that fail on this app's surfaces, but a developer can
+  still write `text-[#333]` and get a 1.6:1 heading. A lint rule over
+  arbitrary hex text colours would close that, and would need a way to
+  distinguish a deliberate low-contrast decoration from a mistake.

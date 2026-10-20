@@ -45,7 +45,7 @@ export default function AdminDashboardPage() {
               A live operational view of Wildframe. Monitor users, streams, moderation, revenue, and platform health from one place.
             </p>
           </div>
-          <AdminButton variant="secondary" size="sm" onClick={() => stats.refetch()} disabled={stats.isFetching}>
+          <AdminButton variant="secondary" size="sm" className="min-h-9" onClick={() => stats.refetch()} disabled={stats.isFetching}>
             <Icons.RefreshIcon className={stats.isFetching ? 'animate-spin' : ''} />
             {stats.isFetching ? 'Refreshing' : 'Refresh data'}
           </AdminButton>
@@ -71,9 +71,9 @@ export default function AdminDashboardPage() {
           <div className="mb-5 flex items-center justify-between">
             <div>
               <h2 className="text-base font-semibold text-white">Traffic overview</h2>
-              <p className="mt-1 text-xs text-zinc-500">Relative activity across the last 14 days</p>
+              <p className="mt-1 text-xs text-muted">Relative activity across the last 14 days</p>
             </div>
-            <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-wider text-zinc-500">14D</span>
+            <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-wider text-muted">14D</span>
           </div>
           <TrafficChart />
         </section>
@@ -82,9 +82,9 @@ export default function AdminDashboardPage() {
           <div className="mb-5 flex items-center justify-between">
             <div>
               <h2 className="text-base font-semibold text-white">New users</h2>
-              <p className="mt-1 text-xs text-zinc-500">Latest registrations</p>
+              <p className="mt-1 text-xs text-muted">Latest registrations</p>
             </div>
-            <a href="/admin/users" className="text-xs font-medium text-red-400 transition hover:text-red-300">View all</a>
+            <a href="/admin/users" className="inline-flex min-h-8 items-center text-xs font-medium text-red-400 transition hover:text-red-300">View all</a>
           </div>
           {recentUsers.isLoading ? (
             <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 animate-pulse rounded-xl bg-zinc-800/60" />)}</div>
@@ -97,9 +97,9 @@ export default function AdminDashboardPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-white">{u.first_name} {u.last_name}</p>
-                    <p className="truncate text-xs text-zinc-500">{u.email}</p>
+                    <p className="truncate text-xs text-muted">{u.email}</p>
                   </div>
-                  <span className="text-[10px] text-zinc-600">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</span>
+                  <span className="text-[10px] text-muted-subtle">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</span>
                 </li>
               ))}
             </ul>

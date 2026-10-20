@@ -100,7 +100,7 @@ export default function MyListPage() {
               >
                 {tab.label}
                 {tab.count > 0 && (
-                  <span className="ml-2 text-xs text-[#E50914]">({tab.count})</span>
+                  <span className="ml-2 text-xs text-brand-400">({tab.count})</span>
                 )}
               </button>
             ))}
@@ -123,7 +123,7 @@ export default function MyListPage() {
                       />
                     ))}
                   </div>
-                  <p className="mt-4 text-xs text-gray-500">
+                  <p className="mt-4 text-xs text-muted">
                     Resume playback and your position saves automatically.
                   </p>
                 </>
@@ -146,7 +146,7 @@ export default function MyListPage() {
                       <MediaCard content={item} showCaption />
                       <button
                         onClick={() => removeFromList(item.id)}
-                        className="absolute top-2 left-2 bg-black/70 text-gray-200 hover:text-white text-xs px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-2 left-2 bg-black/70 text-gray-200 hover:text-white text-xs px-2 py-1 opacity-0 pointer-coarse:opacity-100 group-hover:opacity-100 transition-opacity"
                         aria-label={`Remove ${item.title} from My List`}
                       >
                         Remove ✕
@@ -174,7 +174,7 @@ function EmptyState({ emoji, title, subtitle }: { emoji: string; title: string; 
     <div className="text-center py-20">
       <div className="text-5xl mb-4">{emoji}</div>
       <h3 className="text-lg font-medium text-gray-300">{title}</h3>
-      <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
+      <p className="text-sm text-muted mt-1">{subtitle}</p>
     </div>
   );
 }

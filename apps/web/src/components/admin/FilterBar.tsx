@@ -24,7 +24,7 @@ export function FilterBar({
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex flex-1 items-center gap-3">
         <div className="relative flex-1 sm:max-w-xs">
-          <SearchIcon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+          <SearchIcon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <input
             type="text"
             value={value}
@@ -32,7 +32,7 @@ export function FilterBar({
             placeholder={placeholder}
             className={clsx(
               'w-full rounded-lg border border-white/10 bg-zinc-900/60 py-2 pl-9 pr-3 text-sm text-white',
-              'placeholder:text-zinc-500 focus:border-red-500/50 focus:outline-none focus:ring-2 focus:ring-red-500/30',
+              'placeholder:text-muted focus:border-red-500/50 focus:outline-none focus:ring-2 focus:ring-red-500/30',
             )}
           />
         </div>
