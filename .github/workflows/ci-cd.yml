@@ -702,6 +702,12 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      # The SARIF upload resolves its own workflow run through the
+      # workflow-runs API, which needs this scope. Without it the upload
+      # fails on every pull_request event with "Resource not accessible by
+      # integration", and it fails on a push event only where the action
+      # happens not to need the lookup.
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
