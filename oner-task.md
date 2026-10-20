@@ -1344,3 +1344,66 @@ once you confirm it is the generated localhost cert, and separately fix `main`,
 which is independently red (run `37361191563` at that sha failed: Security Scan,
 Frontend CI, Backend Lint, and every Backend Test job). #531 does not block PR
 #938.
+
+### `Security Scan` is red on every PR — the repository's code scanning is off
+
+Found while verifying PR #1032 (the dev-certificate SAN fix). The `Security
+Scan` job fails on every `pull_request` event, and **not** because of any
+pull request's code:
+
+- The Trivy scan succeeds; the **SARIF upload** is refused:
+  `##[error]Please verify that the necessary features are enabled: Code
+  scanning is not enabled for this repository.`
+- The code-scanning API says the same thing about the repository itself:
+  `gh api repos/shobhit727/Wildframe/code-scanning/alerts` →
+  `403 Code scanning is not enabled for this repository.`
+  The repository is private, and GitHub's code-scanning feature is currently
+  **not enabled** for it. No workflow change can make the upload succeed.
+
+It was working recently: PR #1022 (2026-10-18 05:30Z) and PR #938 (05:25Z)
+both had every step of `Security Scan` pass, and the alerts API was readable
+during this same session. The repository's settings changed in between.
+
+**Owner action:** re-enable code scanning (GitHub Advanced Security) in the
+repository settings. Until then no PR can be green, which is why 20 Dependabot
+PRs are blocked.
+
+Two further points, both mine to record and not to fix unilaterally:
+
+- **`actions: read` may also be needed.** With only `contents: read` and
+  `security-events: write` the upload failed with `Resource not accessible by
+  integration - .../workflow-runs#get-a-workflow-run`; with `actions: read`
+  added the error moved on to the real 403, which is consistent with the
+  permission being needed for the action to resolve its own run. That is an
+  inference, not a verified fix, so PR #1038 was closed rather than shipped
+  unverified. The branch `fix/ci-sarif-upload-permissions` is kept; it is one
+  CI cycle to re-test once code scanning is back on.
+- **The Trivy step fails on its own whenever the DB has CRITICAL/HIGH
+  findings**, because the action is configured with `exit-code: 1` and
+  `severity: CRITICAL,HIGH`. The repository carries 288 open Dependabot
+  alerts, so finding something CRITICAL/HIGH is the normal case. On PR #1038
+  the scan step failed this way; on PR #1032 it passed and the upload failed
+  instead. The two failures are independent, and the gate should probably not
+  be "any CRITICAL/HIGH anywhere in the dependency tree" while the repository
+  has that many open alerts — that is a policy decision, not a bug.
+
+### `Compose Runtime Smoke (advisory)` has a 15-minute budget for a 16-image stack
+
+The same PR's other red check. The job is `timeout-minutes: 15` and it has to
+build 16 Docker images, start 16 services, wait for health, probe, and tear
+down. On PR #1032 it failed after 13m40s because `elasticsearch-1` never
+became healthy — its own logs show it starting normally (JVM up, heap
+allocated, node elected as the health node) and simply not passing its
+healthcheck in time, while kafka, redis and postgres were all `Healthy`. On
+the re-run it was cancelled by the 15-minute timeout (started 06:37:47,
+cancelled 06:53:29).
+
+It is marked "(advisory)" with `continue-on-error: true`, so the authors
+already treat it as non-blocking, but it still reports as a failing check. A
+16-image build plus a 16-service stack does not fit in 15 minutes on a shared
+runner, and Elasticsearch is the most expensive member of that set.
+
+This is **not** the certificate change: the same job's log shows the new
+script working on the CI runner, generating a certificate with the runner's
+own addresses (`10.1.1.154`, `172.17.0.1`) where the old script would have
+produced only the one developer's address.

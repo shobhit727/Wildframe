@@ -10287,3 +10287,76 @@ used the same address as a "your host's IP" example, which now reads
 shelved as a patch while my one-line comment change was committed, and
 re-applied afterwards as an unstaged modification. It is deliberately **not**
 in this commit.
+
+### [M-20261020T0700Z-pr1032-ci-red] 2026-10-20T07:00Z · agent=codeql-green · status=done
+
+**PR #1032** (dev-certificate SANs, `fix/dev-certs-dynamic-san` @ `6d4225e0`) is
+**blocked on two pre-existing main-level failures**, neither caused by it.
+
+## `Security Scan` — red on every PR, because code scanning is off
+
+The Trivy scan succeeds; the SARIF upload is refused:
+
+```
+##[error]Please verify that the necessary features are enabled:
+Code scanning is not enabled for this repository.
+```
+
+and the code-scanning API says the same about the repository itself:
+
+```
+$ gh api repos/shobhit727/Wildframe/code-scanning/alerts
+403 Code scanning is not enabled for this repository.
+```
+
+The repository is private and the feature is currently off. It was on earlier
+in this same session — the alerts API answered, and PR #1022 (10-18 05:30Z)
+and PR #938 (05:25Z) both passed every step of `Security Scan`. It stopped
+between then and now, and the change is in repository settings, not in any
+commit.
+
+**This is what blocks the 20 Dependabot PRs**, and it is an owner action:
+re-enable code scanning.
+
+### The hypothesis I tested and had to throw away
+
+I assumed the upload needed `actions: read` (the job grants only `contents:
+read` and `security-events: write`, and the error names the workflow-runs
+API). I opened PR #1038 with that one-line change. The job *did* receive
+`Actions: read` — the token log shows it — and the error moved from
+`Resource not accessible by integration` to the real 403. So the permission
+is plausibly part of the path, but it fixes nothing on its own, and I cannot
+demonstrate it working in any state of the repository where the upload
+succeeds. **PR #1038 closed rather than shipped unverified.** The branch
+`fix/ci-sarif-upload-permissions` is kept for one CI cycle after code
+scanning is re-enabled.
+
+### A second, independent failure in the same job
+
+The Trivy step exits 1 whenever the vulnerability DB holds CRITICAL/HIGH
+findings (`exit-code: 1`, `severity: CRITICAL,HIGH`). With 288 open
+Dependabot alerts, that is the normal case, so the job can fail at the scan
+step before the upload is even reached. PR #1038 failed that way; PR #1032
+passed the scan and failed the upload. Two independent problems in one job.
+
+## `Compose Runtime Smoke (advisory)` — 15 minutes for a 16-image stack
+
+`timeout-minutes: 15` for building 16 images, starting 16 services, waiting
+for health, probing and tearing down. On PR #1032 it failed after 13m40s
+with `elasticsearch-1` unhealthy while kafka, redis and postgres were all
+`Healthy` — Elasticsearch's own logs show it starting normally and simply
+not passing its healthcheck in time. On the re-run the job hit the timeout
+(06:37:47 → 06:53:29) and was cancelled.
+
+Not the certificate change: the same job's log shows the new script working on
+the CI runner, generating a certificate carrying the runner's own addresses
+(`10.1.1.154`, `172.17.0.1`) where the old script would have produced only the
+one developer's address.
+
+## What I did not do
+
+I did not weaken the failing checks, did not add `continue-on-error` to
+anything, and did not touch the advisory job's timeout — the 15-minute budget
+is a judgement call about runner capacity that belongs to the owner, and
+changing it would hide a real capacity problem rather than fix it. Both
+findings are in `oner-task.md`.
