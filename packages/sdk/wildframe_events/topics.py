@@ -511,7 +511,37 @@ _SERVICE_ACL: Dict[str, Dict[str, List[str]]] = {
             Topic.BILLING_SUBSCRIPTION_CREATED,
             Topic.BILLING_SUBSCRIPTION_UPDATED,
             Topic.BILLING_SUBSCRIPTION_CANCELLED,
+            Topic.USER_REGISTERED,
         ],
+    },
+    # auth-service and admin-service were absent here entirely even though
+    # TOPIC_METADATA names them as the producers of user.registered /
+    # user.moderated and both run with EVENT_PUBLISHER=kafka in
+    # deployments/docker-compose.dev.yml. An ACL bootstrap that walks this
+    # table therefore granted them NOTHING, so their first publish died with
+    # TOPIC_AUTHORIZATION_FAILED (#893). Only the relationships with a live
+    # publisher/consumer behind them are listed:
+    #   auth-service  publishes user.registered (app/services/__init__.py)
+    #                 consumes  user.moderated  (app/core/event_consumer.py)
+    #   admin-service publishes user.moderated  (app/core/events.py)
+    #   user-service  consumes  user.registered (app/core/event_consumer.py)
+    # notification-service<-user.registered and
+    # creators-service<-moderation.decision_made are still declared in
+    # TOPIC_METADATA but have no consumer in code; granting them would be an
+    # ACL no code path can use, so they stay out until a consumer exists.
+    "auth-service": {
+        "produce": [
+            Topic.USER_REGISTERED,
+        ],
+        "consume": [
+            Topic.USER_MODERATED,
+        ],
+    },
+    "admin-service": {
+        "produce": [
+            Topic.USER_MODERATED,
+        ],
+        "consume": [],
     },
 }
 

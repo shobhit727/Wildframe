@@ -40,7 +40,8 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     ENVIRONMENT: str = "development"
     DATABASE_URL: str | None = None
     JWT_SECRET_KEY: str | None = None
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
+    JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_ISSUER: str = "wildframe-auth"
     JWT_EXPIRATION_MINUTES: int = 15
@@ -129,8 +130,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
                 "KAFKA_BOOTSTRAP_SERVERS must be set explicitly when ENVIRONMENT is not development."
             )
         if (
-            not self.MEDIA_PIPELINE_ADAPTERS
-            or self.MEDIA_PIPELINE_ADAPTERS.strip() == ""
+            self.MEDIA_PIPELINE_ADAPTERS.strip() == ""
             or self.MEDIA_PIPELINE_ADAPTERS.strip() == "stub"
         ):
             raise ValueError(

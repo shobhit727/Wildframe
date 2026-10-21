@@ -13,7 +13,7 @@ export default function Error({
         <h1 className="text-6xl font-bold text-white mb-4">Oops</h1>
         <p className="text-xl text-gray-400 mb-4">{error.message || 'Something went wrong'}</p>
         {error.digest && (
-          <p className="text-xs text-gray-500 mb-8">Error ID: {error.digest}</p>
+          <p className="text-xs text-muted mb-8">Error ID: {error.digest}</p>
         )}
         <button
           onClick={reset}

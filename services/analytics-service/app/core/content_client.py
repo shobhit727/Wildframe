@@ -71,8 +71,27 @@ async def resolve_content_owner(content_id: UUID) -> UUID | None:
         raise ContentServiceUnavailableError(f"could not resolve content {content_id}")
     try:
         payload = response.json()
+        # Valid JSON is not necessarily an object. A 200 carrying a JSON scalar
+        # ("...", 42, [], null) parses fine and then raises AttributeError on
+        # .get(), which is not a ValueError/TypeError, so it escaped this block
+        # and broke the fail-closed guarantee: require_content_access only
+        # catches ContentServiceUnavailableError, so the request 500ed instead
+        # of returning the documented 503 denial.
+        #
+        # Guarded explicitly rather than by adding AttributeError to the except
+        # clause: blanket-catching AttributeError would also swallow a genuine
+        # typo'd attribute access in this block and report it as a 503 denial,
+        # turning a programming error into a silent fail-closed.
+        if not isinstance(payload, dict):
+            raise TypeError(f"expected a JSON object, got {type(payload).__name__}")
         owner = payload.get("creator_id")
-        return UUID(owner) if owner else None
+        if not owner:
+            return None
+        # Same hazard one level down: UUID(42) raises AttributeError, not
+        # ValueError, because the constructor calls str.replace on its argument.
+        if not isinstance(owner, str):
+            raise TypeError(f"creator_id must be a string, got {type(owner).__name__}")
+        return UUID(owner)
     except (ValueError, TypeError) as exc:
         raise ContentServiceUnavailableError(
             f"malformed content-service response for {content_id}"
