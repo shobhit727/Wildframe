@@ -32,7 +32,7 @@ history and are not release declarations (see `STATUS.md`).
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | **Current** development workflow: setup, conventions, roadmap, technical glossary. |
 | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Contribution conventions and expected service layout. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Architecture overview (service structure, patterns, DB schema notes). Partly aspirational — header flags that `AGENTS.md`/`README.md` are authoritative for current facts (15 services, JWT audience, no Alembic). |
-| [`docs/FRONTEND_ARCHITECTURE.md`](docs/FRONTEND_ARCHITECTURE.md) | Frontend architecture: Next.js 15 App Router, state management, video player design. |
+| [`docs/FRONTEND_ARCHITECTURE.md`](docs/FRONTEND_ARCHITECTURE.md) | Frontend architecture: Next.js 16.3.6 App Router, state management, video player design. |
 | [`docs/SERVICE_ARCHITECTURE_PATTERN.md`](docs/SERVICE_ARCHITECTURE_PATTERN.md) | Canonical internal layout every microservice follows. |
 | [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md) | Database design reference: database-per-service, tables, indexes, partitioning. |
 | [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md) | API reference: base URLs, JWT auth flow (incl. `aud: wildframe-api` audience claim), rate limiting, endpoints for services 1–4, error format. |

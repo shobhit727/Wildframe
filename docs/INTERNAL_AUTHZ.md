@@ -69,5 +69,7 @@ Examples:
 
 ## References
 
-- Issue #445: Internal service authorization needs endpoint-level scopes
-- Issue #597: Auth service token format and validation
+GitHub issue state is metadata only. The implementation checklist above is not marked complete merely because an issue is closed; verify each item against the auth and gateway source.
+
+- Issue #445: Internal service authorization needs endpoint-level scopes — closed in GitHub as of September 27, 2026
+- Issue #597: Auth service token format and validation / refresh-token family detection — closed in GitHub as of September 27, 2026

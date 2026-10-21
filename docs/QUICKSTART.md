@@ -2,7 +2,7 @@
 
 Get the Wildframe platform running on your local machine in under 10 minutes.
 
-**Last Updated**: September 7, 2026
+**Last Updated**: September 27, 2026
 **Version**: 1.0.0
 
 ---

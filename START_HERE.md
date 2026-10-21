@@ -140,3 +140,4 @@ cd services/auth-service && python3 -m pytest tests/ -v
 ---
 
 **Ready?** Open `HOW_TO_RUN_TESTS.md` and follow the instructions!
+

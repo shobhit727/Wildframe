@@ -22,3 +22,4 @@ Recommendations:
 - Add unit tests or startup checks to catch incorrect await usage.
 
 Notes: Project docs and AGENTS.md recommend `redis.asyncio` over `aioredis` — confirm the exact API contract for the pinned dependency version.
+

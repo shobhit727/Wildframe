@@ -29,7 +29,7 @@ services/
 ```
 
 ## Frontend
-- apps/web/ - Next.js 15 frontend
+- apps/web/ - Next.js 16.3.6 frontend
 
 ## Key Patterns
 - App factory: `create_app()` in `app/main.py`, `app = create_app()` at module level
@@ -47,3 +47,4 @@ services/
 
 ## Confidence: HIGH
 Evidence: Read all service directories, main.py files, settings files, docker-compose, AGENTS.md
+

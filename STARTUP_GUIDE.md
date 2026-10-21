@@ -16,12 +16,12 @@
 ## Platform Overview
 
 **Wildframe** is a complete Netflix-like streaming platform with:
-- ✅ **12 Production-Ready Microservices** (Auth, User, Content, Streaming, Search, Admin, Recommendation, Billing, Analytics, Notification, Media Pipeline, API Gateway)
-- ✅ **Modern Next.js 15 Frontend** with 10 pages and 6+ reusable components
+- ✅ **15 backend services in the repository** (Auth, User, Content, Streaming, Search, Admin, Recommendation, Billing, Analytics, Notification, Media Pipeline, API Gateway)
+- ✅ **Next.js 16.3.6 frontend** with 10 pages and 6+ reusable components
 - ✅ **Full Video Streaming** with HLS/DASH adaptive bitrate
 - ✅ **JWT Authentication** with token refresh
 - ✅ **Subscription Management** (4 tiers: free/basic/premium/family)
-- ✅ **Docker Containerization** (14 containers)
+- ✅ **Docker Compose development stack**
 
 ---
 
@@ -42,7 +42,7 @@ cd "$(git rev-parse --show-toplevel)"
 docker-compose -f deployments/docker-compose.dev.yml up -d
 ```
 
-Wait 10-15 seconds for all services to initialize...
+Wait for the compose health checks to report the required dependencies healthy; startup time varies by machine.
 
 ### 2. Start Frontend
 ```bash
@@ -87,7 +87,7 @@ docker-compose -f deployments/docker-compose.dev.yml logs -f api-gateway
 - Analytics Service (8009)
 - Notification Service (8010)
 - Media Pipeline Service (8011)
-- PostgreSQL (5432) - 12 databases
+- PostgreSQL (5432) - per-service databases initialized by the development SQL script
 - Redis (6379)
 - Elasticsearch (9200)
 - Kafka (9092)
@@ -280,7 +280,7 @@ docker-compose up -d
 
 ## Architecture Overview
 
-### Frontend (Next.js 15)
+### Frontend (Next.js 16.3.6)
 ```
 pages/
 ├── / (home)
@@ -307,7 +307,7 @@ api/
 └── client.ts (28 methods)
 ```
 
-### Backend (12 Services)
+### Backend (15 Services)
 ```
 services/
 ├── api-gateway (8000) - Routing & middleware
@@ -377,6 +377,7 @@ databases/
 
 ---
 
-**Platform Status**: ✅ **PRODUCTION READY**  
-**Last Updated**: 2024  
-**Version**: 1.0.0-complete
+**Platform Status**: Active development; this guide documents the development stack, not a production-readiness claim  
+**Last Updated**: September 27, 2026
+**Version**: Current repository state
+

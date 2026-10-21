@@ -1,11 +1,13 @@
+
 > [!WARNING]
 > **Historical snapshot — generated 2026-08-22** against HEAD `dc1f52c`.
 > Companion to `CLOSED_ISSUES_AUDIT.md`, with the same caveat: its issue
 > tallies describe that date, not today, and its "54/54 jobs" CI figures
 > describe one specific past run (`ci-cd.yml` defines 17 jobs today). Kept for
-> history only.
+> history only. The tracker reported 165 open issues as of 2026-09-27; that is
+> a dated figure, not a live one.
 
-# Wildframe — Full Closed-Issues Audit (all 607)
+# Wildframe — Full Closed-Issues Audit (all 607, Historical Snapshot)
 
 Generated 2026-08-22 against `shobhit727/Wildframe` (HEAD `dc1f52c`).
 Companion to `CLOSED_ISSUES_AUDIT.md`; this file is the **complete** audit table.
@@ -15,7 +17,7 @@ Companion to `CLOSED_ISSUES_AUDIT.md`; this file is the **complete** audit table
 | Metric | Value |
 |---|---|
 | Total issues closed (no PRs) | **607** |
-| Open now | **0** |
+| Open at audit time | **0** |
 | Closing comment present | **606 / 607** |
 | Cited at least one commit SHA | 482 |
 | Cited SHAs verified in git history | **481 / 482** (99.8 %) |
@@ -161,3 +163,4 @@ done
 # 3. Verify cited SHAs
 git log --all --pretty=%H | sort -u > /tmp/all_shas.txt
 ```
+

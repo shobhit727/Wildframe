@@ -9,7 +9,7 @@ Perfect for building SaaS products, landing pages, and web applications.
 ## ⚡ Quick Start (2 minutes)
 
 ```bash
-cd /home/phoenix/Desktop/wildframe/apps/web
+cd ./apps/web
 
 # Install dependencies
 npm install
@@ -46,7 +46,7 @@ Container    - Content wrapper
 - ✅ Fully responsive (mobile, tablet, desktop)
 - ✅ Tailwind CSS styling
 - ✅ TypeScript support
-- ✅ Next.js 15 App Router
+- ✅ Next.js 16 App Router
 - ✅ Production-ready
 - ✅ Zero config needed
 
@@ -218,7 +218,7 @@ export default function Dashboard() {
 ## 🔗 Resources
 
 ### Learning
-- [Next.js 15 Documentation](https://nextjs.org/docs)
+- [Next.js 16.3.6 Documentation](https://nextjs.org/docs)
 - [React 19 Documentation](https://react.dev)
 - [Tailwind CSS Guide](https://tailwindcss.com/docs)
 - [TypeScript Handbook](https://www.typescriptlang.org/docs)
@@ -301,3 +301,4 @@ npm run dev
 Then edit `src/app/page.tsx` to make it yours!
 
 **Happy building!** 🎉
+

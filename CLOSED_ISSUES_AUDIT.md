@@ -1,3 +1,4 @@
+
 > [!WARNING]
 > **Historical snapshot — generated 2026-08-22** against HEAD `6297fde`. Its
 > tallies ("N closed / 0 open") describe the tracker on that date and are
@@ -5,8 +6,11 @@
 > run tallies (e.g. "54/54 jobs") likewise describe one specific historical
 > run — `ci-cd.yml` defines 17 jobs today. Kept for history only; read the
 > GitHub tracker for current state.
+>
+> The tracker reported 165 open issues as of 2026-09-27; that is a dated
+> figure, not a live one.
 
-# Wildframe — Closed-Issues Audit
+# Wildframe — Closed-Issues Audit (Historical Snapshot)
 
 Generated 2026-08-22 against `shobhit727/Wildframe` (HEAD `6297fde`).
 
@@ -15,7 +19,7 @@ Generated 2026-08-22 against `shobhit727/Wildframe` (HEAD `6297fde`).
 | Metric | Value |
 |---|---|
 | Total issues closed (excluding PRs) | **607** |
-| Issues open now | **0** |
+| Issues open at audit time | **0** |
 | Closed with explicit `completed` reason | 559 (92.1 %) |
 | Closed as `not_planned` (out-of-scope) | 48 (7.9 %) |
 | Closed by `shobhit727` (all) | 607 |
@@ -105,7 +109,7 @@ PY
 
 ## Verdict
 
-- All 607 open issues resolved and audited.
-- 481 / 482 cited SHAs resolve in git history (the 1 outlier is a PR-branch force-push artifact, not a missed closure).
-- CI green on the last run before this audit (`1239b51` → run `32574835607`, 54 / 54 jobs success).
-- Repository open-issue count: **0**.
+- The audit covered 607 issues that were open during its August 2026 audit window.
+- 481 / 482 cited SHAs resolved in the audit's git history check; the one exception was a force-pushed PR-branch SHA.
+- The repository has since received additional issues, so the August count of zero open issues is no longer current.
+

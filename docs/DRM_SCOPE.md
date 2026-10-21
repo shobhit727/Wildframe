@@ -1,7 +1,7 @@
 # DRM Scope: Widevine + FairPlay + PlayReady
 
 **Status**: ⚠️ Known gap — no content protection today.
-**Last Updated**: August 7, 2026
+**Last Updated**: September 27, 2026
 
 ## Current State
 

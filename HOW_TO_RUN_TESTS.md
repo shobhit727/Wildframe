@@ -100,7 +100,7 @@ Skipped automatically when the stack is not reachable.
 
 ```bash
 # From repo root — stack must be up (docker compose -f deployments/docker-compose.dev.yml up -d)
-poetry run pytest tests/integration -q    # ~16 min, 110 tests
+poetry run pytest tests/integration -q    # ~16 min, 76 tests
 ```
 
 > ⚠️ The integration suite is **not** part of the per-service loop: the root

@@ -682,4 +682,4 @@ docker compose -f deployments/docker-compose.dev.yml up --build
 
 ---
 
-**Last Updated**: September 7, 2026
+**Last Updated**: September 27, 2026

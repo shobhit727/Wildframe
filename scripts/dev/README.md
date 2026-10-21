@@ -50,3 +50,4 @@ so the demo HLS stream cannot decode in these tests — you'll see
 `bufferAddCodecError` / `manifestIncompatibleCodecsError`. That is a test-browser
 limitation, not an app bug: real Chrome/Edge/Firefox/Safari play the asset fine
 (verified: manifest + segments serve 200, hls.js attaches the MSE buffer).
+

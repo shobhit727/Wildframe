@@ -1,6 +1,6 @@
 # Wildframe Web Frontend
 
-React + Next.js 15 frontend for the Wildframe Netflix-like streaming platform.
+React + Next.js 16.3.6 frontend for the Wildframe Netflix-like streaming platform.
 
 ## Features
 
@@ -15,8 +15,8 @@ React + Next.js 15 frontend for the Wildframe Netflix-like streaming platform.
 
 ## Tech Stack
 
-- **Framework**: Next.js 15 (App Router)
-- **UI Library**: React 19 RC
+- **Framework**: Next.js 16.3.6 (App Router)
+- **UI Library**: React 19
 - **Styling**: Tailwind CSS
 - **State Management**: Zustand
 - **Data Fetching**: TanStack React Query
@@ -127,8 +127,8 @@ await apiClient.logEvent(userId, 'play_started', { quality: '1080p' });
 ## Authentication
 
 Authentication is handled via JWT tokens:
-- **Access Token**: Short-lived (15 min), stored in localStorage
-- **Refresh Token**: Long-lived (7 days), automatically refreshed
+- **Access Token**: Short-lived and held in memory by the API client
+- **Refresh Token**: Persisted in an HttpOnly `__Host-wf_refresh` cookie and rotated through the `/auth-session` route
 - **Token Interceptor**: Automatically adds token to API requests
 - **Protected Routes**: Middleware redirects unauthenticated users to login
 
@@ -234,3 +234,4 @@ Internal project - Wildframe Netflix-like Platform
 - Documentation: See [docs/](../../docs/)
 - Issues: GitHub Issues
 - API Reference: [API_DOCUMENTATION.md](../../docs/API_DOCUMENTATION.md)
+

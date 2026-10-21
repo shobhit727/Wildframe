@@ -11,7 +11,7 @@ Quick reference guide to what's included in the Wildframe platform and current p
 
 ## 📚 Documentation Structure
 
-We've consolidated 10 separate documentation files into 4 main guides for easier navigation:
+The repository currently contains a broader set of active guides plus historical reports. Use the documents listed here as navigation aids; verify implementation details against source.
 
 | Document | Coverage |
 |----------|----------|
@@ -23,7 +23,7 @@ We've consolidated 10 separate documentation files into 4 main guides for easier
 
 ---
 
-## ✅ What's Completed & Production-Ready
+## Current Repository State
 
 ### Architecture & Documentation
 - **ARCHITECTURE.md** - Complete system design with data flows, security model, patterns
@@ -32,7 +32,7 @@ We've consolidated 10 separate documentation files into 4 main guides for easier
 - **database_schema.md** - Complete database design with indexing and partitioning strategies
 
 ### Backend Infrastructure
-- **Docker Compose** - 14 services fully configured (PostgreSQL, Redis, Kafka, Elasticsearch, monitoring stack)
+- **Docker Compose** - development stack with 15 backend services plus PostgreSQL, Redis, Kafka, Elasticsearch, Prometheus, Grafana, Loki, Jaeger, Caddy, pgAdmin, and exporters
 - **Kubernetes Manifests** - Auth Service complete K8s manifest with deployments, services, HPA, RBAC, network policies
 - **Terraform Infrastructure** - EKS, RDS, ElastiCache, S3, CloudFront, VPC configuration
 - **GitHub Actions CI/CD** - Automated testing, building, and deployment pipeline
@@ -129,9 +129,9 @@ Notification Service ↔ Media Pipeline
 **Cache**: Redis 7.0+  
 **Events**: Kafka 3.0+  
 **Search**: Elasticsearch 8.0+  
-**Frontend**: Next.js 15 + React 18 + TypeScript  
+**Frontend**: Next.js 16.3.6 + React 19 RC + TypeScript 6.0.3  
 **Infrastructure**: Kubernetes + Terraform + Docker  
-**Observability**: Prometheus + Grafana + Loki + Jaeger  
+**Observability**: Prometheus + Grafana + Loki + Jaeger are present in the development compose stack; production deployment configuration must be checked separately.  
 
 ---
 
@@ -261,11 +261,12 @@ Use keyboard shortcut `Cmd/Ctrl + F` to search within any document.
 | Phase 5: Frontend | 2 weeks | 📋 Planned |
 | Phase 6: Ops & Deploy | 2 weeks | 📋 Planned |
 
-**Current**: May 26, 2026 | **Next Review**: June 2, 2026
+**Current**: September 27, 2026 | **Next Review**: October 27, 2026
 
 ---
 
 ## 📝 Last Updated
-May 26, 2026
+September 27, 2026
 
 For detailed information on any topic, refer to the specific documentation files listed above.
+

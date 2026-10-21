@@ -102,3 +102,4 @@ npm run type-check  # TypeScript check
 ---
 
 For detailed guide, see **TEMPLATE_GUIDE.md**
+

@@ -1,7 +1,7 @@
 # 🏗️ Wildframe Platform Architecture
 
 **Version**: 1.0.0  
-**Last Updated**: September 7, 2026  
+**Last Updated**: September 27, 2026
 **Stability**: Active development — not production-ready (see `STATUS.md`)
 
 > Some sections below are aspirational design notes retained for history.
@@ -801,8 +801,8 @@ Unique identifier tracking a request through all services and all logs, enabling
 
 ## CI/CD Pipeline
 
-The CI pipeline (GitHub Actions) defines **17 jobs** and runs on every push and
-every pull request:
+The CI pipeline (GitHub Actions) defines **17 jobs** and runs on pushes to
+`main`/`develop` and pull requests targeting `main`:
 
 | Job | Tools |
 |---|---|
@@ -825,7 +825,10 @@ There is **no `Integration` job.** `tests/integration/` runs only when you run
 it explicitly against a live stack.
 | Deploy | 2 | skipped (no AWS creds) |
 
-**Total time**: ~15-20 minutes
+
+
+
+The exact runtime varies with matrix expansion and GitHub-hosted runner availability.
 
 ---
 
@@ -867,4 +870,4 @@ it explicitly against a live stack.
 
 ---
 
-**Last Updated**: September 7, 2026
+**Last Updated**: September 27, 2026

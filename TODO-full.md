@@ -971,3 +971,4 @@ Do not stop after one cycle.
 The task is complete only when required GitHub Actions are green, tests remain intact, the repository has reached a verified clean state, and the final remediation PR is ready for human review and merge into `main`.
 
 The human owner, not the agent, performs the final merge into `main`.
+
