@@ -75,7 +75,7 @@ export default function AdminAlertsPage() {
         </div>
       ) : (alerts.data?.length ?? 0) === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-zinc-900/40 px-6 py-16 text-center">
-          <Icons.BellIcon className="mb-3 text-zinc-600" />
+          <Icons.BellIcon className="mb-3 text-muted-subtle" />
           <h3 className="text-base font-semibold text-white">All clear</h3>
           <p className="mt-1 text-sm text-zinc-400">No unacknowledged alerts right now.</p>
         </div>
@@ -99,10 +99,10 @@ export default function AdminAlertsPage() {
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-zinc-300">{a.message}</p>
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs text-muted">
                     {new Date(a.created_at).toLocaleString()}
                     {a.acknowledged && (
-                      <span className="ml-2 text-zinc-600">
+                      <span className="ml-2 text-muted-subtle">
                         · acknowledged{a.acknowledged_by ? ` by ${a.acknowledged_by}` : ''}
                       </span>
                     )}
@@ -113,6 +113,7 @@ export default function AdminAlertsPage() {
                 <AdminButton
                   variant="secondary"
                   size="sm"
+                  className="min-h-9"
                   disabled={ack.isPending}
                   onClick={() => setAckTarget(a)}
                 >

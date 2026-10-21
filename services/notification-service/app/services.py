@@ -12,14 +12,24 @@ from app.channels import (
     EmailQuotaTracker,
 )
 from app.core.settings import settings
-from app.models import NotificationPreference, utcnow_naive
+
+# The truncation limits are imported from ``app.models``, not redeclared here:
+# they are the same two numbers as the ``VARCHAR`` widths they have to fit into,
+# and the columns are now built from these constants, so the two cannot drift
+# apart. They used to be literals in both files with nothing tying them
+# together -- raising these tenfold kept all 302 tests green and would have made
+# every long title a ``StringDataRightTruncation`` 500 on send, which is exactly
+# what the sanitiser's truncation exists to prevent.
+from app.models import (
+    MESSAGE_MAX_LENGTH,
+    TITLE_MAX_LENGTH,
+    NotificationPreference,
+    utcnow_naive,
+)
 from app.repositories import NotificationRepository
 from app.templates import sanitize_text
 
 logger = logging.getLogger(__name__)
-
-TITLE_MAX_LENGTH = 255
-MESSAGE_MAX_LENGTH = 1000
 
 _EMAIL_QUOTA = EmailQuotaTracker(settings.EMAIL_DAILY_QUOTA)
 

@@ -55,15 +55,25 @@ class UserRepository(BaseRepository):
             raise
 
     async def get_by_email(self, email: str) -> User | None:
-        """Get user by email (NFC-normalized + casefolded, #161)."""
-        # Inactive (disabled/soft-deleted) accounts can never authenticate.
+        """Get user by email (NFC-normalized + casefolded, #161).
+
+        #874: filtering ``is_active`` here -- rather than returning the row and
+        letting the service decide -- is deliberate and load-bearing. It is what
+        makes a suspended account indistinguishable from one that does not
+        exist, because both produce the same generic 401. Removing the filter
+        "to surface a 403" would create an account-enumeration oracle on the
+        login endpoint. See the note in ``AuthService.login``.
+        """
         stmt = select(User).where(User.email == normalize_email(email), User.is_active.is_(True))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_by_id(self, user_id: UUID) -> User | None:
-        """Get user by ID."""
-        # Inactive accounts must not be resolvable for refresh/verification.
+        """Get user by ID.
+
+        #874: same reasoning as ``get_by_email`` -- inactive accounts are not
+        resolvable, so they cannot mint new tokens via refresh.
+        """
         stmt = select(User).where(User.id == user_id, User.is_active.is_(True))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -142,6 +152,7 @@ class RefreshTokenRepository(BaseRepository):
             select(RefreshToken)
             .where(RefreshToken.user_id == user_id)
             .order_by(RefreshToken.created_at.desc(), RefreshToken.id.desc())
+            .limit(1)
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

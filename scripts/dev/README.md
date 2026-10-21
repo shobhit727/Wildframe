@@ -35,7 +35,7 @@ Self-signed certs are accepted (`ignoreHTTPSErrors`).
 
 ```bash
 npm run journey                     # defaults
-WF_WEB_URL=https://192.168.1.14:3000 npm run auth
+WF_WEB_URL=https://YOUR_LAN_IP:3000 npm run auth
 npm run probe                       # API-level security checks
 ```
 

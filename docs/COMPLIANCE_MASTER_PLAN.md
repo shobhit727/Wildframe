@@ -1,3 +1,19 @@
+> ## ⚠️ READ THIS BEFORE TRUSTING A "DONE" BELOW
+>
+> **This document is a work plan, not a verified inventory of what is
+> deployed.** Its `DONE` markers record that code was written and compiled. They
+> do **not** record that the code is reachable over HTTP.
+>
+> **Five endpoints are marked ✅ "shipped" here and do not exist at runtime**
+> (verified 2026-10-14 against each service's generated `openapi.json`; see
+> the table under "Endpoint reachability" below). Every service that owns the
+> router file has that file on disk but never calls `include_router` for it, so
+> the router is dead code and the route 404s.
+>
+> Do not sign a COPPA / GDPR / DPDP / CCPA statement off against this document.
+> Sign off against `docs/COMPLIANCE_FOUNDATION_PLAN.md` plus a live
+> `openapi.json` check, not against a plan's status column.
+
 # Master Plan: All Remaining COMPLIANCE-* Issues
 
 ## Overview
@@ -32,6 +48,63 @@
 | #708 FOUNDATION | **DONE** | `final` | 119 SDK tests + 25/25 issues closed |
 | #714, #716 ORPHANS | **DONE** | `final` | Closed as covered by #713/#716 |
 
+## Endpoint reachability — verified 2026-10-14
+
+Method: each service's own `app.main:app` was imported with the SDK on
+`PYTHONPATH` and its generated `openapi.json` path list read. That is the same
+thing a client sees; a route in this list answers, anything else 404s.
+
+| Endpoint claimed ✅ above | Service that owns the file | In `openapi.json`? | HTTP |
+|---|---|---|---|
+| `GET /dsar/export` | user-service | ❌ no | 404 |
+| `POST /dsar/verify` | user-service | ❌ no | 404 |
+| `POST /child-accounts` | user-service | ❌ no | 404 |
+| `POST /{child_id}/verify` | user-service | ❌ no | 404 |
+| `POST /maturity/check` | streaming-service | ❌ no | 404 |
+
+**What each service actually exposes** (path count from the same run):
+
+| Service | Paths | Notes |
+|---|---|---|
+| `auth-service` | 28 | includes `/api/v1/privacy/*` — the privacy/consent work **is** live |
+| `user-service` | 15 | devices, profiles, preferences, subscriptions. **No** dsar/child/privacy |
+| `content-service` | 19 | content, genres, reindex. **No** dsar/reviews/rights/ads |
+| `streaming-service` | 22 | playback, manifests, quality profiles, downloads. **No** maturity/drm |
+| `admin-service` | 18 | `/api/v1/admin/*`. **No** documents/transfers/eu/india/processors |
+
+### Why they 404: the routers exist but are never mounted
+
+`app/api/routes/__init__.py` in `user-service`, `content-service` and
+`admin-service` contains **zero** `include_router` calls. `auth-service`'s
+contains two (`auth`, `privacy`). The orphaned modules are:
+
+- `user-service/app/api/routes/` — `child.py`, `dsar.py`, `privacy.py`
+- `content-service/app/api/routes/` — `ads.py`, `dsar.py`, `reviews.py`, `rights.py`
+- `streaming-service/app/api/routes/` — `drm.py`, `maturity.py`
+- `auth-service/app/api/routes/` — `age.py`, `dsar_verify.py`
+- `admin-service/app/api/routes/` — `documents.py`, `eu.py`, `india.py`, `processors.py`, `transfers.py`
+
+**Severity, stated precisely.** These modules are *not* a live vulnerability:
+an unmounted router serves nothing, so there is no unauthenticated endpoint
+today. They are a latent one. Several of them were written without an auth
+dependency — `user-service/app/api/routes/child.py` would let an anonymous
+caller create a parent-to-child link and set `parental_consent_verified=True`
+from a path id, and `content-service/app/api/routes/reviews.py` hardcodes
+`verified_viewer=True`. **The moment someone adds the missing
+`include_router`, each of those becomes a real authorisation bypass.** Mounting
+them is a code change with a security review attached, not a documentation fix.
+
+### Keeping this honest
+
+Each service's own `tests/test_unmounted_routers.py` pins the *current*
+(non-)mounting,
+which stops someone accidentally exposing them — but nothing ties **this
+document** to reality, which is how a `DONE` column drifted into a shipped-
+feature claim. A check that every endpoint named as delivered here resolves in
+`openapi.json` is the missing piece.
+
+---
+
 ## Phase 1: Core Privacy & Data Rights (Issues #709, #710, #711)
 **Priority: CRITICAL** - Direct consumers of compliance SDK
 
@@ -51,11 +124,11 @@
 **Merge:** 4 agents parallel, plan `tmp/plan-710.json` strict PASS (6 tasks, acyclic), all 12 DSAR files `py_compile` OK
 **Handoff:** coder-user `user-service/app/models/dsar.py` DSARRequest + SLA 30d/45d; coder-auth `auth-service/app/api/routes/dsar_verify.py` JWT identity proofing; coder-content `content-service/app/models/dsar.py` copyright export; coder-analytics `analytics-service/app/models/dsar.py` retention check 2555
 **Components:**
-- DSAR (Data Subject Access Request) workflow ✅ `DSARRequest` status pending→verified→processing→completed + `sla_deadline`
-- Data portability export (JSON/CSV) ✅ `GET /dsar/export` json/csv + `content-service` `GET /dsar/export/{user_id}`
+- DSAR (Data Subject Access Request) workflow ✅ **models** (`DSARRequest`, status pending→verified→processing→completed + `sla_deadline`). The model and repository exist; the HTTP surface does not — see below.
+- Data portability export (JSON/CSV) ⚠️ **NOT REACHABLE** — `GET /dsar/export` json/csv and `content-service` `GET /dsar/export/{user_id}` are written in `user-service/app/api/routes/dsar.py` and `content-service/app/api/routes/dsar.py`, but **neither router is mounted**, so both 404.
 - Correction workflow (user-initiated + admin review) ✅ `request_type=correction` + reason
 - Deletion workflow (cascade + legal hold check) ✅ `request_type=deletion` + cascade via `DSARRepository`
-- Verification + identity proofing ✅ `POST /dsar/verify` JWT `user_id` match + email ownership challenge
+- Verification + identity proofing ⚠️ **NOT REACHABLE** — `POST /dsar/verify` exists in `user-service/app/api/routes/dsar.py`, which is never included. The sibling `auth-service/app/api/routes/dsar_verify.py` is also unmounted (only `auth` and `privacy` are included there).
 - SLA tracking (30 days GDPR, 45 days CCPA) ✅ `sla_deadline` auto 30d (45d for US-CA) + `GET /retention-check`
 - Policy: `evaluate_data_subject_right` for all 7 rights ✅ `request_type` enum covers 7 rights
 
@@ -65,9 +138,9 @@
 **Handoff:** coder-auth `app/models/age_verification.py` + `schemas/age.py` + `api/routes/age.py` JWT `age_verified/is_minor`; coder-user `child_account.py` parent linking + `verify` workflow; coder-streaming `maturity.py` `G/PG/PG-13/R/NC-17/18+` + `min_age` + `purchase_restricted`/`spending_limit`/`bedtime`; coder-gateway `app/core/age_gate.py` `X-Jurisdiction` `X-Age-Verified` enforcement + `middleware/age.py`
 **Components:**
 - Age verification (self-declare + document check) ✅ `AgeVerification` `declared_age`/`verified_age`/`is_minor` + `Jurisdiction` `consent_minor_age` 16/13/18
-- Child account creation (linked to parent) ✅ `ChildAccount` `child_user_id`/`parent_user_id` + `relationship` + `POST /child-accounts`
-- Parental consent workflow (verifiable per DPDP/COPPA) ✅ `POST /{child_id}/verify` + `parental_consent_verified` + `verified_at`
-- Content gating by maturity rating (AVMS) ✅ `ContentMaturity` `min_age` + `POST /maturity/check` + `GET /{content_id}`
+- Child account creation (linked to parent) ⚠️ **NOT REACHABLE** — `ChildAccount` model exists, and `POST /child-accounts` is defined in `user-service/app/api/routes/child.py`, but that router is never mounted. **Treat child-account support as NOT shipped.**
+- Parental consent workflow (verifiable per DPDP/COPPA) ⚠️ **NOT REACHABLE** — `POST /{child_id}/verify`, `parental_consent_verified` and `verified_at` live in the unmounted `user-service/app/api/routes/child.py`. Treat verifiable parental consent as NOT shipped.
+- Content gating by maturity rating (AVMS) ⚠️ **NOT REACHABLE** — `ContentMaturity` and `POST /maturity/check` are in `streaming-service/app/api/routes/maturity.py`, which `streaming-service/app/main.py` never includes. `streaming-service` exposes 22 paths and none of them is a maturity check. Treat maturity gating as NOT shipped.
 - Purchase restrictions + spending limits ✅ `purchase_restricted` + `spending_limit_cents` + `requires_parental_consent`
 - Screen time limits + bedtime schedules ✅ `screen_time_limit_minutes` + `bedtime_start`/`bedtime_end`
 - Policy: `consent_minor_age` per jurisdiction, `verifiable_parental_consent` ✅ `wildframe_compliance` `get_policy_for_jurisdiction` + `CONSENT_AGES` 16/13/18

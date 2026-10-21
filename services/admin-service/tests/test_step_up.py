@@ -7,6 +7,8 @@ from jose import jwt
 
 from app.api.routes.admin import verify_admin_reauth, _stepup_jti_seen
 from app.core.settings import settings
+from tests._test_jwks import JWKS, PRIVATE_PEM
+from wildframe_auth.verifier import clear_jwks_cache
 
 
 def _mint_step_up(
@@ -40,7 +42,7 @@ def _mint_step_up(
         "av": 0,
         "jti": jti or f"stepup_{sub}_{now.timestamp()}_{uuid.uuid4().hex[:4]}",
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
 
 
 def _mint_access(sub, exp_offset=300):
@@ -59,7 +61,22 @@ def _mint_access(sub, exp_offset=300):
         "av": 0,
         "jti": f"access_{sub}_{now.timestamp()}",
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
+
+
+@pytest.fixture(autouse=True)
+def _stub_jwks(monkeypatch):
+    # Replace only the outbound JWKS fetch; the verifier (cache, single-flight,
+    # real RS256 signature check) still runs.
+    async def fetch(_url):
+        return JWKS
+
+    monkeypatch.setattr("wildframe_auth.verifier.fetch_jwks", fetch)
+    clear_jwks_cache()
+    monkeypatch.setattr(settings, "REDIS_URL", None)
+    monkeypatch.setattr(settings, "ENVIRONMENT", "development")
+    yield
+    clear_jwks_cache()
 
 
 @pytest.mark.asyncio
@@ -79,14 +96,14 @@ async def test_rejects_access_token_type():
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, token)
     assert exc.value.status_code == 401
-    assert "Invalid reauth token type" in exc.value.detail
+    assert "Invalid token" in exc.value.detail
 
 
 @pytest.mark.asyncio
 async def test_rejects_expired():
     _stepup_jti_seen.clear()
     admin_id = str(uuid.uuid4())
-    token = _mint_step_up(admin_id, exp_offset=-10)
+    token = _mint_step_up(admin_id, exp_offset=-120)
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, token)
     assert exc.value.status_code == 401
@@ -191,7 +208,7 @@ async def test_missing_jti():
         "arv": settings.ADMIN_ROLE_VERSION,
         "av": 0,
     }
-    token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    token = jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, token)
     assert exc.value.status_code == 401
