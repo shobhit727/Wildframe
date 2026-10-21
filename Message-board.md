@@ -10361,6 +10361,83 @@ is a judgement call about runner capacity that belongs to the owner, and
 changing it would hide a real capacity problem rather than fix it. Both
 findings are in `oner-task.md`.
 
+### [M-20261020T1500Z-compose-smoke-budget] 2026-10-20T15:00Z · agent=compose-smoke-budget · status=done
+
+**To:** all
+**Files:** `.github/workflows/ci-cd.yml`, `scripts/compose-smoke.sh`, `scripts/README.md`,
+`tests/contract/test_compose_smoke_budget.py` (new), `oner-task.md`
+**Re:** #1045 — the `Compose Runtime Smoke (advisory)` 15-minute budget is fixed in
+PR #1047 (`fix/ci-compose-smoke-budget`), and the verdict now says "timed out"
+instead of "the stack did not come up".
+
+## The measurement, from the job's own log
+
+Run `39422598539`, job `118627058290` — the run named in #1045:
+
+```
+[2026-10-20T12:30:20Z] Starting the full development stack
+[2026-10-20T12:44:51Z] Waiting up to 420s for every Compose service
+```
+
+`compose up -d --build --remove-orphans` for the 16 images took **14m31s of the
+15-minute budget**; the job started `12:30:16Z` and was cancelled `12:45:34Z`. The
+stack was seconds from ready when it was killed — at `12:45:27Z` the only pending
+service was `search-service: state=running health=starting`, and elasticsearch,
+kafka, postgres and redis were all `healthy`.
+
+The `if: always()` verdict step ran at `12:45:29Z` and wrote "the stack did not come
+up clean". Both halves were wrong: the failure was a budget problem, and the reason
+pointed at the stack.
+
+## What changed
+
+- Job budget `15` -> **40** minutes; the step that runs the stack gets its own
+  **35**-minute deadline, so an overrun is stopped at the step and the
+  `if: always()` steps below still report a verdict. 40 minutes is derived from the
+  work: 20m build + 7m health wait + 5m bootstrap/probes/teardown = 32m, plus
+  headroom for a slower runner.
+- `scripts/compose-smoke.sh` writes exactly one `COMPOSE_SMOKE_RESULT` marker
+  (`PASS` / `FAIL` / `TIMEOUT`, exit code 2 is the timeout code) and a
+  `COMPOSE_SMOKE_STAGE` marker per stage. The job maps them to three distinct
+  summaries; a run killed before it could write a marker has none and is read as a
+  timeout with the last stage it reached named.
+- The image build is bounded separately (`COMPOSE_SMOKE_BUILD_TIMEOUT_SECONDS`,
+  default 1200s against the measured 872s) and an overrun is reported as a timeout,
+  not as a broken service.
+
+I considered and rejected dropping `--build` in favour of the `docker-build-smoke`
+jobs: they are a matrix of separate jobs, each on its own runner with its own Docker
+daemon, and the only registry push (`Build & Push`) is gated on pushes to
+`main`/`develop`, so on a PR there is nothing to pull.
+
+## Evidence
+
+```
+$ python -m pytest tests/contract/test_compose_smoke_budget.py -q   # before the fix
+9 failed, 3 passed
+$ python -m pytest tests/contract/test_compose_smoke_budget.py -q   # after
+12 passed
+$ python -m pytest tests/contract -q
+108 passed
+$ python .github/scripts/verify-supply-chain.py
+Guard PASSED
+```
+
+The new test executes the verdict step's own shell block (read out of the YAML) and
+the real `compose-smoke.sh` against a fake `docker`, so the distinction is asserted
+behaviourally rather than by matching text.
+
+## What I did not do
+
+The job is still `continue-on-error: true` and still "(advisory)" — promoting it is
+#979's open decision. The Elasticsearch healthcheck was not touched: nothing in the
+evidence says Elasticsearch is broken. `COMPOSE_SMOKE_WAIT_SECONDS` is still 420.
+I could not run `scripts/compose-smoke.sh` end to end against a live stack from my
+worktree (the shared dev stack in the main checkout was in use and the script's
+cleanup trap tears down the Compose project it is pointed at), so the script-side
+coverage is the fake-`docker` execution, not a 16-image build.
+
+Claim released.
 ### [M-20261020T1830Z-ui-a11y-layout-pass] 2026-10-20T18:30Z · agent=codeql-green · status=done
 
 **Branch:** `feat/ui-accessibility-and-layout-pass` (off `main` @ `b802326e`).

@@ -446,7 +446,15 @@ jobs:
     name: Compose Runtime Smoke (advisory)
     runs-on: ubuntu-latest
     continue-on-error: true
-    timeout-minutes: 15
+    # The work this job has to do does not fit in 15 minutes. `compose up -d
+    # --build` for the 16 images took 14m32s of the 15m budget on the CI
+    # runner (run 39422598539), which left 28s for a 420s health wait, so the
+    # job was killed before it could judge anything and the check reported a
+    # broken stack. 40 minutes is the smallest budget that covers the measured
+    # build, the health wait, the schema bootstrap, the probes and the
+    # teardown, with headroom for a slower runner. The step below carries the
+    # deadline that has to produce a verdict.
+    timeout-minutes: 40
     permissions:
       contents: read
     steps:
@@ -454,6 +462,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run Compose runtime smoke
+        # This step's own deadline is the one that matters for the verdict. A
+        # step that overruns is stopped on its own, and the `if: always()`
+        # steps below still run, so a run that ran out of time is *reported*
+        # as having run out of time instead of being lost with the job.
+        # 35 minutes covers the measured work: a 14m32s image build, the 420s
+        # health wait, the schema bootstrap, the five probes and the teardown.
+        timeout-minutes: 35
         env:
           COMPOSE_PROJECT_NAME: wildframe-ci-${{ github.run_id }}
         run: bash scripts/compose-smoke.sh
@@ -464,37 +479,88 @@ jobs:
       # looking" is the failure mode AGENTS.md 28b warns about, so the verdict
       # is stated where it cannot be misread. This changes nothing about what
       # blocks a merge; promoting the job itself is issue #979's open decision.
+      #
+      # The verdict separates two failure modes, because they call for opposite
+      # responses:
+      #
+      #   FAIL    the stack did not come up -- a service failed to start or a
+      #           route answered with an unexpected status. A finding about the
+      #           application.
+      #   TIMEOUT the run ran out of time before the stack could be judged. A
+      #           finding about the CI budget. Reporting this as a stack
+      #           failure is how run 39422598539 produced a red check whose
+      #           reason was wrong: the build ate the clock and the stack was
+      #           one service short of ready when the job was killed.
+      #
+      # The script writes exactly one COMPOSE_SMOKE_RESULT marker as it leaves,
+      # and a COMPOSE_SMOKE_STAGE marker as it enters each stage. A run that
+      # was killed before it could write a result has no marker at all, and
+      # that is a timeout as well -- the step's deadline is what killed it.
       - name: Report the Compose smoke verdict
         if: always()
         run: |
           set -uo pipefail
           log_file="${RUNNER_TEMP}/wildframe-compose-smoke.log"
-          # The script writes the marker as its last statement, so an absent
-          # marker means it died before the verdict -- a failure, not a skip.
-          # Unanchored at the start on purpose: log() prefixes every line with
-          # "[<utc timestamp>] ", so an anchored '^COMPOSE_SMOKE_RESULT=PASS$'
-          # never matches and this step would report FAIL on a healthy stack.
-          if [ -f "$log_file" ] && grep -q 'COMPOSE_SMOKE_RESULT=PASS$' "$log_file"; then
-            verdict="PASS"
-          else
-            verdict="FAIL"
+          verdict="TIMEOUT"
+          stage=""
+          if [ -f "$log_file" ]; then
+            # Unanchored at the start on purpose: log() prefixes every line with
+            # "[<utc timestamp>] ", so an anchored '^COMPOSE_SMOKE_RESULT=PASS$'
+            # never matches and this step would report FAIL on a healthy stack.
+            if grep -q 'COMPOSE_SMOKE_RESULT=PASS$' "$log_file"; then
+              verdict="PASS"
+            elif grep -q 'COMPOSE_SMOKE_RESULT=FAIL$' "$log_file"; then
+              verdict="FAIL"
+            elif grep -q 'COMPOSE_SMOKE_RESULT=TIMEOUT$' "$log_file"; then
+              verdict="TIMEOUT"
+            fi
+            # The last stage marker reached says where the time went, which is
+            # the difference between "the image build ate the budget" and "the
+            # stack never became healthy".
+            stage="$(grep -o 'COMPOSE_SMOKE_STAGE=[a-z-]*' "$log_file" \
+              | tail -1 | cut -d= -f2 || true)"
           fi
           {
             echo "## Compose Runtime Smoke: ${verdict}"
             echo ""
-            if [ "$verdict" = "FAIL" ]; then
-              echo "**Advisory job: the stack did not come up clean.** The check"
-              echo "above is green only because it is \`continue-on-error\`; the"
-              echo "compose smoke itself failed. See the \`compose-smoke-*\` artifact."
-            else
-              echo "All Compose services healthy; schema bootstrap and the five"
-              echo "endpoint probes passed. Advisory only -- this gates nothing."
-            fi
+            case "$verdict" in
+              PASS)
+                echo "All Compose services healthy; schema bootstrap and the"
+                echo "five endpoint probes passed. Advisory only -- this gates"
+                echo "nothing."
+                ;;
+              FAIL)
+                echo "**The stack did not come up.** A service failed to start,"
+                echo "or a route answered with an unexpected status. This is a"
+                echo "finding about the application, not about the runner. The"
+                echo "check above is green only because it is"
+                echo "\`continue-on-error\`; the compose smoke itself failed. See"
+                echo "the \`compose-smoke-*\` artifact for the failing service and"
+                echo "the response bodies."
+                ;;
+              TIMEOUT)
+                echo "**The run ran out of time before the stack could be"
+                echo "judged.** This is a finding about the CI budget, not about"
+                echo "a service, so do not go looking for an unhealthy one: the"
+                echo "last stage reached was \`${stage:-unknown}\`. The check"
+                echo "above is green only because it is \`continue-on-error\`; the"
+                echo "run ran out of time. See the \`compose-smoke-*\` artifact for"
+                echo "how the time was spent."
+                ;;
+            esac
           } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$verdict" = "FAIL" ]; then
-            echo "::warning title=Compose Runtime Smoke failed::the stack did not come up clean; this check is green only because it is continue-on-error"
-            exit 1
-          fi
+          case "$verdict" in
+            PASS)
+              ;;
+            FAIL)
+              echo "::warning title=Compose Runtime Smoke failed::the stack did not come up; this is a finding about the application, not the runner, and this check is green only because it is continue-on-error"
+              exit 1
+              ;;
+            TIMEOUT)
+              echo "::warning title=Compose Runtime Smoke timed out::the run ran out of time before the stack could be judged (last stage: ${stage:-unknown}); this is a CI budget problem, not a service failure, and this check is green only because it is continue-on-error"
+              exit 2
+              ;;
+          esac
 
       - name: Upload Compose smoke diagnostics
         if: always()
