@@ -1,3 +1,11 @@
+> [!WARNING]
+> **Historical snapshot — generated 2026-08-22** against HEAD `6297fde`. Its
+> tallies ("N closed / 0 open") describe the tracker on that date and are
+> **not** current: the tracker has open items, including blockers. Its CI
+> run tallies (e.g. "54/54 jobs") likewise describe one specific historical
+> run — `ci-cd.yml` defines 17 jobs today. Kept for history only; read the
+> GitHub tracker for current state.
+
 # Wildframe — Closed-Issues Audit
 
 Generated 2026-08-22 against `shobhit727/Wildframe` (HEAD `6297fde`).

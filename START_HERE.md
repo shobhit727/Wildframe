@@ -1,3 +1,16 @@
+> [!WARNING]
+> **Historical document — superseded.** This file records a point-in-time
+> session (August 2026) and is kept only for project history. It is **not** a
+> current status report: its service counts, test counts, ports, and commands
+> are stale.
+>
+> **Current entry points:** [`README.md`](README.md) and
+> [`AGENTS.md`](AGENTS.md) for how the repo is actually built;
+> [`STATUS.md`](STATUS.md) for current state; [`DOCS_INDEX.md`](DOCS_INDEX.md)
+> for the full doc index. For running tests, use
+> [`HOW_TO_RUN_TESTS.md`](HOW_TO_RUN_TESTS.md) and
+> [`docs/TEST_GUIDE.md`](docs/TEST_GUIDE.md).
+
 # ✨ WORK COMPLETED - Ready to Test
 
 ## 🎯 Summary of What Was Done
@@ -32,7 +45,7 @@
 
 ```bash
 # 1. Start the platform
-cd /home/phoenix/Desktop/wildframe
+cd "$(git rev-parse --show-toplevel)"
 docker-compose -f deployments/docker-compose.dev.yml up -d
 
 # 2. Wait for services
@@ -84,7 +97,7 @@ Loki                 → 3100
 ## 🧪 Test Everything in 30 Seconds
 
 ```bash
-cd /home/phoenix/Desktop/wildframe && \
+cd "$(git rev-parse --show-toplevel)" && \
 docker-compose -f deployments/docker-compose.dev.yml up -d && \
 sleep 90 && \
 cd services/auth-service && python3 -m pytest tests/ -v

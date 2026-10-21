@@ -39,7 +39,14 @@ from app.schemas import (
     UserResponse,
     VerifyEmailRequest,
 )
-from app.security import PasswordManager, RateLimiter, SecretCipher, TokenManager, role_for_email
+from app.security import (
+    PasswordManager,
+    RateLimiter,
+    SecretCipher,
+    TokenManager,
+    normalize_email,
+    role_for_email,
+)
 from app.services import AuthService, MfaChallengeRequired
 
 logger = logging.getLogger(__name__)
@@ -170,8 +177,37 @@ async def register(
         Token response with access and refresh tokens
 
     Raises:
-        HTTPException: If email already exists or validation fails
+        HTTPException: If email already exists, validation fails, or the
+            registration attempt ceiling is reached
     """
+    # #1044: the registration attempt ceiling was configured
+    # (REGISTRATION_RATE_LIMIT_ATTEMPTS / _WINDOW) and documented, but
+    # enforced by nothing -- no counter existed for a registration attempt in
+    # Redis or anywhere else, so the only throttle on this endpoint was the
+    # api-gateway's coarse per-IP edge ceiling (5 requests per 60s over the
+    # whole /auth/* namespace, which also counts logins and session checks).
+    #
+    # The counter lives in Redis under the documented ``rl:token:<scope>``
+    # key format, so it survives a restart and is shared by every replica.
+    # The subject is the address being registered: the client IP this service
+    # observes is the proxy's address in every deployed topology, so a per-IP
+    # bucket here would cap the whole platform at three registrations per
+    # hour rather than one client at a time.
+    #
+    # The limits come from the existing ``RateLimiter.get_window_size``
+    # helper, so ``app/core/settings.py`` stays the single source of truth.
+    # The check runs before any state change: no user row, no token, no event.
+    attempts, window = rate_limiter.get_window_size("registration")
+    if not await allow(
+        f"registration:email:{request.email}",
+        max_requests=attempts,
+        window_seconds=window,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many registration attempts. Try again later.",
+        )
+
     try:
         user = await auth_service.register(request)
         await db.commit()
@@ -585,7 +621,15 @@ async def resend_verification(
     Production fails uniformly before account lookup rather than claiming an
     undelivered email was sent. Per-IP/email quotas and cooldown remain active.
     """
-    email = request.email.strip().lower()
+    # `request.email` is already canonical -- `ResendVerificationRequest` uses
+    # `CanonicalEmailStr` (NFC + strip + casefold), the same rule
+    # `UserRepository` stores and looks up with. This call is therefore
+    # idempotent; it stays because it also names the rule at the one place
+    # that builds a per-address rate-limit key, and the previous
+    # `.strip().lower()` was *not* that rule (`lower` leaves `ß` alone where
+    # `casefold` folds it to `ss`), so that key's subject and the stored
+    # address could disagree.
+    email = normalize_email(request.email)
     client_ip = request_obj.client.host if request_obj.client else "unknown"
 
     # Anti-abuse: per-IP quota + per-email quota with a send cooldown.
@@ -617,10 +661,9 @@ async def resend_verification(
     token = TokenManager.create_email_verification_token(user.id, user.email)
     logger.info("Email verification token issued for %s", user.email)
 
-    response: dict = {"message": _ENUMERATION_SAFE_MESSAGE}
-    if settings.ENVIRONMENT != "production":
-        response["verification_token"] = token
-    return response
+    # Production already returned 503 above, so this is always non-production:
+    # the token is the only delivery path that exists.
+    return {"message": _ENUMERATION_SAFE_MESSAGE, "verification_token": token}
 
 
 @router.post("/mfa/setup")

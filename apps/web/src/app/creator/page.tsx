@@ -14,9 +14,9 @@ import { Content } from '@/types';
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <article className="group rounded-2xl border border-white/10 bg-zinc-900/60 p-5 shadow-xl shadow-black/20 transition duration-300 hover:-translate-y-1 hover:border-white/15 hover:bg-zinc-900/80">
-      <p className="text-xs font-medium uppercase tracking-widest text-zinc-500">{label}</p>
+      <p className="text-xs font-medium uppercase tracking-widest text-muted">{label}</p>
       <p className="mt-3 text-3xl font-bold tracking-tight text-white">{value}</p>
-      <p className="mt-1 text-xs text-zinc-500">{detail}</p>
+      <p className="mt-1 text-xs text-muted">{detail}</p>
     </article>
   );
 }
@@ -51,7 +51,7 @@ export default function CreatorDashboardPage() {
               <Link href="/browse" className="rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-zinc-200">
                 View platform
               </Link>
-              <button disabled className="cursor-not-allowed rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-zinc-500" title="Creator publishing API is not connected yet">
+              <button disabled className="cursor-not-allowed rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-muted" title="Creator publishing API is not connected yet">
                 Upload content — coming soon
               </button>
             </div>
@@ -68,9 +68,9 @@ export default function CreatorDashboardPage() {
           <div className="mb-5 flex items-end justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold">Content slate</h2>
-              <p className="mt-1 text-xs text-zinc-500">A cinematic preview of the current catalog.</p>
+              <p className="mt-1 text-xs text-muted">A cinematic preview of the current catalog.</p>
             </div>
-            <span className="text-xs text-zinc-600">Read-only preview</span>
+            <span className="text-xs text-muted-subtle">Read-only preview</span>
           </div>
 
           {contentQuery.isLoading ? (
@@ -80,7 +80,7 @@ export default function CreatorDashboardPage() {
           ) : contentQuery.isError ? (
             <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-6 text-sm text-red-300">The catalog could not be loaded. Check the API gateway and try again.</div>
           ) : content.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-white/10 p-10 text-center text-sm text-zinc-500">No published content is available yet.</div>
+            <div className="rounded-xl border border-dashed border-white/10 p-10 text-center text-sm text-muted">No published content is available yet.</div>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               {content.slice(0, 10).map((item) => (
@@ -107,7 +107,7 @@ export default function CreatorDashboardPage() {
           ].map(([title, description]) => (
             <article key={title} className="rounded-2xl border border-white/10 bg-zinc-900/40 p-5 transition hover:bg-zinc-900/60">
               <h3 className="font-semibold text-white">{title}</h3>
-              <p className="mt-2 text-sm leading-6 text-zinc-500">{description}</p>
+              <p className="mt-2 text-sm leading-6 text-muted">{description}</p>
             </article>
           ))}
         </section>

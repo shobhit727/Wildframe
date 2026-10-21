@@ -103,12 +103,12 @@ export default function AdminConfigPage() {
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-zinc-900/40 px-6 py-16 text-center">
-          <Icons.SettingsIcon className="mb-3 text-zinc-600" />
+          <Icons.SettingsIcon className="mb-3 text-muted-subtle" />
           <h3 className="text-base font-semibold text-white">No config entries</h3>
           <p className="mt-1 text-sm text-zinc-400">Create a key to get started.</p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-white/10">
+        <div className="overflow-x-auto rounded-xl border border-white/10">
           <table className="min-w-full divide-y divide-white/5 text-sm">
             <thead className="bg-zinc-900/80">
               <tr>
@@ -131,11 +131,11 @@ export default function AdminConfigPage() {
                     {c.value}
                   </td>
                   <td className="hidden px-4 py-3 text-xs text-zinc-400 md:table-cell">{c.config_type}</td>
-                  <td className="hidden max-w-sm truncate px-4 py-3 text-xs text-zinc-500 lg:table-cell">
+                  <td className="hidden max-w-sm truncate px-4 py-3 text-xs text-muted lg:table-cell">
                     {c.description ?? '—'}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <AdminButton variant="secondary" size="sm" onClick={() => openEdit(c)}>
+                    <AdminButton variant="secondary" size="sm" className="min-h-9" onClick={() => openEdit(c)}>
                       Edit
                     </AdminButton>
                   </td>
