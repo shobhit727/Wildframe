@@ -30,8 +30,12 @@ async def test_provision_profile_creates_via_service():
 
 
 @pytest.mark.asyncio
-async def test_provision_profile_tolerates_duplicate():
-    """A duplicate-profile failure is logged, not raised (at-least-once)."""
+async def test_provision_profile_propagates_failure():
+    """A failed provisioning must raise so the caller skips the offset commit.
+
+    Swallowing here would let the consumer commit an offset for a profile that
+    was never created, permanently losing that registration.
+    """
     session = MagicMock()
     session.__aenter__ = AsyncMock(return_value=session)
     session.__aexit__ = AsyncMock(return_value=False)
@@ -41,9 +45,8 @@ async def test_provision_profile_tolerates_duplicate():
         svc_cls.return_value.create_user_profile = AsyncMock(
             side_effect=RuntimeError("duplicate key value violates unique constraint")
         )
-        # At-least-once delivery: failures are logged, never raised — a
-        # redelivered message must not kill the consumer loop.
-        await _provision_profile(factory, "11111111-2222-3333-4444-555555555555")
+        with pytest.raises(RuntimeError):
+            await _provision_profile(factory, "11111111-2222-3333-4444-555555555555")
         svc_cls.return_value.create_user_profile.assert_awaited_once()
 
 

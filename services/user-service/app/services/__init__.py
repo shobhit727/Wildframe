@@ -5,7 +5,9 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 
+from app.models import UserProfile
 from app.repositories import (
     UserDeviceRepository,
     UserPreferenceRepository,
@@ -43,15 +45,29 @@ class UserService:
         self.subscription_repo = subscription_repo
 
     async def create_user_profile(self, user_id: UUID) -> UserProfileResponse:
-        """Create new user profile."""
+        """Create the user's profile together with its default rows.
+
+        This is an *ensure* path, not a strict create. The Account page posts
+        when it cannot find a profile, and the Kafka consumer provisions
+        profiles from at-least-once ``user.registered`` events (see
+        ``app/core/event_consumer.py``), so the same user can legitimately
+        arrive here with some of the rows already in place -- for instance
+        with preferences but no profile. An existing row is reused; it is
+        never an error.
+        """
         try:
-            profile = await self.profile_repo.create(user_id=user_id)
-            # Create default preferences
-            await self.preference_repo.create_default(user_id)
-            # Create default subscription
-            await self.subscription_repo.create_default(user_id, tier="free")
+            # The profile row is written first on purpose. It is the one
+            # write of this unit of work that is not SAVEPOINT-scoped, so
+            # writing it first is what keeps its failure from being able to
+            # discard the rows written after it.
+            profile = await self._ensure_profile(user_id)
+            # Default preferences and subscription are created only when they
+            # are missing. Both inserts are SAVEPOINT-scoped, so a failure
+            # there cannot take the profile row down with it.
+            await self.preference_repo.get_or_create_default(user_id)
+            await self.subscription_repo.get_or_create_default(user_id, tier="free")
             await self.profile_repo.commit()
-            logger.info(f"Created full user profile for: {user_id}")
+            logger.info(f"Ensured full user profile for: {user_id}")
             return UserProfileResponse.from_orm(profile)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Error creating user profile: {e!s}")
@@ -59,6 +75,26 @@ class UserService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create user profile",
             )
+
+    async def _ensure_profile(self, user_id: UUID) -> UserProfile:
+        """Return the user's profile row, creating it when it is missing.
+
+        ``UserProfileRepository.create`` is a strict create: it rolls the
+        session back and re-raises when the unique constraint fires. The
+        profile is unique per user, so a profile that already exists is a
+        success rather than a failure -- the row is re-read and returned.
+        """
+        try:
+            return await self.profile_repo.create(user_id=user_id)
+        except IntegrityError:
+            # `create` rolled back the failed INSERT. Nothing else had been
+            # written yet (the profile is the first write of the unit), so
+            # re-reading the row is enough to carry on with the rest of it.
+            existing = await self.profile_repo.get_by_user_id(user_id)
+            if existing is None:
+                raise
+            logger.info(f"Profile already exists for user: {user_id}")
+            return existing
 
     async def get_user_profile(self, user_id: UUID) -> UserProfileResponse:
         """Get user profile."""

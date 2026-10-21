@@ -30,11 +30,14 @@ def get_event_publisher() -> EventPublisher:
     global _publisher
     if _publisher is None:
         if settings.EVENT_PUBLISHER == "kafka":
+            bootstrap_servers = settings.KAFKA_BOOTSTRAP_SERVERS
+            if not bootstrap_servers:
+                raise RuntimeError("KAFKA_BOOTSTRAP_SERVERS is not configured")
             _publisher = KafkaEventPublisher(
-                bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+                bootstrap_servers=bootstrap_servers,
                 client_id="content-service",
             )
-            logger.info("event publisher: kafka (%s)", settings.KAFKA_BOOTSTRAP_SERVERS)
+            logger.info("event publisher: kafka (%s)", bootstrap_servers)
         else:
             _publisher = InMemoryEventPublisher()
             logger.info("event publisher: in-memory")

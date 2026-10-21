@@ -63,7 +63,11 @@ def sanitize_storage_key(key: str) -> str:
     normalized = unicodedata.normalize("NFKC", key)
     if any(sep in normalized for sep in _KEY_SEPARATORS) or normalized.startswith("."):
         raise UnsafeInput("storage_key must be a single path segment (no separators)")
-    if normalized.startswith(("/", "~")):
+    if normalized.startswith("~"):
+        # Only "~" is reachable here. A leading "/" necessarily contains "/",
+        # which _KEY_SEPARATORS rejects four lines above, so the "/" half of this
+        # check could never fire. "~" is not a separator, so it needs its own
+        # check to reject a home-relative path.
         raise UnsafeInput("storage_key must be relative")
     return normalized
 

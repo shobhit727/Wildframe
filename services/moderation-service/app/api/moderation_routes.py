@@ -15,10 +15,15 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException
-from jose import JWTError, jwt
+from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
+from wildframe_auth import JWKSUnavailableError, verify_token_with_jwks
 
 from app.core.database import get_db
+from app.core.content_client import (
+    ContentServiceUnavailableError,
+    resolve_content_owner,
+)
 from app.core.settings import settings
 from app.repositories import (
     ContentFlagRepository,
@@ -34,7 +39,7 @@ from app.schemas import (
     StrikeResponse,
     StrikesResponse,
 )
-from app.services import ModerationError, ModerationService
+from app.services import DuplicateFlagError, ModerationError, ModerationService
 
 router = APIRouter(prefix="/api/v1/moderation", tags=["moderation"])
 
@@ -73,6 +78,40 @@ async def _enforce_auth_version(authorization: str, payload: dict) -> None:
             raise HTTPException(status_code=401, detail="Invalid token")
 
 
+async def _decode_token(token: str) -> dict:
+    """Verify an access token against auth-service's published JWKS.
+
+    This used to hand-roll its own shared-secret HMAC decode, which made the
+    service a shared-secret verifier (#941): ``JWT_SECRET_KEY`` is a committed
+    development value and ``DEV_ENVIRONMENTS`` exempts it from the production
+    validator, so a forged HS256 token with ``role: "admin"`` and any ``sub``
+    reached the moderation queue, its decisions endpoint, and the DMCA
+    workflows behind it. The HS256 path is deleted rather than rotated --
+    rotating would keep every service on one symmetric key and reject genuine
+    RS256 tokens.
+
+    Only the *signature* is checked here. Authorization (the ``role`` and
+    ``arv`` claims) is still decided by :func:`_verify_token`, unchanged.
+    """
+    # JWKSUnavailableError must be caught *before* JWTError: it is a JWTError
+    # subclass, and it is the branch that keeps a JWKS outage (fetch failure,
+    # or a body that is not a JWKS) a 503 instead of a 401. Everything else the
+    # verifier rejects -- bad signature, expired, wrong audience, unknown kid --
+    # stays a 401.
+    try:
+        return await verify_token_with_jwks(
+            token,
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            url=settings.JWT_JWKS_URL,
+            expected_type="access",
+        )
+    except JWKSUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="Token verification is unavailable") from exc
+    except JWTError as exc:
+        raise HTTPException(status_code=401, detail="Invalid token") from exc
+
+
 async def _verify_token(
     authorization: str | None,
     *,
@@ -81,18 +120,7 @@ async def _verify_token(
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization.replace("Bearer ", "")
-    try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=settings.JWT_AUDIENCE,
-            issuer=settings.JWT_ISSUER,
-        )
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    if payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Invalid token type")
+    payload = await _decode_token(token)
     await _enforce_auth_version(authorization, payload)
     if require_admin and payload.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
@@ -136,13 +164,25 @@ async def flag_content(
     service: Annotated[ModerationService, Depends(get_moderation_service)],
 ):
     """Flag a piece of content for moderator review (any authenticated user)."""
+    # The creator that a strike would target is resolved server-side from
+    # content-service. A body field would let any reporter aim a strike (and
+    # an automatic suspension) at a creator of their choosing, so the request
+    # schema does not even accept one.
+    try:
+        content_creator_id = await resolve_content_owner(request.content_id)
+    except ContentServiceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if content_creator_id is None:
+        raise HTTPException(status_code=404, detail="Content not found")
     try:
         flag = await service.flag_content(
             content_id=request.content_id,
-            content_creator_id=request.content_creator_id,
+            content_creator_id=content_creator_id,
             flag_reason=request.flag_reason,
             reporter_id=UUID(reporter_id),
         )
+    except DuplicateFlagError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ModerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _flag_to_response(flag)
