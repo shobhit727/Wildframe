@@ -31,7 +31,6 @@ from typing import Any
 import asyncio
 import logging
 import os
-import shutil
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -188,12 +187,19 @@ class ClamavScanner(VirusScanner):
 
         cd = clamd.ClamdUnixSocket(self.socket_path)
         result = await asyncio.to_thread(cd.scan, path)
-        if result is None:
-            return True
-        # result == {path: ('FOUND', 'Virus.Name')} when infected.
+        if not result:
+            # clamd returns None when it did not scan the file at all (size /
+            # StreamMaxLength limits). That is indeterminate, not clean: raise
+            # so the orchestrator retries instead of advancing unscanned bytes.
+            raise RuntimeError(f"clamd did not scan {path!r}: result is empty")
+        # result == {path: ('FOUND', 'Virus.Name')} when infected,
+        # {path: ('OK', ...)} only when the file was actually scanned.
         for status in result.values():
-            if status and status[0] == "FOUND":
+            code = status[0] if status else None
+            if code == "FOUND":
                 return False
+            if code != "OK":
+                raise RuntimeError(f"clamd scan of {path!r} returned {status!r}")
         return True
 
 
@@ -310,7 +316,17 @@ class StubPackager(Packager):
 
 
 class ObjectStorage(ABC):
-    """Port: upload packaged artifacts to object storage (S3-like)."""
+    """Port: upload packaged artifacts to object storage (S3-like).
+
+    ``durable`` is the contract the orchestrator completes a job on. It is True
+    only when :meth:`upload` actually puts the bytes somewhere that outlives the
+    job sandbox, so the pipeline may then report ``COMPLETED`` and remove its
+    temp directories. In-process stubs leave it False: they fabricate a URI and
+    copy nothing, which makes the job sandbox the only copy of the media
+    (#1000).
+    """
+
+    durable: bool = False
 
     @abstractmethod
     async def upload(self, local_path: str, storage_key: str) -> str:
@@ -319,6 +335,8 @@ class ObjectStorage(ABC):
 
 
 class StubObjectStorage(ObjectStorage):
+    """Fabricates storage URIs. Stores nothing, so ``durable`` stays False."""
+
     async def upload(self, local_path: str, storage_key: str) -> str:
         return f"s3://wildframe-media/{storage_key}"
 
@@ -407,16 +425,6 @@ def _quarantine_path(ctx: dict[str, Any], storage_key: str) -> str:
     # basename as the local filename (no directories in the key).
     safe_name = os.path.basename(storage_key) or "source"
     return os.path.join(root, str(ctx["job_id"]), safe_name)
-
-
-def _cleanup_job(ctx: dict[str, Any]) -> None:
-    """Best-effort removal of per-job work and quarantine directories."""
-    work_root = ctx.get("work_root", "/tmp/wildframe/work")
-    quarantine_root = ctx.get("quarantine_root", "/tmp/wildframe/quarantine")
-    job_id = str(ctx.get("job_id", ""))
-    if job_id:
-        shutil.rmtree(os.path.join(work_root, job_id), ignore_errors=True)
-        shutil.rmtree(os.path.join(quarantine_root, job_id), ignore_errors=True)
 
 
 @as_stage(name="quarantine_store", success_event="content.quarantined")

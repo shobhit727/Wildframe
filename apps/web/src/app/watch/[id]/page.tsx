@@ -149,6 +149,25 @@ function WatchContent({ contentId }: { contentId: string }) {
     }
   };
 
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#141414] text-white flex items-center justify-center px-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-2xl font-bold mb-3">Sign in to watch</h1>
+          <p className="text-gray-400 mb-6">
+            Sign in to start playback and access this title.
+          </p>
+          <Link
+            href="/login"
+            className="inline-flex items-center justify-center rounded-md bg-[#E50914] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#f40612] transition-colors"
+          >
+            Sign in
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (isStarting) {
     return (
       <div className="min-h-screen bg-[#141414] flex items-center justify-center">
@@ -166,7 +185,7 @@ function WatchContent({ contentId }: { contentId: string }) {
       <div className="px-8 pt-4">
         <Link
           href="/browse"
-          className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+          className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white py-3 transition-colors"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
@@ -200,7 +219,7 @@ function WatchContent({ contentId }: { contentId: string }) {
                 <div className="flex items-center gap-3 text-sm text-gray-400">
                   {content.rating > 0 && (
                     <span className="text-[#46d369] font-semibold">
-                      {Math.min(99, Math.max(75, content.rating * 10))}% Match
+                      {Math.round(content.matchPercentage)}% Match
                     </span>
                   )}
                   {content.rating > 0 && (
@@ -227,7 +246,7 @@ function WatchContent({ contentId }: { contentId: string }) {
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
                   onClick={toggleMyList}
-                  className={`p-2 rounded-full bg-[#2f2f2f] hover:bg-[#454545] transition-colors ${inMyList ? 'text-[#E50914]' : 'text-gray-300 hover:text-white'}`}
+                  className={`p-2 rounded-full bg-[#2f2f2f] hover:bg-[#454545] transition-colors ${inMyList ? 'text-brand-400' : 'text-gray-300 hover:text-white'}`}
                   aria-label="Toggle my list"
                 >
                   <svg className="w-5 h-5" fill={inMyList ? 'currentColor' : 'none'} viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -239,7 +258,7 @@ function WatchContent({ contentId }: { contentId: string }) {
             <p className="text-gray-400 text-sm leading-relaxed max-w-2xl">
               {content.description}
             </p>
-            <div className="mt-3 text-sm text-gray-500">
+            <div className="mt-3 text-sm text-muted">
               <span className="text-gray-400">Genres:</span> {genres}
             </div>
           </div>
@@ -260,17 +279,17 @@ function WatchContent({ contentId }: { contentId: string }) {
                   onClick={() => selectEpisode(ep.id, ep.episode_number)}
                   className="w-full flex items-center gap-4 p-3 rounded-lg hover:transition-colors cursor-pointer group text-left hover:bg-white/5"
                 >
-                  <span className={selectedEpisode?.id === ep.id ? 'text-[#E50914] w-8 text-center' : 'text-sm text-gray-500 w-8 text-center'}>
+                  <span className={selectedEpisode?.id === ep.id ? 'text-brand-400 w-8 text-center' : 'text-sm text-muted w-8 text-center'}>
                     {ep.episode_number}
                   </span>
                   <div className="w-28 h-16 bg-[#1f1f1f] overflow-hidden flex-shrink-0">
                     <div className="w-full h-full shimmer" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white font-medium truncate group-hover:text-[#E50914] transition-colors">
+                    <p className="text-sm text-white font-medium truncate group-hover:text-brand-400 transition-colors">
                       Episode {ep.episode_number}: {ep.title}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted">
                       {ep.duration_minutes}m{ep.release_date ? ` · ${new Date(ep.release_date).getFullYear()}` : ''}
                     </p>
                   </div>
@@ -297,7 +316,7 @@ function WatchContent({ contentId }: { contentId: string }) {
       <div className="px-4 sm:px-6 pb-8">
         <Link
           href="/browse"
-          className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+          className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white py-3 transition-colors"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />

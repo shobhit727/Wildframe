@@ -3,15 +3,19 @@
 import asyncio
 import ipaddress
 import logging
+import time
+import uuid
 import zlib
+from collections.abc import Awaitable
 from contextlib import asynccontextmanager
 from types import MappingProxyType
+from typing import Any, cast
 
 import httpx
 import redis.asyncio as redis
 from fastapi import HTTPException, Request, Response, status
-from fastapi.responses import StreamingResponse
-from jose import JWTError, jwt
+from fastapi.responses import JSONResponse, StreamingResponse
+from wildframe_auth import JWKSUnavailableError, JWTError, verify_token_with_jwks
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
@@ -67,6 +71,11 @@ _SECURITY_SENSITIVE_HEADERS = frozenset(
 # X-Forwarded-For / X-Real-IP are replaced with trusted values.
 # X-User-* identity headers are dropped entirely.
 # X-Correlation-ID / X-Request-ID are always regenerated server-side.
+#
+# X-Age-Verified / X-Is-Minor (#1023): these are the values the age gate reads,
+# so a client able to send them is a client that can age-gate itself open. They
+# are stripped here and re-asserted by AgeGateMiddleware from the verified
+# bearer token, which is the only source the gate accepts.
 _STRIP_HEADERS = frozenset(
     {
         "x-forwarded-for",
@@ -76,6 +85,8 @@ _STRIP_HEADERS = frozenset(
         "x-user-roles",
         "x-correlation-id",
         "x-request-id",
+        "x-age-verified",
+        "x-is-minor",
     }
 )
 
@@ -194,6 +205,18 @@ def get_shared_client() -> httpx.AsyncClient:
     return _shared_client
 
 
+async def _eval_script(client: redis.Redis, script: str, numkeys: int, *args: str) -> Any:
+    """Run a Lua script on an async Redis client and return its reply.
+
+    redis-py types ``eval`` as ``Awaitable[str] | str`` because a single command
+    mixin backs both the sync and the asyncio client; on ``redis.asyncio.Redis``
+    the call always returns a coroutine, so the union is narrowed once here
+    instead of at every call site. Values are passed as strings because that is
+    the contract redis-py encodes them to anyway (its encoder stringifies ints).
+    """
+    return await cast("Awaitable[Any]", client.eval(script, numkeys, *args))
+
+
 class RateLimiter:
     """Independent IP and account limits with burst and concurrency.
 
@@ -234,8 +257,22 @@ class RateLimiter:
             "default": settings.RATE_LIMIT_CONCURRENCY_DEFAULT,
         }
         self._concurrency_upload_finalize = settings.RATE_LIMIT_CONCURRENCY_UPLOAD_FINALIZE
-        self._concurrency_window = settings.RATE_LIMIT_CONCURRENCY_WINDOW
+        self._lease_ttl_seconds = settings.RATE_LIMIT_LEASE_TTL_SECONDS
         self._window = 60
+
+    _ACQUIRE_LEASE_SCRIPT = """
+local key = KEYS[1]
+local member = ARGV[1]
+local now = tonumber(ARGV[2])
+local expiry = tonumber(ARGV[3])
+local limit = tonumber(ARGV[4])
+redis.call('ZREMRANGEBYSCORE', key, '-inf', now)
+if redis.call('ZCARD', key) >= limit then return 0 end
+redis.call('ZADD', key, expiry, member)
+redis.call('PEXPIRE', key, math.max(1, (expiry - now) * 1000))
+return 1
+"""
+    _RELEASE_LEASE_SCRIPT = "return redis.call('ZREM', KEYS[1], ARGV[1])"
 
     def _get_limit(self, service: str, path: str = "") -> int:
         if service == "uploads" and path.endswith(("/complete", "/abort")):
@@ -322,30 +359,90 @@ class RateLimiter:
                 service,
             ):
                 return False
-        conc_limit = self._get_concurrency_limit(service, path)
-        if conc_limit is not None:
-            if not await self._check_key(
-                f"rate_limit:concurrent:ip:{ip}:{service}",
-                conc_limit,
-                self._concurrency_window,
-                service,
-            ):
-                return False
-            if account_id and not await self._check_key(
-                f"rate_limit:concurrent:account:{account_id}:{service}",
-                conc_limit,
-                self._concurrency_window,
-                service,
-            ):
-                return False
-            if device_id and not await self._check_key(
-                f"rate_limit:concurrent:device:{device_id}:{service}",
-                conc_limit,
-                self._concurrency_window,
-                service,
-            ):
-                return False
         return True
+
+    def _concurrency_keys(
+        self,
+        ip: str,
+        service: str,
+        path: str,
+        account_id: str | None,
+        device_id: str | None,
+    ) -> tuple[int | None, list[str]]:
+        limit = self._get_concurrency_limit(service, path)
+        if limit is None:
+            return None, []
+        keys = [f"rate_limit:inflight:ip:{ip}:{service}"]
+        if account_id:
+            keys.append(f"rate_limit:inflight:account:{account_id}:{service}")
+        if device_id:
+            keys.append(f"rate_limit:inflight:device:{device_id}:{service}")
+        return limit, keys
+
+    async def acquire_rate_limits(
+        self,
+        ip: str,
+        service: str,
+        path: str = "",
+        account_id: str | None = None,
+        device_id: str | None = None,
+    ) -> tuple[bool, str | None]:
+        if not await self._check_dual(ip, service, path, account_id, device_id):
+            return False, None
+        limit, keys = self._concurrency_keys(ip, service, path, account_id, device_id)
+        if limit is None:
+            return True, None
+        lease_id = uuid.uuid4().hex
+        now = int(time.time())
+        # Was max(60, RATE_LIMIT_CONCURRENCY_WINDOW * 12), which described a
+        # window but produced a TTL. At the default window of 5 that is 60s, so
+        # this is behaviour-preserving; the setting is now named for what it is.
+        lease_seconds = self._lease_ttl_seconds
+        expiry = now + lease_seconds
+        acquired: list[str] = []
+        try:
+            for key in keys:
+                result = await _eval_script(
+                    self.redis,
+                    self._ACQUIRE_LEASE_SCRIPT,
+                    1,
+                    key,
+                    lease_id,
+                    str(now),
+                    str(expiry),
+                    str(limit),
+                )
+                if not result:
+                    await self.release_concurrency_lease(lease_id, acquired)
+                    return False, None
+                acquired.append(key)
+        except Exception:  # noqa: BLE001
+            await self.release_concurrency_lease(lease_id, acquired)
+            if service == "auth":
+                logger.warning("Rate limiter Redis lease error for %s; denying request", service)
+                return False, None
+            logger.warning("Rate limiter Redis lease error for %s; allowing request", service)
+            return True, None
+        return True, lease_id
+
+    async def release_concurrency_lease(self, lease_id: str, keys: list[str]) -> None:
+        for key in keys:
+            try:
+                await _eval_script(self.redis, self._RELEASE_LEASE_SCRIPT, 1, key, lease_id)
+            except Exception:  # noqa: BLE001
+                logger.warning("Failed to release in-flight rate-limit lease")
+
+    async def release_rate_limits(
+        self,
+        lease_id: str,
+        ip: str,
+        service: str,
+        path: str = "",
+        account_id: str | None = None,
+        device_id: str | None = None,
+    ) -> None:
+        _, keys = self._concurrency_keys(ip, service, path, account_id, device_id)
+        await self.release_concurrency_lease(lease_id, keys)
 
     async def check_rate_limits(
         self,
@@ -392,15 +489,9 @@ class RateLimiter:
             service = args[1]
         if len(args) >= 3:
             path = args[2]
-        if user_id_kw is not None:
-            user_id = user_id_kw
         if service_kw is not None:
             service = service_kw
-        elif "service" in kwargs:
-            service = kwargs["service"]
-        if "path" in kwargs:
-            path = kwargs["path"]
-        elif path_kw != "":
+        if path_kw != "":
             path = path_kw
         if user_id is None or service is None:
             return True
@@ -441,8 +532,13 @@ def _is_trusted_ip(ip_str: str, trusted: list[str]) -> bool:
                 if ip == ipaddress.ip_address(entry):
                     return True
             except ValueError:
-                if ip_str == entry:
-                    return True
+                # A malformed entry is skipped, exactly like a malformed CIDR
+                # above. This branch used to fall back to a literal `ip_str ==
+                # entry` comparison, but that is unreachable: reaching here
+                # means `entry` failed to parse, and `ip_str` is only in scope
+                # because it already parsed at the top of the function, so
+                # `entry == ip_str` would have parsed too (#886).
+                continue
     return False
 
 
@@ -504,15 +600,33 @@ class _DeflateDecompressor:
         self._obj = zlib.decompressobj()
         self._tried_raw = False
 
-    def decompress(self, data: bytes) -> bytes:
+    def decompress(self, data: bytes, max_length: int = 2**31 - 1) -> bytes:
+        if self._obj.eof:
+            raise ValueError("Trailing data after compressed stream")
         try:
-            return self._obj.decompress(data)
+            result = self._obj.decompress(data, max_length)
         except zlib.error as exc:
             if not self._tried_raw and "incorrect header" in str(exc).lower():
                 self._tried_raw = True
                 self._obj = zlib.decompressobj(-15)
-                return self._obj.decompress(data)
-            raise
+                result = self._obj.decompress(data, max_length)
+            else:
+                raise
+        if self._obj.unused_data:
+            raise ValueError("Trailing data after compressed stream")
+        return result
+
+    @property
+    def unconsumed_tail(self) -> bytes:
+        return self._obj.unconsumed_tail
+
+    @property
+    def unused_data(self) -> bytes:
+        return self._obj.unused_data
+
+    @property
+    def eof(self) -> bool:
+        return self._obj.eof
 
     def flush(self) -> bytes:
         try:
@@ -528,41 +642,48 @@ def _create_decompressor(encoding: str):
     if enc == "deflate":
         return _DeflateDecompressor()
     if enc == "br":
-        try:
-            import brotli
-
-            return brotli.Decompressor()
-        except ImportError:
-            try:
-                import brotlicffi as brotli  # type: ignore
-
-                return brotli.Decompressor()
-            except ImportError:
-                return None
-        except Exception:
-            return None
+        return None
     return None
 
 
-def _decompress_chunk(decompressor, chunk: bytes) -> bytes:
+def _decompress_chunk(decompressor, chunk: bytes, max_output_bytes: int | None = None) -> bytes:
     if decompressor is None:
         return b""
-    if hasattr(decompressor, "decompress"):
-        return decompressor.decompress(chunk)
-    if hasattr(decompressor, "process"):
-        return decompressor.process(chunk)
-    return b""
-
-
-def _flush_decompressor(decompressor) -> bytes:
-    if decompressor is None:
+    if max_output_bytes is None:
+        if hasattr(decompressor, "decompress"):
+            return cast(bytes, decompressor.decompress(chunk))
+        if hasattr(decompressor, "process"):
+            return cast(bytes, decompressor.process(chunk))
         return b""
-    if hasattr(decompressor, "flush"):
-        try:
-            return decompressor.flush()
-        except Exception:
-            return b""
-    return b""
+    if not hasattr(decompressor, "unconsumed_tail") or not hasattr(decompressor, "eof"):
+        raise ValueError("Compressed encoding does not support bounded decompression")
+    if decompressor.eof:
+        raise ValueError("Trailing data after compressed stream")
+
+    output: list[bytes] = []
+    produced = 0
+    pending = chunk
+    while pending:
+        remaining = max_output_bytes - produced
+        decoded = decompressor.decompress(pending, max(1, remaining + 1))
+        if len(decoded) > remaining:
+            raise ValueError("Decompressed body exceeds limit")
+        output.append(decoded)
+        produced += len(decoded)
+        next_pending = decompressor.unconsumed_tail
+        if not next_pending:
+            break
+        if next_pending == pending and not decoded:
+            raise ValueError("Compressed stream made no progress")
+        pending = next_pending
+    if getattr(decompressor, "unused_data", b""):
+        raise ValueError("Trailing data after compressed stream")
+    return b"".join(output)
+
+
+def _validate_decompressor_complete(decompressor) -> None:
+    if decompressor is not None and not decompressor.eof:
+        raise ValueError("Incomplete compressed stream")
 
 
 class BodyLimitMiddleware(BaseHTTPMiddleware):
@@ -575,7 +696,6 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
         self.max_header_count = settings.MAX_HEADER_COUNT
         self.max_header_field_size = settings.MAX_HEADER_FIELD_SIZE
         self.max_header_total_size = settings.MAX_HEADER_TOTAL_SIZE
-        self.max_decompression_ratio = settings.MAX_DECOMPRESSION_RATIO
         self.max_multipart_body = settings.MAX_REQUEST_BODY_SIZE * 2
         self.chunk_size = getattr(settings, "GATEWAY_BODY_STREAM_CHUNK_SIZE", 65536)
 
@@ -639,17 +759,16 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
         is_compressed = False
         if raw_enc:
             low = raw_enc.strip().lower()
-            if "," in low:
-                parts = [p.strip() for p in low.split(",") if p.strip()]
-                for p in reversed(parts):
-                    if p in ("gzip", "deflate", "br"):
-                        enc = p
-                        break
-                else:
-                    enc = low
-            else:
-                enc = low
-            is_compressed = enc in ("gzip", "deflate", "br")
+            parts = [part.strip() for part in low.split(",") if part.strip()]
+            if len(parts) != 1:
+                return Response("Stacked content encodings are not supported", status_code=415)
+            enc = parts[0]
+            if enc not in ("identity", "gzip", "deflate"):
+                return Response("Content encoding is not supported", status_code=415)
+            # "br" is not in this tuple because the allowlist above already
+            # rejected it with 415 -- a brotli-encoded request can never reach
+            # here, so naming it suggested a path that does not exist.
+            is_compressed = enc != "identity"
         method = request.method
         has_body = method in ("POST", "PUT", "PATCH", "DELETE") or cl is not None
         if (
@@ -673,7 +792,6 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
         try:
             original_stream = request.stream
             limit = body_limit
-            max_ratio = self.max_decompression_ratio
             decompressor = _create_decompressor(enc) if is_compressed else None
             decompressed_total = 0
 
@@ -689,7 +807,9 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                     if is_compressed:
                         if decompressor is not None:
                             try:
-                                out = _decompress_chunk(decompressor, chunk)
+                                out = _decompress_chunk(
+                                    decompressor, chunk, limit - decompressed_total
+                                )
                             except Exception as exc:
                                 raise ValueError(f"Invalid compressed body: {exc}") from exc
                             decompressed_total += len(out)
@@ -698,22 +818,15 @@ class BodyLimitMiddleware(BaseHTTPMiddleware):
                                     f"Decompressed body exceeds limit: {decompressed_total} > {limit}"
                                 )
                         else:
-                            if total * max_ratio > limit:
-                                raise ValueError(
-                                    f"Potential decompression bomb: {total} * {max_ratio} > {limit}"
-                                )
+                            raise ValueError(
+                                "Compressed encoding does not support bounded decompression"
+                            )
                     yield chunk
                 if is_compressed and decompressor is not None:
                     try:
-                        out = _flush_decompressor(decompressor)
+                        _validate_decompressor_complete(decompressor)
                     except Exception as exc:
                         raise ValueError(f"Invalid compressed body: {exc}") from exc
-                    if out:
-                        decompressed_total += len(out)
-                        if decompressed_total > limit:
-                            raise ValueError(
-                                f"Decompressed body exceeds limit: {decompressed_total} > {limit}"
-                            )
 
             request.stream = bounded_stream  # type: ignore[method-assign]
 
@@ -829,9 +942,11 @@ class ServiceRegistry:
     @classmethod
     def route_request(cls, path: str) -> tuple[str | None, str]:
         """Route request path to appropriate service."""
+        # `str.split` always returns at least one element ("" -> [""]), so
+        # `parts` is never empty and an emptiness guard here is unreachable.
+        # An empty path yields parts == [""], which falls through to the
+        # ordinary "unknown service" answer below (#886).
         parts = path.strip("/").split("/")
-        if not parts:
-            return None, ""
 
         service = parts[0]
         remaining_path = "/" + "/".join(parts[1:]) if len(parts) > 1 else "/"
@@ -854,11 +969,13 @@ class AuthenticationMiddleware:
         }
     )
 
-    def __init__(self, jwt_secret: str):
-        self.jwt_secret = jwt_secret
+    def __init__(self, *, jwks_url: str, audience: str, issuer: str):
+        self.jwks_url = jwks_url
+        self.audience = audience
+        self.issuer = issuer
 
     async def verify_token(self, request: Request) -> dict | None:
-        """Verify a JWT token from the Authorization header."""
+        """Verify a bearer JWT with the shared RS256/JWKS verifier."""
         auth_header = request.headers.get("Authorization")
         if not auth_header:
             return None
@@ -868,34 +985,37 @@ class AuthenticationMiddleware:
             if scheme.lower() != "bearer":
                 return None
 
-            # Optional identity extraction only; upstream services enforce audience.
-            # Expiry remains mandatory even at this transparent proxy boundary
-            # (python-jose spells "exp is required" as require_exp, not a
-            # `require` list).
-            payload = jwt.decode(
+            # The gateway only extracts optional identity for rate limiting and
+            # routing context. The shared verifier enforces RS256, required claims,
+            # and bounded JWKS rotation refreshes.
+            return await verify_token_with_jwks(
                 token,
-                self.jwt_secret,
-                algorithms=["HS256"],
-                options={"verify_aud": False, "require_exp": True},
+                audience=self.audience,
+                issuer=self.issuer,
+                url=self.jwks_url,
+                leeway=60,
             )
-            return payload
-        except (JWTError, ValueError):  # ValueError: malformed auth header
+        except (JWTError, JWKSUnavailableError, ValueError, TypeError):
+            # Invalid/expired tokens and temporary JWKS failures must not make the
+            # transparent proxy itself reject downstream requests; upstream services
+            # remain the authorization boundary.
             logger.warning("Token verification failed", exc_info=True)
             return None
 
     async def __call__(self, request: Request) -> dict | None:
         """Middleware to check authentication on protected routes."""
         request_path = request.url.path.rstrip("/") or "/"
-        from app.core.settings import settings
 
-        is_docs_path = request_path in (
-            "/docs",
-            "/redoc",
-            "/openapi.json",
-        ) or request_path.startswith(("/docs/", "/redoc/", "/openapi.json/"))
-        if is_docs_path and settings.ENVIRONMENT == "production":
-            pass
-        elif any(
+        # Docs paths are deliberately absent from PUBLIC_PATHS, so they fall
+        # through to the token check and are anonymous-unreachable in every
+        # environment. A `if is_docs_path and ENVIRONMENT == "production":
+        # pass` branch used to sit here: it read as a production exemption but
+        # had no effect, so it was removed as dead code (#808). Note this
+        # method is not installed via add_middleware() -- the control that
+        # actually withholds docs from the production surface is the
+        # docs_url=None wiring in app/main.py, asserted at the HTTP surface by
+        # test_create_app_withholds_docs_in_production.
+        if any(
             request_path == path or request_path.startswith(f"{path}/")
             for path in self.PUBLIC_PATHS
         ):
@@ -968,11 +1088,124 @@ async def get_optional_user(request: Request) -> dict | None:
     return await auth_middleware.verify_token(request)
 
 
-async def age_middleware(request: Request, call_next):
-    """Middleware that propagates age claims from JWT to upstream headers."""
-    # In prod, decode JWT and inject X-Age-Verified, X-Is-Minor
-    # For now, pass through and let age_gate enforce
-    response = await call_next(request)
-    # Add Vary to help caches
-    response.headers["Vary"] = "X-Jurisdiction, X-Age-Verified"
-    return response
+class AgeGateMiddleware(BaseHTTPMiddleware):
+    """The age gate, on the request path (#1023).
+
+    Replaces `age_middleware`, which was a pass-through that set `Vary` and
+    never called `check_age_gate` -- and was not registered in `create_app`
+    either. So `/maturity/*`, `/purchase` and `/content/restricted` were not
+    age-gated at runtime while 16 unit tests called `check_age_gate` directly
+    and passed. A unit test cannot see that; see test_age_gate_wiring.py.
+
+    The claim comes from the **verified bearer token** and nowhere else. The
+    JWT decode is real (the docstring's "in prod" deferral was stale): it uses
+    the same shared JWKS verifier as `AuthenticationMiddleware`, so it adds no
+    crypto of its own.
+
+    Policy chosen for the two questions the owner left open -- both are
+    deliberately the conservative reading and both are reversible in one place:
+
+    1. **Absent claim -> refused.** An unknown age is treated as a gate hit.
+    2. **Client-asserted claim -> refused.** `X-Age-Verified` is stripped at
+       the edge, so a forged header is not proof and cannot be forwarded to an
+       upstream that might trust it. What the upstream finally receives is the
+       value derived from the token, which replaces any client value.
+
+    Consequence, stated plainly: auth-service does not currently put
+    `age_verified` / `is_minor` in the access token (POST /age/verify returns
+    them in a response body that nothing mints into a token), so until it does,
+    every age-restricted request is refused. That is the fail-closed default,
+    not an accident; relaxing it is a one-line change to
+    `age_claim_from_token` once the owner decides the policy.
+    """
+
+    def __init__(self, app):
+        super().__init__(app)
+        from app.core.settings import settings
+
+        self._jwks_url = settings.JWT_JWKS_URL
+        self._audience = settings.JWT_AUDIENCE
+        self._issuer = settings.JWT_ISSUER
+
+    async def _verified_claims(self, request: Request) -> dict | None:
+        """Verify the bearer token, or return None.
+
+        None means "no usable claim", for every reason: no header, a non-bearer
+        scheme, a bad token, or JWKS being unreachable. All of them fail
+        closed at the gate below; none of them raise into the request path.
+        """
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            return None
+        try:
+            scheme, token = auth_header.split()
+            if scheme.lower() != "bearer":
+                return None
+            return await verify_token_with_jwks(
+                token,
+                audience=self._audience,
+                issuer=self._issuer,
+                url=self._jwks_url,
+                leeway=60,
+            )
+        except (JWTError, JWKSUnavailableError, ValueError, TypeError):
+            # Same posture as AuthenticationMiddleware.verify_token: an
+            # unverifiable token is not an error here, it is an absent claim.
+            logger.warning("Age gate token verification failed", exc_info=True)
+            return None
+
+    async def dispatch(self, request: Request, call_next):
+        from app.core.age_gate import age_claim_from_token, check_age_gate, is_age_restricted
+
+        if not is_age_restricted(request.url.path):
+            return await call_next(request)
+
+        claims = await self._verified_claims(request)
+        x_age_verified, x_is_minor = age_claim_from_token(claims)
+        try:
+            check_age_gate(
+                request,
+                x_age_verified=x_age_verified,
+                x_is_minor=x_is_minor,
+                # Jurisdiction is a caller hint: it only reaches a log line
+                # today (see the KNOWN GAP on JURISDICTION_MINOR_AGE) and is
+                # not used to grant or refuse access.
+                x_jurisdiction=request.headers.get("X-Jurisdiction"),
+            )
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+        # check_age_gate has already refused everything that is not exactly
+        # "true", so reaching here means the token carried a verified claim.
+        # A missing minor claim is stated explicitly ("false") rather than left
+        # as a silent "unknown" downstream, and the value the upstream finally
+        # sees is the one derived here -- never the client's, which the edge
+        # has already stripped.
+        self._assert_claim_upstream(
+            request, cast(str, x_age_verified), x_is_minor if x_is_minor is not None else "false"
+        )
+
+        response = await call_next(request)
+        # Only where it means something: a response to an age-restricted path
+        # varies by jurisdiction and age claim.
+        response.headers["Vary"] = "X-Jurisdiction, X-Age-Verified"
+        return response
+
+    @staticmethod
+    def _assert_claim_upstream(request: Request, verified: str, is_minor: str) -> None:
+        """Replace any age headers on the request with the gateway's own.
+
+        HeaderSanitizerMiddleware already removed the client's copies (it runs
+        outside this middleware); the filter here makes the "whatever arrives
+        upstream is ours" property local to the gate as well.
+        """
+        headers = [
+            (k, v)
+            for k, v in request.scope["headers"]
+            if k.lower() not in (b"x-age-verified", b"x-is-minor")
+        ]
+        headers.append((b"x-age-verified", verified.encode()))
+        headers.append((b"x-is-minor", is_minor.encode()))
+        request.scope["headers"] = headers
+        if hasattr(request, "_headers"):
+            del request._headers
