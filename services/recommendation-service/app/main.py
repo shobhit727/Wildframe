@@ -37,9 +37,11 @@ async def lifespan(app: FastAPI):
     if settings.EVENT_PUBLISHER == "kafka":
         from wildframe_events.dlq_retention import apply_dlq_retention
 
-        asyncio.create_task(
-            apply_dlq_retention(settings.KAFKA_BOOTSTRAP_SERVERS, settings.SERVICE_NAME)
-        )
+        # Retention tuning is best-effort and must never block startup, so an
+        # unset broker list skips the task instead of raising here.
+        bootstrap_servers = settings.KAFKA_BOOTSTRAP_SERVERS
+        if bootstrap_servers:
+            asyncio.create_task(apply_dlq_retention(bootstrap_servers, settings.SERVICE_NAME))
     logger.info(f"Starting {settings.SERVICE_NAME} v{settings.SERVICE_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
 
@@ -55,32 +57,36 @@ async def lifespan(app: FastAPI):
     # recommendations never reference removed or unpublished titles (#228).
     await start_event_subscriber()
 
-    yield
-
-    # Shutdown (#426): stop accepting new requests, drain in-flight, close clients
-    logger.info(f"Shutting down {settings.SERVICE_NAME}")
-    app.state.shutting_down = True
-    _shutdown_event.set()
-
-    # Wait for in-flight requests to complete (bounded)
+    # Wrap the served period so an exception raised while the app is serving
+    # cannot propagate past the teardown and leak the subscriber, the catalog
+    # client and the engine (#863).
     try:
-        async with asyncio.timeout(_MAX_DRAIN_SECONDS):
-            while True:
-                async with _in_flight_lock:
-                    if _in_flight_requests == 0:
-                        break
-                await asyncio.sleep(0.1)
-    except asyncio.TimeoutError:
-        logger.warning(
-            "Shutdown drain timeout after %ds; %d requests still in flight",
-            _MAX_DRAIN_SECONDS,
-            _in_flight_requests,
-        )
+        yield
+    finally:
+        # Shutdown (#426): stop accepting new requests, drain in-flight, close clients
+        logger.info(f"Shutting down {settings.SERVICE_NAME}")
+        app.state.shutting_down = True
+        _shutdown_event.set()
 
-    await stop_event_subscriber()
-    await close_catalog_client()
-    await DatabaseManager.close()
-    logger.info("Shutdown complete")
+        # Wait for in-flight requests to complete (bounded)
+        try:
+            async with asyncio.timeout(_MAX_DRAIN_SECONDS):
+                while True:
+                    async with _in_flight_lock:
+                        if _in_flight_requests == 0:
+                            break
+                    await asyncio.sleep(0.1)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Shutdown drain timeout after %ds; %d requests still in flight",
+                _MAX_DRAIN_SECONDS,
+                _in_flight_requests,
+            )
+
+        await stop_event_subscriber()
+        await close_catalog_client()
+        await DatabaseManager.close()
+        logger.info("Shutdown complete")
 
 
 def create_app() -> FastAPI:
@@ -148,15 +154,21 @@ def create_app() -> FastAPI:
         checks["database"] = "ok" if db_ok else "down"
         if not db_ok:
             overall = "not_ready"
-        try:
-            redis_client = await redis.from_url(settings.REDIS_URL)
-            await asyncio.wait_for(redis_client.ping(), timeout=2.0)
-            await redis_client.close()
-            checks["redis"] = "ok"
-        except Exception as e:  # noqa: BLE001
-            logger.error("Redis readiness check failed: %s", e)
+        redis_url = settings.REDIS_URL
+        if redis_url is None:
+            logger.error("Redis readiness check failed: REDIS_URL is not configured")
             checks["redis"] = "down"
             overall = "not_ready"
+        else:
+            try:
+                redis_client = await redis.from_url(redis_url)
+                await asyncio.wait_for(redis_client.ping(), timeout=2.0)
+                await redis_client.close()
+                checks["redis"] = "ok"
+            except Exception as e:  # noqa: BLE001
+                logger.error("Redis readiness check failed: %s", e)
+                checks["redis"] = "down"
+                overall = "not_ready"
 
         payload = {
             "status": overall,

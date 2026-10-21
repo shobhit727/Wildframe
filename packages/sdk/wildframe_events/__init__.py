@@ -28,7 +28,11 @@ service's DB.
 from wildframe_events.topics import Topic
 from wildframe_events.event import DomainEvent
 from wildframe_events.publisher import EventPublisher, InMemoryEventPublisher, KafkaEventPublisher
-from wildframe_events.subscriber import EventSubscriber, InMemoryEventSubscriber
+from wildframe_events.subscriber import (
+    EventSubscriber,
+    InMemoryEventSubscriber,
+    KafkaEventSubscriber,
+)
 
 __all__ = [
     "Topic",

@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from app.models import ContentStatus
-from app.services import ContentService
+from app.models import ContentStatus, content_cast_association
+from app.services import DEFAULT_CAST_ROLE, ContentService
 
 pytestmark = pytest.mark.asyncio
 
@@ -89,8 +89,10 @@ class TestCastMemberOperations:
         from app.schemas import CastMemberCreateRequest
 
         content = MagicMock()
+        content.id = uuid4()
         content.cast_members = []
         member = MagicMock()
+        member.id = uuid4()
         service.content_repo.get_by_id.return_value = content
         service.cast_repo.get_by_slug.return_value = None
         service.cast_repo.create.return_value = member
@@ -101,7 +103,18 @@ class TestCastMemberOperations:
 
         assert result is member
         service.cast_repo.create.assert_awaited_once()
-        assert member in content.cast_members
+        # The association row is written explicitly, with the NOT NULL ``role``
+        # column set (#858) — appending to ``content.cast_members`` left it
+        # NULL and every add failed against real PostgreSQL. The collection is
+        # expired rather than appended so the next read reloads it.
+        inserted = service.content_repo.session.execute.await_args.args[0]
+        assert inserted.table is content_cast_association
+        assert inserted.compile().params == {
+            "content_id": content.id,
+            "cast_id": member.id,
+            "role": DEFAULT_CAST_ROLE,
+        }
+        service.content_repo.session.expire.assert_called_once_with(content, ["cast_members"])
         service.content_repo.commit.assert_awaited_once()
 
     async def test_add_cast_member_skips_duplicate(self, service):

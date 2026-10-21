@@ -229,6 +229,40 @@ async def test_get_recommendations_regenerates_when_preferences_are_newer(servic
 
 
 @pytest.mark.asyncio
+async def test_rows_generated_at_the_preference_instant_are_not_stale(service):
+    """The staleness oracle is ``latest_generated >= prefs.updated_at``.
+
+    Rows written by the generation that ``update_preferences`` itself triggers
+    carry a ``created_at`` no older than the ``updated_at`` it just wrote, so
+    the boundary is reachable in practice and is inclusive by design.
+
+    The existing coverage only used a strictly-older preference timestamp, so
+    tightening ``>=`` to ``>`` regenerated on every read after an update and
+    the suite stayed green.
+    """
+    same_instant = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
+    service.pref_repo.get_or_create = AsyncMock(
+        return_value=MagicMock(liked_genres=["action"], disliked_genres=[], updated_at=same_instant)
+    )
+    row = MagicMock(content_id=uuid4(), score=0.9, reason="Because you like Action")
+    service.rec_repo.get_for_user = AsyncMock(return_value=[row])
+    service.rec_repo.latest_created_at = AsyncMock(return_value=same_instant)
+    # The branch under test decides *whether* to regenerate; the work itself
+    # is not what is being asserted, and leaving it real would swallow the
+    # difference in its own fail-open handler.
+    service.generate = AsyncMock(return_value=1)
+
+    with patch("app.services._cache_get", AsyncMock(return_value=None)):
+        recs = await service.get_recommendations(uuid4())
+
+    assert len(recs) == 1
+    service.generate.assert_not_awaited()
+    # The stale branch re-reads storage after regenerating; the fresh branch
+    # does not, so this is a second, independent witness.
+    assert service.rec_repo.get_for_user.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_get_recommendations_clamps_excessive_limit(service):
     """A hostile limit is clamped before hitting the repository (#228 F4)."""
     now = datetime.now(UTC)
@@ -246,24 +280,119 @@ async def test_get_recommendations_clamps_excessive_limit(service):
 
 
 @pytest.mark.asyncio
-async def test_generate_clamps_genre_lists_and_limit(service):
-    """Generation bounds: genre lists and limit are clamped (#228 F4)."""
+async def test_generate_stores_no_more_rows_than_the_limit_allows(service):
+    """``generate`` honours its own ``limit`` argument.
+
+    ``ranked`` is sliced with ``[:limit]`` before the rows are written. The
+    previous bounds test here asserted ``count <= 100`` against a catalog that
+    only ever produced two deduplicated items, so it passed for every
+    possible value of ``limit``.
+    """
+    ids = [str(uuid4()) for _ in range(5)]
+    items = [{"id": cid, "audience_score": 90 - n, "genres": []} for n, cid in enumerate(ids)]
     client = make_client(
         fetch_genres=AsyncMock(return_value=fake_genres()),
-        fetch_by_genre=AsyncMock(
-            side_effect=lambda gid, **kwargs: [fake_items(gid)[0], fake_items(gid)[1]]
-        ),
+        fetch_by_genre=AsyncMock(return_value=items),
     )
     with patch("app.services.ContentCatalogClient", return_value=client):
-        count = await service.generate(
-            uuid4(),
-            ["action"] * 500,
-            ["horror"] * 500,
-            limit=10_000,
-        )
+        count = await service.generate(uuid4(), ["action"], [], limit=2)
 
-    assert count <= 100  # clamped limit
-    assert client.fetch_by_genre.await_count <= 50  # clamped genre list
+    assert count == 2
+    assert service.rec_repo.create.await_count == 2
+    # The two kept are the highest scoring, not merely the first two.
+    created = [
+        args[1] if isinstance(args[1], UUID) else UUID(kwargs.get("content_id"))
+        for args, kwargs in service.rec_repo.create.await_args_list
+    ]
+    assert created == [UUID(ids[0]), UUID(ids[1])]
+
+
+@pytest.mark.asyncio
+async def test_generate_caps_a_hostile_limit_at_the_configured_maximum(service, monkeypatch):
+    """``limit`` is clamped to ``MAX_RECOMMENDATION_LIMIT`` before slicing.
+
+    The route bounds the query parameter, but ``generate`` is also reachable
+    from ``update_preferences`` and from ``get_recommendations``; the clamp
+    here is the service-layer defence (#228 F4).
+    """
+    import app.services as services_mod
+
+    monkeypatch.setattr(services_mod.settings, "MAX_RECOMMENDATION_LIMIT", 2)
+    items = [{"id": str(uuid4()), "audience_score": 80, "genres": []} for _ in range(5)]
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=fake_genres()),
+        fetch_by_genre=AsyncMock(return_value=items),
+    )
+    with patch("app.services.ContentCatalogClient", return_value=client):
+        count = await service.generate(uuid4(), ["action"], [], limit=10_000)
+
+    assert count == 2
+    assert service.rec_repo.create.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_floors_a_zero_limit_at_one(service):
+    """``limit=0`` must still produce one row, not zero.
+
+    The floor exists so a caller cannot ask for an empty rail. Without it
+    ``ranked[:0]`` writes nothing and the user's stored recommendations are
+    cleared and left empty by ``clear_for_user``.
+    """
+    items = [{"id": str(uuid4()), "audience_score": 80, "genres": []} for _ in range(3)]
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=fake_genres()),
+        fetch_by_genre=AsyncMock(return_value=items),
+    )
+    with patch("app.services.ContentCatalogClient", return_value=client):
+        count = await service.generate(uuid4(), ["action"], [], limit=0)
+
+    assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_truncates_the_disliked_genre_list(service, monkeypatch):
+    """The disliked list is bounded by ``MAX_PREFERENCE_GENRES`` too.
+
+    Only the *liked* truncation had a test (``test_preference_lists_are_truncated``
+    in test_app_lifecycle.py). An unbounded dislike list is a fan-out vector:
+    every entry is resolved and turned into an exclusion set.
+    """
+    import app.services as services_mod
+
+    monkeypatch.setattr(services_mod.settings, "MAX_PREFERENCE_GENRES", 1)
+    genres = [
+        {"id": "1", "slug": "action", "name": "Action"},
+        {"id": "2", "slug": "comedy", "name": "Comedy"},
+    ]
+    action_item, comedy_item, other_item = str(uuid4()), str(uuid4()), str(uuid4())
+    global_items = [
+        {
+            "id": action_item,
+            "audience_score": 95,
+            "genres": [{"id": "1", "slug": "action"}],
+        },
+        {
+            "id": comedy_item,
+            "audience_score": 90,
+            "genres": [{"id": "2", "slug": "comedy"}],
+        },
+        {"id": other_item, "audience_score": 50, "genres": []},
+    ]
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=genres),
+        fetch_global=AsyncMock(return_value=global_items),
+    )
+    with patch("app.services.ContentCatalogClient", return_value=client):
+        # Only the first dislike ("action") may be honoured.
+        count = await service.generate(uuid4(), [], ["action", "comedy"], limit=10)
+
+    # Action excluded, comedy NOT (it was truncated away), other kept.
+    assert count == 2
+    created = {
+        args[1] if isinstance(args[1], UUID) else UUID(kwargs.get("content_id"))
+        for args, kwargs in service.rec_repo.create.await_args_list
+    }
+    assert created == {UUID(comedy_item), UUID(other_item)}
 
 
 @pytest.mark.asyncio
@@ -324,13 +453,18 @@ async def test_generate_excludes_disliked_genre_expressed_by_name(service):
     """Disliked genres expressed by name (not slug) must still be excluded.
 
     Regression for the [SECURITY] finding that disliked name strings were
-    only compared against genre slugs, so "Action" failed to exclude
-    content whose genre slug was "action".
+    only compared against genre slugs, leaking content from name-only
+    dislikes (see the ``resolve`` comment in ``app/services.py``).
+
+    The genre's ``name`` and ``slug`` deliberately differ ("Horror" vs
+    "horror-movies"). With ``name="Action"``/``slug="action"`` the two lookups
+    were indistinguishable, so this test passed even with name resolution
+    deleted -- it was not a guard for the behaviour its name claims.
     """
-    # Catalog exposes one genre named "Action" with slug "action".
-    action_id = str(uuid4())
-    genres = [{"id": action_id, "name": "Action", "slug": "action"}]
-    # Two items: one belongs to the Action genre (should be excluded),
+    # Catalog exposes one genre named "Horror" with slug "horror-movies".
+    horror_id = str(uuid4())
+    genres = [{"id": horror_id, "name": "Horror", "slug": "horror-movies"}]
+    # Two items: one belongs to the Horror genre (should be excluded),
     # the other belongs to a different genre (should be kept).
     other_id = str(uuid4())
     kept_id = str(uuid4())
@@ -343,9 +477,9 @@ async def test_generate_excludes_disliked_genre_expressed_by_name(service):
         },
         {
             "id": str(uuid4()),
-            "title": "Action Movie",
+            "title": "Horror Movie",
             "audience_score": 95,
-            "genres": [{"id": action_id, "name": "Action", "slug": "action"}],
+            "genres": [{"id": horror_id, "name": "Horror", "slug": "horror-movies"}],
         },
     ]
     client = make_client(
@@ -353,13 +487,65 @@ async def test_generate_excludes_disliked_genre_expressed_by_name(service):
         fetch_global=AsyncMock(return_value=global_items),
     )
     with patch("app.services.ContentCatalogClient", return_value=client):
-        # Disliked expressed only by name (capitalised, not as slug).
-        count = await service.generate(uuid4(), [], ["Action"], limit=10)
+        # Disliked expressed only by name -- never by its slug.
+        count = await service.generate(uuid4(), [], ["Horror"], limit=10)
 
     assert count == 1
-    # The one recommendation must be the non-Action item.
+    # The one recommendation must be the non-Horror item.
     args, kwargs = service.rec_repo.create.await_args_list[0]
     assert kwargs.get("content_id") == UUID(kept_id) or (args and args[1] == UUID(kept_id))
+
+
+@pytest.mark.asyncio
+async def test_generate_matches_a_liked_genre_expressed_by_name(service):
+    """A liked genre expressed by name (not slug) must still be scored.
+
+    The sibling of ``test_generate_excludes_disliked_genre_expressed_by_name``.
+    The comment on ``resolve`` in ``app/services.py`` claims name resolution
+    covers both directions; only the *disliked* direction had a test, so
+    deleting the ``or by_name.get(ref)`` fallback left the liked path
+    unprotected and the suite green.
+
+    The genre's ``name`` and ``slug`` deliberately differ, and the liked genre
+    is referenced by name only.
+    """
+    scifi_id = str(uuid4())
+    genres = [{"id": scifi_id, "name": "Science Fiction", "slug": "science-fiction"}]
+    scifi_ids = [str(uuid4()), str(uuid4())]
+    scifi_items = [
+        {
+            "id": cid,
+            "title": "Space Movie",
+            "audience_score": 80,
+            "genres": [{"id": scifi_id, "name": "Science Fiction", "slug": "science-fiction"}],
+        }
+        for cid in scifi_ids
+    ]
+    fallback_item = str(uuid4())
+    client = make_client(
+        fetch_genres=AsyncMock(return_value=genres),
+        fetch_by_genre=AsyncMock(return_value=scifi_items),
+        fetch_global=AsyncMock(
+            return_value=[
+                {"id": fallback_item, "audience_score": 99, "genres": []},
+            ]
+        ),
+    )
+    with patch("app.services.ContentCatalogClient", return_value=client):
+        # Liked by name ("Science Fiction"), never by its slug.
+        count = await service.generate(uuid4(), ["Science Fiction"], [], limit=10)
+
+    # The named genre resolved, so its content was fetched by genre id...
+    client.fetch_by_genre.assert_awaited_once()
+    assert client.fetch_by_genre.await_args.args[0] == scifi_id
+    # ...and the popular-catalog fallback was NOT used instead.
+    client.fetch_global.assert_not_awaited()
+    assert count == len(scifi_items)
+    created = {
+        args[1] if isinstance(args[1], UUID) else UUID(kwargs.get("content_id"))
+        for args, kwargs in service.rec_repo.create.await_args_list
+    }
+    assert created == {UUID(cid) for cid in scifi_ids}
 
 
 @pytest.mark.asyncio

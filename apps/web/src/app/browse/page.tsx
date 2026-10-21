@@ -86,11 +86,11 @@ export default function BrowsePage() {
               </div>
             ) : (
               <div className="text-center py-20">
-                <svg className="w-8 h-8 mx-auto text-gray-600 mb-4" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
+                <svg className="w-8 h-8 mx-auto text-muted mb-4" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
                 </svg>
                 <h3 className="text-lg font-medium text-gray-400 mb-1">No results found</h3>
-                <p className="text-sm text-gray-600">Try searching for a different title.</p>
+                <p className="text-sm text-muted">Try searching for a different title.</p>
               </div>
             )}
           </div>
@@ -104,8 +104,12 @@ export default function BrowsePage() {
               <HeroBanner items={trending.slice(0, 5)} />
             )}
 
-            {/* Rows overlay the billboard bottom */}
-            <div className="relative z-10 -mt-10 space-y-10 pb-16">
+            {/* Rows overlay the billboard bottom. The pull-up is smaller on a
+                phone: the hero is only 380px tall there (min-h-[380px]) against
+                760px on a desktop, so a fixed -mt-10 puts the first row's
+                heading on top of the hero's action buttons — measured, they
+                overlapped by 2px at 390px wide. */}
+            <div className="relative z-10 -mt-4 sm:-mt-10 space-y-10 pb-16">
               {/* Trending Row */}
               <Row title="Trending Now" items={trending} variant="backdrop" />
 

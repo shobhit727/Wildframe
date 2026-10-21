@@ -12,10 +12,30 @@ WORKDIR /workspace
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
-COPY --from=builder /workspace /workspace
-RUN chown -R nextjs:nodejs /workspace
+# `output: 'standalone'` already emits a pruned, self-contained tree with only
+# the node_modules the server actually loads. Copying that instead of the whole
+# builder /workspace is the canonical pattern: the full copy drags in the
+# hoisted dev node_modules (~1M files, multiple GB) and was what filled the
+# disk and stalled this step. The tree is rooted so its server.js lands at
+# apps/web/server.js.
+#
+# static and public are not in the standalone tree — the server serves them from
+# beside itself. Without these the container boots, answers 200, and serves no
+# JS or CSS, which is indistinguishable from a CSP/nonce failure.
+COPY --chown=nextjs:nodejs --from=builder /workspace/apps/web/.next/standalone ./
+COPY --chown=nextjs:nodejs --from=builder /workspace/apps/web/.next/static ./apps/web/.next/static
+COPY --chown=nextjs:nodejs --from=builder /workspace/apps/web/public ./apps/web/public
 USER nextjs
 WORKDIR /workspace/apps/web
 EXPOSE 3000
 ENV PORT=3000
-CMD ["./node_modules/.bin/next", "start"]
+# `next.config.ts` sets `output: 'standalone'`, and Next refuses to run
+# `next start` in that mode: the process exits with
+#   "next start" does not work with "output: standalone" configuration
+# so the container never served a request under the old CMD.
+#
+# Nothing in CI caught this because the workflow builds the web image but never
+# *starts* it, so a container that cannot boot was invisible to the pipeline.
+# Verify any change here with: node scripts/browser-check.mjs /login
+ENV HOSTNAME=0.0.0.0
+CMD ["node", "server.js"]
