@@ -342,7 +342,7 @@ export function VideoPlayer({
                 step={0.1}
                 value={isMuted ? 0 : volume}
                 onChange={handleVolumeChange}
-                className="w-24 h-2 accent-white"
+                className="w-24 h-6 accent-white"
                 aria-label="Volume"
               />
               <button

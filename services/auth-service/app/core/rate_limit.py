@@ -2,9 +2,12 @@
 
 Used by the email-verification resent flow (#54): per-IP quotas plus a
 per-email cooldown so an address cannot be flooded with verification
-emails, and repeated probes are throttled. Redis is the single source of
-truth so limits survive service restarts. Fail-closed on Redis errors for
-auth-sensitive endpoints.
+emails, and repeated probes are throttled. Also used by the MFA, step-up
+and registration buckets: each of those endpoints has a documented attempt
+ceiling in ``app/core/settings.py``, and this module is where those
+ceilings are enforced. Redis is the single source of truth so limits
+survive service restarts and are shared by every replica. Fail-closed on
+Redis errors for auth-sensitive endpoints.
 
 Why the bucket key is validated, not just hashed
 ------------------------------------------------
@@ -27,9 +30,9 @@ So this module refuses to hash anything it cannot show is an identifier.
   exclude credentials, so for those buckets a secret cannot be expressed
   at all -- this is exclusion, not a length heuristic.
 
-``resend:email`` is the one bucket whose subject (an address) is not
-provably distinguishable from a secret, so that bucket is bounded and
-rejected but not excluded. See ``_is_email``.
+``resend:email`` and ``registration:email`` are the buckets whose subject
+(an address) is not provably distinguishable from a secret, so those
+buckets are bounded and rejected but not excluded. See ``_is_email``.
 
 Rejected keys are denied (fail-closed, ``False``) and logged at ERROR with
 the subject omitted: a guard that echoed the value would leak the very
@@ -93,11 +96,26 @@ class BucketKind(StrEnum):
     One member per namespace passed by ``app/api/routes/auth.py``. Adding a
     bucket is a deliberate, reviewable edit here rather than an ad-hoc
     string at a call site, and the value of each member is the exact prefix
-    that call site already sends, so Redis keys are unaffected.
+    that call site sends, so an existing bucket's Redis keys are unaffected.
     """
 
     RESEND_IP = "resend:ip"
     RESEND_EMAIL = "resend:email"
+    # #1044: the registration attempt ceiling
+    # (``REGISTRATION_RATE_LIMIT_ATTEMPTS`` / ``_WINDOW``) was configured in
+    # ``app/core/settings.py`` and documented in ``docs/API_DOCUMENTATION.md``
+    # but enforced by nothing at all -- no code path read those settings to
+    # decide whether a registration attempt was allowed, so no counter existed
+    # for it in Redis or anywhere else. This bucket is where that ceiling is
+    # now enforced.
+    #
+    # The subject is the address being registered, not the client IP. The
+    # client IP the service observes is the *proxy's* address in every
+    # deployed topology (both Caddy and the api-gateway terminate the client
+    # connection before proxying to auth-service), so a per-IP registration
+    # bucket here would be a platform-wide cap -- three registrations per
+    # hour for the entire service. See issue #1044.
+    REGISTRATION_EMAIL = "registration:email"
     # NOTE: "mfa:verify:*" is shared by two endpoints -- POST /mfa/login-verify
     # and POST /mfa/verify -- so the 12 call sites use only 10 namespaces and
     # those two endpoints share one counter. Pre-existing behaviour, kept
@@ -125,13 +143,15 @@ _DOMAIN_LABEL_MAX = 63
 # each domain label are bounded and dot-separated, so a non-address is rejected
 # -- but an address-shaped *secret* still passes this grammar.
 #
-# That is a property of the bucket, not the current risk. The only caller is
-# ``auth.py``'s resend-verification route, whose request model types the field
-# as Pydantic ``EmailStr``, so a validated address is the only value that can
-# reach it today and the residual is a verified zero rather than "11 of 12".
-# ``test_resend_email_has_exactly_one_caller_and_it_is_schema_validated`` turns
-# that from a claim in a comment into a failing test if it stops being true: add
-# a second caller, or widen the field, and that test goes red.
+# That is a property of the bucket, not the current risk. Each address bucket
+# has exactly one caller, and each of those callers types the field as a
+# schema-validated address (``EmailStr`` normalised by ``CanonicalEmailStr``),
+# so a validated address is the only value that can reach them today and the
+# residual is a verified zero rather than "11 of 12".
+# ``test_resend_email_has_exactly_one_caller_and_it_is_schema_validated`` and
+# ``test_registration_email_has_exactly_one_caller_and_it_is_schema_validated``
+# turn that from a claim in a comment into failing tests if it stops being
+# true: add a second caller, or widen the field, and those tests go red.
 _EMAIL_RE = re.compile(
     rf"[^@\s]{{1,{_LOCAL_PART_MAX}}}@"
     rf"(?:[^@\s.]{{1,{_DOMAIN_LABEL_MAX}}}\.)+"
@@ -177,6 +197,7 @@ def _is_email(subject: str) -> bool:
 _SUBJECT_VALIDATORS: dict[BucketKind, Callable[[str], bool]] = {
     BucketKind.RESEND_IP: _is_ip_subject,
     BucketKind.RESEND_EMAIL: _is_email,
+    BucketKind.REGISTRATION_EMAIL: _is_email,
     BucketKind.MFA_LOGIN_VERIFY_IP: _is_ip_subject,
     BucketKind.MFA_LOGIN_VERIFY_USER: _is_user_subject,
     BucketKind.MFA_SETUP_IP: _is_ip_subject,

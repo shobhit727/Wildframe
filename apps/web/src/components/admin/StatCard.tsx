@@ -53,7 +53,7 @@ export function StatCard({
             {trend.positive ? '↑' : '↓'} {Math.abs(trend.value)}%
           </span>
         )}
-        {hint && <span className="text-zinc-500">{hint}</span>}
+        {hint && <span className="text-muted">{hint}</span>}
       </div>
     </div>
   );

@@ -74,7 +74,7 @@ export default function SignupPage() {
     <div className="min-h-screen bg-[#141414] flex flex-col">
       {/* Brand */}
       <header className="px-8 py-6">
-        <Link href="/" className="text-3xl font-bold tracking-tight text-[#E50914] select-none inline-block">
+        <Link href="/" className="text-3xl font-bold tracking-tight text-brand-400 select-none inline-block">
           WILDFRAME
         </Link>
       </header>
@@ -202,7 +202,7 @@ export default function SignupPage() {
 
           <p className="text-gray-400 mt-6 text-center text-sm">
             Already have an account?{' '}
-            <Link href="/login" className="text-white font-medium hover:text-[#E50914] transition-colors">
+            <Link href="/login" className="text-white font-medium hover:text-brand-400 py-4 transition-colors">
               Sign in
             </Link>
           </p>

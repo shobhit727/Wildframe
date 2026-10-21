@@ -14,6 +14,7 @@ Run these from the **repo root** (they resolve `playwright-core` from there or f
 | `causation-check.mjs` | *Why* does it break — which header or setting is the cause? |
 | `auth-flow-check.mjs` | Can a real user register and stay signed in? |
 | `verify-csp-nonce.mjs` | Do the CSP nonces actually reach the rendered scripts? |
+| `ui-capture.mjs` | Does the page render — and is it readable and usable once it has? |
 | `compose-smoke.sh` | Does the whole stack come up, and do real routes answer? |
 | `kafka_init.py --print-plan` | Which topics and per-service ACLs should the broker have? |
 | `find_vacuous_tests.py` | Which tests assert nothing, and therefore cannot fail? |
@@ -269,6 +270,76 @@ by how often it occurs:
   passes.
 - `swallowed` — an assertion *is* present but a bare `except:` or
   `except Exception:` can discard it, so the test passes either way.
+
+---
+
+## `ui-capture.mjs`
+
+Renders every route in a real browser, with the repo's own E2E mock harness
+(`apps/web/e2e/fixtures.ts`) serving the API, so pages render with real
+catalog payloads instead of empty states — an empty grid hides most layout
+problems, which is precisely when a review is worth doing.
+
+It answers two questions, and the second is the reason it exists.
+
+**Does the page render, and does it fit?** HTTP status, visible text length,
+console errors, horizontal overflow (`scrollWidth` vs `clientWidth`, plus the
+elements responsible), and a screenshot per route per viewport.
+
+**Is the page usable?** "It rendered" is not the same claim as "a person can
+read it and hit it". Three checks run on the rendered DOM:
+
+- **WCAG 2.1 AA text contrast (1.4.3).** For every element that directly
+  contains text, the effective background is resolved by walking the ancestor
+  chain and compositing each semi-transparent background over the first opaque
+  one, and the sRGB relative-luminance contrast ratio is computed. Below 4.5:1
+  is a failure; text at 24px, or at 18.66px and bold, is large text and is
+  held to 3:1. The report gives the text, the ratio, the required ratio, the
+  font size, and the computed colour and background.
+- **WCAG 2.2 AA target size (2.5.8).** `button`, `a[href]`, `input`, `select`,
+  `textarea`, `[role=button]` and `[role=tab]` must present a 24x24 CSS px hit
+  area. Under that in *either* dimension is reported, with the tag, the
+  accessible label and the measured size. Elements that are not rendered
+  (zero-size, `display:none`, `visibility:hidden`) are skipped.
+- **Heading structure.** The `h1` count per route. Zero and more than one are
+  both reported.
+
+The audit is on by default, because a defect class that is only catchable by
+hand is a defect class that comes back.
+
+```bash
+node scripts/ui-capture.mjs                      # all routes, desktop+mobile
+node scripts/ui-capture.mjs --routes /,/browse   # specific routes
+node scripts/ui-capture.mjs --viewport mobile     # one viewport
+node scripts/ui-capture.mjs --out tem/ui          # screenshot directory
+node scripts/ui-capture.mjs --no-audit            # render + overflow only
+node scripts/ui-capture.mjs --self-test           # prove the audit still detects
+node scripts/ui-capture.mjs --help
+```
+
+Exit `0` when every route is clean, `1` when any route has a problem, `2` when
+the script itself failed — no browser, no dev server, bad usage. A dev server
+that is not running gets a two-line message and exit `2`, rather than fifteen
+identical navigation errors that read like fifteen broken routes.
+
+`--self-test` runs the audit against a synthetic page carrying known defects —
+a solid low-contrast text, a semi-transparent text, a semi-transparent panel,
+two large-text cases that must *not* be reported, and three targets of known
+size — and checks the audit found exactly those. It needs no dev server. Run it
+after editing the audit: a detector that has stopped detecting reports "0
+findings", which reads as good news, and that is the one failure this script
+exists to prevent.
+
+### What it cannot see
+
+Background *images* and gradients are not sampled — the background *colour*
+under them is used, which is the CSS `background-color` layer, so a gradient
+that changes contrast substantially will be mismeasured. Text painted by
+`::before`/`::after` is not measured, because it is not text in the DOM.
+`opacity` on a container is not composited; only background-colour alpha is.
+And WCAG 2.5.8 has exceptions — spacing, inline, essential, user-agent
+controls — that this check does not implement, so a target-size finding is a
+candidate for review, not a verdict.
 
 ---
 

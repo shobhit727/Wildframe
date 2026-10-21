@@ -142,7 +142,7 @@ export default function AdminAuditPage() {
         description: `Filtered by ${activeFilters.join(', ')}. Entries may exist outside this view — clear the filters to see everything the trail returned for ${rangeLabel.toLowerCase()}.`,
         action: (
           <button
-            className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:bg-white/5"
+            className="min-h-8 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition hover:bg-white/5"
             onClick={clearFilters}
           >
             Clear filters
@@ -197,7 +197,7 @@ export default function AdminAuditPage() {
       render: (r) => (
         <span className="text-xs text-zinc-300">
           {r.resource_type}
-          <span className="text-zinc-500"> · </span>
+          <span className="text-muted"> · </span>
           <span className="font-mono text-zinc-400">{r.resource_id.slice(0, 10)}…</span>
         </span>
       ),
@@ -207,7 +207,7 @@ export default function AdminAuditPage() {
       header: 'Changes',
       className: 'hidden lg:table-cell',
       render: (r) => (
-        <span className="block max-w-xs truncate font-mono text-[11px] text-zinc-500">
+        <span className="block max-w-xs truncate font-mono text-[11px] text-muted">
           {r.changes ?? '—'}
         </span>
       ),
@@ -233,7 +233,7 @@ export default function AdminAuditPage() {
             value={adminId}
             onChange={(e) => { setAdminId(e.target.value); setPage(0); }}
             placeholder="Filter by admin…"
-            className="w-full rounded-lg border border-white/10 bg-zinc-900/70 px-3 py-2 text-sm text-white placeholder:text-zinc-500 focus:border-red-500/50 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+            className="w-full rounded-lg border border-white/10 bg-zinc-900/70 px-3 py-2 text-sm text-white placeholder:text-muted focus:border-red-500/50 focus:outline-none focus:ring-2 focus:ring-red-500/30"
           />
         </Field>
         <Field label="Action">
@@ -287,7 +287,7 @@ export default function AdminAuditPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium transition hover:bg-white/5 disabled:opacity-40"
+            className="min-h-8 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium transition hover:bg-white/5 disabled:opacity-40"
             disabled={safePage === 0}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
           >
@@ -297,7 +297,7 @@ export default function AdminAuditPage() {
             {safePage + 1} / {pageCount}
           </span>
           <button
-            className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium transition hover:bg-white/5 disabled:opacity-40"
+            className="min-h-8 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium transition hover:bg-white/5 disabled:opacity-40"
             disabled={safePage >= pageCount - 1}
             onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
           >
