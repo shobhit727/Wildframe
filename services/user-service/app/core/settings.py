@@ -43,7 +43,8 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     KAFKA_CONSUMER_GROUP: str = "user-service"
     AUTH_SERVICE_URL: str = "http://auth-service:8000"
     JWT_SECRET_KEY: str | None = None
-    JWT_ALGORITHM: str = "HS256"
+    JWT_ALGORITHM: str = "RS256"
+    JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
     JWT_ISSUER: str = "wildframe-auth"
     JWT_AUDIENCE: str = "wildframe-api"
     JWT_EXPIRATION_MINUTES: int = 15
@@ -73,6 +74,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
     LOGIN_RATE_LIMIT_ATTEMPTS: int = 10
     LOGIN_RATE_LIMIT_WINDOW: int = 900
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod

@@ -10,7 +10,7 @@ Every microservice in Wildframe follows the same internal architecture. This doc
 ## Why a Shared Pattern?
 
 - **Predictability** — Every service has the same shape, so onboarding takes hours, not days.
-- **Tooling** — One generator, one test runner, one linter, one CI job works for all 12 services.
+- **Tooling** — One generator, one test runner, one linter, one CI job works for all 15 services.
 - **Refactor safety** — Changes in patterns propagate cleanly because every service uses the same abstractions.
 
 ---
