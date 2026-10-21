@@ -656,6 +656,7 @@ Reach for the logs before theorising. Every row here cost real time to derive.
 | A test passes but the app is broken | the test mocks the layer where the value should arrive | run it against the running stack |
 | Push says success, commit is missing | branch moved; check content, not exit code | `git show origin/<b>:<path> \| grep -c` |
 | Push rejected, tree is dirty | someone else's uncommitted work — see AGENT_COORDINATION.md 23.1 | `git status --porcelain` |
+| Every CI job fails at once, in seconds | an account/org setting, not your code — Actions spending limit, failed payment, disabled runner | `gh run view <id> --json jobs`, then read the job annotation |
 
 ## 27. Before you claim something is done
 
