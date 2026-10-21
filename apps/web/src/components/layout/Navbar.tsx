@@ -112,7 +112,7 @@ export function Navbar({ onSearchChange }: NavbarProps) {
         <div className="flex min-w-0 items-end gap-5 sm:gap-7">
           <Link
             href="/browse"
-            className="select-none text-[22px] font-black tracking-[-0.04em] text-[#E50914] transition-transform duration-200 hover:scale-[1.03] sm:text-[26px]"
+            className="select-none text-[22px] font-black tracking-[-0.04em] text-brand-400 transition-transform duration-200 hover:scale-[1.03] sm:text-[26px]"
           >
             WILDFRAME
           </Link>
@@ -159,7 +159,7 @@ export function Navbar({ onSearchChange }: NavbarProps) {
                     onChange={(e) => handleSearch(e.target.value)}
                     placeholder="Titles, people, genres"
                     aria-label="Search titles, people, or genres"
-                    className="w-44 bg-transparent px-3 py-2.5 text-[13px] text-white outline-none placeholder:text-gray-500 sm:w-60"
+                    className="w-44 bg-transparent px-3 py-2.5 text-[13px] text-white outline-none placeholder:text-muted sm:w-60"
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') {
                         setSearchOpen(false);

@@ -21,7 +21,9 @@ const VARIANTS: Record<Variant, string> = {
 };
 
 const SIZES: Record<Size, string> = {
-  sm: 'px-3 py-1.5 text-xs',
+  // `py-1.5` alone renders `sm` 28px tall; min-h-8 holds it at 32px
+  // without changing the padding or the type size.
+  sm: 'px-3 py-1.5 text-xs min-h-8',
   md: 'px-4 py-2 text-sm',
   lg: 'px-5 py-2.5 text-sm',
 };

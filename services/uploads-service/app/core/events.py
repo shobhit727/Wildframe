@@ -135,7 +135,7 @@ class KafkaEventPublisher(EventPublisher):
         if self._producer is None:
             # Imported lazily so the import of this module never hard-requires
             # aiokafka in environments that use the in-memory publisher.
-            from aiokafka import AIOKafkaProducer  # type: ignore[import-untyped]
+            from aiokafka import AIOKafkaProducer
 
             producer = AIOKafkaProducer(
                 bootstrap_servers=self.bootstrap_servers,
@@ -200,7 +200,10 @@ def _build_publisher() -> EventPublisher:
     from app.core.settings import settings
 
     if settings.EVENT_PUBLISHER == "kafka":
+        bootstrap_servers = settings.KAFKA_BOOTSTRAP_SERVERS
+        if not bootstrap_servers:
+            raise RuntimeError("KAFKA_BOOTSTRAP_SERVERS is not configured")
         return KafkaEventPublisher(
-            bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS,
+            bootstrap_servers=bootstrap_servers,
         )
     return InMemoryEventPublisher()

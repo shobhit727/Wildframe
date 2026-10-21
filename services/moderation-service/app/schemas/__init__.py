@@ -30,12 +30,13 @@ StrikeReasonEnum = StrikeReason
 class FlagContentRequest(BaseModel):
     """Request body for POST /moderation/flags.
 
-    The reporter is the authenticated caller (token ``sub``), never a
-    caller-supplied body field.
+    The reporter is the authenticated caller (token ``sub``) and the creator is
+    resolved server-side from content-service. Neither identity is ever a
+    caller-supplied field: a reporter must not be able to aim a strike at an
+    arbitrary creator by naming one in the body.
     """
 
     content_id: UUID
-    content_creator_id: UUID | None = None
     flag_reason: FlagReasonEnum
 
 
