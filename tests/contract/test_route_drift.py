@@ -77,6 +77,7 @@ KNOWN_FRONTEND_ONLY_PATHS: set[tuple[str, str]] = {
     ("admin", "/admin/api/v1/transfers"),
     # Additional admin endpoints found in frontend
     ("admin", "/admin/api/v1/admin/alerts/{}/acknowledge"),
+    ("admin", "/admin/api/v1/admin/audit"),
     ("admin", "/admin/api/v1/admin/audit/admin/{}"),
     ("admin", "/admin/api/v1/admin/audit/resource/{}/{}"),
     ("admin", "/admin/api/v1/admin/content/flagged"),
@@ -151,6 +152,10 @@ def frontend_paths() -> list[tuple[str, str, str]]:
     found: list[tuple[str, str, str]] = []
     for path in sorted((REPO / "apps/web/src").rglob("*")):
         if path.suffix not in (".ts", ".tsx") or "node_modules" in str(path):
+            continue
+        # Test fixtures legitimately reference endpoints that no route serves.
+        # Scanning them turns this into a false alarm, so exclude them.
+        if "__tests__" in path.parts or path.name.endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")):
             continue
         text = path.read_text(errors="ignore")
         for literal in FRONTEND_URL_RE.findall(text):

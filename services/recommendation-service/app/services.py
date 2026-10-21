@@ -26,9 +26,13 @@ async def get_redis_client() -> redis_async.Redis | None:
     """Lazily create the shared redis.asyncio client; fail-open if unavailable."""
     global _redis_client
     if _redis_client is None:
+        redis_url = settings.REDIS_URL
+        if redis_url is None:
+            logger.warning("Redis unavailable; recommendation cache disabled")
+            return _redis_client
         try:
             _redis_client = await redis_async.from_url(
-                settings.REDIS_URL,
+                redis_url,
                 encoding="utf-8",
                 decode_responses=True,
             )
@@ -141,14 +145,12 @@ class ContentCatalogClient:
 
 
 _catalog_client: ContentCatalogClient | None = None
-_catalog_client_class: type | None = None
 
 
 def get_catalog_client() -> ContentCatalogClient:
     """Return the process-wide shared catalog client, creating it lazily."""
-    global _catalog_client, _catalog_client_class
+    global _catalog_client
     if _catalog_client is None:
-        _catalog_client_class = ContentCatalogClient
         _catalog_client = ContentCatalogClient(
             base_url=settings.CONTENT_SERVICE_URL,
             timeout=settings.CONTENT_CATALOG_TIMEOUT_SECONDS,
@@ -160,11 +162,10 @@ def get_catalog_client() -> ContentCatalogClient:
 
 async def close_catalog_client() -> None:
     """Close the shared catalog client and release pooled connections."""
-    global _catalog_client, _catalog_client_class
+    global _catalog_client
     if _catalog_client is not None:
         await _catalog_client.aclose()
         _catalog_client = None
-        _catalog_client_class = None
 
 
 class RecommendationService:

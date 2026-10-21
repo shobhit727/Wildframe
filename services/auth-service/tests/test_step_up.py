@@ -130,7 +130,12 @@ class TestTokenManagerStepUp:
             "aud": settings.JWT_AUDIENCE,
             "jti": f"stepup_{admin_user_id}_{now.timestamp()}_test",
         }
-        token = jwt.encode(payload, get_private_key_pem(), algorithm=settings.JWT_ALGORITHM, headers={"kid": settings.JWT_KEY_ID})
+        token = jwt.encode(
+            payload,
+            get_private_key_pem(),
+            algorithm=settings.JWT_ALGORITHM,
+            headers={"kid": settings.JWT_KEY_ID},
+        )
         assert TokenManager.verify_token(token, token_type="admin_step_up") is None
 
 
