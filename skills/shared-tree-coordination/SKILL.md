@@ -54,6 +54,46 @@ while preserving the change.
 by taking `origin` discards your entry and commits the reduced file. Re-append *inside*
 the retry loop, after each rebase.
 
+**But do not rebase to pull when the base has moved and your work is already
+merged.** A squash-merged PR leaves your branch's commits unreconciled with
+main, so `git pull --rebase` replays them onto a base that already contains
+the same changes — conflicts across every file the PR touched. `git merge
+origin/main` is the right move there, and it is what the house rule against
+force-pushing requires.
+
+**A union merge can duplicate board entries, and the duplicates are silent.**
+`.gitattributes` sets `merge=union` on the board so that *different* agents'
+appends both survive. But when a PR that carried board entries was
+squash-merged, `origin/main` already holds those entries — and so does your
+branch. The union keeps both copies. The board's own integrity test counts
+*distinct* entry IDs, so it will not fail; the file just grows. Check the
+counts either side of the merge:
+
+```bash
+git show origin/main:Message-board.md | grep -oE '^### \[M-[^]]+\]' | sort -u | wc -l
+grep -oE '^### \[M-[^]]+\]' Message-board.md | sort -u | wc -l
+git show origin/main:Message-board.md | grep -oE '^### \[M-[^]]+\]' | sort | uniq -d | wc -l
+grep -oE '^### \[M-[^]]+\]' Message-board.md | sort | uniq -d | wc -l
+```
+
+Distinct counts must match, and the duplicate count must not grow. If it
+grows, the union duplicated entries that existed on both sides — de-duplicate
+by entry ID before pushing.
+
+**Prefer a path-scoped stash over a whole-tree stash.** `git stash push -- <path>`
+stashes one file and leaves the rest of the tree alone, so a concurrent agent's
+`git stash pop` cannot pick up your work. A bare `git stash` is a shared pool:
+one agent's `git stash pop` takes whatever is on top, which may be another
+agent's. Check `git stash list` before popping, and verify the file you
+expected to come back is the one that came back:
+
+```bash
+git stash push -q -- <their-file>
+git merge origin/main
+git stash pop
+git status --porcelain    # the foreign edit must still be there, unstaged
+```
+
 **Another agent may leave the tree detached mid-rebase** with conflict markers in
 tracked files. Committed HEAD is often clean while the worktree is not — check both,
 and check whether those files even parse. Someone left seven Python files with conflict

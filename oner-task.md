@@ -1474,3 +1474,38 @@ carousel's dots at 24×2 and the player's volume input at 96×8.
   still write `text-[#333]` and get a 1.6:1 heading. A lint rule over
   arbitrary hex text colours would close that, and would need a way to
   distinguish a deliberate low-contrast decoration from a mistake.
+
+---
+
+### No CI job starts at all — the account's Actions spending limit
+
+**Filed as issue #1049.** Since roughly **2026-10-20T12:50Z**, every GitHub
+Actions job on every branch of this repository fails in 2-5 seconds without
+being scheduled:
+
+```
+failure: The job was not started because recent account payments have failed
+or your spending limit needs to be increased. Please check the 'Billing &
+plans' section in your settings
+```
+
+The onset is bracketed by two runs: `39422598539` (12:29:06Z) failed 2 of 45
+jobs with the first job starting normally, and `39425382458` (12:50:12Z)
+failed **41 of 45** with every job blocked.
+
+**Owner action:** **Settings → Billing & plans** — raise the Actions spending
+limit, or resolve the failed payment. Nothing in the repository can work
+around it, because the jobs are not being scheduled at all.
+
+**Why this is on the human's list and not a code change:** the fix is an
+account billing setting, and it silently converts "your code is broken" into
+"every job on every branch is red" for whoever looks next. It is the second
+account-level blocker found in this session, after code scanning being
+disabled for this private repository (see above). Both need the owner, and
+both are worth distinguishing from a real code failure before anyone spends
+time debugging a red build.
+
+**What it blocked here:** PR #1046, #1047 and #1048 could not have their
+regression tests shown green in CI. All three were verified locally against
+their own service's test suite, the contract suite and the supply-chain
+guard, but that is not CI agreeing, and it should not be reported as such.
