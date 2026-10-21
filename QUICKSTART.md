@@ -1,3 +1,13 @@
+> [!WARNING]
+> **Historical document — superseded, dated August 2026 (6-service era).** Kept only for project
+> history. It is **not** a current reference: its service counts, test counts,
+> ports, paths and commands do not describe the repo as it stands.
+>
+> **Use instead:** [`README.md`](README.md) (overview),
+> [`AGENTS.md`](AGENTS.md) (how it is actually built),
+> [`STATUS.md`](STATUS.md) (current status),
+> [`DOCS_INDEX.md`](DOCS_INDEX.md) (which document is authoritative for what).
+
 # 🚀 Wildframe Quick Start Guide
 
 **Current State**: 6 core services start and expose CRUD APIs. Email/MFA stubbed. No integration tests. Observability stubbed.
@@ -21,7 +31,7 @@ redis 7+
 ## 2️⃣ Start Core Platform (6 Services + Infra)
 
 ```bash
-cd /home/phoenix/Desktop/wildframe
+cd "$(git rev-parse --show-toplevel)"
 
 # Start infrastructure + 6 core services
 docker-compose -f deployments/docker-compose.dev.yml up -d

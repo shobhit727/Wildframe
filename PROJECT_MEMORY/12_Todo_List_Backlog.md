@@ -80,12 +80,12 @@
 - [x] Fix rate limiting implementation across services — gateway limiter wired (Aug 9), auth-service login limiting
 
 ## Placeholder Memory Structure
-- ./PROJECT_MEMORY/features/
-- ./PROJECT_MEMORY/bugs/
-- ./PROJECT_MEMORY/performance/
-- ./PROJECT_MEMORY/security/
-- ./PROJECT_MEMORY/api/
-- ./PROJECT_MEMORY/database/
-- ./PROJECT_MEMORY/history/
-- ./PROJECT_MEMORY/planning/
-- ./PROJECT_MEMORY/decisions/
+- PROJECT_MEMORY/features/
+- PROJECT_MEMORY/bugs/
+- PROJECT_MEMORY/performance/
+- PROJECT_MEMORY/security/
+- PROJECT_MEMORY/api/
+- PROJECT_MEMORY/database/
+- PROJECT_MEMORY/history/
+- PROJECT_MEMORY/planning/
+- PROJECT_MEMORY/decisions/

@@ -360,6 +360,16 @@ async def test_packaging_failure_never_publishes_content():
 
 @pytest.mark.asyncio
 async def test_media_requires_both_playlists_before_packaged_event():
+    """A packaging failure never publishes.
+
+    NOTE: this case does *not* exercise the ``hls_package`` AND ``dash_package``
+    guard in ``app/services.py`` -- ``dash_package`` is critical, so it exhausts
+    its retries, ``advance()`` returns through ``except PipelineError``, and
+    control never reaches the guard. Its ``content.packaged`` assertion holds
+    because the job died earlier, not because the guard refused to fire. The
+    test below is the one that reaches the guard; both are kept because they
+    describe two different failures.
+    """
     reg = StageRegistry()
     reg.register(CountingStage("hls_package", success_event="content.hls_done"))
     reg.register(CountingStage("dash_package", success_event="content.packaged", fail_times=99))
@@ -375,6 +385,64 @@ async def test_media_requires_both_playlists_before_packaged_event():
     topics = [e.topic for e in service.publisher.sent]
     assert "content.published" not in topics
     assert "content.packaged" not in topics  # needs hls AND dash
+
+
+@pytest.mark.asyncio
+async def test_the_packaged_event_needs_both_playlists_not_just_hls():
+    """The AND guard itself: a half-packaged run must stay silent.
+
+    The test above cannot reach the guard, so the ``and`` between the two
+    ``in`` checks was untested: dropping ``dash_package`` from the condition, or
+    replacing ``and`` with ``or``, left the suite green. This registry has no
+    ``dash_package`` stage at all, so every stage succeeds, the job COMPLETEs
+    (the stub adapter set is durable by definition), and execution reaches the
+    guard with ``hls_package`` present and ``dash_package`` absent.
+
+    ``hls_package`` deliberately announces ``content.hls_done`` and not
+    ``content.packaged`` -- otherwise the stage's own success event would mask
+    whatever the guard does, which is how the guard went untested in the first
+    place.
+    """
+    reg = StageRegistry()
+    reg.register(CountingStage("hls_package", success_event="content.hls_done"))
+    service = make_service(reg)
+    job = await service.start_job(
+        content_id=uuid4(), upload_session_id=uuid4(), storage_key="uploads/x/a.mp4"
+    )
+
+    job = await service.advance(job.id)
+    await service.drain_outbox()
+
+    topics = [e.topic for e in service.publisher.sent]
+    assert job.status == PipelineJobStatus.COMPLETED, "the run itself must succeed"
+    assert set(job.stage_versions) == {"hls_package"}, "HLS really did run"
+    assert "content.hls_done" in topics, "the stage success event still fires"
+    assert "content.packaged" not in topics, (
+        "one playlist is not packaged media; announcing it would point content "
+        "at a DASH manifest that does not exist"
+    )
+
+
+@pytest.mark.asyncio
+async def test_both_playlists_completed_announce_packaged_media_once():
+    """Control for the guard above: with both stages done, it does fire.
+
+    Without this, the test above also passes if the guard is simply dead.
+    """
+    reg = StageRegistry()
+    reg.register(CountingStage("hls_package", success_event="content.hls_done"))
+    reg.register(CountingStage("dash_package", success_event="content.dash_done"))
+    service = make_service(reg)
+    job = await service.start_job(
+        content_id=uuid4(), upload_session_id=uuid4(), storage_key="uploads/x/a.mp4"
+    )
+
+    job = await service.advance(job.id)
+    await service.drain_outbox()
+
+    topics = [e.topic for e in service.publisher.sent]
+    assert job.status == PipelineJobStatus.COMPLETED
+    assert topics.count("content.packaged") == 1
 
 
 # ---------------------------------------------------------------------------

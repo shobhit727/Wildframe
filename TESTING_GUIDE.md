@@ -14,7 +14,7 @@
 
 Run tests for all services:
 ```bash
-cd /home/phoenix/Desktop/wildframe
+cd "$(git rev-parse --show-toplevel)"
 ./run_all_tests.sh
 ```
 
@@ -34,7 +34,7 @@ python -m pytest app/tests --cov=app --cov-report=html
 
 Start all Docker containers:
 ```bash
-cd /home/phoenix/Desktop/wildframe
+cd "$(git rev-parse --show-toplevel)"
 ./start_services.sh
 ```
 

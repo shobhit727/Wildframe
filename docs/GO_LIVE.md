@@ -47,7 +47,7 @@ CI already refuses images built with dev defaults; services refuse to boot in
 There is no migration framework by design. From a machine with access:
 
 ```bash
-python scripts/init_schemas.py   # creates all tables from the models
+python scripts/init_schemas.py   # creates all tables from the models, adds missing columns
 ```
 
 Run it once against prod RDS through the bastion/EKS job, then freeze the

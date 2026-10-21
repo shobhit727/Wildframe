@@ -1,6 +1,16 @@
-# Wildframe — Closed-Issues Audit (Historical Snapshot)
 
-> This audit was generated on August 22, 2026. It is a historical snapshot, not the current GitHub issue state. GitHub currently reports 165 open issues as of September 27, 2026; use GitHub Issues for live state.
+> [!WARNING]
+> **Historical snapshot — generated 2026-08-22** against HEAD `6297fde`. Its
+> tallies ("N closed / 0 open") describe the tracker on that date and are
+> **not** current: the tracker has open items, including blockers. Its CI
+> run tallies (e.g. "54/54 jobs") likewise describe one specific historical
+> run — `ci-cd.yml` defines 17 jobs today. Kept for history only; read the
+> GitHub tracker for current state.
+>
+> The tracker reported 165 open issues as of 2026-09-27; that is a dated
+> figure, not a live one.
+
+# Wildframe — Closed-Issues Audit (Historical Snapshot)
 
 Generated 2026-08-22 against `shobhit727/Wildframe` (HEAD `6297fde`).
 

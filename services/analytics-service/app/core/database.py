@@ -22,8 +22,11 @@ class DatabaseManager:
     @classmethod
     async def init(cls) -> None:
         """Initialize database."""
+        database_url = settings.DATABASE_URL
+        if not database_url:
+            raise RuntimeError("DATABASE_URL is not configured")
         cls.engine = create_async_engine(
-            settings.DATABASE_URL,
+            database_url,
             echo=False,
             future=True,
             pool_size=5,
@@ -65,9 +68,19 @@ class DatabaseManager:
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Get database session."""
+    """FastAPI dependency yielding an AsyncSession per request.
+
+    Repositories only flush, so the request session owns the transaction:
+    commit on success, roll back and re-raise on error. Without this the
+    INSERTs from the ingestion endpoints are discarded with the session.
+    """
     if DatabaseManager.session_factory is None:
         await DatabaseManager.init()
     assert DatabaseManager.session_factory is not None
     async with DatabaseManager.session_factory() as session:
-        yield session
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise

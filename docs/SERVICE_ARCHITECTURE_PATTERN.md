@@ -10,7 +10,9 @@ The 15 backend services share recurring FastAPI/SQLAlchemy patterns, but their d
 ## Why a Shared Pattern?
 
 - **Predictability** — Every service has the same shape, so onboarding takes hours, not days.
-- **Tooling** — The CI workflow runs service-specific test and lint steps across the backend service set.
+- **Tooling** — The CI workflow runs service-specific test and lint steps
+  across the backend service set: one `backend-test` job over a 15-service
+  matrix.
 - **Refactor safety** — Changes in patterns propagate cleanly because every service uses the same abstractions.
 
 ---

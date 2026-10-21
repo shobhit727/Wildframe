@@ -1,6 +1,13 @@
-# Wildframe — Full Closed-Issues Audit (all 607, Historical Snapshot)
 
-> Generated August 22, 2026. This file records that audit window and is not a live issue tracker. GitHub currently reports 165 open issues as of September 27, 2026.
+> [!WARNING]
+> **Historical snapshot — generated 2026-08-22** against HEAD `dc1f52c`.
+> Companion to `CLOSED_ISSUES_AUDIT.md`, with the same caveat: its issue
+> tallies describe that date, not today, and its "54/54 jobs" CI figures
+> describe one specific past run (`ci-cd.yml` defines 17 jobs today). Kept for
+> history only. The tracker reported 165 open issues as of 2026-09-27; that is
+> a dated figure, not a live one.
+
+# Wildframe — Full Closed-Issues Audit (all 607, Historical Snapshot)
 
 Generated 2026-08-22 against `shobhit727/Wildframe` (HEAD `dc1f52c`).
 Companion to `CLOSED_ISSUES_AUDIT.md`; this file is the **complete** audit table.
@@ -141,7 +148,7 @@ These are documented in closing comments with explicit justification (e.g. DRM, 
 ## Re-run
 
 ```bash
-cd /home/phoenix/Desktop/wildframe
+cd "$(git rev-parse --show-toplevel)"
 
 # 1. Pull closed issues
 gh api "repos/shobhit727/Wildframe/issues?state=closed&per_page=100&page=N" \
