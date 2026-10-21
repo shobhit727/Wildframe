@@ -1,5 +1,6 @@
 import base64
 import json
+from typing import cast
 
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
@@ -96,7 +97,12 @@ def get_public_key_pem() -> str:
         serialization.PublicFormat.SubjectPublicKeyInfo,
     ).decode()
     _cached_public_pem = pub_pem
-    return pub_pem
+    # `cryptography` 50 exposes `load_pem_private_key` as an untyped builtin, so
+    # `_load_private_key` is Any and so is everything derived from it. Per the
+    # cryptography API `public_bytes(...)` returns bytes, and `bytes.decode()`
+    # returns str, so this value really is a str -- mypy just cannot see through
+    # the Any to check it.
+    return cast(str, pub_pem)
 
 
 def get_current_jwk() -> dict:
@@ -135,7 +141,7 @@ def get_jwk_for_kid(kid: str) -> dict | None:
     jwks = get_jwks()
     for k in jwks.get("keys", []):
         if k.get("kid") == kid:
-            return k
+            return cast(dict, k)
     return None
 
 

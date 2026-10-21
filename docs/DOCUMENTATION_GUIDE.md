@@ -221,7 +221,7 @@ SELECT * FROM users WHERE active = true;
 
 #### Links
 ```markdown
-[Link text](docs/DEVELOPMENT.md)  # Internal link
+[Link text](DEVELOPMENT.md)      # Internal link, relative to this file
 [Link text](https://example.com)  # External link
 [reference]: https://example.com  # Reference link
 ```
@@ -342,9 +342,9 @@ curl -X GET https://api.wildframe.com/users/me \
 ```
 
 ### See Also
-- [Refresh Token Endpoint](/docs/API.md#post-authrefresh)
-- [JWT Token Structure](/docs/ARCHITECTURE.md#jwt-authentication)
-- [Rate Limiting](/docs/ARCHITECTURE.md#rate-limiting)
+- [Refresh Token Endpoint](API_DOCUMENTATION.md#post-authrefresh)
+- [JWT Token Structure](ARCHITECTURE.md#jwt-authentication)
+- [Rate Limiting](ARCHITECTURE.md#rate-limiting)
 ```
 
 ### Example 2: Troubleshooting Section
@@ -632,7 +632,7 @@ Start
 **Version**: 2.0.0  
 **Last Updated**: May 27, 2026  
 **Stability**: Stable  
-**Deprecations**: See [Changelog](CHANGELOG.md#v200)  
+**Deprecations**: See [`DOCS_INDEX.md`](../DOCS_INDEX.md)  
 
 ### Versions Reference
 

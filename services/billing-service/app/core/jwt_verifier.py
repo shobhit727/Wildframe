@@ -1,5 +1,5 @@
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from jose import JWTError, jwt
@@ -16,7 +16,7 @@ ALLOWED_ALG = {"RS256"}
 def _get_jwk_for_kid(jwks: dict, kid: str) -> dict | None:
     for k in jwks.get("keys", []):
         if k.get("kid") == kid:
-            return k
+            return cast(dict, k)
     return None
 
 
@@ -64,7 +64,12 @@ async def fetch_jwks(url: str | None = None) -> dict:
     async with httpx.AsyncClient(timeout=5.0) as client:
         resp = await client.get(target)
         resp.raise_for_status()
-        return resp.json()
+        # httpx types `Response.json()` as Any. This asserts the auth-service
+        # JWKS document really is an object; a non-2xx already raised above and a
+        # non-JSON body raises inside `json()`, so the only way to get a
+        # non-dict past this point is a JSON array/scalar body, which this does
+        # not verify. See the note in the PR description.
+        return cast(dict, resp.json())
 
 
 async def get_cached_jwks(url: str | None = None, ttl: int = 300) -> dict:
