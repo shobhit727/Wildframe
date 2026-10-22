@@ -75,7 +75,6 @@ history and are not release declarations (see `STATUS.md`).
 | [`CLOSED_ISSUES_AUDIT.md`](CLOSED_ISSUES_AUDIT.md) | Audit of issues already closed at the time (Aug 2026). Its "0 open issues" and CI-run tallies describe that snapshot and are not current — the tracker has open items. |
 | [`CLOSED_ISSUES_AUDIT_FULL.md`](CLOSED_ISSUES_AUDIT_FULL.md) | Longer version of the above; same caveat. |
 | [`CODEBASE_LEARNING_OUTLINE.md`](CODEBASE_LEARNING_OUTLINE.md) | Learning-oriented walkthrough outline of the codebase. |
-| [`GITHUB_ISSUES_CODE_AUDIT_2026-09-26.md`](GITHUB_ISSUES_CODE_AUDIT_2026-09-26.md) | Dated code audit against GitHub issues, 2026-09-26. |
 | [`TODO-full.md`](TODO-full.md) | Full TODO inventory, dated 2026-09-26. (There is no `TODO.md`.) |
 | [`web_audit_report.md`](web_audit_report.md) | Dated frontend audit. **Superseded in part**: its "no Content-Security-Policy header" finding no longer holds — `apps/web/src/proxy.ts` now sets CSP with a nonce. |
 
