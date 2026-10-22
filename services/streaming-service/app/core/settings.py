@@ -40,11 +40,13 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     DEBUG: bool = False
     DATABASE_URL: str | None = None
     REDIS_URL: str | None = None
+    # Legacy compatibility field; JWT verification uses RS256/JWKS and never reads this secret.
     JWT_SECRET_KEY: str | None = None
     JWT_ALGORITHM: str = "RS256"
+    JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
+    AUTH_SERVICE_URL: str = "http://auth-service:8000"
     JWT_ISSUER: str = "wildframe-auth"
     JWT_AUDIENCE: str = "wildframe-api"
-    JWT_JWKS_URL: str = "http://auth-service:8001/.well-known/jwks.json"
     ADMIN_ROLE_VERSION: int = 0
     JWT_EXPIRATION_MINUTES: int = 15
     DB_POOL_SIZE: int = 5
@@ -66,7 +68,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     PLAYBACK_SESSION_IDLE_TIMEOUT_MINUTES: int = 90
     PLAYBACK_URL_SIGNING_SECRET: str = "dev-playback-signing-secret-change-in-production"
     PLAYBACK_URL_TTL_SECONDS: int = 3600
-    ENTITLEMENT_CHECK_ENABLED: bool = True
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod
@@ -75,8 +77,6 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
         if environment in DEV_ENVIRONMENTS:
             for key, value in DEV_DEFAULTS.items():
                 values.setdefault(key, value)
-            if environment in {"", "development", "test"}:
-                values.setdefault("JWT_ALGORITHM", "HS256")
         return values
 
     @model_validator(mode="after")
@@ -104,12 +104,6 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
             )
-        if self.JWT_ALGORITHM != "RS256":
-            raise ValueError("JWT_ALGORITHM must be RS256.")
-        if not self.JWT_JWKS_URL.strip():
-            raise ValueError("JWT_JWKS_URL must be set explicitly when ENVIRONMENT is not development.")
-        if not self.JWT_ISSUER.strip() or not self.JWT_AUDIENCE.strip():
-            raise ValueError("JWT_ISSUER and JWT_AUDIENCE must be set explicitly when ENVIRONMENT is not development.")
         # The playback signing secret is a plain str carrying a shipped dev
         # default, so a non-development deploy that omits the env var would
         # otherwise sign playback URLs with that dev secret.

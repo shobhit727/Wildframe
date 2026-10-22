@@ -1,6 +1,10 @@
-"""Integration tests for Content Service."""
+"""Integration tests for Content Service.
 
-from datetime import UTC
+These run against real PostgreSQL, so the service SQL, the JSONB columns and
+the catalog's unique constraints are actually exercised.
+"""
+
+from datetime import UTC, datetime
 
 import pytest_asyncio
 from httpx import AsyncClient
@@ -9,6 +13,16 @@ from httpx import ASGITransport
 from app.main import app
 from app.models import ContentStatus
 from app.services import ContentService
+
+
+def naive_utcnow() -> datetime:
+    """A naive UTC timestamp, as ``TIMESTAMP WITHOUT TIME ZONE`` columns expect.
+
+    ``release_date``/``created_at`` are stored without a timezone, and asyncpg
+    rejects an offset-aware value ("can't subtract offset-naive and
+    offset-aware datetimes"), so requests carry a naive UTC wall time.
+    """
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 @pytest_asyncio.fixture
@@ -69,8 +83,6 @@ class TestContentIntegration:
 
     async def test_create_content(self, content_service, db_session):
         """Test creating content."""
-        from datetime import datetime
-
         from app.models import ContentType
         from app.schemas import ContentCreateRequest
 
@@ -79,7 +91,7 @@ class TestContentIntegration:
             slug="test-movie",
             description="A test movie",
             content_type="movie",
-            release_date=datetime.now(UTC),
+            release_date=naive_utcnow(),
             duration_minutes=120,
             original_language="en",
             country="US",
@@ -101,8 +113,6 @@ class TestContentIntegration:
 
     async def test_create_content_with_genres(self, content_service, db_session):
         """Test creating content with genres."""
-        from datetime import datetime
-
         from app.schemas import ContentCreateRequest
 
         # Create genres first
@@ -126,7 +136,7 @@ class TestContentIntegration:
             slug="adventure-movie",
             description="An adventure movie",
             content_type="movie",
-            release_date=datetime.now(UTC),
+            release_date=naive_utcnow(),
             duration_minutes=150,
             genre_ids=[genre1.id, genre2.id],
         )
@@ -187,8 +197,6 @@ class TestSeasonIntegration:
 
     async def test_create_season(self, content_service, db_session):
         """Test creating a season."""
-        from datetime import datetime
-
         from app.schemas import ContentCreateRequest, SeasonCreateRequest
 
         # Create content first
@@ -205,7 +213,7 @@ class TestSeasonIntegration:
             season_number=1,
             title="Season 1",
             description="First season",
-            release_date=datetime.now(UTC),
+            release_date=naive_utcnow(),
         )
 
         season = await content_service.create_season(content.id, season_request)

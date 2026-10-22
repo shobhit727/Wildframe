@@ -19,6 +19,7 @@ Handled events:
 
 import logging
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -191,6 +192,45 @@ async def _handle_subscription_deleted(
     logger.info("Subscription cancelled for user %s (reverted to AVOD)", user_id)
 
 
+def _invoice_amount_major_units(invoice_obj: dict[str, Any]) -> tuple[Decimal, str] | None:
+    """Convert a Stripe invoice ``total`` into exact major units.
+
+    Stripe reports ``total`` in the currency's *minor units*, and how many
+    minor units a currency has is a property of the currency itself (JPY 0,
+    USD 2, BHD 3). Dividing by a hardcoded 100 misstates every invoice in a
+    currency that is not 2-decimal by 100x or 1000x, so the divisor comes
+    from the ISO-4217 table in :mod:`app.core.money` via
+    :func:`from_minor_units`.
+
+    Returns ``(amount, currency)``, or ``None`` when the payload carries a
+    total/currency that can never be valid. That is a *permanent* defect:
+    Stripe redelivers the identical payload, so failing the event would burn
+    the retry budget on a poison message that can never succeed. The
+    rejection is logged and the event acknowledged instead.
+    """
+    raw_total = invoice_obj.get("total")
+    raw_currency = invoice_obj.get("currency") or settings.DEFAULT_CURRENCY
+    try:
+        currency = validate_currency(raw_currency)
+        total_minor = Decimal(str(raw_total))
+        if total_minor != total_minor.to_integral_value():
+            raise CurrencyError(
+                f"total {raw_total!r} is not a whole number of {currency} minor units"
+            )
+        amount = from_minor_units(int(total_minor), currency)
+    except (ArithmeticError, TypeError, ValueError) as exc:
+        # CurrencyError is a ValueError; InvalidOperation is an ArithmeticError.
+        logger.error(
+            "Rejecting invoice %s: unusable total/currency (total=%r, currency=%r): %s",
+            invoice_obj.get("id"),
+            raw_total,
+            raw_currency,
+            exc,
+        )
+        return None
+    return amount, currency
+
+
 async def _handle_invoice_paid(
     event: dict[str, Any],
     service: BillingService,
@@ -222,14 +262,12 @@ async def _handle_invoice_paid(
         user_id_str = metadata.get("user_id")
         if user_id_str:
             user_id = UUID(user_id_str)
-            currency = invoice_obj.get("currency", "USD").upper()
-            try:
-                validate_currency(currency)
-                total_minor = int(invoice_obj["total"])
-                # Convert using ISO-4217 minor units; dividing by 100 breaks JPY/BHD/etc.
-                amount = from_minor_units(total_minor, currency)
-            except (CurrencyError, KeyError, TypeError, ValueError) as exc:
-                raise BillingError(f"Invalid invoice amount/currency: {exc}") from exc
+            converted = _invoice_amount_major_units(invoice_obj)
+            if converted is None:
+                # Permanent rejection (already logged). Acknowledging stops
+                # Stripe re-delivering a payload that can never succeed.
+                return
+            amount, currency = converted
 
             new_inv = await service.inv_repo.create(
                 user_id=user_id,
@@ -278,7 +316,6 @@ async def _handle_payment_intent_succeeded(
         raise BillingError(
             f"Currency mismatch: expected {settings.DEFAULT_CURRENCY} got {currency}"
         )
-    from app.core.money import from_minor_units, to_minor_units
 
     amount = from_minor_units(amount_minor, currency)
     creator_share = BillingService.calculate_creator_share(amount)
@@ -415,7 +452,6 @@ async def _process_single_refund_obj(
         validate_currency(currency)
     except CurrencyError as exc:
         raise BillingError(str(exc)) from exc
-    from app.core.money import from_minor_units
 
     amount = from_minor_units(amount_minor, currency)
     user_id = None

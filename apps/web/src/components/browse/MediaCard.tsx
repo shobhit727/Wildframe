@@ -34,7 +34,7 @@ export function MediaCard({ content, variant = 'poster', showProgress, showCapti
           </h3>
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-[#46d369]">
-              {Math.min(99, Math.max(75, content.rating * 10))}% Match
+              {Math.round(content.matchPercentage)}% Match
             </span>
             {content.rating > 0 && (
               <span className="text-[11px] text-gray-400">{content.rating.toFixed(1)}</span>
@@ -68,7 +68,7 @@ export function MediaCard({ content, variant = 'poster', showProgress, showCapti
           <h3 className="truncate text-sm text-gray-200 transition-colors group-hover:text-white">
             {content.title}
           </h3>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted">
             {content.releaseDate?.split('-')[0]}
             {content.rating > 0 ? ` · ★ ${content.rating.toFixed(1)}` : ''}
           </p>

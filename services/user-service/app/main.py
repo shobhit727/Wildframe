@@ -1,9 +1,10 @@
 """Main FastAPI application for User Service."""
 
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -13,7 +14,7 @@ from fastapi.responses import JSONResponse
 from wildframe_observability.wire import wire_observability
 
 from app.core.database import DatabaseManager
-from app.core.logging import get_correlation_id, set_correlation_id, set_request_id, setup_logging
+from app.core.logging import set_correlation_id, set_request_id, setup_logging
 from app.core.settings import settings
 from app.schemas import ErrorResponse
 
@@ -106,6 +107,34 @@ def create_app() -> FastAPI:
         response.headers["X-Request-ID"] = request_id
         return response
 
+    def _serializable_errors(errors: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Sanitize Pydantic error entries so JSON responses never carry
+        non-serializable objects.
+
+        Pydantic puts the offending value in ``input`` and the failing
+        constraint in ``ctx``. Either can be an arbitrary object -- notably
+        ``input`` holds the raw request body (bytes) whenever a client sends a
+        body that cannot be parsed into the expected model, e.g. a JSON body
+        without ``Content-Type: application/json``. Passing ``exc.errors()``
+        straight to ``JSONResponse`` made ``json.dumps`` raise inside this
+        handler and turned the intended 422 into a 500.
+        """
+        json_safe = (str, int, float, bool, type(None))
+
+        def coerce(value: Any) -> Any:
+            return value if isinstance(value, json_safe) else str(value)
+
+        cleaned: list[dict[str, Any]] = []
+        for error in errors:
+            error = dict(error)
+            if "input" in error:
+                error["input"] = coerce(error["input"])
+            ctx = error.get("ctx")
+            if isinstance(ctx, dict):
+                error["ctx"] = {key: coerce(value) for key, value in ctx.items()}
+            cleaned.append(error)
+        return cleaned
+
     # Global exception handler for validation errors
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -115,7 +144,7 @@ def create_app() -> FastAPI:
             content=ErrorResponse(
                 error="VALIDATION_ERROR",
                 message="Request validation failed",
-                details={"errors": exc.errors()},
+                details={"errors": _serializable_errors(exc.errors())},
             ).model_dump(),
         )
 
@@ -183,7 +212,36 @@ def create_app() -> FastAPI:
                 pass
         return await call_next(request)
 
-    wire_observability(app, service_name=settings.SERVICE_NAME, log_level=settings.LOG_LEVEL)
+    # register_metrics=False: this service registers its own token-gated
+    # /metrics below, and the SDK's public route would shadow it.
+    wire_observability(
+        app,
+        service_name=settings.SERVICE_NAME,
+        log_level=settings.LOG_LEVEL,
+        register_metrics=False,
+    )
+
+    # Gate /metrics behind admin token (#469)
+    from fastapi import Depends, Header, HTTPException
+
+    async def require_metrics_token(
+        authorization: str | None = Header(default=None, alias="Authorization"),
+    ) -> None:
+        if settings.ENVIRONMENT == "production":
+            expected = (
+                f"Bearer {settings.METRICS_TOKEN}"
+                if hasattr(settings, "METRICS_TOKEN") and settings.METRICS_TOKEN
+                else None
+            )
+            if expected is None or authorization != expected:
+                raise HTTPException(status_code=401, detail="Unauthorized")
+
+    @app.get("/metrics", dependencies=[Depends(require_metrics_token)])
+    async def gated_metrics():
+        from prometheus_client import generate_latest
+        from fastapi import Response
+
+        return Response(content=generate_latest(), media_type="text/plain")
 
     # Opaque 500 handler (#557) — never leak exception internals.
     @app.exception_handler(Exception)
@@ -191,12 +249,7 @@ def create_app() -> FastAPI:
         logger.exception("Unhandled exception: %s", exc)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={
-                "status_code": 500,
-                "message": "Internal server error",
-                "correlation_id": get_correlation_id(),
-            },
-            headers={"X-Correlation-ID": get_correlation_id()},
+            content={"status_code": 500, "message": "Internal server error"},
         )
 
     return app

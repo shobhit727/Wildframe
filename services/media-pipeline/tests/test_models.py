@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
+
 from app.models import (
     Base,
     DeliveryProtocol,
@@ -23,10 +24,12 @@ from app.models import (
 @pytest.fixture
 def session():
     with ExitStack() as stack:
+        from testcontainers.postgres import (
+            PostgresContainer,
+        )  # lazy: keeps collection safe when the dep is absent
+
         url = os.environ.get("TEST_DATABASE_URL")
         if not url:
-            from testcontainers.postgres import PostgresContainer
-
             postgres = stack.enter_context(PostgresContainer("postgres:15"))
             url = postgres.get_connection_url()
         engine = create_engine(make_url(url).set(drivername="postgresql+psycopg2"))

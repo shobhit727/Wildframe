@@ -1,5 +1,4 @@
 from functools import lru_cache
-from pathlib import Path
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
@@ -44,7 +43,6 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     JWT_KEY_ID: str = "k1"
     JWT_PREVIOUS_SECRETS: str = ""
     JWT_PRIVATE_KEY: str | None = None
-    JWT_PRIVATE_KEY_FILE: str | None = None
     JWT_PUBLIC_KEY: str | None = None
     JWT_PREVIOUS_JWKS: str = ""
     JWT_EXPIRATION_MINUTES: int = 15
@@ -95,10 +93,16 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     compliance_grievance_officer_email: str = "grievance@wildframe.com"
     compliance_allowed_data_regions: list[str] = ["US", "EU", "IN", "SG"]
     EVENT_PUBLISHER: str = "memory"
+    # JAEGER_ENABLED is retained as the tracing on/off switch so existing compose
+    # and Helm values keep working. The agent host/port fields are retained for
+    # compatibility but are no longer used for export: the Jaeger exporter was
+    # discontinued at 1.21.0 and cannot be used with the required SDK. Spans go
+    # over OTLP instead. See issue #978.
     JAEGER_ENABLED: bool = False
     JAEGER_AGENT_HOST: str = "localhost"
     JAEGER_AGENT_PORT: int = 6831
     JAEGER_SERVICE_NAME: str = "auth-service"
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://jaeger:4317"
     EMAIL_VERIFICATION_ENABLED: bool = True
     EMAIL_VERIFICATION_EXPIRATION_HOURS: int = 24
     MFA_ENABLED: bool = True
@@ -108,11 +112,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     MFA_BACKUP_CODE_LENGTH: int = 8
     MFA_ENCRYPTION_KEY: str = ""
     MFA_ENCRYPTION_KEY_PREVIOUS: list[str] = []
-
-    @property
-    def SECRET_KEY(self) -> str | None:
-        """Compatibility alias; JWT signing remains exclusively RS256/JWKS."""
-        return self.JWT_SECRET_KEY
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod
@@ -121,12 +121,6 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
         if environment in DEV_ENVIRONMENTS:
             for key, value in DEV_DEFAULTS.items():
                 values.setdefault(key, value)
-        # Prefer an explicitly generated local key file so dev reloads do not
-        # rotate the auth signing key and invalidate unrelated test sessions.
-        if not values.get("JWT_PRIVATE_KEY") and values.get("JWT_PRIVATE_KEY_FILE"):
-            key_path = Path(str(values["JWT_PRIVATE_KEY_FILE"]))
-            if key_path.is_file():
-                values["JWT_PRIVATE_KEY"] = key_path.read_text(encoding="utf-8")
         return values
 
     @model_validator(mode="after")

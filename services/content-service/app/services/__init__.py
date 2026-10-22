@@ -4,15 +4,16 @@ Orchestrates repositories and business rules.
 """
 
 import logging
-from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     AnimationStyle,
     ContentStatus,
     ContentType,
+    content_cast_association,
 )
 from app.repositories import (
     CastMemberRepository,
@@ -39,12 +40,11 @@ from app.schemas import (
 
 logger = logging.getLogger(__name__)
 
-
-def _db_datetime(value: datetime | None) -> datetime | None:
-    """Normalize aware timestamps for PostgreSQL TIMESTAMP WITHOUT TIME ZONE columns."""
-    if value is None or value.tzinfo is None:
-        return value
-    return value.astimezone(UTC).replace(tzinfo=None)
+# ``content_cast.role`` is NOT NULL, so the association row cannot be written
+# without one. ``CastMemberCreateRequest`` carries no role and the frontend only
+# ever sends name/bio/slug (apps/web/src/types/index.ts), so the add path writes
+# this default rather than inventing a new request field.
+DEFAULT_CAST_ROLE = "cast"
 
 
 class ContentService:
@@ -153,7 +153,7 @@ class ContentService:
                 slug=request.slug,
                 description=request.description,
                 content_type=ContentType(request.content_type),
-                release_date=_db_datetime(request.release_date),
+                release_date=request.release_date,
                 duration_minutes=request.duration_minutes,
                 original_language=request.original_language,
                 country=request.country,
@@ -165,6 +165,7 @@ class ContentService:
                 is_premium=request.is_premium,
                 can_download=request.can_download,
                 can_stream=request.can_stream,
+                price_usd=request.price_usd,
                 genres=genres,
             )
 
@@ -221,8 +222,6 @@ class ContentService:
         """Update content."""
         try:
             update_data = request.model_dump(exclude_unset=True, exclude={"genre_ids"})
-            if "release_date" in update_data:
-                update_data["release_date"] = _db_datetime(update_data["release_date"])
             content = await self.content_repo.update(content_id, **update_data)
             if content is None:
                 await self.content_repo.rollback()
@@ -251,9 +250,11 @@ class ContentService:
         waiting for a reindex (#227).
         """
         try:
+            from datetime import datetime
+
             update_data = {"status": ContentStatus(request.status)}
             if request.status == "published":
-                update_data["published_at"] = datetime.now(UTC).replace(tzinfo=None)
+                update_data["published_at"] = datetime.utcnow()  # type: ignore[assignment]
 
             content = await self.content_repo.update(content_id, **update_data)
             await self.content_repo.commit()
@@ -304,7 +305,7 @@ class ContentService:
                 title=request.title,
                 description=request.description,
                 poster_url=request.poster_url,
-                release_date=_db_datetime(request.release_date),
+                release_date=request.release_date,
             )
             await self.content_repo.commit()
             return await self.season_repo.get_by_id(season.id)  # type: ignore[arg-type]
@@ -349,8 +350,6 @@ class ContentService:
             if not season or season.content_id != content_id:
                 return None
             update_data = request.model_dump(exclude_unset=True)
-            if "release_date" in update_data:
-                update_data["release_date"] = _db_datetime(update_data["release_date"])
             season = await self.season_repo.update(season_id, **update_data)
             await self.content_repo.commit()
             return season
@@ -366,6 +365,13 @@ class ContentService:
     ):
         """Create a new episode."""
         try:
+            # The season must belong to the content in the path: both columns
+            # are free, so without this check an episode can straddle two
+            # unrelated catalog branches.
+            season = await self.season_repo.get_by_id(season_id)
+            if not season or season.content_id != content_id:
+                return None
+
             episode = await self.episode_repo.create(
                 content_id=content_id,
                 season_id=season_id,
@@ -374,15 +380,13 @@ class ContentService:
                 duration_minutes=request.duration_minutes,
                 description=request.description,
                 thumbnail_url=request.thumbnail_url,
-                release_date=_db_datetime(request.release_date),
+                release_date=request.release_date,
                 is_available=request.is_available,
             )
 
             # Update season episode count
-            season = await self.season_repo.get_by_id(season_id)
-            if season:
-                episodes = await self.episode_repo.get_season_episodes(season_id)
-                season.episode_count = len(episodes)  # type: ignore[assignment]
+            episodes = await self.episode_repo.get_season_episodes(season_id)
+            season.episode_count = len(episodes)  # type: ignore[assignment]
 
             await self.content_repo.commit()
             return episode
@@ -443,8 +447,6 @@ class ContentService:
             if not episode or episode.season_id != season_id:
                 return None
             update_data = request.model_dump(exclude_unset=True)
-            if "release_date" in update_data:
-                update_data["release_date"] = _db_datetime(update_data["release_date"])
             episode = await self.episode_repo.update(episode_id, **update_data)
             await self.content_repo.commit()
             return episode
@@ -542,11 +544,25 @@ class ContentService:
                     bio=request.bio,
                     birth_date=request.birth_date,
                     image_url=request.image_url,
-                    role=request.role,
                 )
 
             if member not in content.cast_members:
-                content.cast_members.append(member)
+                # Write the association row explicitly rather than appending to
+                # ``content.cast_members``: the ORM only populates the two FK
+                # columns, leaving ``content_cast.role`` NULL, which is NOT
+                # NULL — so the append raised NotNullViolationError against real
+                # PostgreSQL on every single add (#858).
+                await self.content_repo.session.execute(
+                    insert(content_cast_association).values(
+                        content_id=content.id,
+                        cast_id=member.id,
+                        role=DEFAULT_CAST_ROLE,
+                    )
+                )
+                # ``expire_on_commit=False`` means the already-loaded collection
+                # would keep its stale (pre-insert) contents, so drop it and let
+                # the next read re-issue the selectinload.
+                self.content_repo.session.expire(content, ["cast_members"])
 
             await self.content_repo.commit()
             return member

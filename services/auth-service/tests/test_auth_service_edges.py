@@ -47,6 +47,12 @@ def make_user(**overrides):
     u.last_name = "Last"
     u.login_attempts = 0
     u.locked_until = None
+    # `login` reads User.is_locked, which the real model derives from
+    # locked_until. A MagicMock auto-creates a *truthy* attribute for anything
+    # not set here, so omitting this made every mock user look locked and
+    # turned ordinary logins into 429s. Set it alongside locked_until, and
+    # pass is_locked=True to build a locked mock.
+    u.is_locked = False
     u.email_verified = False
     u.mfa_enabled = False
     u.auth_version = 0
@@ -85,6 +91,9 @@ class TestLoginBranches:
     async def test_locked_account_429(self, service, repos):
         user = make_user()
         user.locked_until = __import__("datetime").datetime.now(UTC) + timedelta(minutes=15)
+        # The real model derives this from locked_until; the mock must say so
+        # explicitly rather than relying on an auto-created attribute.
+        user.is_locked = True
         repos["user_repo"].get_by_email.return_value = user
 
         with pytest.raises(HTTPException) as exc:
@@ -225,6 +234,9 @@ def _user():
     u.password_hash = PasswordManager().hash_password("PasSword123!")
     u.login_attempts = 0
     u.locked_until = None
+    # See the note in make_user(): a MagicMock attribute defaults to truthy,
+    # so an unset is_locked makes the user look locked.
+    u.is_locked = False
     u.last_login_at = None
     u.first_name = "First"
     u.last_name = "Last"

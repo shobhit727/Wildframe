@@ -2,8 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.exc import IntegrityError
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -24,15 +23,7 @@ async def create_onboarding(
         tax_form_type=request.tax_form_type,
     )
     db.add(rec)
-    try:
-        await db.flush()
-        await db.commit()
-    except IntegrityError:
-        # A creator can only have one onboarding row; duplicate submissions are a conflict.
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Creator onboarding already exists",
-        )
+    await db.flush()
+    await db.commit()
     await db.refresh(rec)
     return OnboardingResponse.model_validate(rec)

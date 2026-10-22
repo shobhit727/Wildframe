@@ -92,11 +92,12 @@ class AdminAuditLogResponse(BaseModel):
 
 
 class SystemStatsResponse(BaseModel):
-    # User counts are unavailable until the admin/user service contract exposes
-    # an authoritative aggregate; do not turn that absence into a 500.
+    # The user directory is owned by user-service, which exposes no count
+    # endpoint, so total/active users are reported as null rather than a
+    # fabricated zero. Populate once that aggregate exists.
     total_users: int | None
     active_users: int | None
-    suspended_users: int | None
+    suspended_users: int
     flagged_content: int
     active_alerts: int
     system_uptime_hours: float

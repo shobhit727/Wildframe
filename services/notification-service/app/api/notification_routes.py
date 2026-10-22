@@ -3,11 +3,12 @@
 from typing import Annotated
 from uuid import UUID
 
-from jose import JWTError, jwt
-from wildframe_auth.verifier import get_cached_jwks, verify_token
+from jose import JWTError
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from wildframe_auth import JWKSUnavailableError, verify_token_with_jwks
 
 from app.core.database import get_db
 from app.core.settings import settings
@@ -28,40 +29,27 @@ async def get_current_user_id(
         )
     token = authorization.removeprefix("Bearer ")
     try:
-        if settings.ENVIRONMENT in {"", "development", "test"} and settings.JWT_ALGORITHM == "HS256":
-            if not settings.JWT_SECRET_KEY:
-                raise JWTError("missing development JWT secret")
-            payload = jwt.decode(
-                token,
-                settings.JWT_SECRET_KEY,
-                algorithms=["HS256"],
-                audience=settings.JWT_AUDIENCE,
-                issuer=settings.JWT_ISSUER,
-            )
-        else:
-            header = jwt.get_unverified_header(token)
-            kid = header.get("kid")
-            if not kid:
-                raise JWTError("missing kid")
-            jwks = await get_cached_jwks(settings.JWT_JWKS_URL, required_kid=kid)
-            payload = verify_token(
-                token,
-                jwks,
-                audience=settings.JWT_AUDIENCE,
-                issuer=settings.JWT_ISSUER,
-                expected_type="access",
-            )
-        # Token-type separation (#221): refresh tokens share the audience but
-        # must never be accepted as access tokens.
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type",
-            )
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Authentication service unavailable") from None
+        # JWKSUnavailableError must be caught *before* JWTError: it is a
+        # JWTError subclass, and it is the branch that keeps a JWKS outage
+        # (fetch failure, or a body that is not a JWKS) a 503 instead of a
+        # 401. Everything else the verifier rejects — bad signature, expired,
+        # wrong audience, unknown kid, wrong token type — stays a 401.
+        payload = await verify_token_with_jwks(
+            token,
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            url=settings.JWT_JWKS_URL,
+            expected_type="access",
+        )
+    except JWKSUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Token verification is unavailable",
+        ) from exc
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from exc
     sub = payload.get("sub") or payload.get("user_id")
     if not sub:
         raise HTTPException(
@@ -116,8 +104,6 @@ async def send_notification(
         kwargs["event_id"] = event_id
     if channels is not None:
         kwargs["channels"] = channels
-    # email_address is deliberately rejected above until the account-recipient
-    # verification contract is available; this branch is therefore unreachable.
     if template != "generic":
         kwargs["template"] = template
     return await service.send_notification(user_id, title, message, channel, **kwargs)

@@ -103,7 +103,7 @@ export default function AdminUsersPage() {
             <p className="truncate font-medium text-white">
               {u.first_name} {u.last_name}
             </p>
-            <p className="truncate text-xs text-zinc-500">{u.email}</p>
+            <p className="truncate text-xs text-muted">{u.email}</p>
           </div>
         </div>
       ),
@@ -212,7 +212,7 @@ export default function AdminUsersPage() {
                   setPage(0);
                 }}
                 className={clsx(
-                  'rounded-md px-3 py-1.5 text-xs font-medium transition',
+                  'min-h-8 rounded-md px-3 py-1.5 text-xs font-medium transition',
                   status === f.value
                     ? 'bg-red-600/20 text-red-300'
                     : 'text-zinc-400 hover:bg-white/5 hover:text-white',
@@ -257,6 +257,7 @@ export default function AdminUsersPage() {
           <AdminButton
             variant="secondary"
             size="sm"
+            className="min-h-8"
             disabled={safePage === 0}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
           >
@@ -268,6 +269,7 @@ export default function AdminUsersPage() {
           <AdminButton
             variant="secondary"
             size="sm"
+            className="min-h-8"
             disabled={safePage >= pageCount - 1}
             onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
           >
@@ -288,25 +290,25 @@ export default function AdminUsersPage() {
           <div className="space-y-4 text-sm">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-xs text-zinc-500">Name</p>
+                <p className="text-xs text-muted">Name</p>
                 <p className="text-white">
                   {selected.first_name} {selected.last_name}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-zinc-500">Status</p>
+                <p className="text-xs text-muted">Status</p>
                 <StatusBadge status={selected.status} />
               </div>
               <div className="col-span-2">
-                <p className="text-xs text-zinc-500">User ID</p>
+                <p className="text-xs text-muted">User ID</p>
                 <p className="font-mono text-zinc-300">{selected.user_id}</p>
               </div>
               <div className="col-span-2">
-                <p className="text-xs text-zinc-500">Email</p>
+                <p className="text-xs text-muted">Email</p>
                 <p className="text-zinc-300">{selected.email}</p>
               </div>
               <div className="col-span-2">
-                <p className="text-xs text-zinc-500">Last moderation reason</p>
+                <p className="text-xs text-muted">Last moderation reason</p>
                 <p className="text-zinc-300">{selected.reason ?? '—'}</p>
               </div>
             </div>

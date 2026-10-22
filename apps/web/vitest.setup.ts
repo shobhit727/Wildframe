@@ -18,13 +18,19 @@ if (typeof window !== "undefined" && typeof window.localStorage === "undefined")
   Object.defineProperty(globalThis, "localStorage", { value: storage, configurable: true });
 }
 
+// ---------------------------------------------------------------------------
+// Browser API polyfills
+// ---------------------------------------------------------------------------
+// jsdom 23 does not implement these. Without them, components that touch them
+// either crash or silently take a fallback branch, which would make coverage
+// numbers lie. Each is installed defensively so a future jsdom that ships a
+// real implementation keeps it.
 
-// jsdom intentionally omits several browser APIs used by the real application.
-// These defensive shims exercise the application branches without replacing
-// implementations supplied by a future jsdom release.
-if (typeof window !== "undefined") {
-  if (!window.matchMedia) {
-    window.matchMedia = (query: string) => ({
+if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    configurable: true,
+    value: (query: string) => ({
       matches: false,
       media: query,
       onchange: null,
@@ -33,64 +39,70 @@ if (typeof window !== "undefined") {
       addEventListener: () => {},
       removeEventListener: () => {},
       dispatchEvent: () => false,
-    }) as MediaQueryList;
-  }
+    }),
+  });
+}
 
-  if (!window.scrollTo) {
-    window.scrollTo = () => {};
-  }
-
-  if (!URL.createObjectURL) {
-    URL.createObjectURL = () => "blob:vitest";
-  }
-  if (!URL.revokeObjectURL) {
-    URL.revokeObjectURL = () => {};
-  }
-
-  if (!("MediaSource" in window)) {
-    (window as Window & { MediaSource?: typeof MediaSource }).MediaSource =
-      class FakeMediaSource {} as typeof MediaSource;
+for (const name of ["ResizeObserver", "IntersectionObserver"] as const) {
+  const g = globalThis as unknown as Record<string, unknown>;
+  if (typeof g[name] !== "function") {
+    g[name] = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+      takeRecords() {
+        return [];
+      }
+    };
   }
 }
 
 if (typeof Element !== "undefined" && !Element.prototype.scrollTo) {
-  Element.prototype.scrollTo = () => {};
+  Element.prototype.scrollTo = function scrollTo() {};
+}
+if (typeof window !== "undefined" && !window.scrollTo) {
+  window.scrollTo = (() => {}) as typeof window.scrollTo;
 }
 
-if (typeof ResizeObserver === "undefined") {
-  class ResizeObserverShim {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  }
-  globalThis.ResizeObserver = ResizeObserverShim as typeof ResizeObserver;
+if (typeof URL !== "undefined" && !URL.createObjectURL) {
+  URL.createObjectURL = () => "blob:mock";
+  URL.revokeObjectURL = () => {};
 }
 
-if (typeof IntersectionObserver === "undefined") {
-  class IntersectionObserverShim {
-    readonly root = null;
-    readonly rootMargin = "";
-    readonly thresholds: readonly number[] = [0];
-    constructor(_callback: IntersectionObserverCallback, _options?: IntersectionObserverInit) {}
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-    takeRecords(): IntersectionObserverEntry[] { return []; }
-  }
-  globalThis.IntersectionObserver = IntersectionObserverShim as typeof IntersectionObserver;
-}
-
+// HTMLMediaElement.play() returns undefined in jsdom, so `video.play().catch()`
+// throws a TypeError. VideoPlayer hits this on every play.
 if (typeof HTMLMediaElement !== "undefined") {
-  HTMLMediaElement.prototype.play ||= (() => Promise.resolve()) as typeof HTMLMediaElement.prototype.play;
-  HTMLMediaElement.prototype.pause ||= (() => {}) as typeof HTMLMediaElement.prototype.pause;
-  HTMLMediaElement.prototype.load ||= (() => {}) as typeof HTMLMediaElement.prototype.load;
+  const proto = HTMLMediaElement.prototype as unknown as Record<string, unknown>;
+  if (typeof proto.play !== "function" || proto.play.length === 0) {
+    Object.defineProperty(proto, "play", {
+      configurable: true,
+      writable: true,
+      value: () => Promise.resolve(undefined),
+    });
+  }
+  if (typeof proto.pause !== "function") {
+    Object.defineProperty(proto, "pause", { configurable: true, writable: true, value: () => {} });
+  }
+  if (typeof proto.load !== "function") {
+    Object.defineProperty(proto, "load", { configurable: true, writable: true, value: () => {} });
+  }
 }
 
 if (typeof HTMLVideoElement !== "undefined") {
-  HTMLVideoElement.prototype.canPlayType ||= (() => "probably") as typeof HTMLVideoElement.prototype.canPlayType;
-  HTMLVideoElement.prototype.requestFullscreen ||= (() => Promise.resolve()) as typeof HTMLVideoElement.prototype.requestFullscreen;
+  const vproto = HTMLVideoElement.prototype as unknown as Record<string, unknown>;
+  if (typeof vproto.requestFullscreen !== "function") {
+    Object.defineProperty(vproto, "requestFullscreen", {
+      configurable: true,
+      writable: true,
+      value: () => Promise.resolve(undefined),
+    });
+  }
 }
 
-if (typeof document !== "undefined" && !document.exitFullscreen) {
-  document.exitFullscreen = (() => Promise.resolve()) as typeof document.exitFullscreen;
+if (typeof document !== "undefined" && typeof document.exitFullscreen !== "function") {
+  Object.defineProperty(document, "exitFullscreen", {
+    configurable: true,
+    writable: true,
+    value: () => Promise.resolve(undefined),
+  });
 }

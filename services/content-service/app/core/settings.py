@@ -14,8 +14,8 @@ DEV_ENVIRONMENTS = {"", "development", "test"}
 DEV_DEFAULTS = {
     "DATABASE_URL": "postgresql+asyncpg://postgres:password@localhost:5432/content_db",
     "REDIS_URL": "redis://localhost:6379/0",
-    "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
     "JWT_SECRET_KEY": "dev-secret-key-change-in-production-min-32-bytes",
+    "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
 }
 
 KNOWN_INSECURE_DB_CREDENTIALS = (
@@ -23,6 +23,15 @@ KNOWN_INSECURE_DB_CREDENTIALS = (
     "wildframe:wildframe_dev_password",
     "postgres:password",
 )
+KNOWN_INSECURE_JWT_SECRETS = (
+    "dev-secret-key",
+    "dev-secret-key-change-in-production",
+    "dev-secret-key-change-in-production-min-32-bytes",
+    "your-secret-key-change-in-production",
+    "secret",
+    "changeme",
+)
+
 
 class Settings(ComplianceSettingsMixin, BaseSettings):
     ADMIN_ROLE_VERSION: int = 0
@@ -36,8 +45,8 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     REDIS_URL: str | None = None
     JWT_SECRET_KEY: str | None = None
     JWT_ALGORITHM: str = "RS256"
+    JWT_JWKS_URL: str = "http://auth-service:8000/.well-known/jwks.json"
     JWT_AUDIENCE: str = "wildframe-api"
-    JWT_JWKS_URL: str = "http://auth-service:8001/.well-known/jwks.json"
     JWT_ISSUER: str = "wildframe-auth"
     AUTH_SERVICE_URL: str = "http://auth-service:8000"
     DB_POOL_SIZE: int = 5
@@ -58,6 +67,7 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     LOG_LEVEL: str = "INFO"
     EVENT_PUBLISHER: str = "memory"
     KAFKA_BOOTSTRAP_SERVERS: str | None = None
+    METRICS_TOKEN: str = ""
 
     @model_validator(mode="before")
     @classmethod
@@ -66,8 +76,6 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
         if environment in DEV_ENVIRONMENTS:
             for key, value in DEV_DEFAULTS.items():
                 values.setdefault(key, value)
-            if environment in {"", "development", "test"}:
-                values.setdefault("JWT_ALGORITHM", "HS256")
         return values
 
     @model_validator(mode="after")
@@ -84,12 +92,18 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
             raise ValueError(
                 "REDIS_URL must be set explicitly when ENVIRONMENT is not development."
             )
-        if self.JWT_ALGORITHM != "RS256":
-            raise ValueError("JWT_ALGORITHM must be RS256.")
-        if not self.JWT_JWKS_URL.strip():
-            raise ValueError("JWT_JWKS_URL must be set explicitly when ENVIRONMENT is not development.")
-        if not self.JWT_ISSUER.strip() or not self.JWT_AUDIENCE.strip():
-            raise ValueError("JWT_ISSUER and JWT_AUDIENCE must be set explicitly when ENVIRONMENT is not development.")
+        if self.JWT_SECRET_KEY is None:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
+            )
+        if self.JWT_SECRET_KEY in KNOWN_INSECURE_JWT_SECRETS:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a strong random value when ENVIRONMENT is not development."
+            )
+        if len(self.JWT_SECRET_KEY) < 32:
+            raise ValueError(
+                "JWT_SECRET_KEY must be at least 32 characters long when ENVIRONMENT is not development."
+            )
         if self.KAFKA_BOOTSTRAP_SERVERS is None:
             raise ValueError(
                 "KAFKA_BOOTSTRAP_SERVERS must be set explicitly when ENVIRONMENT is not development."

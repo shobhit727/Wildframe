@@ -1,7 +1,6 @@
 """Search service API routes."""
 
 import asyncio
-import inspect
 from typing import Annotated
 from uuid import UUID
 
@@ -129,12 +128,7 @@ async def reindex(
 
     Admin-only, single-concurrency, async job semantics via alias switch.
     """
-    override = request.app.dependency_overrides.get(get_admin_identity)
-    if override is not None:
-        result = override()
-        admin_identity = await result if inspect.isawaitable(result) else result
-    else:
-        admin_identity = await get_admin_identity(request)
+    await get_admin_identity(request)
 
     if _reindex_lock.locked():
         raise _error(409, "A reindex job is already running")
