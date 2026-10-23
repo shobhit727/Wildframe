@@ -20,7 +20,7 @@ import {
   Icons,
 } from '@/components/admin';
 import type { AdminUser, UserStatus } from '@/types/admin';
-import { useUsers, useModerateUser } from '@/hooks/admin';
+import { useUsers, useModerateUser, useRequestStepUp, adminErrorMessage } from '@/hooks/admin';
 
 const STATUS_FILTERS: { label: string; value: string }[] = [
   { label: 'All', value: '' },
@@ -41,9 +41,12 @@ export default function AdminUsersPage() {
   const [selected, setSelected] = useState<AdminUser | null>(null);
   const [action, setAction] = useState<{ type: UserStatus } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [reauthError, setReauthError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const query = useUsers({ limit: 100, offset: 0, status, search });
   const moderate = useModerateUser();
+  const requestStepUp = useRequestStepUp();
 
   const filtered = useMemo(() => {
     const rows = query.data ?? [];
@@ -77,15 +80,37 @@ export default function AdminUsersPage() {
   const requestAction = (user: AdminUser, type: UserStatus) => {
     setSelected(user);
     setAction({ type });
+    setReauthError(null);
     setConfirmOpen(true);
   };
 
-  const confirm = () => {
+  const confirm = async (password?: string, mfaCode?: string) => {
     if (!selected || !action) return;
-    moderate.mutate(
-      { user_id: selected.user_id, status: action.type, reason: selected.reason ?? undefined },
-      { onSuccess: () => setConfirmOpen(false) },
-    );
+    setReauthError(null);
+    setSubmitting(true);
+    try {
+      const reauthToken = password
+        ? await requestStepUp.mutateAsync({ password, mfa_code: mfaCode })
+        : undefined;
+      moderate.mutate(
+        {
+          user_id: selected.user_id,
+          status: action.type,
+          reason: selected.reason ?? undefined,
+          reauthToken,
+        },
+        {
+          onSuccess: () => {
+            setConfirmOpen(false);
+            setSubmitting(false);
+          },
+          onError: () => setSubmitting(false),
+        },
+      );
+    } catch (e) {
+      setReauthError(adminErrorMessage(e, 'Step-up authentication failed'));
+      setSubmitting(false);
+    }
   };
 
   const columns: Column<AdminUser>[] = [
@@ -319,7 +344,10 @@ export default function AdminUsersPage() {
       {/* Confirm dialog */}
       <ConfirmDialog
         open={confirmOpen}
-        onOpenChange={setConfirmOpen}
+        onOpenChange={(open) => {
+          setConfirmOpen(open);
+          if (!open) setReauthError(null);
+        }}
         title={action ? `${action.type === 'active' ? 'Activate' : action.type === 'suspended' ? 'Suspend' : 'Ban'} user` : 'Confirm'}
         description={
           selected
@@ -328,7 +356,9 @@ export default function AdminUsersPage() {
         }
         confirmLabel={action ? (action.type === 'active' ? 'Activate' : action.type === 'suspended' ? 'Suspend' : 'Ban') : 'Confirm'}
         destructive={action?.type !== 'active'}
-        loading={moderate.isPending}
+        requirePassword
+        passwordError={reauthError}
+        loading={submitting || moderate.isPending}
         onConfirm={confirm}
       />
     </div>

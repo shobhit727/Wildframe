@@ -197,7 +197,7 @@ SHOWS = [
 ]
 
 
-def seed_subscription_and_moderation(user_id: str, token: str) -> None:
+def seed_subscription_and_moderation(user_id: str, token: str, password: str) -> None:
     import httpx as _hx
 
     gw = GATEWAY
@@ -215,9 +215,24 @@ def seed_subscription_and_moderation(user_id: str, token: str) -> None:
         print("subscribe skipped:", exc)
     try:
         r = _hx.post(
+            f"{gw}/auth/api/v1/auth/step-up",
+            json={"password": password},
+            headers=headers,
+            verify=False,
+            timeout=15,
+        )
+        if r.status_code != 200:
+            print(f"moderate skipped: step-up failed ({r.status_code})")
+            return
+        reauth_token = r.json()["step_up_token"]
+    except Exception as exc:  # noqa: BLE001
+        print("moderate skipped: step-up failed:", exc)
+        return
+    try:
+        r = _hx.post(
             f"{gw}/admin/api/v1/admin/users/moderate",
             json={"user_id": user_id, "status": "active", "reason": "seed"},
-            headers={**headers, "X-Admin-Reauth": token},
+            headers={**headers, "X-Admin-Reauth": reauth_token},
             verify=False,
             timeout=15,
         )
@@ -255,7 +270,7 @@ def main() -> None:
         except Exception:
             pass
         client = auth_client(client, token)
-        seed_subscription_and_moderation(user_id, token)
+        seed_subscription_and_moderation(user_id, token, demo_password)
 
         genres = seed_genres(client)
         ok(f"{len(genres)} genres ready")

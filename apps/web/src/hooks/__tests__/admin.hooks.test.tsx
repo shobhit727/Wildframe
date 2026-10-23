@@ -171,7 +171,7 @@ describe('useModerateUser', () => {
     await waitFor(() => expect(result.current.users.isSuccess).toBe(true));
     await result.current.moderate.mutateAsync({ user_id: 'u1', status: 'banned', reason: 'fraud' });
 
-    expect(api.moderateUser).toHaveBeenCalledWith('u1', 'banned', 'fraud');
+    expect(api.moderateUser).toHaveBeenCalledWith('u1', 'banned', 'fraud', undefined);
     // The moderation table must reflect the new status without a manual reload.
     await waitFor(() => expect(api.listUsers).toHaveBeenCalledTimes(2));
   });
@@ -263,7 +263,7 @@ describe('useFlags and useResolveFlag', () => {
 
     await result.current.resolve.mutateAsync({ content_id: 'c1', status: 'removed' });
 
-    expect(api.resolveFlag).toHaveBeenCalledWith('c1', 'removed');
+    expect(api.resolveFlag).toHaveBeenCalledWith('c1', 'removed', undefined);
     await waitFor(() => expect(api.listFlags).toHaveBeenCalledTimes(2));
   });
 

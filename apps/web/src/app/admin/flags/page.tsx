@@ -16,7 +16,7 @@ import {
   Icons,
 } from '@/components/admin';
 import type { ContentFlag, ContentStatus } from '@/types/admin';
-import { useFlags, useResolveFlag } from '@/hooks/admin';
+import { useFlags, useResolveFlag, useRequestStepUp, adminErrorMessage } from '@/hooks/admin';
 
 const PAGE_SIZE = 10;
 
@@ -25,9 +25,41 @@ export default function AdminFlagsPage() {
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<SortState>({ key: 'flagged_at', dir: 'desc' });
   const [pending, setPending] = useState<{ flag: ContentFlag; status: ContentStatus } | null>(null);
+  const [reauthError, setReauthError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const query = useFlags({ limit: 100 });
   const resolve = useResolveFlag();
+  const requestStepUp = useRequestStepUp();
+
+  const openConfirmation = (flag: ContentFlag, status: ContentStatus) => {
+    setPending({ flag, status });
+    setReauthError(null);
+  };
+
+  const confirm = async (password?: string, mfaCode?: string) => {
+    if (!pending) return;
+    setReauthError(null);
+    setSubmitting(true);
+    try {
+      const reauthToken = password
+        ? await requestStepUp.mutateAsync({ password, mfa_code: mfaCode })
+        : undefined;
+      resolve.mutate(
+        { content_id: pending.flag.content_id, status: pending.status, reauthToken },
+        {
+          onSuccess: () => {
+            setPending(null);
+            setSubmitting(false);
+          },
+          onError: () => setSubmitting(false),
+        },
+      );
+    } catch (e) {
+      setReauthError(adminErrorMessage(e, 'Step-up authentication failed'));
+      setSubmitting(false);
+    }
+  };
 
   const rows = useMemo(() => {
     const all = query.data ?? [];
@@ -100,8 +132,8 @@ export default function AdminFlagsPage() {
             variant="secondary"
             size="sm"
             className="min-h-9"
-            disabled={resolve.isPending}
-            onClick={() => setPending({ flag: f, status: 'active' })}
+            disabled={resolve.isPending || submitting}
+            onClick={() => openConfirmation(f, 'active')}
           >
             <Icons.CheckIcon width={15} height={15} /> Resolve
           </AdminButton>
@@ -109,8 +141,8 @@ export default function AdminFlagsPage() {
             variant="ghost"
             size="sm"
             className="min-h-9"
-            disabled={resolve.isPending}
-            onClick={() => setPending({ flag: f, status: 'removed' })}
+            disabled={resolve.isPending || submitting}
+            onClick={() => openConfirmation(f, 'removed')}
           >
             <Icons.TrashIcon width={15} height={15} /> Dismiss
           </AdminButton>
@@ -179,7 +211,11 @@ export default function AdminFlagsPage() {
 
       <ConfirmDialog
         open={!!pending}
-        onOpenChange={(o) => !o && setPending(null)}
+        onOpenChange={(o) => {
+          if (o) return;
+          setPending(null);
+          setReauthError(null);
+        }}
         title={pending?.status === 'removed' ? 'Dismiss flag & remove content' : 'Resolve flag'}
         description={
           pending
@@ -188,14 +224,10 @@ export default function AdminFlagsPage() {
         }
         confirmLabel={pending?.status === 'removed' ? 'Remove' : 'Resolve'}
         destructive={pending?.status === 'removed'}
-        loading={resolve.isPending}
-        onConfirm={() => {
-          if (!pending) return;
-          resolve.mutate(
-            { content_id: pending.flag.content_id, status: pending.status },
-            { onSuccess: () => setPending(null) },
-          );
-        }}
+        requirePassword
+        passwordError={reauthError}
+        loading={submitting || resolve.isPending}
+        onConfirm={confirm}
       />
     </div>
   );
