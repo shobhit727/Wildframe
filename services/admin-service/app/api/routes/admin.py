@@ -274,7 +274,12 @@ async def flag_content(
     """Flag inappropriate content"""
     service = AdminService(db)
     return await service.flag_content(
-        request.content_id, request.content_type, request.reason, admin_id, _client_ip(request_meta)
+        request.content_id,
+        request.content_type,
+        request.reason,
+        admin_id,
+        _client_ip(request_meta),
+        status=request.status,
     )
 
 

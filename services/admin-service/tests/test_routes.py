@@ -689,6 +689,35 @@ class TestContentModerationRoutes:
         assert body["content_id"] == "c-1"
         assert body["status"] == "flagged"
 
+    async def test_flag_content_honours_a_removed_status(self, admin_client):
+        resp = await admin_client.post(
+            "/api/v1/admin/content/flag",
+            json={
+                "content_id": "c-removed",
+                "content_type": "movie",
+                "status": "removed",
+                "reason": "policy",
+            },
+            headers=_bearer(_mint()),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "removed"
+
+    async def test_flag_content_with_removed_status_does_not_reuse_an_open_flag(self, admin_client):
+        headers = _bearer(_mint())
+        await admin_client.post(
+            "/api/v1/admin/content/flag",
+            json={"content_id": "c-open", "content_type": "movie", "status": "flagged"},
+            headers=headers,
+        )
+        resp = await admin_client.post(
+            "/api/v1/admin/content/flag",
+            json={"content_id": "c-open", "content_type": "movie", "status": "removed"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "removed"
+
     async def test_flag_content_rejects_an_unknown_content_type(self, admin_client):
         resp = await admin_client.post(
             "/api/v1/admin/content/flag",

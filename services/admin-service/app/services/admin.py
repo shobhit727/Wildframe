@@ -137,15 +137,16 @@ class AdminService:
         reason: str | None,
         flagged_by: str,
         ip_address: str,
+        status: str = "flagged",
     ) -> dict:
         existing = await self.content_repo.get_active_flag(content_id, flagged_by)
-        if existing is not None and existing.status == "flagged":
+        if status == "flagged" and existing is not None and existing.status == "flagged":
             # Repeated reports from the same actor must not inflate flag
             # counts; return the existing open flag without a duplicate audit.
             return self._serialize_content_moderation(existing)
 
         moderation = await self.content_repo.create(
-            content_id, content_type, "flagged", reason, flagged_by
+            content_id, content_type, status, reason, flagged_by
         )
         await self.audit_repo.create(
             flagged_by, "content_flagged", "content", content_id, reason, ip_address
