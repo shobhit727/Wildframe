@@ -20,6 +20,21 @@ _in_flight_lock = asyncio.Lock()
 _MAX_DRAIN_SECONDS = 30
 
 
+async def _drain_outbox_worker() -> None:
+    from app.services.admin import AdminService
+
+    while True:
+        try:
+            if DatabaseManager.session_factory is not None:
+                async with DatabaseManager.session_factory() as session:
+                    await AdminService(session).drain_outbox()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("outbox drain iteration failed")
+        await asyncio.sleep(settings.OUTBOX_POLL_INTERVAL_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _shutdown_event
@@ -35,6 +50,8 @@ async def lifespan(app: FastAPI):
         logger.warning("Database health check failed on startup")
     else:
         logger.info("Database connection established")
+
+    outbox_task = asyncio.create_task(_drain_outbox_worker())
 
     yield
 
@@ -57,6 +74,12 @@ async def lifespan(app: FastAPI):
             _MAX_DRAIN_SECONDS,
             _in_flight_requests,
         )
+
+    outbox_task.cancel()
+    try:
+        await outbox_task
+    except asyncio.CancelledError:
+        pass
 
     await DatabaseManager.close()
     logger.info("Shutdown complete")

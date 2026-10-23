@@ -8,6 +8,7 @@ from app.models.admin import (
     AdminAuditLog,
     AuditLogAppendOnlyError,
     ContentModeration,
+    OutboxEvent,
     SystemAlert,
     SystemConfig,
     UserModeration,
@@ -333,3 +334,31 @@ class AdminAuditLogRepository:
         )
         result = await self.db.execute(query)
         return list(result.scalars().all())
+
+
+class OutboxRepository:
+    """Events that must survive the gap between a DB commit and the broker."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def enqueue(self, topic: str, event_key: str | None, payload: dict) -> OutboxEvent:
+        event = OutboxEvent(topic=topic, event_key=event_key, payload=payload, status="pending")
+        self.db.add(event)
+        await self.db.flush()
+        return event
+
+    async def pending(self, limit: int) -> list[OutboxEvent]:
+        result = await self.db.execute(
+            select(OutboxEvent)
+            .where(OutboxEvent.status == "pending")
+            .order_by(OutboxEvent.created_at, OutboxEvent.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        return list(result.scalars().all())
+
+    async def mark_dispatched(self, event: OutboxEvent) -> None:
+        event.status = "dispatched"
+        event.dispatched_at = datetime.now(UTC)
+        await self.db.flush()

@@ -62,6 +62,8 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     EVENT_PUBLISHER: str = "memory"
     KAFKA_BOOTSTRAP_SERVERS: str | None = None
     TRUST_PROXY: bool = False
+    OUTBOX_BATCH_SIZE: int = 100
+    OUTBOX_POLL_INTERVAL_SECONDS: float = 5.0
 
     @model_validator(mode="before")
     @classmethod

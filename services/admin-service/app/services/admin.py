@@ -1,17 +1,18 @@
 import logging
 import time
-
-from sqlalchemy import func, select
-
 from datetime import UTC, datetime
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from wildframe_events import DomainEvent
 
 from app.core.secrets import is_sensitive_config_key, mask_value
+from app.core.settings import settings
 from app.models.admin import ContentModeration, SystemAlert, UserModeration
 from app.repositories.admin import (
     AdminAuditLogRepository,
     ContentModerationRepository,
+    OutboxRepository,
     SystemAlertRepository,
     SystemConfigRepository,
     UserModerationRepository,
@@ -46,31 +47,29 @@ class AdminService:
         self.alert_repo = SystemAlertRepository(db)
         self.config_repo = SystemConfigRepository(db)
         self.audit_repo = AdminAuditLogRepository(db)
+        self.outbox_repo = OutboxRepository(db)
 
     # User Moderation
     async def moderate_user(
         self, user_id: str, status: str, reason: str | None, moderated_by: str, ip_address: str
     ) -> dict:
+        from app.core.events import user_moderated_event
+
         existing = await self.user_repo.get_by_user_id(user_id)
         if existing is not None and existing.status == status:
             # Idempotent: the same decision already stands — do not rewrite the
-            # row or duplicate the audit trail. Still (re)publish the event:
+            # row or duplicate the audit trail. Still (re)deliver the event:
             # the downstream enforcer (auth-service) may not have applied the
             # earlier one (e.g. it was down).
-            from app.core.events import get_event_publisher, user_moderated_event
-
-            try:
-                await get_event_publisher().publish(
-                    user_moderated_event(
-                        user_id,
-                        status,
-                        moderated_by,
-                        _moderated_at_iso(existing.moderated_at),
-                    )
-                )
-            except Exception:
-                logger.exception("failed to republish user.moderated for %s", user_id)
-                raise
+            event = user_moderated_event(
+                user_id,
+                status,
+                moderated_by,
+                _moderated_at_iso(existing.moderated_at),
+            )
+            await self.outbox_repo.enqueue(event.topic, event.key, event.payload)
+            await self.db.commit()
+            await self._deliver_pending_events()
             return self._serialize_user_moderation(existing)
 
         moderation = await self.user_repo.update_status(user_id, status, reason, moderated_by)
@@ -80,27 +79,53 @@ class AdminService:
         await self.audit_repo.create(
             moderated_by, f"user_moderation_{status}", "user", user_id, reason, ip_address
         )
-        await self.db.commit()
-
         # Notify auth-service so suspension/ban is enforced at the login
-        # boundary (admin_db and auth_db are separate by design). Failures
-        # remain visible to callers; durable delivery requires an outbox.
-        from app.core.events import get_event_publisher, user_moderated_event
-
-        try:
-            await get_event_publisher().publish(
-                user_moderated_event(
-                    user_id,
-                    status,
-                    moderated_by,
-                    _moderated_at_iso(moderation.moderated_at),
-                )
-            )
-        except Exception:
-            logger.exception("failed to publish user.moderated for %s", user_id)
-            raise
+        # boundary (admin_db and auth_db are separate by design). The event is
+        # written in the same transaction as the moderation row, so a broker
+        # outage cannot leave auth-service enforcing the old state (#1054).
+        event = user_moderated_event(
+            user_id,
+            status,
+            moderated_by,
+            _moderated_at_iso(moderation.moderated_at),
+        )
+        await self.outbox_repo.enqueue(event.topic, event.key, event.payload)
+        await self.db.commit()
+        await self._deliver_pending_events()
 
         return self._serialize_user_moderation(moderation)
+
+    async def drain_outbox(self) -> int:
+        """Publish pending outbox events. Failures stay pending for retry."""
+        from app.core.events import get_event_publisher
+
+        events = await self.outbox_repo.pending(settings.OUTBOX_BATCH_SIZE)
+        for event in events:
+            try:
+                await get_event_publisher().publish(
+                    DomainEvent(
+                        topic=event.topic,
+                        key=event.event_key or "",
+                        payload=event.payload,
+                        producer=settings.SERVICE_NAME,
+                    )
+                )
+            except Exception:
+                logger.exception(
+                    "outbox publish failed for event %s (topic=%s); will retry",
+                    event.id,
+                    event.topic,
+                )
+                continue
+            await self.outbox_repo.mark_dispatched(event)
+        await self.db.commit()
+        return len(events)
+
+    async def _deliver_pending_events(self) -> None:
+        try:
+            await self.drain_outbox()
+        except Exception:
+            logger.exception("outbox drain failed; pending events will be retried")
 
     @staticmethod
     def _serialize_user_moderation(moderation) -> dict:
