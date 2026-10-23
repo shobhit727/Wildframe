@@ -49,7 +49,11 @@ async def _decode_token(token: str, expected_type: str = "access") -> dict:
             detail="Token verification is unavailable",
         ) from exc
     except JWTError as exc:
-        raise HTTPException(status_code=401, detail="Invalid token") from exc
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
 
 
 async def _enforce_auth_version(authorization: str, payload: dict) -> None:
@@ -139,7 +143,7 @@ async def verify_admin_reauth(
 ) -> str:
     if not x_admin_reauth:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Step-up authentication required: X-Admin-Reauth header missing",
         )
     payload = await _decode_token(x_admin_reauth, expected_type="admin_step_up")
@@ -147,7 +151,7 @@ async def verify_admin_reauth(
         access_payload = await _decode_token(authorization.removeprefix("Bearer "))
         if payload.get("av") != access_payload.get("av"):
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=status.HTTP_403_FORBIDDEN,
                 detail="Reauth token has been revoked",
             )
     if payload.get("role") != "admin":
@@ -167,12 +171,12 @@ async def verify_admin_reauth(
     amr = payload.get("amr") or []
     if "pwd" not in amr:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Insufficient authentication strength"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient authentication strength"
         )
     jti = payload.get("jti")
     if not isinstance(jti, str) or not jti:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Reauth token missing jti"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Reauth token missing jti"
         )
     try:
         was_used = await _consume_stepup_jti(jti, payload.get("exp"))
@@ -183,7 +187,7 @@ async def verify_admin_reauth(
         ) from exc
     if was_used:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Reauth token already used"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Reauth token already used"
         )
     return admin_id
 

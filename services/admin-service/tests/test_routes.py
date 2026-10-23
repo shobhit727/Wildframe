@@ -573,7 +573,10 @@ class TestUserModerationRoutes:
             json={"user_id": "u-1", "status": "suspended"},
             headers=_bearer(_mint()),
         )
-        assert resp.status_code == 401
+        # A refused step-up follows successful authentication, so it is an
+        # authorization failure. It must not be 401: the web client treats a
+        # non-auth-endpoint 401 as an expired session and signs the admin out.
+        assert resp.status_code == 403
         assert "Step-up authentication required" in resp.json()["detail"]
 
     async def test_moderate_user_requires_an_admin_token(self, admin_client):
@@ -582,6 +585,17 @@ class TestUserModerationRoutes:
             json={"user_id": "u-1", "status": "suspended"},
         )
         assert resp.status_code == 401
+
+    async def test_invalid_step_up_token_returns_401_with_challenge(self, admin_client):
+        resp = await admin_client.post(
+            "/api/v1/admin/users/moderate",
+            json={"user_id": "u-1", "status": "suspended"},
+            headers={**_bearer(_mint()), "X-Admin-Reauth": "not-a-jwt"},
+        )
+        # A credential the verifier rejects stays a 401, and RFC 6750 requires
+        # the challenge header on every Bearer 401.
+        assert resp.status_code == 401
+        assert resp.headers["www-authenticate"] == "Bearer"
 
     async def test_moderate_user_with_step_up_succeeds(self, admin_client):
         from tests.test_step_up import _mint_step_up
@@ -749,7 +763,7 @@ class TestContentModerationRoutes:
             params={"content_id": "c-1", "status": "active"},
             headers=_bearer(_mint()),
         )
-        assert resp.status_code == 401
+        assert resp.status_code == 403
 
 
 class TestAlertRoutes:

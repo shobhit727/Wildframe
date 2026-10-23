@@ -116,12 +116,12 @@ async def test_rejects_insufficient_amr():
     token = _mint_step_up(admin_id, amr=[])
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, token)
-    assert exc.value.status_code == 401
+    assert exc.value.status_code == 403
     assert "Insufficient authentication" in exc.value.detail
     token2 = _mint_step_up(admin_id, amr=["mfa"])
     with pytest.raises(HTTPException) as exc2:
         await verify_admin_reauth(admin_id, token2)
-    assert exc2.value.status_code == 401
+    assert exc2.value.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -146,7 +146,7 @@ async def test_jti_replay():
     assert result == admin_id
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, token)
-    assert exc.value.status_code == 401
+    assert exc.value.status_code == 403
     assert "already used" in exc.value.detail.lower()
 
 
@@ -166,7 +166,7 @@ async def test_missing_header():
     admin_id = str(uuid.uuid4())
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, None)
-    assert exc.value.status_code == 401
+    assert exc.value.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -211,7 +211,7 @@ async def test_missing_jti():
     token = jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, token)
-    assert exc.value.status_code == 401
+    assert exc.value.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -233,3 +233,4 @@ async def test_invalid_signature():
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, bad)
     assert exc.value.status_code == 401
+    assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
