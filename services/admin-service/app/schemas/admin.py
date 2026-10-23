@@ -10,7 +10,7 @@ class _StrictRequest(BaseModel):
 
 
 class UserModerationRequest(_StrictRequest):
-    user_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1, max_length=255)
     status: str = Field(..., pattern="^(active|suspended|banned)$")
     reason: str | None = None
 
@@ -27,7 +27,7 @@ class UserModerationResponse(BaseModel):
 
 
 class ContentModerationRequest(_StrictRequest):
-    content_id: str = Field(..., min_length=1)
+    content_id: str = Field(..., min_length=1, max_length=255)
     content_type: str = Field(..., pattern="^(movie|show|episode)$")
     status: str = Field(..., pattern="^(active|flagged|removed)$")
     reason: str | None = None
@@ -45,10 +45,10 @@ class ContentModerationResponse(BaseModel):
 
 
 class SystemAlertRequest(_StrictRequest):
-    alert_type: str = Field(..., min_length=1)
+    alert_type: str = Field(..., min_length=1, max_length=50)
     severity: str = Field(..., pattern="^(info|warning|critical)$")
     message: str = Field(..., min_length=1)
-    service: str = Field(..., min_length=1)
+    service: str = Field(..., min_length=1, max_length=255)
 
 
 class SystemAlertResponse(BaseModel):
@@ -63,7 +63,7 @@ class SystemAlertResponse(BaseModel):
 
 
 class SystemConfigRequest(_StrictRequest):
-    key: str = Field(..., min_length=1)
+    key: str = Field(..., min_length=1, max_length=255)
     value: str = Field(..., min_length=1)
     config_type: str = Field(..., pattern="^(string|integer|boolean|json)$")
     description: str | None = None
