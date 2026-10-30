@@ -515,6 +515,20 @@ class TestLifespan:
                     async with lifespan(app) as _:
                         assert app.state.shutting_down is False
 
+    async def test_database_manager_closes_and_resets_the_engine_on_shutdown(self):
+        DatabaseManager.engine = MagicMock()
+        DatabaseManager.session_factory = MagicMock()
+
+        async def _dispose():
+            return None
+
+        DatabaseManager.engine.dispose = _dispose
+
+        await DatabaseManager.close()
+
+        assert DatabaseManager.engine is None
+        assert DatabaseManager.session_factory is None
+
     async def test_startup_installs_a_fresh_shutdown_event(self):
         # A stale event from a previous run would make the drain loop exit early.
         app = create_app()

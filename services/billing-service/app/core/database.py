@@ -56,9 +56,15 @@ class DatabaseManager:
 
     @classmethod
     async def close(cls) -> None:
-        """Dispose of the engine (called on shutdown)."""
+        """Dispose of the engine and clear cached state for the next startup."""
         if cls.engine:
-            await cls.engine.dispose()
+            try:
+                await cls.engine.dispose()
+            finally:
+                cls.engine = None
+                cls.session_factory = None
+        else:
+            cls.session_factory = None
 
     @classmethod
     async def health_check(cls) -> bool:
