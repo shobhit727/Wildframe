@@ -26,6 +26,8 @@ class DatabaseManager:
     @classmethod
     async def init(cls) -> None:
         """Initialize the async engine and session factory."""
+        if cls.engine is not None and cls.session_factory is not None:
+            return
         database_url = settings.DATABASE_URL
         if not database_url:
             raise RuntimeError("DATABASE_URL is not configured")
