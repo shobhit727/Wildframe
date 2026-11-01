@@ -433,15 +433,19 @@ kubectl logs -l app=api-gateway -n wildframe-prod --tail=100 | grep ERROR
 ```bash
 # Auth Service
 curl -s https://api.wildframe.com/auth/health | jq .
+curl -s https://api.wildframe.com/auth/ready | jq .
 
 # User Service  
 curl -s https://api.wildframe.com/users/health | jq .
+curl -s https://api.wildframe.com/users/ready | jq .
 
 # Content Service
 curl -s https://api.wildframe.com/content/health | jq .
+curl -s https://api.wildframe.com/content/ready | jq .
 
 # Streaming Service
 curl -s https://api.wildframe.com/streaming/health | jq .
+curl -s https://api.wildframe.com/streaming/ready | jq .
 ```
 
 ### Common Tasks
@@ -675,8 +679,11 @@ kubectl set env deployment/api-gateway \
 ### Health Checks
 
 ```bash
-# Application health
+# Process liveness
 curl https://api.wildframe.com/health
+
+# Service readiness (dependency check)
+curl -i https://api.wildframe.com/ready
 
 # Database
 kubectl exec -it <pod-name> -n wildframe-prod -- psql -c "SELECT 1"

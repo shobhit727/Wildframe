@@ -101,6 +101,16 @@ def create_app() -> FastAPI:
             "database": "ok" if db_ok else "unavailable",
         }
 
+    @app.get("/ready", response_model=None)
+    async def readiness() -> dict | JSONResponse:
+        """Report whether the database dependency can serve requests."""
+        if not await DatabaseManager.health_check():
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"status": "not ready", "reason": "database unhealthy"},
+            )
+        return {"status": "ready"}
+
     app.include_router(moderation_router)
 
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics).

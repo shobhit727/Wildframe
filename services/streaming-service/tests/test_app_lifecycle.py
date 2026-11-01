@@ -174,6 +174,28 @@ def test_health_reports_unhealthy_when_db_down(monkeypatch):
     assert body["database"] == "unhealthy"
 
 
+@pytest.mark.unit
+def test_readiness_returns_503_when_db_is_down(monkeypatch):
+    monkeypatch.setattr(db_manager, "health_check", AsyncMock(return_value=False))
+    app = main_module.create_app()
+    with TestClient(app, base_url="http://localhost") as c:
+        response = c.get("/ready")
+    assert response.status_code == 503
+    assert response.json() == {"status": "not ready", "reason": "database unhealthy"}
+
+
+@pytest.mark.unit
+def test_readiness_returns_200_when_db_is_up(monkeypatch):
+    check = AsyncMock(return_value=True)
+    monkeypatch.setattr(db_manager, "health_check", check)
+    app = main_module.create_app()
+    with TestClient(app, base_url="http://localhost") as c:
+        response = c.get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+    assert check.await_count == 2  # startup health check plus readiness probe
+
+
 # --------------------------------------------------------- body size cap ----
 
 

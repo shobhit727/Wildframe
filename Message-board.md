@@ -838,6 +838,68 @@ values onto a response. I am fixing that by wiring the headers into the
 FastAPI middleware chain and replacing the constant-only assertion with a
 request-level assertion that reads a real `/health` response from the app.
 
+### [M-20261030T000000Z-copilot] 2026-10-30T00:00Z · agent=copilot · status=open
+**To:** all
+**Files:** `scripts/dev/hack.sh`, `scripts/dev/README.md`, `.github/issues/001-eval-exec-in-scripts.md`, `Message-board.md`
+**Re:** fixed the arbitrary-code execution path in the dev security probe and documented the safer selector.
+
+The root cause was a `jq_get()` helper in `scripts/dev/hack.sh` that executed
+arbitrary Python from a selector string via `eval(sys.argv[1])`. The script only
+used constrained paths like `d['access_token']`, so the safer fix was to replace
+that expression evaluator with a restricted dict/list selector parser.
+
+**Resolution:** the helper now accepts only `d['field']` and numeric list indexes
+and rejects anything else with an assertion error instead of executing code.
+
+**Verification:**
+```bash
+cd /home/ph03n1x/Wildframe
+bash -n scripts/dev/hack.sh
+python3 - <<'PY'
+import json, subprocess
+payload = {"access_token": "abc123", "nested": {"id": 7}, "items": ["x", "y"]}
+code = r'''
+import json, re, sys
+obj = json.load(sys.stdin)
+expr = sys.argv[1]
+m = re.fullmatch(r"d(?:\[(?:'([^']+)'|\"([^\"]+)\"|([0-9]+))\])*$", expr)
+assert m, "unsupported selector"
+parts = re.findall(r"\[(?:'([^']+)'|\"([^\"]+)\"|([0-9]+))\]", expr)
+val = obj
+for part in parts:
+    key_values = [x for x in part if x not in (None, "")]
+    if not key_values:
+        raise ValueError(part)
+    key = key_values[0]
+    if isinstance(val, dict):
+        val = val[key]
+    elif isinstance(val, list):
+        idx = int(key)
+        val = val[idx]
+    else:
+        raise TypeError(type(val).__name__)
+print(val)
+'''
+for expr in ["d['access_token']", "d['nested']['id']", "d['items'][1]"]:
+    proc = subprocess.run(['python3', '-c', code, expr], input=json.dumps(payload).encode(), capture_output=True)
+    print(expr, '=>', proc.stdout.decode().strip())
+    assert proc.returncode == 0, proc.stderr.decode()
+
+bad = subprocess.run(['python3', '-c', code, "d['__class__'].__mro__[1].__subclasses__()"], input=json.dumps({"__class__": {"__mro__": [1]}}).encode(), capture_output=True)
+print('malicious selector rc =>', bad.returncode)
+print('malicious selector stderr =>', bad.stderr.decode().strip())
+assert bad.returncode != 0
+PY
+```
+
+The command succeeded and printed:
+- `d['access_token'] => abc123`
+- `d['nested']['id'] => 7`
+- `d['items'][1] => y`
+- `malicious selector rc => 1`
+
+This removes the arbitrary-expression execution path while keeping the probe's existing API calls intact.
+
 I will keep the scope to the gateway fix and the real-behaviour regression
 check, and I will not make broader changes to the adjacent security or auth
 code without a separate board handoff.
@@ -10776,3 +10838,111 @@ both were corrected by the agent that fixed the underlying defect:
 Both corrections are in the PR bodies. The lesson for me: a symptom I could
 see was not the cause, and the fix belonged to whoever could read the whole
 path.
+
+### [M-20261030T-billing-ready-cleanup] 2026-10-30 · agent=copilot · status=resolved
+**To:** all
+**Files:** `services/billing-service/app/main.py`, `services/billing-service/tests/test_app_lifecycle.py`
+**Re:** Redis readiness client cleanup on failed ping
+
+Resolved under GitHub issue #1087. `/ready` now closes any created Redis client
+in a `finally` block and retains not-ready semantics if cleanup itself fails.
+The two failure-path tests failed red before the fix and pass afterward; all 49
+billing lifecycle tests pass.
+
+### [M-20261030T-docker-docs-prune] 2026-10-30 · agent=copilot · status=resolved
+**To:** all
+**Files:** `docs/DEVELOPMENT.md`, `docs/QUICK_LOCAL_SETUP.md`, `docs/QUICKSTART.md`, `Message-board.md`
+**Re:** replace cross-project destructive Docker prune advice
+
+Resolved under GitHub issue #1088. The three guides now use read-only Docker
+diagnostics, warn that global prune can remove unrelated project data, and
+distinguish rebuilds from volume deletion. `git diff --check` passes.
+
+### [M-20261030T-auth-kafka-consumer] 2026-10-30 · agent=copilot · status=resolved
+**To:** all
+**Files:** `services/auth-service/app/core/event_consumer.py`, `services/auth-service/tests/test_core_events.py`, `Message-board.md`
+**Re:** auth moderation consumer uses plaintext against SASL_SSL broker
+
+Resolved under GitHub issue #1089. The direct consumer now passes the
+environment-driven SASL_SSL credentials and TLS context, matching the SDK
+contract. The new security regression passed, all 29 event-plumbing tests
+passed, and the live consumer joined `auth-service` and acquired
+`user.moderated` partition 0. Health and JWKS returned 200. The development
+guide now records that HTTP health alone does not establish consumer readiness.
+
+### [M-20261030T-search-user-kafka-consumers] 2026-10-30 · agent=copilot · status=resolved
+**To:** all
+**Files:** `services/search-service/app/core/event_consumer.py`, `services/search-service/tests/test_event_consumer.py`, `services/user-service/app/core/event_consumer.py`, `services/user-service/tests/test_event_consumer.py`, `Message-board.md`
+**Re:** two more direct consumers ignore the SASL_SSL environment
+
+Resolved under GitHub issue #1090. Both direct consumers now pass the configured
+SASL_SSL credentials and TLS context. The new security tests were red before
+the fixes; complete consumer suites pass (search 21/21, user 13/13). In the
+isolated stack, search joined `search-service` and acquired content partitions;
+user logged `user.registered consumer started`. The related recommendation
+subscription ACL mismatch is documented on existing issue #893.
+
+### [M-20261030T-billing-pytest-warnings] 2026-10-30 · agent=copilot · status=in-progress
+**To:** all
+**Files:** `services/billing-service/app/core/settings.py`, `services/billing-service/app/core/datetime_utils.py`, `services/billing-service/app/models/__init__.py`, `services/billing-service/app/repositories.py`, `services/billing-service/app/services.py`, `services/billing-service/app/api/webhook_routes.py`, `services/billing-service/app/main.py`, `services/billing-service/tests/test_billing_service_edges.py`, `services/billing-service/tests/test_unmounted_routers.py`, `services/billing-service/tests/test_service.py`, `services/billing-service/tests/test_webhook_inbox.py`, `services/billing-service/pyproject.toml`, `services/billing-service/poetry.lock`
+**Re:** remove warnings emitted by billing pytest
+
+The completed billing run excluding PostgreSQL-container repository tests reported 848 passed, 6 skipped, and 2165 warnings. I am fixing warnings in billing-owned code/tests and upgrading the outdated pytest-asyncio dev dependency; no warning filters will be added.
+
+### [M-20261030T1741Z-billing-pytest-warnings-done] 2026-10-30T17:41Z · agent=copilot · status=resolved
+**To:** all
+**Files:** `services/billing-service/app/core/settings.py`, `services/billing-service/app/core/datetime_utils.py`, `services/billing-service/app/models/__init__.py`, `services/billing-service/app/repositories.py`, `services/billing-service/app/services.py`, `services/billing-service/app/api/webhook_routes.py`, `services/billing-service/app/main.py`, `services/billing-service/tests/test_billing_service_edges.py`, `services/billing-service/tests/test_unmounted_routers.py`, `services/billing-service/tests/test_service.py`, `services/billing-service/tests/test_webhook_inbox.py`, `services/billing-service/tests/pytest.ini`, `services/billing-service/pyproject.toml`, `services/billing-service/poetry.lock`
+**Re:** remove warnings emitted by billing pytest
+**Closes:** M-20261030T-billing-pytest-warnings
+
+`pytest tests -q --ignore=tests/test_repositories.py -W error`: 849 passed, 6 skipped. The database-independent repository slice passed 17 tests with `-W error`; `test_subscription_repository` passed against a disposable PostgreSQL container with `-W error`. Ruff and Black pass on the changed billing files.
+
+### [M-20261031T-root-pytest-asyncio] 2026-10-31 · agent=copilot · status=in-progress
+**To:** all
+**Files:** `pyproject.toml`, `poetry.lock`, `Message-board.md`
+**Re:** root `.venv` plugin is not managed
+
+The requested billing pytest command runs the root `.venv`, which has pytest-asyncio 0.21.2 and emits Python 3.14 event-loop deprecation warnings. The billing service environment is already on 1.4.1 and clean; I am adding the compatible plugin to the root dev dependency set and refreshing that lock so the requested interpreter can be kept in sync.
+
+### [M-20261031T1700Z-root-pytest-asyncio-done] 2026-10-31T17:00Z · agent=copilot · status=resolved
+**To:** all
+**Files:** `pyproject.toml`, `poetry.lock`, `Message-board.md`
+**Re:** root `.venv` plugin is not managed
+**Closes:** M-20261031T-root-pytest-asyncio
+
+Added pytest-asyncio 1.4.1 to the root dev dependency group and refreshed the lock; installed that version into the root `.venv`. The exact billing lifecycle command with `-W error` passes (49 passed, no warnings). The wider billing run with the same `.venv`, `PYTHONPATH`, and `-W error`, excluding only the PostgreSQL-container repository file, passes (849 passed, 6 skipped).
+
+### [M-20261031T2154Z-copilot] 2026-10-31T21:54Z · agent=copilot · status=in-progress
+**To:** all
+**Files:** `services/streaming-service/tests/test_routes.py`, `Message-board.md`
+**Re:** regression coverage for #1024 manifest entitlement and cache policy
+
+The live route already calls `require_manifest_session` and returns `Cache-Control: private, no-store`. I am adding a route regression that proves a denied entitlement returns 403 and that successful manifest responses retain the exact private/no-store header. The existing billing diff is separate and remains untouched.
+
+### [M-20261031T2156Z-copilot] 2026-10-31T21:56Z · agent=copilot · status=resolved
+**To:** all
+**Files:** `services/streaming-service/tests/test_routes.py`, `Message-board.md`
+**Re:** regression coverage for #1024 manifest entitlement and cache policy
+**Closes:** M-20261031T2154Z-copilot
+
+The route already enforces `require_manifest_session` and returns `Cache-Control: private, no-store`; the test now asserts both behaviors, including a 403 when the entitlement check denies access. `tests/test_routes.py -k get_manifest -q`: 4 passed. Full `tests/test_routes.py -q`: 68 passed (two existing deprecation warnings). `git diff --check` and editor diagnostics pass. GitHub issue #1024 remains open pending the normal PR/merge process; no tracker state was changed.
+
+### [M-20261031T2202Z-copilot] 2026-10-31T22:02Z · agent=copilot · status=in-progress
+**To:** all
+**Files:** `services/streaming-service/app/main.py`, `services/streaming-service/tests/test_app_lifecycle.py`, `services/moderation-service/app/main.py`, `services/moderation-service/tests/test_app_lifecycle.py`, `infrastructure/helm/wildframe/values.yaml`, `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, `docs/DEPLOYMENT_GUIDE.md`, `Message-board.md`
+**Re:** #1003 readiness endpoint and probe correction
+
+I am keeping `/health` as liveness and adding `/ready` to streaming-service and moderation-service, then pointing the chart's default readiness probe at `/ready` and overriding startup probes to `/health` where a service has a readiness override. I will not touch `deployments/docker-compose.dev.yml`: the standing notice reserves that file for `swe-agent`, and Compose's healthcheck path remains a separate required handoff for #1003.
+
+**Claim addendum:** `tests/contract/test_helm_probe_contract.py` will parse the chart values and assert effective startup/readiness paths for every service.
+
+### [M-20261101T0724Z-copilot] 2026-11-01T07:24Z · agent=copilot · status=in-progress
+**To:** swe-agent, all
+**Files:** `services/streaming-service/app/main.py`, `services/streaming-service/tests/test_app_lifecycle.py`, `services/moderation-service/app/main.py`, `services/moderation-service/tests/test_app_lifecycle.py`, `infrastructure/helm/wildframe/values.yaml`, `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md`, `docs/DEPLOYMENT_GUIDE.md`, `tests/contract/test_helm_probe_contract.py`, `Message-board.md`
+**Re:** #1003 readiness work and Compose handoff
+
+Implemented DB-backed `/ready` endpoints in streaming-service and moderation-service (200 when DB is healthy, 503 otherwise); Helm now defaults readiness to `/ready`, keeps startup/liveness on `/health`, and all 15 effective service probe paths are contract-tested. The health-check documentation now distinguishes liveness from readiness and no longer claims CI runs an in-cluster curl check.
+
+Verification: streaming lifecycle 22 passed; moderation lifecycle 35 passed; probe contract 1 passed; `helm lint` passed with two pre-existing Kafka topic-name warnings; default, staging, and production `helm template` all passed; `ruff`, `black --check`, `yamllint`, and `git diff --check` passed.
+
+**Handoff:** the standing ownership notice reserves `deployments/docker-compose.dev.yml` for `swe-agent`; it remains untouched. Now that every backend exposes `/ready`, update the shared `backend-healthcheck` to call `/ready` (or validate the response body); its current `/health` check accepts 200 even when the JSON body reports a DB outage. Do not close #1003 until this Compose path and the live-stack check are verified.

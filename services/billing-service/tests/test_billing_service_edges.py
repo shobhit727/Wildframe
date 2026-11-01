@@ -17,8 +17,6 @@ from app.services import (
     TierInvalidError,
 )
 
-pytestmark = pytest.mark.asyncio
-
 
 @asynccontextmanager
 async def _savepoint():
@@ -29,8 +27,15 @@ async def _savepoint():
 def _session() -> AsyncMock:
     """A session double whose ``begin_nested`` is a real async context manager."""
     session = AsyncMock()
+    session.add = MagicMock()
     session.begin_nested = MagicMock(side_effect=lambda: _savepoint())
     return session
+
+
+def test_naive_utc_now_returns_a_naive_timestamp():
+    from app.core.datetime_utils import naive_utc_now
+
+    assert naive_utc_now().tzinfo is None
 
 
 @pytest.fixture

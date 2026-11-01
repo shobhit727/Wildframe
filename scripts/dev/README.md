@@ -29,7 +29,7 @@ Self-signed certs are accepted (`ignoreHTTPSErrors`).
 | `auth-e2e.js`     | Signup with a strong passphrase + login matrix (LAN host + localhost). |
 | `signup-debug.js` | Verbose signup trace: every POST, response bodies, DOM alerts. |
 | `shoot-all.js`    | Screenshots every page (root, browse, my-list, account, billing, creator, admin×6, login, signup, watch) + console/HTTP error report. |
-| `hack.sh`         | Security probes: auth bypass (no token / tampered / forged / refresh-as-access), privilege escalation, IDOR, SQLi/path-traversal, stored-XSS payload creation. Prints PASS/FAIL per check. |
+| `hack.sh`         | Security probes: auth bypass (no token / tampered / forged / refresh-as-access), privilege escalation, IDOR, SQLi/path-traversal, stored-XSS payload creation. Prints PASS/FAIL per check. Uses a restricted JSON path parser instead of `eval()` for safe extraction of fields such as `d['access_token']`. |
 
 ## Usage
 
