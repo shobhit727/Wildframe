@@ -288,13 +288,20 @@ remap a port you must change **both**:
 
 Editing only one leaves the two disagreeing and the route unreachable.
 
-**Stale Docker state?**
+**Docker build or startup problem?**
 ```bash
-docker system prune -a --volumes
-docker builder prune -a
+docker info
+docker system df
+docker compose -f deployments/docker-compose.dev.yml ps --all
+docker compose -f deployments/docker-compose.dev.yml logs --tail=100
 ```
 
-**Need to nuke everything?**
+These commands inspect Docker state without deleting application data. Avoid
+`docker system prune -a --volumes`: it can remove unused volumes and images
+belonging to unrelated projects. Treat volume deletion as a separate,
+data-destructive operation and verify the volume owner and retention needs first.
+
+**Start or update the dev stack?**
 ```bash
 docker compose -f deployments/docker-compose.dev.yml up -d --build
 ```

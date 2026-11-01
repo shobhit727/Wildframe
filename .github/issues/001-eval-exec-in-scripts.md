@@ -8,8 +8,11 @@ Severity: High (security)
 Affected files:
 - scripts/dev/hack.sh: uses `python3 -c "... print(eval(sys.argv[1]))"` (jq_get)
 
-Recommendations (do NOT implement here):
-- Replace `eval()` with a safe parser or explicit lookup/whitelist.
+Resolution:
+- Fixed in `scripts/dev/hack.sh` by replacing `eval()` with a restricted dict/list selector parser that only accepts `d['field']` and numeric list indexes.
+- The script still remains a local developer helper, but it no longer executes arbitrary expressions from JSON paths.
+
+Follow-up:
 - Audit other scripts and CI tasks for similar patterns.
 
-Notes: This file appears to be a local developer helper but still merits removal or protection before CI or shared demo runs.
+Notes: This was a local developer helper, but it was still worth removing the arbitrary-expression execution path before any shared or automated use.

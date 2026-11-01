@@ -18,7 +18,6 @@ Handled events:
 """
 
 import logging
-from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -26,6 +25,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.datetime_utils import naive_utc_now
 from app.core.money import CurrencyError, from_minor_units, to_minor_units, validate_currency
 from app.core.settings import settings
 from app.core.stripe_client import StripeClient, StripeError
@@ -277,7 +277,7 @@ async def _handle_invoice_paid(
                 stripe_invoice_id=stripe_invoice_id,
             )
             new_inv.status = InvoiceStatus.PAID
-            new_inv.paid_at = datetime.utcnow()
+            new_inv.paid_at = naive_utc_now()
             logger.info(
                 "Invoice payment recorded for user %s (amount=%s, stripe_invoice_id=%s)",
                 user_id,
@@ -379,9 +379,9 @@ async def _handle_payment_intent_succeeded(
                 )
             if invoice.status != InvoiceStatus.PAID:
                 invoice.status = InvoiceStatus.PAID
-                invoice.paid_at = datetime.utcnow()
+                invoice.paid_at = naive_utc_now()
     idem_key = f"pi:{pi_id}"
-    now = datetime.utcnow()
+    now = naive_utc_now()
     cycle_start = now
     cycle_end = now
     if purchase is not None:

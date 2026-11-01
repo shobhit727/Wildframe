@@ -301,6 +301,7 @@ class TestReadyEndpoint:
                 resp = await _get(app, "/ready")
         assert resp.status_code == 503
         assert resp.json()["checks"]["redis"] == "down"
+        client.close.assert_awaited_once()
 
     async def test_ready_uses_the_configured_redis_url(self):
         app = create_app()
@@ -334,6 +335,7 @@ class TestReadyEndpoint:
                 resp = await _get(app, "/ready")
         assert resp.status_code == 503
         assert resp.json()["checks"]["redis"] == "down"
+        client.close.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------

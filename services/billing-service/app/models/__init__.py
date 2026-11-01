@@ -45,6 +45,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from app.core.datetime_utils import naive_utc_now
+
 
 class Base(DeclarativeBase):
     """SQLAlchemy 2.0 declarative base (mypy-friendly vs declarative_base())."""
@@ -85,11 +87,11 @@ class StripeWebhookEvent(Base):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.utcnow(),
-        onupdate=lambda: datetime.utcnow(),
+        default=lambda: naive_utc_now(),
+        onupdate=lambda: naive_utc_now(),
     )
 
 
@@ -122,7 +124,7 @@ class Refund(Base):
         SQLEnum(RefundStatus), default=RefundStatus.PROCESSED, nullable=False
     )
     reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
 
 
 # ---------------------------------------------------------------------------
@@ -192,15 +194,15 @@ class Subscription(Base):
         nullable=True,
         comment="Epoch seconds of the newest Stripe event applied; monotonic guard (#482).",
     )
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
     renewal_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.utcnow(),
-        onupdate=lambda: datetime.utcnow(),
+        default=lambda: naive_utc_now(),
+        onupdate=lambda: naive_utc_now(),
     )
 
 
@@ -236,7 +238,7 @@ class Purchase(Base):
     refunded_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True, comment="Set exactly once when a TVOD refund is applied."
     )
-    purchased_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    purchased_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
 
     __table_args__ = (Index("idx_purchase_user_content", "user_id", "content_id", unique=True),)
 
@@ -292,10 +294,10 @@ class Invoice(Base):
         nullable=False,
         comment="Cumulative refunds applied; bounded by amount via check constraint.",
     )
-    issued_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    issued_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
     due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
 
     __table_args__ = (
         CheckConstraint(
@@ -333,11 +335,11 @@ class RegionFloor(Base):
     floor_high: Mapped[Decimal] = mapped_column(
         Numeric(10, 4), nullable=False, comment="Maximum per finished minute"
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.utcnow(),
-        onupdate=lambda: datetime.utcnow(),
+        default=lambda: naive_utc_now(),
+        onupdate=lambda: naive_utc_now(),
     )
 
 
@@ -368,7 +370,7 @@ class CreatorPoolEntry(Base):
         Numeric(12, 2), nullable=False, comment="= net_revenue * pool_percentage"
     )
     redistributed_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
 
 
 class CreatorPoolDistribution(Base):
@@ -386,7 +388,7 @@ class CreatorPoolDistribution(Base):
         Numeric(10, 2),
         comment="How far below floor before this distribution",
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
 
 
 # ---------------------------------------------------------------------------
@@ -419,11 +421,11 @@ class Milestone(Base):
     status: Mapped[MilestoneStatus] = mapped_column(
         SQLEnum(MilestoneStatus), default=MilestoneStatus.PENDING
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.utcnow(),
-        onupdate=lambda: datetime.utcnow(),
+        default=lambda: naive_utc_now(),
+        onupdate=lambda: naive_utc_now(),
     )
 
     tranches = relationship(
@@ -465,7 +467,7 @@ class MilestoneTranche(Base):
     )
     released_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     reverted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
 
     milestone = relationship("Milestone", back_populates="tranches")
 
@@ -518,8 +520,8 @@ class PayoutLedger(Base):
     )
     cycle_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     cycle_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    accrued_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    accrued_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
     transferred_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.utcnow())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: naive_utc_now())
 
     __table_args__ = (Index("idx_payout_creator_cycle", "creator_id", "cycle_start", "cycle_end"),)

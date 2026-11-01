@@ -14,6 +14,7 @@ blocking the partition forever.
 
 import logging
 import os
+import ssl
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,35 @@ async def _provision_profile(session_factory, user_id: str) -> None:
         await service.create_user_profile(UUID(user_id))
 
 
+def _kafka_consumer_options() -> dict:
+    security_protocol = os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
+    options = {
+        "security_protocol": security_protocol,
+        "client_id": os.getenv("KAFKA_CLIENT_ID", "user-service"),
+    }
+    sasl_mechanism = os.getenv("KAFKA_SASL_MECHANISM")
+    sasl_username = os.getenv("KAFKA_SASL_USERNAME")
+    sasl_password = os.getenv("KAFKA_SASL_PASSWORD")
+    if sasl_mechanism:
+        options["sasl_mechanism"] = sasl_mechanism
+    if sasl_username:
+        options["sasl_plain_username"] = sasl_username
+    if sasl_password:
+        options["sasl_plain_password"] = sasl_password
+
+    ca_location = os.getenv("KAFKA_SSL_CA_LOCATION")
+    if ca_location:
+        options["ssl_context"] = ssl.create_default_context(cafile=ca_location)
+    elif security_protocol in ("SSL", "SASL_SSL") and os.getenv(
+        "KAFKA_SSL_INSECURE", "false"
+    ).lower() not in ("false", "0", "no"):
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        options["ssl_context"] = ssl_context
+    return options
+
+
 async def run_user_registered_consumer(session_factory) -> None:
     """Long-running consumer task. Exits quietly when Kafka is unreachable."""
     bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
@@ -57,6 +87,7 @@ async def run_user_registered_consumer(session_factory) -> None:
         group_id=CONSUMER_GROUP,
         enable_auto_commit=False,
         auto_offset_reset="earliest",
+        **_kafka_consumer_options(),
     )
     try:
         await consumer.start()

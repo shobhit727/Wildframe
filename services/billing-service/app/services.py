@@ -39,6 +39,7 @@ import httpx
 from typing import Mapping
 from uuid import UUID
 
+from app.core.datetime_utils import naive_utc_now
 from app.core.money import from_minor_units, validate_currency
 from app.core.stripe_client import StripeClient, StripeError
 from app.models import (
@@ -248,7 +249,7 @@ class BillingService:
             existing.status = SubscriptionStatus.ACTIVE
             existing.is_active = True
             existing.cancelled_at = None
-            existing.renewal_date = datetime.utcnow()
+            existing.renewal_date = naive_utc_now()
             await self.sub_repo.session.flush()
             return existing
         return await self.sub_repo.create(user_id, tier, price)
@@ -268,7 +269,7 @@ class BillingService:
         )
         sub.tier = RevenueTier.AVOD
         sub.monthly_price = Decimal("0.00")
-        sub.cancelled_at = datetime.utcnow()
+        sub.cancelled_at = naive_utc_now()
         sub.is_active = False
         sub.status = SubscriptionStatus.CANCELLED
         return sub
@@ -397,7 +398,7 @@ class BillingService:
             sub.status = target
             sub.is_active = target == SubscriptionStatus.ACTIVE
             if target == SubscriptionStatus.CANCELLED:
-                sub.cancelled_at = datetime.utcnow()
+                sub.cancelled_at = naive_utc_now()
                 sub.tier = RevenueTier.AVOD
                 sub.monthly_price = Decimal("0.00")
         sub.last_stripe_event_ts = event_created
@@ -717,7 +718,7 @@ class BillingService:
             tranche.status, TrancheStatus.RELEASED, TRANCHE_TRANSITIONS, context="release_tranche"
         )
         tranche.status = TrancheStatus.RELEASED
-        tranche.released_at = datetime.utcnow()
+        tranche.released_at = naive_utc_now()
 
         idem_key = f"tranche:{milestone_id}:{tranche_number}"
         validate_currency("USD")
@@ -727,7 +728,7 @@ class BillingService:
             currency="USD",
             idempotency_key=idem_key,
             cycle_start=milestone.created_at,
-            cycle_end=datetime.utcnow(),
+            cycle_end=naive_utc_now(),
             breakdown={"type": "milestone_tranche", "tranche_number": tranche_number},
         )
         return tranche
@@ -753,7 +754,7 @@ class BillingService:
         milestone.status = MilestoneStatus.KILLED
 
         tranches = await self.milestone_repo.get_tranches(milestone_id)
-        now = datetime.utcnow()
+        now = naive_utc_now()
         for tranche in tranches:
             if tranche.status == TrancheStatus.LOCKED:
                 tranche.status = TrancheStatus.REVERTED
