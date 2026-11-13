@@ -87,6 +87,7 @@ async def test_the_undelivered_event_is_kept_in_the_outbox(service):
     assert row.topic == "user.moderated"
     assert row.status == "pending"
     assert row.event_key == "moderated:u-1"
+    assert row.event_id
     assert row.payload["user_id"] == "u-1"
     assert row.payload["status"] == "suspended"
     assert row.payload["moderated_by"] == "admin-1"
@@ -106,6 +107,7 @@ async def test_recovery_delivers_the_pending_event_exactly_once(service, monkeyp
     assert len(recovered.sent) == 1
     event = recovered.sent[0]
     assert event.topic == "user.moderated"
+    assert event.event_id == row.event_id
     assert event.payload["user_id"] == "u-1"
     assert event.payload["status"] == "suspended"
 
@@ -128,6 +130,7 @@ async def test_a_failed_delivery_stays_pending_for_the_next_attempt(service, mon
 
     row = (await session.execute(select(OutboxEvent))).scalar_one()
     assert row.status == "pending"
+    event_id = row.event_id
 
     # Still failing: the drain must not drop or duplicate the row.
     assert await svc.drain_outbox() == 1
@@ -139,6 +142,7 @@ async def test_a_failed_delivery_stays_pending_for_the_next_attempt(service, mon
     monkeypatch.setattr(events_mod, "_publisher", recovered)
     assert await svc.drain_outbox() == 1
     assert len(recovered.sent) == 1
+    assert recovered.sent[0].event_id == event_id
     await session.refresh(row)
     assert row.status == "dispatched"
 
