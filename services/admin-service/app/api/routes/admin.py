@@ -270,8 +270,15 @@ async def flag_content(
     request_meta: Request,
     admin_id: Annotated[str, Depends(get_current_admin_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    x_admin_reauth: Annotated[str | None, Header(alias="X-Admin-Reauth")] = None,
 ):
-    """Flag inappropriate content"""
+    """Flag content; resolving it requires single-use step-up authentication."""
+    if request.status != "flagged":
+        # "active" and "removed" resolve or override moderation state. Keep
+        # those transitions behind the same security gate as /content/resolve.
+        admin_id = await verify_admin_reauth(admin_id, x_admin_reauth, authorization)
+
     service = AdminService(db)
     return await service.flag_content(
         request.content_id,
