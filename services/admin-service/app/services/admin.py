@@ -139,17 +139,32 @@ class AdminService:
         ip_address: str,
         status: str = "flagged",
     ) -> dict:
-        existing = await self.content_repo.get_active_flag(content_id, flagged_by)
-        if status == "flagged" and existing is not None and existing.status == "flagged":
-            # Repeated reports from the same actor must not inflate flag
-            # counts; return the existing open flag without a duplicate audit.
-            return self._serialize_content_moderation(existing)
+        if status == "flagged":
+            existing = await self.content_repo.get_active_flag(content_id, flagged_by)
+            if existing is not None:
+                # Repeated reports from the same actor must not inflate flag
+                # counts; return the existing open flag without a duplicate audit.
+                return self._serialize_content_moderation(existing)
+            moderation = await self.content_repo.create(
+                content_id, content_type, status, reason, flagged_by
+            )
+            audit_action = "content_flagged"
+        else:
+            # Resolve existing open flags together, as /content/resolve does.
+            # If there is no prior flag, preserve the requested state as a new
+            # resolved moderation record rather than storing it as a fresh flag.
+            moderation = await self.content_repo.update_status(content_id, status, flagged_by)
+            if moderation is None:
+                moderation = await self.content_repo.create(
+                    content_id, content_type, status, reason, None
+                )
+                moderation.resolved_by = flagged_by
+                moderation.resolved_at = datetime.now(UTC)
+                await self.db.flush()
+            audit_action = f"content_resolved_{status}"
 
-        moderation = await self.content_repo.create(
-            content_id, content_type, status, reason, flagged_by
-        )
         await self.audit_repo.create(
-            flagged_by, "content_flagged", "content", content_id, reason, ip_address
+            flagged_by, audit_action, "content", content_id, reason, ip_address
         )
         await self.db.commit()
         return self._serialize_content_moderation(moderation)
