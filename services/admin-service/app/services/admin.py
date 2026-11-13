@@ -89,7 +89,7 @@ class AdminService:
             moderated_by,
             _moderated_at_iso(moderation.moderated_at),
         )
-        await self.outbox_repo.enqueue(event.topic, event.key, event.payload)
+        await self.outbox_repo.enqueue(event.topic, event.key, event.event_id, event.payload)
         await self.db.commit()
         await self._deliver_pending_events()
 
