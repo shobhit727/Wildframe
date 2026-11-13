@@ -142,6 +142,7 @@ async def test_a_failed_delivery_stays_pending_for_the_next_attempt(service, mon
     await session.refresh(row)
     assert row.status == "dispatched"
 
+
 async def test_pending_releases_only_the_oldest_event_for_each_partition(service):
     svc, session, _ = service
     from app.models.admin import OutboxEvent
