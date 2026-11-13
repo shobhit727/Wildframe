@@ -67,7 +67,7 @@ class AdminService:
                 moderated_by,
                 _moderated_at_iso(existing.moderated_at),
             )
-            await self.outbox_repo.enqueue(event.topic, event.key, event.payload)
+            await self.outbox_repo.enqueue(event.topic, event.key, event.event_id, event.payload)
             await self.db.commit()
             await self._deliver_pending_events()
             return self._serialize_user_moderation(existing)
@@ -106,6 +106,7 @@ class AdminService:
                     DomainEvent(
                         topic=event.topic,
                         key=event.event_key or "",
+                        event_id=event.event_id,
                         payload=event.payload,
                         producer=settings.SERVICE_NAME,
                     )
