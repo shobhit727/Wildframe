@@ -10,6 +10,8 @@ succeeds.
 These tests run against SQLite and never touch a real broker.
 """
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -139,3 +141,50 @@ async def test_a_failed_delivery_stays_pending_for_the_next_attempt(service, mon
     assert len(recovered.sent) == 1
     await session.refresh(row)
     assert row.status == "dispatched"
+
+async def test_pending_releases_only_the_oldest_event_for_each_partition(service):
+    svc, session, _ = service
+    from app.models.admin import OutboxEvent
+
+    now = datetime.now(UTC)
+    first_user_event = OutboxEvent(
+        topic="user.moderated",
+        event_key="moderated:u-1",
+        payload={"user_id": "u-1", "status": "suspended"},
+        status="pending",
+        created_at=now,
+    )
+    later_user_event = OutboxEvent(
+        topic="user.moderated",
+        event_key="moderated:u-1",
+        payload={"user_id": "u-1", "status": "active"},
+        status="pending",
+        created_at=now + timedelta(seconds=1),
+    )
+    other_user_event = OutboxEvent(
+        topic="user.moderated",
+        event_key="moderated:u-2",
+        payload={"user_id": "u-2", "status": "banned"},
+        status="pending",
+        created_at=now,
+    )
+    session.add_all([first_user_event, later_user_event, other_user_event])
+    await session.commit()
+
+    pending = await svc.outbox_repo.pending(10)
+    assert {event.id for event in pending} == {
+        first_user_event.id,
+        other_user_event.id,
+    }
+
+    # A failed first event remains pending and must continue blocking the
+    # later event on that user's partition, without blocking other users.
+    await session.commit()
+    pending_again = await svc.outbox_repo.pending(10)
+    assert first_user_event.id in {event.id for event in pending_again}
+    assert later_user_event.id not in {event.id for event in pending_again}
+
+    first_user_event.status = "dispatched"
+    await session.commit()
+    pending_after_dispatch = await svc.outbox_repo.pending(10)
+    assert later_user_event.id in {event.id for event in pending_after_dispatch}
