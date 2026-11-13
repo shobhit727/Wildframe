@@ -100,7 +100,7 @@ class TestUserModeratedEvent:
         event = user_moderated_event("u1", "active", "admin-1", "2026-01-01T00:00:00+00:00")
         decoded = json.loads(event.to_json())
         assert decoded["topic"] == Topic.USER_MODERATED
-        assert decoded["key"].startswith("moderated:u1:active")
+        assert decoded["key"] == "moderated:u1"
         assert decoded["payload"]["user_id"] == "u1"
 
 
