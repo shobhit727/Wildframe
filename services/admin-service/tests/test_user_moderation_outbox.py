@@ -86,7 +86,7 @@ async def test_the_undelivered_event_is_kept_in_the_outbox(service):
     row = rows[0]
     assert row.topic == "user.moderated"
     assert row.status == "pending"
-    assert row.event_key.startswith("moderated:u-1:suspended:")
+    assert row.event_key == "moderated:u-1"
     assert row.payload["user_id"] == "u-1"
     assert row.payload["status"] == "suspended"
     assert row.payload["moderated_by"] == "admin-1"
