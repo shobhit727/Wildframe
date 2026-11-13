@@ -54,12 +54,13 @@ def user_moderated_event(
 ) -> DomainEvent:
     """Event for user moderation changes.
 
-    Idempotency key includes the timestamp so repeated moderations of the
-    same user are all delivered (auth-service applies last-write-wins).
+    The key is stable per user so all status changes share one Kafka
+    partition and preserve their order. Each occurrence still has its own
+    unique DomainEvent.event_id.
     """
     return DomainEvent(
         topic=Topic.USER_MODERATED,
-        key=f"moderated:{user_id}:{status}:{moderated_at}",
+        key=f"moderated:{user_id}",
         payload={
             "user_id": user_id,
             "status": status,
