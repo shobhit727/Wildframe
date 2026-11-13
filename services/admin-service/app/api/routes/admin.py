@@ -59,7 +59,11 @@ async def _decode_token(token: str, expected_type: str = "access") -> dict:
 async def _enforce_auth_version(authorization: str, payload: dict) -> None:
     token_version = payload.get("av")
     if type(token_version) is not int:
-        raise HTTPException(status_code=401, detail="Invalid token payload", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
             response = await client.get(
@@ -72,29 +76,53 @@ async def _enforce_auth_version(authorization: str, payload: dict) -> None:
             detail="Auth service unavailable",
         ) from exc
     except Exception as exc:
-        raise HTTPException(status_code=401, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"}) from exc
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
     if response.status_code >= 500:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Auth service unavailable",
         )
     if response.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     try:
         current_version = response.json()["auth_version"]
     except (ValueError, KeyError, TypeError) as exc:
-        raise HTTPException(status_code=401, detail="Invalid token payload", headers={"WWW-Authenticate": "Bearer"}) from exc
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
     if type(current_version) is not int:
-        raise HTTPException(status_code=401, detail="Invalid token payload", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_version != token_version:
-        raise HTTPException(status_code=401, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 async def get_current_admin_id(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> str:
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            status_code=401,
+            detail="Missing or invalid Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     token = authorization.replace("Bearer ", "")
     payload = await _decode_token(token)
     await _enforce_auth_version(authorization, payload)
@@ -108,7 +136,11 @@ async def get_current_admin_id(
         raise HTTPException(status_code=403, detail="Admin privileges required")
     subject = payload.get("sub") or payload.get("user_id")
     if not isinstance(subject, str) or not subject:
-        raise HTTPException(status_code=401, detail="Invalid token subject", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token subject",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return subject
 
 
