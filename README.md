@@ -82,6 +82,14 @@ Prerequisites:
 - Node.js 20+
 - Poetry 2.4.1 (the version CI installs — see `POETRY_VERSION` in `.github/workflows/ci-cd.yml`)
 
+Prepare development certificates and bind-mounted credentials **before**
+starting Compose. The script is idempotent and creates the TLS pair, Kafka
+PEM bundle/password files, and Prometheus metrics token:
+
+```bash
+bash scripts/generate-dev-certs.sh
+```
+
 Start the development stack:
 
 ```bash
