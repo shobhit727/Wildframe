@@ -343,8 +343,16 @@ class OutboxRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def enqueue(self, topic: str, event_key: str | None, payload: dict) -> OutboxEvent:
-        event = OutboxEvent(topic=topic, event_key=event_key, payload=payload, status="pending")
+    async def enqueue(
+        self, topic: str, event_key: str | None, event_id: str, payload: dict
+    ) -> OutboxEvent:
+        event = OutboxEvent(
+            topic=topic,
+            event_key=event_key,
+            event_id=event_id,
+            payload=payload,
+            status="pending",
+        )
         self.db.add(event)
         await self.db.flush()
         return event
