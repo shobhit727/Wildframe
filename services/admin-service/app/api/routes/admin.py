@@ -178,7 +178,19 @@ async def verify_admin_reauth(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Step-up authentication required: X-Admin-Reauth header missing",
         )
-    payload = await _decode_token(x_admin_reauth, expected_type="admin_step_up")
+    try:
+        payload = await _decode_token(x_admin_reauth, expected_type="admin_step_up")
+    except HTTPException as exc:
+        # The primary access token has already authenticated the admin.
+        # A missing, malformed, or expired step-up grant is an authorization
+        # refusal, not an expired application session; keep it out of the
+        # frontend's 401 refresh/logout path.
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Step-up credential is invalid or expired",
+            ) from exc
+        raise
     if authorization:
         access_payload = await _decode_token(authorization.removeprefix("Bearer "))
         if payload.get("av") != access_payload.get("av"):
