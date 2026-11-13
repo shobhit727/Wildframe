@@ -83,16 +83,11 @@ class TestUserModeratedEvent:
             "moderated_at": "2026-01-01T00:00:00+00:00",
         }
 
-    def test_idempotency_key_identifies_user_status_and_timestamp(self):
-        event = user_moderated_event("u1", "banned", "admin-1", "2026-01-01T00:00:00+00:00")
-        assert event.key == "moderated:u1:banned:2026-01-01T00:00:00+00:00"
-
-    def test_repeated_moderation_of_the_same_status_still_gets_a_fresh_key(self):
-        # The timestamp is in the key on purpose so auth-service's
-        # last-write-wins sees both deliveries instead of deduping them.
+    def test_partition_key_is_stable_for_all_changes_to_the_same_user(self):
         first = user_moderated_event("u1", "banned", "admin-1", "2026-01-01T00:00:00+00:00")
-        second = user_moderated_event("u1", "banned", "admin-1", "2026-01-01T00:00:05+00:00")
-        assert first.key != second.key
+        second = user_moderated_event("u1", "active", "admin-1", "2026-01-01T00:00:05+00:00")
+        assert first.key == second.key == "moderated:u1"
+        assert first.event_id != second.event_id
 
     def test_different_users_do_not_collide(self):
         a = user_moderated_event("u1", "banned", "admin-1", "2026-01-01T00:00:00+00:00")
