@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, Text, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -161,6 +162,9 @@ class OutboxEvent(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     topic: Mapped[str] = mapped_column(String(255), nullable=False)
     event_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    event_id: Mapped[str] = mapped_column(
+        String(36), nullable=False, unique=True, default=lambda: str(uuid4())
+    )
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
     created_at: Mapped[datetime] = mapped_column(
