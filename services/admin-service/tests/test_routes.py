@@ -208,6 +208,7 @@ class TestGetCurrentAdminId:
             await get_current_admin_id(_auth_header(_mint()))
         assert exc.value.status_code == 401
         assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     async def test_rejects_malformed_auth_version_response(self, monkeypatch):
         from app.api.routes import admin as admin_routes
@@ -237,6 +238,7 @@ class TestGetCurrentAdminId:
             await get_current_admin_id(_auth_header(_mint()))
         assert exc.value.status_code == 401
         assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     async def test_rejects_token_without_required_sub_claim(self):
         token = jwt.encode(
@@ -256,12 +258,14 @@ class TestGetCurrentAdminId:
             await get_current_admin_id(_auth_header(token))
         assert exc.value.status_code == 401
         assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     @pytest.mark.parametrize("header", [None, "", "Basic abc", "bearer lowercase", "Token x"])
     async def test_rejects_a_missing_or_malformed_header(self, header):
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(header)
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
         assert exc.value.detail == "Missing or invalid Authorization header"
         assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
@@ -269,6 +273,7 @@ class TestGetCurrentAdminId:
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header("not-a-jwt"))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
         assert exc.value.detail == "Invalid token"
         assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
@@ -298,24 +303,28 @@ class TestGetCurrentAdminId:
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(token))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
         assert exc.value.detail == "Invalid token"
 
     async def test_rejects_a_token_from_another_audience(self):
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(_mint(extra={"aud": "some-other-api"})))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
         assert exc.value.detail == "Invalid token"
 
     async def test_rejects_a_token_from_another_issuer(self):
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(_mint(extra={"iss": "rogue-issuer"})))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     @pytest.mark.parametrize("typ", ["refresh", "admin_step_up", "api_key", None])
     async def test_rejects_non_access_token_types(self, typ):
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(_mint(typ=typ)))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
         assert exc.value.detail == "Invalid token"
 
     @pytest.mark.parametrize("role", ["user", "moderator", "billing", "api_key"])
@@ -355,6 +364,7 @@ class TestGetCurrentAdminId:
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(_mint(exp_offset=-120)))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
         assert exc.value.detail == "Invalid token"
 
 
