@@ -89,6 +89,29 @@ describe('listUsers', () => {
   });
 });
 
+describe('requestStepUp', () => {
+  it('exchanges the admin password for a step-up token', async () => {
+    post.mockReturnValue(ok({ step_up_token: 'st-1', expires_in: 300 }));
+
+    const token = await admin.requestStepUp('correct horse');
+
+    expect(token).toBe('st-1');
+    expect(post).toHaveBeenCalledWith('/auth/api/v1/auth/step-up', { password: 'correct horse' });
+  });
+
+  it('forwards the MFA code when the account has MFA enabled', async () => {
+    post.mockReturnValue(ok({ step_up_token: 'st-2' }));
+
+    await admin.requestStepUp('correct horse', '123456');
+
+    // The auth-service rejects a bare password with 400 "MFA code required".
+    expect(post.mock.calls[0][1]).toStrictEqual({
+      password: 'correct horse',
+      mfa_code: '123456',
+    });
+  });
+});
+
 describe('moderateUser', () => {
   it('posts user_id, status and reason in the body', async () => {
     post.mockReturnValue(ok({ status: 'banned' }));
@@ -96,11 +119,29 @@ describe('moderateUser', () => {
     const out = await admin.moderateUser('u1', 'banned', 'chargeback fraud');
 
     expect(out).toEqual({ status: 'banned' });
-    expect(post).toHaveBeenCalledWith('/admin/api/v1/admin/users/moderate', {
-      user_id: 'u1',
-      status: 'banned',
-      reason: 'chargeback fraud',
-    });
+    expect(post).toHaveBeenCalledWith(
+      '/admin/api/v1/admin/users/moderate',
+      {
+        user_id: 'u1',
+        status: 'banned',
+        reason: 'chargeback fraud',
+      },
+      undefined,
+    );
+  });
+
+  it('sends the step-up token as X-Admin-Reauth', async () => {
+    post.mockReturnValue(ok({ status: 'banned' }));
+
+    await admin.moderateUser('u1', 'banned', undefined, 'st-1');
+
+    // Without this header the service answers 401 "Step-up authentication
+    // required", so every administrative action fails after confirmation.
+    expect(post).toHaveBeenCalledWith(
+      '/admin/api/v1/admin/users/moderate',
+      { user_id: 'u1', status: 'banned', reason: undefined },
+      { headers: { 'X-Admin-Reauth': 'st-1' } },
+    );
   });
 
   it('allows an omitted reason', async () => {
@@ -131,6 +172,17 @@ describe('flags', () => {
 
     expect(post).toHaveBeenCalledWith('/admin/api/v1/admin/content/resolve', null, {
       params: { content_id: 'c1', status: 'removed' },
+    });
+  });
+
+  it('sends the step-up token as X-Admin-Reauth', async () => {
+    post.mockReturnValue(ok({ status: 'removed' }));
+
+    await admin.resolveFlag('c1', 'removed', 'st-1');
+
+    expect(post).toHaveBeenCalledWith('/admin/api/v1/admin/content/resolve', null, {
+      params: { content_id: 'c1', status: 'removed' },
+      headers: { 'X-Admin-Reauth': 'st-1' },
     });
   });
 });
