@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
+from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, event
+from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, Text, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -145,6 +146,33 @@ class AdminAuditLog(Base):
         Index("idx_action", "action"),
         Index("idx_created_at", "created_at"),
     )
+
+
+class OutboxEvent(Base):
+    """Event committed atomically with the state change it describes (#1054).
+
+    ``moderate_user`` used to commit the moderation row and then publish; a
+    broker failure between the two left admin_db and auth_db disagreeing.
+    Rows move from ``pending`` to ``dispatched`` when the publisher accepts
+    them, and pending rows are retried by the drain worker.
+    """
+
+    __tablename__ = "outbox_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    topic: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    event_id: Mapped[str] = mapped_column(
+        String(36), nullable=False, unique=True, default=lambda: str(uuid4())
+    )
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (Index("idx_outbox_status_created", "status", "created_at"),)
 
 
 @event.listens_for(AdminAuditLog, "before_update")
