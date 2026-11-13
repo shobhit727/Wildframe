@@ -105,15 +105,14 @@ async def test_recovery_delivers_the_pending_event_exactly_once(service, monkeyp
 
     assert drained == 1
     assert len(recovered.sent) == 1
+    from app.models.admin import OutboxEvent
+
+    row = (await session.execute(select(OutboxEvent))).scalar_one()
     event = recovered.sent[0]
     assert event.topic == "user.moderated"
     assert event.event_id == row.event_id
     assert event.payload["user_id"] == "u-1"
     assert event.payload["status"] == "suspended"
-
-    from app.models.admin import OutboxEvent
-
-    row = (await session.execute(select(OutboxEvent))).scalar_one()
     assert row.status == "dispatched"
     assert row.dispatched_at is not None
 
