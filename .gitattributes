@@ -14,3 +14,11 @@
 # driver never sees a conflict. tests/contract/test_message_board_integrity.py
 # catches that case by watching the entry count for regressions.
 Message-board.md merge=union
+
+# POSIX shell scripts must stay LF in both the blob and the checkout. Several
+# are bind-mounted into containers or run under bash, and bash refuses scripts
+# with CRLF endings (`$'\r': command not found`). The docker compose dev stack
+# restart-looped Kafka on a fresh clone exactly this way (2026-11-10) because
+# these files were committed with CRLF. `eol=lf` overrides any developer's
+# `core.autocrlf`, so a Windows checkout cannot convert them back.
+*.sh text eol=lf
