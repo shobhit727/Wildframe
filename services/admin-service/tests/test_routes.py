@@ -690,6 +690,9 @@ class TestContentModerationRoutes:
         assert body["status"] == "flagged"
 
     async def test_flag_content_honours_a_removed_status(self, admin_client):
+        from tests.test_step_up import _mint_step_up
+
+        headers = {**_bearer(_mint()), "X-Admin-Reauth": _mint_step_up(ADMIN)}
         resp = await admin_client.post(
             "/api/v1/admin/content/flag",
             json={
@@ -698,25 +701,45 @@ class TestContentModerationRoutes:
                 "status": "removed",
                 "reason": "policy",
             },
-            headers=_bearer(_mint()),
+            headers=headers,
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "removed"
+        assert resp.json()["resolved_at"] is not None
 
     async def test_flag_content_with_removed_status_does_not_reuse_an_open_flag(self, admin_client):
-        headers = _bearer(_mint())
+        from tests.test_step_up import _mint_step_up
+
+        access_header = _bearer(_mint())
         await admin_client.post(
             "/api/v1/admin/content/flag",
             json={"content_id": "c-open", "content_type": "movie", "status": "flagged"},
-            headers=headers,
+            headers=access_header,
         )
         resp = await admin_client.post(
             "/api/v1/admin/content/flag",
             json={"content_id": "c-open", "content_type": "movie", "status": "removed"},
-            headers=headers,
+            headers={**access_header, "X-Admin-Reauth": _mint_step_up(ADMIN)},
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "removed"
+        assert resp.json()["resolved_at"] is not None
+
+    async def test_non_flagging_content_status_requires_step_up(self, admin_client):
+        for requested_status in ("active", "removed"):
+            resp = await admin_client.post(
+                "/api/v1/admin/content/flag",
+                json={
+                    "content_id": f"c-step-up-{requested_status}",
+                    "content_type": "movie",
+                    "status": requested_status,
+                },
+                headers=_bearer(_mint()),
+            )
+            # Main currently maps a missing step-up credential to 401; #1052
+            # corrects that classification to 403. Either way the mutation
+            # must be rejected until step-up is supplied.
+            assert resp.status_code in (401, 403)
 
     async def test_flag_content_rejects_an_unknown_content_type(self, admin_client):
         resp = await admin_client.post(
