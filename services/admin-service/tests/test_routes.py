@@ -602,16 +602,17 @@ class TestUserModerationRoutes:
         assert resp.status_code == 401
         assert resp.headers["www-authenticate"] == "Bearer"
 
-    async def test_invalid_step_up_token_returns_401_with_challenge(self, admin_client):
+    async def test_invalid_step_up_token_returns_403_without_challenge(self, admin_client):
         resp = await admin_client.post(
             "/api/v1/admin/users/moderate",
             json={"user_id": "u-1", "status": "suspended"},
             headers={**_bearer(_mint()), "X-Admin-Reauth": "not-a-jwt"},
         )
-        # A credential the verifier rejects stays a 401, and RFC 6750 requires
-        # the challenge header on every Bearer 401.
-        assert resp.status_code == 401
-        assert resp.headers["www-authenticate"] == "Bearer"
+        # The access token authenticated the admin; a failed step-up grant is
+        # an authorization refusal and must not trigger frontend session logout.
+        assert resp.status_code == 403
+        assert "Step-up credential" in resp.json()["detail"]
+        assert "www-authenticate" not in resp.headers
 
     async def test_moderate_user_with_step_up_succeeds(self, admin_client):
         from tests.test_step_up import _mint_step_up
