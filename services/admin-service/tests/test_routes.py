@@ -207,6 +207,7 @@ class TestGetCurrentAdminId:
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(_mint()))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     async def test_rejects_malformed_auth_version_response(self, monkeypatch):
         from app.api.routes import admin as admin_routes
@@ -235,6 +236,7 @@ class TestGetCurrentAdminId:
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(_mint()))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     async def test_rejects_token_without_required_sub_claim(self):
         token = jwt.encode(
@@ -253,6 +255,7 @@ class TestGetCurrentAdminId:
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(token))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     @pytest.mark.parametrize("header", [None, "", "Basic abc", "bearer lowercase", "Token x"])
     async def test_rejects_a_missing_or_malformed_header(self, header):
@@ -260,12 +263,14 @@ class TestGetCurrentAdminId:
             await get_current_admin_id(header)
         assert exc.value.status_code == 401
         assert exc.value.detail == "Missing or invalid Authorization header"
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     async def test_rejects_a_garbage_token(self):
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header("not-a-jwt"))
         assert exc.value.status_code == 401
         assert exc.value.detail == "Invalid token"
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     async def test_rejects_a_token_signed_with_another_key(self):
         # A token whose signature does not match the published JWKS: mint with
@@ -585,6 +590,7 @@ class TestUserModerationRoutes:
             json={"user_id": "u-1", "status": "suspended"},
         )
         assert resp.status_code == 401
+        assert resp.headers["www-authenticate"] == "Bearer"
 
     async def test_invalid_step_up_token_returns_401_with_challenge(self, admin_client):
         resp = await admin_client.post(
