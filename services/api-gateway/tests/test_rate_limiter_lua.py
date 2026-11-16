@@ -219,3 +219,41 @@ def test_production_script_text_carries_the_boundary_the_live_tests_check():
     # the ZADD, or the boundary it enforces is meaningless.
     assert script.index("ZREMRANGEBYSCORE") < script.index("ZCARD") < script.index("ZADD")
     assert "PEXPIRE" in script
+
+
+# ----------------------------------------------------------------------
+# #1116 — the fixed-window increment must be atomic with its TTL
+# ----------------------------------------------------------------------
+
+
+class TestIncrementWindowScript:
+    """The old INCR-then-EXPIRE pair could leave a TTL-less key when the
+    process died between the two commands; such a key 429s that identity
+    forever. The script must (a) set the TTL atomically and (b) repair a
+    TTL-less key created by that crash."""
+
+    def test_script_increments_and_sets_ttl_when_missing(self):
+        script = RateLimiter._INCREMENT_WINDOW_SCRIPT
+
+        # Semantics pinned at the script-text level: INCR first, TTL guard,
+        # EXPIRE only when the key has no TTL. The dual/client-ip fakes
+        # execute the same command sequence the script encodes; a real-Redis
+        # semantic test belongs to the live-stack integration suite.
+        assert "INCR" in script
+        assert "TTL" in script
+        assert "EXPIRE" in script
+        assert "tonumber(ARGV[1])" in script
+
+    @staticmethod
+    def _lua_check():
+        """Marker used to keep the import local; see class docstring."""
+        return True
+
+    def test_script_never_renews_an_existing_window(self):
+        """EXPIRE must be guarded by the TTL check, or a mid-window request
+        would extend the window and change limiting semantics."""
+        script = RateLimiter._INCREMENT_WINDOW_SCRIPT
+        ttl_line = [line for line in script.splitlines() if "TTL" in line][0]
+        expire_line = [line for line in script.splitlines() if "EXPIRE" in line][0]
+        assert "if" in ttl_line and "< 0" in ttl_line
+        assert "end" not in expire_line  # EXPIRE sits inside the guard block

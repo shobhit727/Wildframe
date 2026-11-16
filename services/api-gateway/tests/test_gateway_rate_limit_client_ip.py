@@ -43,6 +43,13 @@ class FakeRedis:
 
     async def eval(self, script, numkeys, key, *args):
         assert numkeys == 1
+        if "INCR" in script:
+            # Atomic fixed-window increment (#1116): mirrors the Lua
+            # INCR + EXPIRE-on-missing-TTL semantics.
+            self.counts[key] = self.counts.get(key, 0) + 1
+            if key not in self.expires or self.expires[key] is None:
+                self.expires[key] = int(args[0])
+            return self.counts[key]
         leases = self.leases.setdefault(key, {})
         if "ZREMRANGEBYSCORE" in script:
             lease_id, now, expiry, limit = args

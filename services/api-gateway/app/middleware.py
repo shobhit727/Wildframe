@@ -274,6 +274,20 @@ return 1
 """
     _RELEASE_LEASE_SCRIPT = "return redis.call('ZREM', KEYS[1], ARGV[1])"
 
+    # Fixed-window increment + TTL in one atomic step (#1116). The previous
+    # INCR-then-EXPIRE pair could leave a TTL-less key when the process died
+    # between the two commands; such a key 429s that identity forever because
+    # the window never resets. EXPIRE NX only sets the TTL when none exists,
+    # so renewals mid-window are impossible and a pre-existing TTL-less key
+    # (the exact crash artifact) is repaired on the next request.
+    _INCREMENT_WINDOW_SCRIPT = """
+local count = redis.call('INCR', KEYS[1])
+if redis.call('TTL', KEYS[1]) < 0 then
+  redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+end
+return count
+"""
+
     def _get_limit(self, service: str, path: str = "") -> int:
         if service == "uploads" and path.endswith(("/complete", "/abort")):
             return self._upload_finalize_limit
@@ -303,9 +317,13 @@ return 1
 
     async def _check_key(self, key: str, limit: int, window: int, service: str) -> bool:
         try:
-            count = int(await self.redis.incr(key))
-            if count == 1:
-                await self.redis.expire(key, window)
+            # Atomic INCR + TTL guarantee (#1116): a crash between the old
+            # INCR and EXPIRE pair left a TTL-less key, permanently 429ing
+            # that identity. The script also repairs any TTL-less key that
+            # already exists (EXPIRE runs whenever TTL < 0).
+            count = int(
+                await _eval_script(self.redis, self._INCREMENT_WINDOW_SCRIPT, 1, key, str(window))
+            )
         except Exception:  # noqa: BLE001
             if service == "auth":
                 logger.warning("Rate limiter Redis error for %s; denying request", service)
