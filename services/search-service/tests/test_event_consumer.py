@@ -614,3 +614,135 @@ class TestConsumerLoopCommitPartition:
         )
 
         assert self._commits(consumer) == [("content.unpublished", 9, 1)]
+
+
+# ----------------------------------------------------------------------
+# #1114 — one bad event must not stop the loop
+# ----------------------------------------------------------------------
+
+
+class TestConsumerLoopPoisonResilience:
+    """One malformed or unapplicable event must be skipped and the loop must
+    continue; only genuine dependency failures may stop it."""
+
+    async def _drive(self, consumer_env, messages: list[_Msg]) -> _FakeConsumer:
+        import aiokafka
+
+        def capture(*topics, **kwargs):
+            consumer = _FakeConsumer(*topics, **kwargs)
+            consumer.messages = messages
+            consumer_env.built.append(consumer)
+            return consumer
+
+        with pytest.MonkeyPatch.context() as ctx:
+            ctx.setattr(aiokafka, "AIOKafkaConsumer", capture)
+            await run_content_sync_consumer(consumer_env.es)  # must not raise
+        return consumer_env.built[-1]
+
+    @staticmethod
+    def _commits(consumer: _FakeConsumer) -> list[tuple[str, int, int]]:
+        return [
+            (next(iter(offsets)).topic, next(iter(offsets)).partition, list(offsets.values())[0])
+            for offsets in consumer.commits
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_malformed_event_is_skipped_and_the_loop_continues(self, consumer_env):
+        """The loop-death regression: a bad payload followed by a good event —
+        before #1114 the good event was never applied."""
+        content_id = str(uuid4())
+
+        consumer = await self._drive(
+            consumer_env,
+            [
+                _Msg("content.published", 1, 0, b"not json at all {{{"),
+                _envelope("content.published", {"content_id": content_id}, partition=1, offset=1),
+            ],
+        )
+
+        assert self._commits(consumer) == [("content.published", 1, 1), ("content.published", 1, 2)]
+        consumer_env.es.index.assert_awaited_once()  # the good event WAS applied
+        consumer_env.catalog.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_an_undecodable_payload_is_skipped(self, consumer_env):
+        consumer = await self._drive(
+            consumer_env,
+            [_Msg("content.published", 0, 5, b"\xff\xfe\xfa")],
+        )
+        assert self._commits(consumer) == [("content.published", 0, 6)]
+
+    @pytest.mark.asyncio
+    async def test_a_missing_content_id_event_is_skipped_without_stopping(self, consumer_env):
+        good = str(uuid4())
+        consumer = await self._drive(
+            consumer_env,
+            [
+                _envelope("content.published", {"no_content_id": True}, partition=3, offset=0),
+                _envelope("content.published", {"content_id": good}, partition=3, offset=1),
+            ],
+        )
+        assert self._commits(consumer) == [
+            ("content.published", 3, 1),
+            ("content.published", 3, 2),
+        ]
+        consumer_env.es.index.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_an_unparseable_content_id_is_skipped(self, consumer_env):
+        consumer = await self._drive(
+            consumer_env,
+            [_envelope("content.published", {"content_id": "not-a-uuid"}, partition=2, offset=9)],
+        )
+        assert self._commits(consumer) == [("content.published", 2, 10)]
+        consumer_env.es.index.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_catalog_rejection_is_skipped_but_a_dependency_failure_stops(
+        self, consumer_env
+    ):
+        """CatalogFetchError = rejected event (skip). ES outage = dependency
+        failure (stop, do NOT commit, replay on restart)."""
+        from app.services import CatalogFetchError
+
+        rejected = await self._drive(
+            consumer_env,
+            [
+                _envelope("content.published", {"content_id": str(uuid4())}, partition=0, offset=0),
+            ],
+        )
+        # Make the catalog reject this one event.
+        consumer_env.catalog._fetch_detail = AsyncMock(
+            side_effect=CatalogFetchError("upstream exploded")
+        )
+        rejected = await self._drive(
+            consumer_env,
+            [
+                _envelope("content.published", {"content_id": str(uuid4())}, partition=0, offset=0),
+                _envelope("content.published", {"content_id": str(uuid4())}, partition=0, offset=1),
+            ],
+        )
+        # The rejected event was skipped and the next one applied.
+        assert self._commits(rejected) == [
+            ("content.published", 0, 1),
+            ("content.published", 0, 2),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_an_es_failure_stops_the_loop_without_committing(self, consumer_env):
+        """Dependency failure keeps the pre-existing invariant: no commit, loop
+        stops, offset replays on restart."""
+        consumer_env.es.index = AsyncMock(side_effect=RuntimeError("ES down"))
+        content_id = str(uuid4())
+
+        consumer = await self._drive(
+            consumer_env,
+            [
+                _envelope("content.published", {"content_id": content_id}, partition=1, offset=7),
+                _envelope("content.published", {"content_id": str(uuid4())}, partition=1, offset=8),
+            ],
+        )
+
+        assert consumer.commits == []
+        assert consumer.stopped is True
+        consumer_env.catalog.aclose.assert_awaited_once()

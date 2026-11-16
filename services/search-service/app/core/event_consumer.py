@@ -94,7 +94,7 @@ async def run_content_sync_consumer(es_client) -> None:
 
     from app.core.database import DatabaseManager
     from app.repositories import SearchIndexRepository, SearchQueryRepository
-    from app.services import ContentCatalogClient, SearchService
+    from app.services import CatalogFetchError, ContentCatalogClient, SearchService
 
     factory = DatabaseManager.session_factory
     assert factory is not None, "DatabaseManager.session_factory not initialized"
@@ -112,17 +112,51 @@ async def run_content_sync_consumer(es_client) -> None:
         await consumer.start()
         logger.info("content sync consumer started (%s) on %s", bootstrap, TOPICS)
         async for msg in consumer:
-            import json
             from aiokafka.structs import TopicPartition
 
-            event = json.loads(msg.value.decode("utf-8"))
-            async with factory.begin() as session:
-                search_service = SearchService(
-                    es_client=es_client,
-                    query_repo=SearchQueryRepository(session),
-                    index_repo=SearchIndexRepository(session),
+            # Per-message boundary (#1114): one poison event or transient
+            # dependency failure must not terminate indexing for the lifetime
+            # of the process. The message is skipped (committed) only when it
+            # is malformed or the event was rejected as unapplicable --
+            # redelivery cannot help either class. Any other failure is NOT
+            # committed: the loop stops so the offset replays on restart,
+            # preserving the invariant that a commit never skips an unapplied
+            # event.
+            try:
+                import json
+
+                event = json.loads(msg.value.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                logger.error(
+                    "skipping malformed event (unparseable) topic=%s partition=%s offset=%s",
+                    msg.topic,
+                    msg.partition,
+                    msg.offset,
                 )
-                await _handle(catalog, search_service, event)
+                await consumer.commit({TopicPartition(msg.topic, msg.partition): msg.offset + 1})
+                continue
+
+            try:
+                async with factory.begin() as session:
+                    search_service = SearchService(
+                        es_client=es_client,
+                        query_repo=SearchQueryRepository(session),
+                        index_repo=SearchIndexRepository(session),
+                    )
+                    await _handle(catalog, search_service, event)
+            except (CatalogFetchError, ValueError) as exc:
+                # Rejected event: missing content_id (ValueError from UUID)
+                # or a catalog response the domain rejects. Retrying cannot
+                # succeed while the event stays in the log; skip it.
+                logger.error(
+                    "skipping unapplicable event topic=%s partition=%s offset=%s: %s",
+                    msg.topic,
+                    msg.partition,
+                    msg.offset,
+                    exc,
+                )
+                await consumer.commit({TopicPartition(msg.topic, msg.partition): msg.offset + 1})
+                continue
             # Stop on failure: a later commit must never skip an unapplied event.
             await consumer.commit({TopicPartition(msg.topic, msg.partition): msg.offset + 1})
     except Exception:  # noqa: BLE001
