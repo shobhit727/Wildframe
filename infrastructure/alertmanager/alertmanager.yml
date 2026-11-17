@@ -1,0 +1,16 @@
+# Alertmanager configuration for the dev stack (issue #1117).
+#
+# The owner has NOT approved any notification destination, so every alert is
+# routed to a receiver with no integrations: alerts are visible in the
+# Alertmanager UI and API but nothing is sent to Slack, PagerDuty or email.
+# Replace the `null` receiver (and add routes) only once destinations are
+# approved.
+route:
+  receiver: "null"
+  group_by: ["alertname", "service", "instance"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: "null"

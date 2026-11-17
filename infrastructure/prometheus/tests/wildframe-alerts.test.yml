@@ -1,0 +1,194 @@
+# promtool unit tests for infrastructure/prometheus/rules/wildframe-alerts.yml.
+#
+# Run with:
+#   docker run --rm -v "$PWD/infrastructure/prometheus:/p:ro" \
+#     --entrypoint promtool prom/prometheus:v3.5.0 \
+#     test rules /p/tests/wildframe-alerts.test.yml
+#
+# Synthetic series only; nothing here is scraped. rule_files paths are
+# resolved relative to the directory of the prometheus.yml being loaded when
+# running under Prometheus, but promtool test rules resolves them relative to
+# the test file's own location, hence ../rules/.
+
+rule_files:
+  - ../rules/wildframe-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ---------------------------------------------------------------------------
+  # Service down fires while the target fails and clears once it recovers.
+  # ---------------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'up{job="wildframe-services", instance="billing-service:8000"}'
+        values: "1+0x10 0+0x10 1+0x20"
+    alert_rule_test:
+      # Minutes 0-10: healthy. The zero run starts at minute 11.
+      - eval_time: 5m
+        alertname: WildframeServiceDown
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: WildframeServiceDown
+        exp_alerts: []
+      # up==0 first observed at minute 11; for:1m makes it pending until
+      # minute 12, so minute 11 is still quiet.
+      - eval_time: 11m
+        alertname: WildframeServiceDown
+        exp_alerts: []
+      # Minute 12: the alert fires.
+      - eval_time: 12m
+        alertname: WildframeServiceDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: wildframe-services
+              instance: billing-service:8000
+            exp_annotations:
+              summary: "Backend service billing-service:8000 is down"
+              description: "Prometheus has failed to scrape billing-service:8000 (job wildframe-services) for more than 1 minute."
+              runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-wildframeservicedown"
+      # Still firing at minute 19.
+      - eval_time: 19m
+        alertname: WildframeServiceDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: wildframe-services
+              instance: billing-service:8000
+            exp_annotations:
+              summary: "Backend service billing-service:8000 is down"
+              description: "Prometheus has failed to scrape billing-service:8000 (job wildframe-services) for more than 1 minute."
+              runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-wildframeservicedown"
+      # up returns to 1 at minute 21; the expression goes empty at minute 22
+      # (values are the samples at the START of each interval, so the last
+      # zero sample is at 20m and still evaluates false-zero at 21m's
+      # timestamp), and the alert clears.
+      - eval_time: 21m
+        alertname: WildframeServiceDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: wildframe-services
+              instance: billing-service:8000
+            exp_annotations:
+              summary: "Backend service billing-service:8000 is down"
+              description: "Prometheus has failed to scrape billing-service:8000 (job wildframe-services) for more than 1 minute."
+              runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-wildframeservicedown"
+      - eval_time: 22m
+        alertname: WildframeServiceDown
+        exp_alerts: []
+
+  # ---------------------------------------------------------------------------
+  # absent(): a job with no up series at all fires its absent alert, including
+  # when up==0 never gets the chance to (no targets configured).
+  # ---------------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      # Only the services job exists; postgres/redis/prometheus never report up.
+      - series: 'up{job="wildframe-services", instance="auth-service:8000"}'
+        values: "1+0x30"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: PostgresJobAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: postgres
+            exp_annotations:
+              summary: "No up series for scrape job postgres"
+              description: "Prometheus has no `up` series for job postgres for 5 minutes. Database metrics are not being collected."
+              runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-scrape-job-absent"
+      - eval_time: 6m
+        alertname: RedisJobAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: redis
+            exp_annotations:
+              summary: "No up series for scrape job redis"
+              description: "Prometheus has no `up` series for job redis for 5 minutes. Cache metrics are not being collected."
+              runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-scrape-job-absent"
+      - eval_time: 6m
+        alertname: PrometheusJobAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: prometheus
+            exp_annotations:
+              summary: "No up series for scrape job prometheus"
+              description: "Prometheus has no `up` series for its own self-scrape job for 5 minutes."
+              runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-scrape-job-absent"
+      # wildframe-services HAS an up series, so its absent alert must not fire.
+      - eval_time: 6m
+        alertname: WildframeServicesJobAbsent
+        exp_alerts: []
+
+  # ---------------------------------------------------------------------------
+  # 5xx ratio: crosses 5% only under real traffic, and stays quiet on an idle
+  # service despite 5xx errors.
+  # ---------------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      # busy-service: 90 req/s ok, 10 req/s 5xx => ratio 0.1 > 0.05.
+      - series: 'http_requests_total{service="busy-service", endpoint="/v1/things", status_code="200"}'
+        values: "0+5400x30"
+      - series: 'http_requests_total{service="busy-service", endpoint="/v1/things", status_code="500"}'
+        values: "0+600x30"
+      # idle-service: a single 500 then nothing; total rate is ~0, so the
+      # > 0.1 req/s guard keeps it from paging.
+      - series: 'http_requests_total{service="idle-service", endpoint="/health", status_code="500"}'
+        values: "1+0x30"
+    promql_expr_test:
+      - expr: |
+          (
+            sum by (service) (rate(http_requests_total{status_code=~"5.."}[5m]))
+            /
+            sum by (service) (rate(http_requests_total[5m]))
+          ) > 0.05
+          and
+          sum by (service) (rate(http_requests_total[5m])) > 0.1
+        eval_time: 10m
+        exp_samples:
+          - labels: '{service="busy-service"}'
+            value: 0.1
+
+  # ---------------------------------------------------------------------------
+  # p95 latency: crosses 500ms only when the request rate is real.
+  # ---------------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      # All observations land in the 0.5s-1s bucket, so p95 = 1.0 > 0.5.
+      - series: 'http_request_duration_seconds_bucket{service="slow-service", endpoint="/v1/slow", le="0.5"}'
+        values: "0+0x30"
+      - series: 'http_request_duration_seconds_bucket{service="slow-service", endpoint="/v1/slow", le="1"}'
+        values: "0+300x30"
+      - series: 'http_request_duration_seconds_bucket{service="slow-service", endpoint="/v1/slow", le="+Inf"}'
+        values: "0+300x30"
+      - series: 'http_requests_total{service="slow-service", endpoint="/v1/slow", status_code="200"}'
+        values: "0+300x30"
+      # Quiet service: latency high but traffic below the guard.
+      - series: 'http_request_duration_seconds_bucket{service="quiet-service", endpoint="/v1/slow", le="0.5"}'
+        values: "0+0x30"
+      - series: 'http_request_duration_seconds_bucket{service="quiet-service", endpoint="/v1/slow", le="1"}'
+        values: "1+0x30"
+      - series: 'http_request_duration_seconds_bucket{service="quiet-service", endpoint="/v1/slow", le="+Inf"}'
+        values: "1+0x30"
+      - series: 'http_requests_total{service="quiet-service", endpoint="/v1/slow", status_code="200"}'
+        values: "1+0x30"
+    promql_expr_test:
+      - expr: |
+          histogram_quantile(
+            0.95,
+            sum by (service, le) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 0.5
+          and on (service)
+          sum by (service) (rate(http_requests_total[5m])) > 0.1
+        eval_time: 10m
+        exp_samples:
+          # rate() over the 5m window ending at 10m drops the leading zeros of
+          # the ramp, so the p95 is 0.975, not the 1.0 the full-bucket value
+          # would give; the exact number does not matter, only that it is > 0.5
+          # and attributed to slow-service.
+          - labels: '{service="slow-service"}'
+            value: 0.975

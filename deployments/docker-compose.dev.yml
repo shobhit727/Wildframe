@@ -353,17 +353,34 @@ services:
     - wildframe-network
   prometheus:
     restart: unless-stopped
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.5.0
     volumes:
     - ../infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    # Alert rules for issue #1117 (wildframe-alerts.yml), loaded through the
+    # rule_files glob in prometheus.yml.
+    - ../infrastructure/prometheus/rules:/etc/prometheus/rules:ro
     # bearer_token_file for the /metrics guard. Generated + gitignored; the
     # same value reaches the services as METRICS_TOKEN below.
     - ../infrastructure/prometheus/metrics_bearer_token:/etc/prometheus/metrics_bearer_token:ro
     - prometheus_data:/prometheus
+    depends_on:
+    - alertmanager
     command:
     - --config.file=/etc/prometheus/prometheus.yml
     - --storage.tsdb.path=/prometheus
     - --storage.tsdb.retention.time=15d
+    networks:
+    - wildframe-network
+  alertmanager:
+    restart: unless-stopped
+    image: prom/alertmanager:v0.28.1
+    volumes:
+    - ../infrastructure/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    # UI bound to loopback only, like grafana above. Routing is a null receiver
+    # until notification destinations are approved, so nothing external is
+    # reachable from it either way.
+    ports:
+    - 127.0.0.1:9093:9093
     networks:
     - wildframe-network
   grafana:

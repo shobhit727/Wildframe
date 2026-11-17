@@ -367,41 +367,86 @@ kafka_consumer_lag_sum
 
 ### Alert Rules
 
-**Critical Alerts** (immediate escalation):
-```yaml
-- AlertName: HighErrorRate
-  Condition: rate(http_requests_total{status=~"5.."}[5m]) > 0.01
-  Duration: 2m
-  Action: Page on-call engineer
+The alert rules live in the repository, not in this document. These files are
+authoritative; Prometheus validates them at startup, and
+`tests/contract/test_prometheus_alert_rules.py` keeps them and the runbook
+anchors below in sync:
 
-- AlertName: ServiceDown
-  Condition: up{job=~"auth|users|content|streaming"} == 0
-  Duration: 1m
-  Action: Page on-call engineer
+- `infrastructure/prometheus/rules/wildframe-alerts.yml` — every alert rule.
+  All thresholds are proposals pending owner approval.
+- `infrastructure/alertmanager/alertmanager.yml` — routing. Every alert goes to
+  a null receiver until notification destinations are approved; nothing is sent
+  to Slack, PagerDuty or email.
+- `deployments/docker-compose.dev.yml` — the `prometheus` and `alertmanager`
+  services.
 
-- AlertName: DatabaseDown
-  Condition: up{job="postgres"} == 0
-  Duration: 1m
-  Action: Page on-call engineer
+Every rule's `runbook_url` points at one of the anchors in this section. The
+down and absent alerts derive the instance name from the `$labels.instance`
+annotation variable; the HTTP alerts derive the service from `$labels.service`.
 
-- AlertName: OutOfMemory
-  Condition: container_memory_usage_bytes / container_memory_limit_bytes > 0.95
-  Duration: 5m
-  Action: Page on-call engineer
-```
+#### Alert: WildframeServiceDown <a id="alert-wildframeservicedown"></a>
 
-**Warning Alerts** (team notification):
-```yaml
-- AlertName: HighLatency
-  Condition: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.5
-  Duration: 5m
-  Action: Send to Slack #alerts
+- **Rule:** `up{job="wildframe-services"} == 0` for 1m (critical).
+- **Meaning:** one backend (named by the instance label, e.g. `billing-service:8000`)
+  stopped answering scrapes: crashed, OOM-killed, or its port is wrong.
+- **First steps:** `docker ps | grep <service>`; then
+  `docker logs --tail 100 <service>`; check the compose port against
+  `infrastructure/prometheus/prometheus.yml`.
 
-- AlertName: HighMemoryUsage
-  Condition: container_memory_usage_bytes / container_memory_limit_bytes > 0.8
-  Duration: 10m
-  Action: Send to Slack #alerts
-```
+#### Alert: PostgresExporterDown <a id="alert-postgresexporterdown"></a>
+
+- **Rule:** `up{job="postgres"} == 0` for 1m (critical).
+- **Meaning:** `postgres-exporter` is not scrapeable — the exporter itself is
+  down or PostgreSQL is unreachable from it.
+- **First steps:** `docker ps | grep postgres-exporter`; then
+  `docker logs --tail 100 postgres-exporter`.
+
+#### Alert: RedisExporterDown <a id="alert-redisexporterdown"></a>
+
+- **Rule:** `up{job="redis"} == 0` for 1m (critical).
+- **Meaning:** `redis-exporter` is not scrapeable — the exporter is down or
+  Redis is unreachable from it.
+- **First steps:** `docker ps | grep redis-exporter`; then
+  `docker logs --tail 100 redis-exporter`.
+
+#### Alert: PrometheusSelfScrapeDown <a id="alert-prometheusselfscrapedown"></a>
+
+- **Rule:** `up{job="prometheus"} == 0` for 1m (warning).
+- **Meaning:** Prometheus cannot scrape itself, usually because the Prometheus
+  process is overloaded or restarting in a loop.
+- **First steps:** `docker ps | grep prometheus`; then
+  `docker logs --tail 100 prometheus`.
+
+#### Alert: ScrapeJobAbsent <a id="alert-scrape-job-absent"></a>
+
+- **Rule:** `absent(up{job="<job>"})` for 5m, one alert per scrape job:
+  `wildframe-services`, `postgres`, `redis`, `prometheus`.
+- **Meaning:** `up == 0` cannot fire when a job has no targets at all. Absence
+  means the job disappeared entirely: a broken config reload, a deleted job, or
+  (for `wildframe-services`) a rename that left `prometheus.yml` behind.
+- **First steps:** compare `prometheus.yml` against
+  `deployments/docker-compose.dev.yml`; check the Prometheus log for
+  `Error loading configuration`; re-run
+  `promtool check config /etc/prometheus/prometheus.yml`.
+
+#### Alert: WildframeHighErrorRatio <a id="alert-wildframehigherrorratio"></a>
+
+- **Rule:** ratio of 5xx to all requests per `service` over 5m above 5%
+  (critical), only while the service takes more than 0.1 req/s.
+- **Meaning:** one backend is failing a meaningful share of requests. The
+  label is `status_code`, not `status` — see
+  `packages/sdk/wildframe_observability/metrics.py`.
+- **First steps:** find the failing endpoints with
+  `sum by (endpoint, status_code) (rate(http_requests_total{service="<service>",status_code=~"5.."}[5m]))`
+  in the Prometheus UI; then read that service's logs.
+
+#### Alert: WildframeHighLatencyP95 <a id="alert-wildframehighlatencyp95"></a>
+
+- **Rule:** p95 of `http_request_duration_seconds` per `service` over 5m above
+  500ms (warning), only while the service takes more than 0.1 req/s.
+- **First steps:** find the slow endpoints with
+  `histogram_quantile(0.95, sum by (endpoint, le) (rate(http_request_duration_seconds_bucket{service="<service>"}[5m])))`;
+  check for database pool exhaustion or slow upstreams.
 
 ---
 
