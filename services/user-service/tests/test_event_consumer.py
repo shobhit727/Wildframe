@@ -14,6 +14,7 @@ contract halves pull in opposite directions here:
 no network are involved.
 """
 
+import ssl
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -105,6 +106,24 @@ async def test_consumer_subscribes_to_the_registration_topic_with_a_stable_group
     assert kwargs["enable_auto_commit"] is False
     assert kwargs["auto_offset_reset"] == "earliest"
     assert "bootstrap_servers" in kwargs
+
+
+async def test_consumer_uses_configured_sasl_ssl_security(monkeypatch):
+    monkeypatch.setenv("KAFKA_SECURITY_PROTOCOL", "SASL_SSL")
+    monkeypatch.setenv("KAFKA_SASL_MECHANISM", "PLAIN")
+    monkeypatch.setenv("KAFKA_SASL_USERNAME", "user-service")
+    monkeypatch.setenv("KAFKA_SASL_PASSWORD", "test-password")
+    monkeypatch.setenv("KAFKA_SSL_INSECURE", "true")
+
+    consumer = await _run()
+
+    assert consumer.init_kwargs["security_protocol"] == "SASL_SSL"
+    assert consumer.init_kwargs["sasl_mechanism"] == "PLAIN"
+    assert consumer.init_kwargs["sasl_plain_username"] == "user-service"
+    assert consumer.init_kwargs["sasl_plain_password"] == "test-password"
+    ssl_context = consumer.init_kwargs["ssl_context"]
+    assert ssl_context.check_hostname is False
+    assert ssl_context.verify_mode == ssl.CERT_NONE
 
 
 async def test_bootstrap_servers_come_from_the_environment():

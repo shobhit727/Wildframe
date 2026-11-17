@@ -508,10 +508,31 @@ docker compose -f deployments/docker-compose.dev.yml up --build
 - [ ] Resolve Docker layer/blob error (if encountered)
 
 ```bash
-docker system prune -a --volumes
-docker builder prune -a
-sudo systemctl restart docker   # or restart Docker Desktop
+docker info
+docker system df
+docker compose -f deployments/docker-compose.dev.yml ps --all
+docker compose -f deployments/docker-compose.dev.yml logs --tail=100
 ```
+
+Do not use `docker system prune -a --volumes` as a generic fix: it can remove
+unused images and volumes across unrelated Compose projects, including local
+database data. If diagnostics point specifically to stale build cache, review
+the impact before running the interactive `docker builder prune`. Remove a
+project volume only after confirming its owner and that its data can be lost.
+
+The dev Kafka listener at `kafka:29092` requires SASL_SSL. Use the shared event
+publisher/subscriber or pass the configured `KAFKA_SECURITY_PROTOCOL`, SASL
+credentials, and TLS context to direct Kafka clients. Backend `/health` checks
+do not prove background consumers connected; confirm the consumer-started log.
+The auth, search, and user services have direct consumers; their current
+implementations read those environment settings. The isolated first-run stack
+verified these consumers joined their groups. `recommendation-service` still
+logs authorization errors for billing subscription topics it subscribes to;
+the missing grants are tracked in issue #893. Fresh schema bootstrap also
+refuses billing-service because `payout_ledger` is declared in two metadata
+registries; the payout model decision is tracked in issue #999. A healthy
+`/health` response does not prove that every service schema or background
+consumer is ready.
 
 - [ ] Bring up `admin-service` and verify health
 

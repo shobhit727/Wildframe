@@ -88,6 +88,16 @@ def create_app() -> FastAPI:
             redis="healthy",
         )
 
+    @app.get("/ready", tags=["Health"])
+    async def readiness_check():
+        """Report whether the database dependency can serve requests."""
+        if not await db_manager.health_check():
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"status": "not ready", "reason": "database unhealthy"},
+            )
+        return {"status": "ready"}
+
     # Wire observability (structured JSON logs, correlation IDs, Prometheus metrics + /metrics)
 
     # Request body size cap (#517): reject oversized payloads before parsing.

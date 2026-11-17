@@ -5,6 +5,7 @@ commit/stop semantics are observable without a broker, and ``_handle`` is
 driven with injected collaborators so the applied index mutations are exact.
 """
 
+import ssl
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
@@ -301,6 +302,25 @@ def _envelope(topic: str, payload: dict, *, partition: int, offset: int) -> _Msg
 
 
 class TestConsumerLoop:
+    @pytest.mark.asyncio
+    async def test_consumer_uses_configured_sasl_ssl_security(self, consumer_env, monkeypatch):
+        monkeypatch.setenv("KAFKA_SECURITY_PROTOCOL", "SASL_SSL")
+        monkeypatch.setenv("KAFKA_SASL_MECHANISM", "PLAIN")
+        monkeypatch.setenv("KAFKA_SASL_USERNAME", "search-service")
+        monkeypatch.setenv("KAFKA_SASL_PASSWORD", "test-password")
+        monkeypatch.setenv("KAFKA_SSL_INSECURE", "true")
+
+        await run_content_sync_consumer(consumer_env.es)
+
+        kwargs = consumer_env.built[-1].kwargs
+        assert kwargs["security_protocol"] == "SASL_SSL"
+        assert kwargs["sasl_mechanism"] == "PLAIN"
+        assert kwargs["sasl_plain_username"] == "search-service"
+        assert kwargs["sasl_plain_password"] == "test-password"
+        ssl_context = kwargs["ssl_context"]
+        assert ssl_context.check_hostname is False
+        assert ssl_context.verify_mode == ssl.CERT_NONE
+
     @pytest.mark.asyncio
     async def test_consumes_indexes_and_commits_offsets(self, consumer_env):
         import aiokafka

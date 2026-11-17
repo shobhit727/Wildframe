@@ -18,10 +18,16 @@ docker compose -f deployments/docker-compose.dev.yml up --build
 - [ ] Resolve Docker layer/blob error (if encountered)
 
 ```bash
-docker system prune -a --volumes
-docker builder prune -a
-sudo systemctl restart docker   # or restart Docker Desktop
+docker info
+docker system df
+docker compose -f deployments/docker-compose.dev.yml ps --all
+docker compose -f deployments/docker-compose.dev.yml logs --tail=100
 ```
+
+Avoid `docker system prune -a --volumes` as a generic fix; it can delete local
+database volumes and images from unrelated projects. Only prune build cache
+after inspecting the diagnostics, and never remove a project volume until its
+owner and data-retention needs are confirmed.
 
 - [ ] Bring up `admin-service` and verify health
 

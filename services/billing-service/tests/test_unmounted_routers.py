@@ -13,7 +13,7 @@ points at the tests below that assumed it was dead code.
 """
 
 from datetime import datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -47,6 +47,7 @@ def _fake_session() -> AsyncMock:
     is exactly what a real session would populate.
     """
     db = AsyncMock()
+    db.add = MagicMock()
     id_ = uuid4()
     created = datetime(2026, 1, 2, 3, 4, 5)
 

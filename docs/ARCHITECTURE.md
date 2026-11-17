@@ -844,8 +844,8 @@ it explicitly against a live stack.
 - Service graph visualization
 
 ### Health Checks
-- `/health` — liveness (DB, Redis)
-- `/ready` — readiness (migrations, config)
+- `/health` — liveness; confirms the process can answer HTTP requests
+- `/ready` — readiness; returns a failing status when required dependencies are unavailable
 
 ---
 

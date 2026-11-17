@@ -26,6 +26,8 @@ class DatabaseManager:
     @classmethod
     async def init(cls) -> None:
         """Initialize the async engine and session factory."""
+        if cls.engine is not None and cls.session_factory is not None:
+            return
         database_url = settings.DATABASE_URL
         if not database_url:
             raise RuntimeError("DATABASE_URL is not configured")
@@ -56,9 +58,15 @@ class DatabaseManager:
 
     @classmethod
     async def close(cls) -> None:
-        """Dispose of the engine (called on shutdown)."""
+        """Dispose of the engine and clear cached state for the next startup."""
         if cls.engine:
-            await cls.engine.dispose()
+            try:
+                await cls.engine.dispose()
+            finally:
+                cls.engine = None
+                cls.session_factory = None
+        else:
+            cls.session_factory = None
 
     @classmethod
     async def health_check(cls) -> bool:
