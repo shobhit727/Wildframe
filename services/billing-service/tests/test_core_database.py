@@ -11,11 +11,12 @@ actually work against asyncpg; the mock tests pin the lifecycle contract
 """
 
 import os
+from uuid import uuid4
 from unittest.mock import MagicMock, patch
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import text
+from sqlalchemy import Column, Integer, MetaData, Table, insert, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -163,11 +164,13 @@ class TestInitAndClose:
 
     async def test_init_is_idempotent(self):
         first, second = _FakeEngine(), _FakeEngine()
-        with patch("app.core.database.create_async_engine", return_value=first):
+        with patch(
+            "app.core.database.create_async_engine", side_effect=[first, second]
+        ) as create:
             await DatabaseManager.init()
-        with patch("app.core.database.create_async_engine", return_value=second):
             await DatabaseManager.init()
-        assert DatabaseManager.engine is second
+        assert DatabaseManager.engine is first
+        assert create.call_count == 1
 
     async def test_session_factory_is_configured_to_keep_attributes_after_commit(self):
         # expire_on_commit=False is required because webhook handlers read model
@@ -366,7 +369,8 @@ class TestGetDb:
         assert get_db_session is get_db
 
     def test_singleton_starts_with_no_engine_and_no_factory(self):
-        assert DatabaseManager.engine is None or isinstance(DatabaseManager.engine, object)
+        assert DatabaseManager.engine is None
+        assert DatabaseManager.session_factory is None
         assert hasattr(DatabaseManager, "session_factory")
 
 
@@ -383,6 +387,28 @@ async def real_url() -> str:
     return url
 
 
+@pytest_asyncio.fixture
+async def persistence_probe(real_url: str):
+    engine = create_async_engine(
+        make_url(real_url).set(drivername="postgresql+asyncpg"), **_engine_kwargs()
+    )
+    metadata = MetaData()
+    table = Table(
+        f"billing_db_probe_{uuid4().hex}",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("value", Integer, nullable=False),
+    )
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+    try:
+        yield engine, table
+    finally:
+        async with engine.begin() as connection:
+            await connection.run_sync(metadata.drop_all)
+        await engine.dispose()
+
+
 class TestAgainstRealPostgres:
     async def test_health_check_round_trips_select_1(self, real_url):
         engine = create_async_engine(
@@ -396,41 +422,35 @@ class TestAgainstRealPostgres:
             DatabaseManager.engine = None
             await engine.dispose()
 
-    async def test_get_db_commits_real_work(self, real_url):
-        engine = create_async_engine(
-            make_url(real_url).set(drivername="postgresql+asyncpg"),
-            **_engine_kwargs(),
+    async def test_get_db_commits_real_work(self, persistence_probe):
+        engine, table = persistence_probe
+        DatabaseManager.session_factory = async_sessionmaker(
+            engine, class_=AsyncSession, expire_on_commit=False
         )
-        try:
-            DatabaseManager.session_factory = async_sessionmaker(
-                engine, class_=AsyncSession, expire_on_commit=False
-            )
-            async for session in get_db():
-                async with session.begin():
-                    await session.execute(text("SELECT 1"))
-                # The row count proves the transaction really committed.
-                result = await session.execute(text("SELECT 1"))
-                assert result.scalar_one() == 1
-        finally:
-            DatabaseManager.session_factory = None
-            await engine.dispose()
+        dependency = get_db()
+        session = await dependency.__anext__()
+        await session.execute(insert(table).values(id=1, value=42))
+        with pytest.raises(StopAsyncIteration):
+            await dependency.__anext__()
 
-    async def test_get_db_rolls_back_real_work(self, real_url):
-        engine = create_async_engine(
-            make_url(real_url).set(drivername="postgresql+asyncpg"),
-            **_engine_kwargs(),
+        async with async_sessionmaker(engine, class_=AsyncSession)() as verify_session:
+            result = await verify_session.execute(select(table.c.value).where(table.c.id == 1))
+        assert result.scalar_one() == 42
+
+    async def test_get_db_rolls_back_real_work(self, persistence_probe):
+        engine, table = persistence_probe
+        DatabaseManager.session_factory = async_sessionmaker(
+            engine, class_=AsyncSession, expire_on_commit=False
         )
-        try:
-            DatabaseManager.session_factory = async_sessionmaker(
-                engine, class_=AsyncSession, expire_on_commit=False
-            )
-            with pytest.raises(RuntimeError):
-                async for session in get_db():
-                    await session.execute(text("SELECT 1"))
-                    raise RuntimeError("abort")
-        finally:
-            DatabaseManager.session_factory = None
-            await engine.dispose()
+        dependency = get_db()
+        session = await dependency.__anext__()
+        await session.execute(insert(table).values(id=1, value=42))
+        with pytest.raises(RuntimeError, match="abort"):
+            await dependency.athrow(RuntimeError("abort"))
+
+        async with async_sessionmaker(engine, class_=AsyncSession)() as verify_session:
+            result = await verify_session.execute(select(table.c.value).where(table.c.id == 1))
+        assert result.scalar_one_or_none() is None
 
     async def test_metadata_create_all_is_idempotent(self, real_url):
         # The models must be able to materialise against a real schema.
@@ -449,10 +469,9 @@ class TestAgainstRealPostgres:
             await DatabaseManager.init()
             assert DatabaseManager.engine is not None
             assert await DatabaseManager.health_check() is True
-            engine = DatabaseManager.engine
             await DatabaseManager.close()
-        # dispose() is idempotent-safe: the engine reports no live pool after.
-        assert engine.pool is not None
+        assert DatabaseManager.engine is None
+        assert DatabaseManager.session_factory is None
 
 
 def _engine_kwargs() -> dict:

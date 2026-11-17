@@ -301,6 +301,7 @@ class TestReadyEndpoint:
                 resp = await _get(app, "/ready")
         assert resp.status_code == 503
         assert resp.json()["checks"]["redis"] == "down"
+        client.close.assert_awaited_once()
 
     async def test_ready_uses_the_configured_redis_url(self):
         app = create_app()
@@ -334,6 +335,7 @@ class TestReadyEndpoint:
                 resp = await _get(app, "/ready")
         assert resp.status_code == 503
         assert resp.json()["checks"]["redis"] == "down"
+        client.close.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -514,6 +516,20 @@ class TestLifespan:
                 with patch.object(DatabaseManager, "close", AsyncMock()):
                     async with lifespan(app) as _:
                         assert app.state.shutting_down is False
+
+    async def test_database_manager_closes_and_resets_the_engine_on_shutdown(self):
+        DatabaseManager.engine = MagicMock()
+        DatabaseManager.session_factory = MagicMock()
+
+        async def _dispose():
+            return None
+
+        DatabaseManager.engine.dispose = _dispose
+
+        await DatabaseManager.close()
+
+        assert DatabaseManager.engine is None
+        assert DatabaseManager.session_factory is None
 
     async def test_startup_installs_a_fresh_shutdown_event(self):
         # A stale event from a previous run would make the drain loop exit early.

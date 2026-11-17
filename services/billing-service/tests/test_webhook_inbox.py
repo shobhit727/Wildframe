@@ -15,13 +15,10 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
-import pytest
 from sqlalchemy.exc import IntegrityError
 
 from app.models import StripeWebhookEvent, WebhookEventStatus
 from app.repositories import WebhookEventRepository
-
-pytestmark = pytest.mark.asyncio
 
 
 def _make_row(
