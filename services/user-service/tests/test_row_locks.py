@@ -147,3 +147,39 @@ async def test_pure_reads_take_no_row_lock(db_session, recorded_selects):
         assert _reads_of(recorded_selects, table), f"no read of {table} was recorded"
     locked = [s for s in recorded_selects if "FOR UPDATE" in s]
     assert not locked, f"pure read paths must not take row locks (#1123): {locked}"
+
+
+async def test_locked_read_refreshes_a_stale_identity_mapped_row(db_session):
+    """The service pre-reads rows unlocked (e.g. update_preferences), so the
+    locked re-read hits an instance already in the identity map. Without
+    populate_existing SQLAlchemy keeps the stale attributes: a write of the
+    stale value is then not "dirty", no UPDATE is emitted, and the other
+    writer's committed value silently wins (a lost update the lock alone
+    cannot prevent)."""
+    from sqlalchemy import text
+
+    user_id = uuid4()
+    repo = UserProfileRepository(db_session)
+    await repo.create(user_id, bio="original")
+    await db_session.commit()
+
+    stale = await repo.get_by_user_id(user_id)  # identity-mapped: bio="original"
+    assert stale is not None and stale.bio == "original"
+
+    # Another writer commits bio="theirs" behind the identity map's back.
+    await db_session.execute(
+        text("UPDATE user_profiles SET bio = 'theirs' WHERE user_id = :u"),
+        {"u": user_id.hex},
+    )
+
+    # Our writer wants bio back to "original" (equal to the stale value).
+    await repo.update(user_id, bio="original")
+    await db_session.commit()
+
+    row = await db_session.execute(
+        text("SELECT bio FROM user_profiles WHERE user_id = :u"), {"u": user_id.hex}
+    )
+    assert row.scalar_one() == "original", (
+        "locked re-read kept the stale identity-mapped value, so the write "
+        "was dropped and the concurrent writer's value won (#1123)"
+    )

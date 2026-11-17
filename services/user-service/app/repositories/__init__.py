@@ -73,7 +73,15 @@ class UserProfileRepository(BaseRepository):
         silently clobbers the first (#1123). Pure read paths must use
         :meth:`get_by_user_id`, which takes no lock.
         """
-        stmt = select(UserProfile).where(UserProfile.user_id == user_id).with_for_update()
+        # populate_existing: a row already in the identity map (pre-read
+        # unlocked by the service layer) must be refreshed from the locked
+        # read, or its stale values decide which writes are "dirty" (#1123).
+        stmt = (
+            select(UserProfile)
+            .where(UserProfile.user_id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -157,7 +165,12 @@ class UserDeviceRepository(BaseRepository):
         write silently clobbers the first (#1123). Pure read paths must use
         :meth:`get_by_id`, which takes no lock.
         """
-        stmt = select(UserDevice).where(UserDevice.id == device_id).with_for_update()
+        stmt = (
+            select(UserDevice)
+            .where(UserDevice.id == device_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -264,7 +277,12 @@ class UserPreferenceRepository(BaseRepository):
         profile repository (#1123). Pure read paths must use
         :meth:`get_by_user_id`, which takes no lock.
         """
-        stmt = select(UserPreference).where(UserPreference.user_id == user_id).with_for_update()
+        stmt = (
+            select(UserPreference)
+            .where(UserPreference.user_id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -364,6 +382,7 @@ class UserSubscriptionProfileRepository(BaseRepository):
             select(UserSubscriptionProfile)
             .where(UserSubscriptionProfile.user_id == user_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
