@@ -446,16 +446,45 @@ jobs:
     name: Compose Runtime Smoke (advisory)
     runs-on: ubuntu-latest
     continue-on-error: true
-    timeout-minutes: 15
+    # 65 minutes, because the job now also runs tests/integration (#1119)
+    # against the stack it brings up. Budget, from measured and bounded parts:
+    # image build 14m32s on the CI runner (run 39422598539), health wait
+    # <=7m (COMPOSE_SMOKE_WAIT_SECONDS=420), schema bootstrap + probes ~2m,
+    # the suite <=30m (INTEGRATION_TIMEOUT_SECONDS; it paces itself under the
+    # gateway's 5 req/min auth limit, so most of its wall clock is deliberate
+    # waiting), teardown ~2m: ~56m, with the step deadline below at 60.
+    timeout-minutes: 65
     permissions:
       contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Run Compose runtime smoke
+      # tests/integration talks to the stack over HTTPS with httpx and nothing
+      # else; it imports no service package (see its conftest), so only the
+      # runner and the client are installed. Pins follow the repo's ranges:
+      # pytest<8 as in the other CI test jobs, httpx as in pyproject.toml.
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install the integration suite's dependencies
+        run: python -m pip install --quiet "pytest<8" "httpx>=0.25,<0.29"
+
+      # Runs the smoke *and* tests/integration. The suite cannot be a later
+      # step: compose-smoke.sh tears the stack down from its EXIT trap, so the
+      # script runs the suite through its post-pass hook while the stack is
+      # up, after the five probes pass and before it writes the PASS marker
+      # (#1119). A suite failure therefore fails this step and withholds the
+      # PASS marker. The step deadline (see the job budget above) stops an
+      # overrun here, so the if: always() verdict and upload steps still run.
+      - name: Run Compose runtime smoke and the integration suite
+        timeout-minutes: 60
         env:
           COMPOSE_PROJECT_NAME: wildframe-ci-${{ github.run_id }}
+          COMPOSE_SMOKE_POST_PASS: scripts/ci-integration-suite.sh
+          PYTHON: python
         run: bash scripts/compose-smoke.sh
 
       # `continue-on-error: true` above makes this job report `success` whether
@@ -476,9 +505,16 @@ jobs:
           # never matches and this step would report FAIL on a healthy stack.
           if [ -f "$log_file" ] && grep -q 'COMPOSE_SMOKE_RESULT=PASS$' "$log_file"; then
             verdict="PASS"
+          elif [ -f "$log_file" ] && grep -q 'COMPOSE_SMOKE_POST_PASS_RESULT=FAIL$' "$log_file"; then
+            # The stack came up and every probe passed; the integration suite
+            # (or its hook) is what failed. Named apart so nobody goes looking
+            # for an unhealthy container.
+            verdict="INTEGRATION FAIL"
           else
             verdict="FAIL"
           fi
+          # No `set -e` in this step, so a grep with no match just leaves this empty.
+          suite_line="$(grep -o '\[integration\] tests=.*' "$log_file" 2>/dev/null | tail -1)"
           {
             echo "## Compose Runtime Smoke: ${verdict}"
             echo ""
@@ -486,13 +522,28 @@ jobs:
               echo "**Advisory job: the stack did not come up clean.** The check"
               echo "above is green only because it is \`continue-on-error\`; the"
               echo "compose smoke itself failed. See the \`compose-smoke-*\` artifact."
+            elif [ "$verdict" = "INTEGRATION FAIL" ]; then
+              echo "**Advisory job: the stack came up and the five probes passed,"
+              echo "but the integration suite (tests/integration) failed.** The"
+              echo "check above is green only because it is \`continue-on-error\`."
+              echo "Failing tests are listed in the step log and in"
+              echo "\`wildframe-integration-junit.xml\` in the \`compose-smoke-*\` artifact."
+              echo ""
+              echo "Suite result: \`${suite_line:-no summary line: the suite did not report}\`"
             else
-              echo "All Compose services healthy; schema bootstrap and the five"
-              echo "endpoint probes passed. Advisory only -- this gates nothing."
+              echo "All Compose services healthy; schema bootstrap, the five"
+              echo "endpoint probes and the integration suite passed. Advisory"
+              echo "only -- this gates nothing."
+              echo ""
+              echo "Suite result: \`${suite_line:-no summary line}\`"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$verdict" = "FAIL" ]; then
             echo "::warning title=Compose Runtime Smoke failed::the stack did not come up clean; this check is green only because it is continue-on-error"
+            exit 1
+          fi
+          if [ "$verdict" = "INTEGRATION FAIL" ]; then
+            echo "::warning title=Integration suite failed::the stack came up but tests/integration failed; this check is green only because it is continue-on-error"
             exit 1
           fi
 
@@ -505,6 +556,7 @@ jobs:
             ${{ runner.temp }}/wildframe-compose-smoke.log
             ${{ runner.temp }}/wildframe-compose-config.json
             ${{ runner.temp }}/wildframe-compose-ps.json
+            ${{ runner.temp }}/wildframe-integration-junit.xml
           if-no-files-found: warn
           retention-days: 7
 

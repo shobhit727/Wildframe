@@ -16,6 +16,7 @@ Run these from the **repo root** (they resolve `playwright-core` from there or f
 | `verify-csp-nonce.mjs` | Do the CSP nonces actually reach the rendered scripts? |
 | `ui-capture.mjs` | Does the page render — and is it readable and usable once it has? |
 | `compose-smoke.sh` | Does the whole stack come up, and do real routes answer? |
+| `ci-integration-suite.sh` | Does `tests/integration` pass against the running stack — and did it really run? |
 | `kafka_init.py --print-plan` | Which topics and per-service ACLs should the broker have? |
 | `find_vacuous_tests.py` | Which tests assert nothing, and therefore cannot fail? |
 
@@ -62,6 +63,42 @@ COMPOSE_SMOKE_LOG=/tmp/smoke.log bash scripts/compose-smoke.sh
 `COMPOSE_SMOKE_LOG` holds the full `compose logs` dump, which is the artifact to read
 first — it names the exception behind any probe failure, where the script's own output
 only says which route failed.
+
+**`COMPOSE_SMOKE_POST_PASS` runs one more script while the stack is still up.** Off by
+default. Set it to `scripts/<file>` (a regular file directly under `scripts/`; anything
+else is refused and fails the run) and the script runs it after the five probes pass and
+before it writes `COMPOSE_SMOKE_RESULT=PASS`, still inside the `EXIT` trap that collects
+logs and tears the stack down. A non-zero hook exit fails the run with no PASS marker; the
+log says `COMPOSE_SMOKE_POST_PASS_RESULT=PASS` or `=FAIL`. CI uses it to run the
+integration suite (#1119), because a later workflow step would find the stack gone:
+
+```bash
+COMPOSE_SMOKE_POST_PASS=scripts/ci-integration-suite.sh bash scripts/compose-smoke.sh
+```
+
+---
+
+## `ci-integration-suite.sh`
+
+Runs `tests/integration` (about 110 tests: real JWTs, real databases, real Kafka) against
+a stack that is already up, and gives a verdict that cannot be green by accident. Plain
+`pytest tests/integration` can: the suite's conftest skips every test when the gateway is
+unreachable, and pytest exits 0 on an all-skipped run. This script refuses to start
+pytest unless `$WILDFRAME_GATEWAY_URL/gateway/health` answers 200 (exit 3), then reads the
+JUnit report: any failure or error is exit 1 with the test names printed, and zero tests
+or all-skipped is exit 4. The suite paces itself under the gateway's 5 req/min auth limit,
+so most of its wall clock is deliberate waiting; `INTEGRATION_TIMEOUT_SECONDS` (default
+1800) bounds it, exit 5. The last line is `INTEGRATION_SUITE_RESULT=<verdict>`.
+
+```bash
+bash scripts/ci-integration-suite.sh                  # whole suite, stack must be up
+bash scripts/ci-integration-suite.sh -k gateway_auth  # extra args go to pytest
+bash scripts/ci-integration-suite.sh --help           # env vars and exit codes
+```
+
+It needs only `pytest` and `httpx` (`PYTHON` picks the interpreter, default `python3`).
+The JUnit report goes to `$INTEGRATION_JUNIT`, default
+`${RUNNER_TEMP:-<repo>/tem}/wildframe-integration-junit.xml`.
 
 ---
 
