@@ -134,7 +134,7 @@ curl -skG 'https://localhost:9090/api/v1/query' \
 
 ### Log format
 
-Services log to stdout; auth-service and content-service also write a log file. The format depends on the service:
+Services log to the console (stdout for auth-service and SDK-configured services; stderr for user-service and content-service); auth-service and content-service also write a log file. The format depends on the service:
 
 - **SDK `JSONFormatter`** (`packages/sdk/wildframe_observability/logging.py`), installed by `wire_observability`. One JSON object per line with `timestamp`, `level`, `logger`, `message`, `request_id`, `correlation_id`, `service_name`, plus any `extra={...}` fields and `exception` when an exception is attached. Keys matching `REDACT_FIELDS` (passwords, tokens, secrets, …) are replaced with `***REDACTED***`; values are stripped of control characters and ANSI colour codes.
 - **user-service, content-service** replace it at startup with their own `dictConfig` (`app/core/logging.py`) using `pythonjsonlogger` (fields such as `asctime`, `levelname`, `name`), without `service_name` and without the SDK redaction.
@@ -196,7 +196,7 @@ Grafana provisions three dashboards from `infrastructure/grafana/provisioning/da
 | `wildframe-service-health.json` | Wildframe — Service Health | Services up/down, 5xx/4xx rate, p95 latency, Total RPS, Scrape health by target, Error ratio by service, request rate / p95 latency / active requests by service, busiest endpoints, runtime (CPU, resident memory, open FDs, GC) |
 | `wildframe-data-services.json` | Wildframe — Data Services (Postgres, Redis) | Postgres exporter scrape OK, Database size (and over time), Connections in use, Connection usage against limit, Redis memory, clients, ops/s, cache hit ratio, ACL denials |
 
-Known panel caveats: the runtime panels aggregate `process_*`/`python_gc_*` `by (service)`, but those series carry no `service` label, so they collapse into one series; "Connection usage against limit" divides by `pg_database_connection_limit`, which is `-1` for every database here (no per-database limit is set), so it does not show real headroom.
+Known panel caveats: the runtime panels aggregate `process_*`/`python_gc_*` `by (service)`, but those series carry no `service` label, so they collapse into one series; "Connections in use" and "Connection usage against limit" use `pg_database_connection_limit`, which is `-1` for every database here (no per-database limit is set), so the limit series is negative and does not show real headroom.
 
 There are no per-service (auth/user/content/streaming) dashboards.
 
@@ -269,7 +269,7 @@ Kubernetes commands below use the base chart namespace `wildframe` (`values.yaml
 
 ```
 1. Check database performance
-   - Connections: "Connections in use" panel (Data Services dashboard), or
+   - Connections: "Connections in use" panel count (ignore its negative limit series), or
      sum(pg_stat_activity_count) / max(pg_settings_max_connections)
    - Active queries: SELECT pid, now() - query_start AS age, query
        FROM pg_stat_activity WHERE state = 'active' ORDER BY age DESC;
@@ -330,7 +330,7 @@ These targets are not implemented as recording rules or alerts anywhere in the r
 
 ### Error Budget
 
-- Monthly availability target: 99.9% = 43.2 minutes of downtime allowed (30-day month)
+- Monthly availability target: 99.9% = 43.2 minutes of downtime allowed (30-day month); a full month cannot be measured yet with 15-day retention
 - Budget consumption is not tracked yet (no SLO recording rules).
 
 ---
