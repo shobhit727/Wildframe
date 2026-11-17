@@ -225,7 +225,7 @@ sum(pg_stat_activity_count) / max(pg_settings_max_connections)
 
 **No alerting exists on `main`.** `infrastructure/prometheus/prometheus.yml` has no `rule_files` or `alerting` block, there is no Alertmanager service, Grafana provisions no alert rules or contact points, and no email/Slack/PagerDuty receiver is configured. Adding rules and Alertmanager is tracked in [#1117](https://github.com/shobhit727/Wildframe/issues/1117); see [OPERATIONS.md](OPERATIONS.md) once it lands.
 
-Until then, watch the **Scrape health by target** panel on the Service Health dashboard, or query `count(up{job="wildframe-services"} == 0) or vector(0)` for the number of down targets. (The **Services down** stat panel uses `sum(up{…} == 0)`, which always sums to 0, so it does not show outages.)
+Until then, watch the **Scrape health by target** panel on the Service Health dashboard, or query `count(up{job="wildframe-services"} == 0) or vector(0)` for the number of down targets. (The **Services down** stat panel uses `sum(up{…} == 0)`, which always sums to 0, so it does not show outages: [#1134](https://github.com/shobhit727/Wildframe/issues/1134).)
 
 The playbooks below are written against the conditions an alert would cover (high error ratio, high latency, service down), using the queries above.
 
