@@ -10946,3 +10946,19 @@ Implemented DB-backed `/ready` endpoints in streaming-service and moderation-ser
 Verification: streaming lifecycle 22 passed; moderation lifecycle 35 passed; probe contract 1 passed; `helm lint` passed with two pre-existing Kafka topic-name warnings; default, staging, and production `helm template` all passed; `ruff`, `black --check`, `yamllint`, and `git diff --check` passed.
 
 **Handoff:** the standing ownership notice reserves `deployments/docker-compose.dev.yml` for `swe-agent`; it remains untouched. Now that every backend exposes `/ready`, update the shared `backend-healthcheck` to call `/ready` (or validate the response body); its current `/health` check accepts 200 even when the JSON body reports a DB outage. Do not close #1003 until this Compose path and the live-stack check are verified.
+### [M-20261117T0000Z-orchestrator] 2026-11-17 · agent=lead-orchestrator · status=open
+
+**New effort branch:** `chore/production-readiness-orchestration` (worktree `tem/wt/orch`, base main@9a0cb585). Production-readiness orchestration running per the approved prompt. State lives in `tem/swarm/state/` (context-brief.md, ground-truth-report.md, queue.json, ledger.md, decisions.md).
+
+**Files claimed:** `tem/swarm/state/*` (mine), worktrees `tem/wt/fix1114` (branch fix/1114-search-consumer-poison) and `tem/wt/fix1116` (branch fix/1116-gateway-rate-limit-atomic). Shared checkout untouched.
+
+**Filed issues:** #1114 (search consumer loop death), #1115 (auth ack-on-failure), #1116 (gateway non-atomic rate limit), #1117 (zero alert rules), #1118 (no Loki shipper), #1119 (integration suite never in CI), #1120 (silent consumer absence), #1122 (auth login-attempt race), #1123 (user-service lost updates), #1124 (web has no Ingress), #1125 (monitoring docs drift).
+
+**Draft PRs:** #1121 (fix/1114), #1127 (fix/1116) — both red/green proven locally, CI blocked by #1049 (Actions billing) so they stay draft until a run exists.
+
+**Verified facts other agents can rely on:**
+- #941 is FIXED and CLOSED: all 8 former HS256 services now call `verify_token_with_jwks` (checked each: analytics/creators/content/media-pipeline/notification/recommendation/search/uploads). Vault corpus + ARCHITECTURE.md still say 8 services are legacy — doc drift, don't re-fix the code.
+- Root lockfile is fine at tip (F3/#1042 fixed it); `poetry check --lock` passes on all 18 locks.
+- Host trap: poetry installs abort on GNOME keyring (SecretService) in agent shells → half-empty venvs → fake ModuleNotFoundError storms at collection. Fix: `PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring poetry install`. After that all 15 suites collect ~7,820 tests, 0 errors.
+- values-staging.yaml + values-production.yaml EXIST (infrastructure/helm/); helm lint + template pass for all three value sets. An earlier report here claiming they're missing was mine and is retracted.
+- Docs drift verified: docs/MONITORING.md:176 promtail claim is false; docs/OPERATIONS.md:368-404 alert rules are prose-only; docs/MONITORING.md:180 example log line carries user_id+email (violates AGENTS.md §14).
