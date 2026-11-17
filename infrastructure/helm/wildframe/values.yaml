@@ -39,7 +39,7 @@ probes:
     periodSeconds: 5
     timeoutSeconds: 3
   readinessProbe:
-    path: /health
+    path: /ready
     initialDelaySeconds: 5
     periodSeconds: 10
     timeoutSeconds: 5
@@ -60,7 +60,7 @@ services:
       readinessProbe:
         path: /ready
       startupProbe:
-        path: /ready
+        path: /health
   auth-service:
     containerPort: 8001
     replicas: 1
@@ -71,7 +71,7 @@ services:
       readinessProbe:
         path: /ready
       startupProbe:
-        path: /ready
+        path: /health
   user-service:
     containerPort: 8002
     replicas: 1
@@ -80,7 +80,7 @@ services:
       readinessProbe:
         path: /ready
       startupProbe:
-        path: /ready
+        path: /health
   content-service:
     containerPort: 8003
     replicas: 1
@@ -89,7 +89,7 @@ services:
       readinessProbe:
         path: /ready
       startupProbe:
-        path: /ready
+        path: /health
   streaming-service:
     containerPort: 8004
     replicas: 1
@@ -136,7 +136,7 @@ services:
       readinessProbe:
         path: /ready
       startupProbe:
-        path: /ready
+        path: /health
   creators-service:
     containerPort: 8012
     replicas: 1

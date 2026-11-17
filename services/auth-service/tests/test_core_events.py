@@ -13,6 +13,7 @@ import contextlib
 import functools
 import json
 import logging
+import ssl
 from uuid import UUID
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -400,6 +401,25 @@ class TestRunUserModerationConsumer:
         assert consumer.kwargs["auto_offset_reset"] == "earliest"
         assert consumer.started is True
         assert consumer.stopped is True
+
+    async def test_uses_configured_sasl_ssl_broker_security(self, fake_consumer, monkeypatch):
+        monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
+        monkeypatch.setenv("KAFKA_SECURITY_PROTOCOL", "SASL_SSL")
+        monkeypatch.setenv("KAFKA_SASL_MECHANISM", "PLAIN")
+        monkeypatch.setenv("KAFKA_SASL_USERNAME", "auth-service")
+        monkeypatch.setenv("KAFKA_SASL_PASSWORD", "test-password")
+        monkeypatch.setenv("KAFKA_SSL_INSECURE", "true")
+
+        await event_consumer.run_user_moderation_consumer(_make_factory(AsyncMock()))
+
+        consumer = fake_consumer.instances[0]
+        assert consumer.kwargs["security_protocol"] == "SASL_SSL"
+        assert consumer.kwargs["sasl_mechanism"] == "PLAIN"
+        assert consumer.kwargs["sasl_plain_username"] == "auth-service"
+        assert consumer.kwargs["sasl_plain_password"] == "test-password"
+        ssl_context = consumer.kwargs["ssl_context"]
+        assert ssl_context.check_hostname is False
+        assert ssl_context.verify_mode == ssl.CERT_NONE
 
     async def test_applies_a_sdk_enveloped_moderation_event(
         self, fake_consumer, test_session, uuid_str_binds

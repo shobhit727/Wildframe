@@ -8,7 +8,39 @@ HACK_EMAIL="hacker@wildframe.com"; HACK_PASS="HackerPass123!"
 if [ -z "$DEMO_PASS" ]; then echo "DEMO_PASS not set: export WILDFRAME_DEMO_PASSWORD (or DEMO_PASSWORD) to match seed_demo" >&2; exit 1; fi
 CURL="curl -sk"
 
-jq_get() { python3 -c "import json,sys;d=json.load(sys.stdin);print(eval(sys.argv[1]))" "$1" 2>/dev/null; }
+jq_get() {
+  python3 - "$1" <<'PY' 2>/dev/null
+import json
+import re
+import sys
+
+expr = sys.argv[1]
+obj = json.load(sys.stdin)
+
+m = re.fullmatch(r"d(?:\[(?:'([^']+)'|\"([^\"]+)\"|([0-9]+))\])*$", expr)
+if not m:
+    raise ValueError(f"unsupported selector: {expr!r}")
+
+for part in re.findall(r"\[(?:'([^']+)'|\"([^\"]+)\"|([0-9]+))\]", expr):
+    key_values = [item for item in part if item not in (None, "")]
+    if not key_values:
+        raise ValueError(f"unsupported selector segment: {part!r}")
+    key = key_values[0]
+    if isinstance(obj, dict):
+        if key not in obj:
+            raise KeyError(f"missing key: {key!r}")
+        obj = obj[key]
+    elif isinstance(obj, list):
+        idx = int(key)
+        if idx < 0 or idx >= len(obj):
+            raise IndexError(f"index out of range: {idx}")
+        obj = obj[idx]
+    else:
+        raise TypeError(f"cannot index into {type(obj).__name__}")
+
+print(obj)
+PY
+}
 
 echo "== setup tokens =="
 DEMO_TOKEN=$($CURL -X POST $GW/auth/api/v1/auth/login -H "Content-Type: application/json" -d "{\"email\":\"$DEMO_EMAIL\",\"password\":\"$DEMO_PASS\"}" | jq_get "d['access_token']")

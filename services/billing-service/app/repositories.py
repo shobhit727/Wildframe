@@ -14,7 +14,6 @@ Deadlock retry (#631): financial UPDATEs are retried with exponential backoff
 on PostgreSQL deadlock (40P01) and lock_not_available (55P03) errors.
 """
 
-from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
@@ -23,6 +22,7 @@ from sqlalchemy import and_, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.datetime_utils import naive_utc_now
 from app.models import (
     CreatorPoolEntry,
     Invoice,
@@ -123,7 +123,7 @@ class WebhookEventRepository:
             event_type=event_type,
             status=WebhookEventStatus.PROCESSING,
             attempts=1,
-            claimed_at=datetime.utcnow(),
+            claimed_at=naive_utc_now(),
         )
         self.session.add(row)
         try:
@@ -139,7 +139,7 @@ class WebhookEventRepository:
             if existing.status == WebhookEventStatus.PROCESSED:
                 return False
 
-            now = datetime.utcnow()
+            now = naive_utc_now()
             reclaimable = False
             if existing.status == WebhookEventStatus.FAILED and existing.attempts < max_attempts:
                 reclaimable = True
@@ -178,7 +178,7 @@ class WebhookEventRepository:
                 StripeWebhookEvent.event_id == event_id,
                 StripeWebhookEvent.status == WebhookEventStatus.PROCESSING,
             )
-            .values(status=WebhookEventStatus.PROCESSED, processed_at=datetime.utcnow())
+            .values(status=WebhookEventStatus.PROCESSED, processed_at=naive_utc_now())
         )
         result = await self.session.execute(stmt)
         return bool(result.rowcount)  # type: ignore[attr-defined]

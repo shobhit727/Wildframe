@@ -45,7 +45,7 @@ push develop
     +--> publish 15 backend images + frontend to GHCR
     +--> deploy staging EKS
     +--> rollout verification
-    +--> in-cluster /health checks
+    +--> in-cluster /ready checks
 
 push main
     |
@@ -53,7 +53,7 @@ push main
     +--> production Environment protection/approval
     +--> deploy production EKS
     +--> rollout verification
-    +--> in-cluster /health checks
+    +--> in-cluster /ready checks
 ```
 
 ## CI Pipeline Details (17 jobs, several matrixed)
@@ -309,7 +309,7 @@ If GHCR packages are made public later, the pull secret can remain; it is harmle
 
 ## Health and rollout verification
 
-Every backend deployment has Kubernetes readiness and liveness probes using `/health`.
+Every backend deployment uses `/health` for startup/liveness and `/ready` for readiness. Readiness endpoints return a non-2xx response when a required dependency is unavailable, so Kubernetes stops routing traffic to that pod without restarting it for a transient dependency outage.
 
 After Helm succeeds, CI waits for all 15 backend deployments:
 
@@ -320,7 +320,7 @@ for svc in $SERVICES; do
 done
 ```
 
-The pipeline then runs `/health` against every service from an ephemeral in-cluster curl pod. Failures are not ignored.
+The rollout gate waits for each deployment to become ready. The workflow does not currently run a separate in-cluster curl probe against every service; use the readiness probe status and the service-specific verification steps when diagnosing a deployment.
 
 ## Failure behavior
 
