@@ -72,7 +72,7 @@ These are tracked and in flight; the doc describes `main` as it is, not as plann
 - **Alerting** — no Prometheus `rule_files`, no Alertmanager, no receivers: [#1117](https://github.com/shobhit727/Wildframe/issues/1117).
 - **Log shipping** — Loki runs and is a Grafana datasource, but no Promtail/Alloy/collector or Docker logging driver sends it anything: [#1118](https://github.com/shobhit727/Wildframe/issues/1118).
 - **Tracing coverage** — only 5 of 15 services set `JAEGER_ENABLED` in compose, and Helm sets it for none: [#1129](https://github.com/shobhit727/Wildframe/issues/1129). No trace context is propagated between services, so each service's spans form separate traces.
-- **Helm metrics scraping** — `METRICS_TOKEN` is not set by the chart, so `/metrics` returns 401 in Kubernetes (no tracking issue yet).
+- **Helm metrics scraping** — `METRICS_TOKEN` is not set by the chart, so `/metrics` returns 401 in Kubernetes: [#1133](https://github.com/shobhit727/Wildframe/issues/1133).
 
 ---
 
