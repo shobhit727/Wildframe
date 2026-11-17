@@ -316,6 +316,23 @@ class TestManifestRoutes:
 
         assert response.status_code == 200
         assert response.json()["id"] == str(manifest.id)
+        assert response.headers["cache-control"] == "private, no-store"
+        fake_service.require_manifest_session.assert_awaited_once_with(
+            auth_user_id, manifest.episode_id, manifest.content_id
+        )
+
+    def test_get_manifest_rejects_without_active_session(
+        self, client, fake_service, auth_user_id
+    ):
+        manifest = make_manifest()
+        fake_service.get_manifest = AsyncMock(return_value=manifest)
+        fake_service.require_manifest_session.side_effect = HTTPException(
+            status_code=403, detail="No active playback session"
+        )
+
+        response = client.get(f"/api/v1/manifests/{manifest.id}")
+
+        assert response.status_code == 403
         fake_service.require_manifest_session.assert_awaited_once_with(
             auth_user_id, manifest.episode_id, manifest.content_id
         )

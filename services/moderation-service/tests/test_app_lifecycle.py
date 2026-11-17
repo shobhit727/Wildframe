@@ -385,6 +385,20 @@ class TestHealthEndpoint:
         assert body["status"] == "degraded"
         assert body["database"] == "unavailable"
 
+    async def test_readiness_returns_503_when_database_is_unavailable(self, stub_db):
+        _, healthy = stub_db
+        healthy["value"] = False
+        async with _client(create_app()) as client:
+            resp = await client.get("/ready")
+        assert resp.status_code == 503
+        assert resp.json() == {"status": "not ready", "reason": "database unhealthy"}
+
+    async def test_readiness_returns_200_when_database_is_available(self, stub_db):
+        async with _client(create_app()) as client:
+            resp = await client.get("/ready")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ready"}
+
     async def test_router_health_is_static(self, stub_db):
         async with _client(create_app()) as client:
             resp = await client.get("/api/v1/moderation/health")

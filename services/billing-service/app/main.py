@@ -161,15 +161,23 @@ def create_app() -> FastAPI:
             checks["redis"] = "down"
             overall = "not_ready"
         else:
+            redis_client = None
             try:
                 redis_client = await redis.from_url(redis_url)
                 await asyncio.wait_for(redis_client.ping(), timeout=2.0)
-                await redis_client.close()
                 checks["redis"] = "ok"
             except Exception as e:  # noqa: BLE001
                 logger.error("Redis readiness check failed: %s", e)
                 checks["redis"] = "down"
                 overall = "not_ready"
+            finally:
+                if redis_client is not None:
+                    try:
+                        await redis_client.close()
+                    except Exception as e:  # noqa: BLE001
+                        logger.error("Redis readiness client cleanup failed: %s", e)
+                        checks["redis"] = "down"
+                        overall = "not_ready"
 
         payload = {
             "status": overall,
@@ -199,7 +207,7 @@ def create_app() -> FastAPI:
                 if int(content_length) > MAX_BODY_SIZE:
                     return JSONResponse(
                         content={"detail": "Request body too large"},
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                     )
             except ValueError:
                 pass

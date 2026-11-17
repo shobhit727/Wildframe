@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from pydantic import model_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.money import validate_currency
 from wildframe_compliance.jurisdiction import Jurisdiction
@@ -22,6 +22,13 @@ KNOWN_INSECURE_DB_CREDENTIALS = (
 
 
 class Settings(ComplianceSettingsMixin, BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="COMPLIANCE_",
+        env_nested_delimiter="__",
+        extra="ignore",
+    )
+
     SERVICE_NAME: str = "Billing"
     SERVICE_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
@@ -125,9 +132,6 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     PIPELINE_MAX_JOBS_PER_CREATOR: int = 2
     CLOUDFRONT_DISTRIBUTION_ID: str | None = None
     METRICS_TOKEN: str = ""
-
-    class Config:
-        env_file = ".env"
 
 
 settings = Settings()
