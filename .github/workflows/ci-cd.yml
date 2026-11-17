@@ -27,7 +27,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.13"
-  NODE_VERSION: "20"
+  NODE_VERSION: "24"
   POETRY_VERSION: "2.4.1"
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
