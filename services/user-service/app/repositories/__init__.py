@@ -65,8 +65,20 @@ class UserProfileRepository(BaseRepository):
             logger.error(f"Error creating user profile: {e!s}")
             raise
 
+    async def _get_for_update(self, user_id: UUID) -> UserProfile | None:
+        """Get profile by user ID with a row lock (SELECT ... FOR UPDATE).
+
+        Used only by read-modify-write methods: without the lock two
+        concurrent writers both read the same base row and the second write
+        silently clobbers the first (#1123). Pure read paths must use
+        :meth:`get_by_user_id`, which takes no lock.
+        """
+        stmt = select(UserProfile).where(UserProfile.user_id == user_id).with_for_update()
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_by_user_id(self, user_id: UUID) -> UserProfile | None:
-        """Get profile by user ID."""
+        """Get profile by user ID (plain SELECT, no row lock)."""
         stmt = select(UserProfile).where(UserProfile.user_id == user_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -78,7 +90,7 @@ class UserProfileRepository(BaseRepository):
     async def update(self, user_id: UUID, **kwargs) -> UserProfile | None:
         """Update user profile."""
         try:
-            profile = await self.get_by_user_id(user_id)
+            profile = await self._get_for_update(user_id)
             if not profile:
                 return None
 
@@ -137,6 +149,18 @@ class UserDeviceRepository(BaseRepository):
         """Get device by database ID."""
         return await self.session.get(UserDevice, device_id)
 
+    async def _get_for_update(self, device_id: UUID) -> UserDevice | None:
+        """Get device by database ID with a row lock (SELECT ... FOR UPDATE).
+
+        Used only by update(), a read-modify-write: without the lock two
+        concurrent writers can both read the same base row and the second
+        write silently clobbers the first (#1123). Pure read paths must use
+        :meth:`get_by_id`, which takes no lock.
+        """
+        stmt = select(UserDevice).where(UserDevice.id == device_id).with_for_update()
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_user_devices(self, user_id: UUID, active_only: bool = True) -> list[UserDevice]:
         """Get all devices for a user."""
         stmt = select(UserDevice).where(UserDevice.user_id == user_id)
@@ -149,7 +173,7 @@ class UserDeviceRepository(BaseRepository):
     async def update(self, device_id: UUID, user_id: UUID, **kwargs) -> UserDevice | None:
         """Update device."""
         try:
-            device = await self.get_by_id(device_id)
+            device = await self._get_for_update(device_id)
             if not device or device.user_id != user_id:
                 return None
 
@@ -233,8 +257,19 @@ class UserPreferenceRepository(BaseRepository):
             logger.info(f"Preferences already exist for user: {user_id}")
             return existing
 
+    async def _get_for_update(self, user_id: UUID) -> UserPreference | None:
+        """Get preferences by user ID with a row lock (SELECT ... FOR UPDATE).
+
+        Used only by read-modify-write methods, for the same reason as the
+        profile repository (#1123). Pure read paths must use
+        :meth:`get_by_user_id`, which takes no lock.
+        """
+        stmt = select(UserPreference).where(UserPreference.user_id == user_id).with_for_update()
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_by_user_id(self, user_id: UUID) -> UserPreference | None:
-        """Get preferences by user ID."""
+        """Get preferences by user ID (plain SELECT, no row lock)."""
         stmt = select(UserPreference).where(UserPreference.user_id == user_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -242,7 +277,7 @@ class UserPreferenceRepository(BaseRepository):
     async def update(self, user_id: UUID, **kwargs) -> UserPreference | None:
         """Update user preferences."""
         try:
-            preference = await self.get_by_user_id(user_id)
+            preference = await self._get_for_update(user_id)
             if not preference:
                 return None
 
@@ -318,8 +353,23 @@ class UserSubscriptionProfileRepository(BaseRepository):
             logger.info(f"Subscription already exists for user: {user_id}")
             return existing
 
+    async def _get_for_update(self, user_id: UUID) -> UserSubscriptionProfile | None:
+        """Get subscription by user ID with a row lock (SELECT ... FOR UPDATE).
+
+        Used only by read-modify-write methods: update_tier() is a
+        multi-field write whose fields must move together (#1123). Pure read
+        paths must use :meth:`get_by_user_id`, which takes no lock.
+        """
+        stmt = (
+            select(UserSubscriptionProfile)
+            .where(UserSubscriptionProfile.user_id == user_id)
+            .with_for_update()
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_by_user_id(self, user_id: UUID) -> UserSubscriptionProfile | None:
-        """Get subscription by user ID."""
+        """Get subscription by user ID (plain SELECT, no row lock)."""
         stmt = select(UserSubscriptionProfile).where(UserSubscriptionProfile.user_id == user_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -327,7 +377,7 @@ class UserSubscriptionProfileRepository(BaseRepository):
     async def update_tier(self, user_id: UUID, new_tier: str) -> UserSubscriptionProfile | None:
         """Update subscription tier."""
         try:
-            subscription = await self.get_by_user_id(user_id)
+            subscription = await self._get_for_update(user_id)
             if not subscription:
                 return None
 
