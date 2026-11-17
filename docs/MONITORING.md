@@ -92,7 +92,7 @@ All 15 services expose Prometheus-format metrics on `/metrics`. Prometheus scrap
 Every service gates `/metrics` with `require_metrics_token`: when `ENVIRONMENT=production` the request must carry `Authorization: Bearer $METRICS_TOKEN`, otherwise it gets a 401; if `METRICS_TOKEN` is empty, every request gets a 401. In other environments the endpoint is open.
 
 ```bash
-# Inside wildframe-network (not executed in this doc review)
+# From inside wildframe-network (needs the running dev stack)
 curl -H "Authorization: Bearer $METRICS_TOKEN" http://auth-service:8000/metrics
 ```
 
@@ -123,7 +123,7 @@ http_request_duration_seconds_bucket{endpoint="/api/v1/auth/login",le="0.05",met
 ### Accessing Prometheus
 
 ```bash
-# Dev compose, via Caddy (not executed in this doc review — needs the running stack)
+# Dev compose, via Caddy (needs the running dev stack)
 curl -skG 'https://localhost:9090/api/v1/query' \
   --data-urlencode 'query=sum by (service) (rate(http_requests_total[5m]))'
 ```
