@@ -196,7 +196,7 @@ Grafana provisions three dashboards from `infrastructure/grafana/provisioning/da
 | `wildframe-service-health.json` | Wildframe — Service Health | Services up/down, 5xx/4xx rate, p95 latency, Total RPS, Scrape health by target, Error ratio by service, request rate / p95 latency / active requests by service, busiest endpoints, runtime (CPU, resident memory, open FDs, GC) |
 | `wildframe-data-services.json` | Wildframe — Data Services (Postgres, Redis) | Postgres exporter scrape OK, Database size (and over time), Connections in use, Connection usage against limit, Redis memory, clients, ops/s, cache hit ratio, ACL denials |
 
-Known panel caveats: the runtime panels aggregate `process_*`/`python_gc_*` `by (service)`, but those series carry no `service` label, so they collapse into one series; "Connections in use" and "Connection usage against limit" use `pg_database_connection_limit`, which is `-1` for every database here (no per-database limit is set), so the limit series is negative and does not show real headroom.
+Known panel caveats ([#1134](https://github.com/shobhit727/Wildframe/issues/1134)): the runtime panels aggregate `process_*`/`python_gc_*` `by (service)`, but those series carry no `service` label, so they collapse into one series; "Connections in use" and "Connection usage against limit" use `pg_database_connection_limit`, which is `-1` for every database here (no per-database limit is set), so the limit series is negative and does not show real headroom.
 
 There are no per-service (auth/user/content/streaming) dashboards.
 
