@@ -39,13 +39,6 @@ async def lifespan(app: FastAPI):
         logger.error("Database health check failed")
         raise RuntimeError("Database is not healthy on startup")
 
-    # Redis backs client_event_id idempotency; fail open when unavailable.
-    try:
-        app.state.redis_client = await redis.from_url(settings.REDIS_URL)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Redis unavailable at startup; client_event_id dedup disabled: %s", e)
-        app.state.redis_client = None
-
     logger.info("All startup checks passed")
 
     yield
@@ -70,10 +63,6 @@ async def lifespan(app: FastAPI):
             _in_flight_requests,
         )
 
-    redis_client = getattr(app.state, "redis_client", None)
-    if redis_client is not None:
-        await redis_client.close()
-        app.state.redis_client = None
     await close_content_client()
     await DatabaseManager.close()
     logger.info("Shutdown complete")

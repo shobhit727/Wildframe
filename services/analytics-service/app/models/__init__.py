@@ -31,6 +31,11 @@ class Event(Base):
     content_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    # Idempotency key (#1143): sha256 of (user_id, client_event_id), NULL when
+    # the client sent none; NULLs never collide. unique=True sits on the column,
+    # not in a table-level Index, so the schema bootstrap refuses to add it to an
+    # existing table without its constraint. See services.client_event_key.
+    client_event_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     __table_args__ = (Index("idx_events_user_type", "user_id", "event_type"),)
 
     def __init__(self, **kwargs):
@@ -57,6 +62,8 @@ class ContentViewEvent(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    # Same idempotency key as Event.client_event_key, scoped to viewer_id.
+    client_event_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     __table_args__ = (
         Index("idx_view_events_content", "content_id", "created_at"),
         Index("idx_view_events_viewer", "viewer_id", "created_at"),

@@ -1,7 +1,7 @@
 """Analytics service business logic."""
 
+import hashlib
 import json
-import logging
 import math
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -14,8 +14,6 @@ from app.repositories import (
     EventRepository,
 )
 
-logger = logging.getLogger(__name__)
-
 # Integrity constants enforced at the ingestion boundary.
 MAX_EVENT_LIMIT = 1000
 MAX_EVENT_TYPE_LENGTH = 100
@@ -25,7 +23,6 @@ MAX_EVENT_DATA_DEPTH = 10
 MAX_DURATION_SECONDS = 24 * 60 * 60  # single playback session cannot exceed a day
 TIMESTAMP_SKEW = timedelta(minutes=5)  # tolerated client clock skew
 ALLOWED_PLAYBACK_QUALITIES = frozenset({"240p", "360p", "480p", "720p", "1080p", "4k"})
-DEDUP_TTL_SECONDS = 86_400
 
 
 def _check_depth(value: Any, depth: int = 0) -> None:
@@ -67,6 +64,26 @@ def _check_finite(value: Any) -> None:
             _check_finite(v)
 
 
+def client_event_key(owner_id: UUID, client_event_id: str | None) -> str | None:
+    """The value stored in the unique ``client_event_key`` column.
+
+    Idempotency is enforced by that unique key at insert time, inside the
+    request transaction (#1143). It used to be a Redis ``SET NX`` claimed before
+    the write and never released, so a write that failed to commit left the key
+    behind and its retry was swallowed as a duplicate for 24 hours.
+
+    The key is scoped to the owner, so one user's id never suppresses another
+    user's event. It is a digest because the client-supplied text is arbitrary
+    and only ever compared for equality. ``None`` (no id) is never deduplicated.
+    """
+    if not client_event_id:
+        return None
+    client_event_id = client_event_id.strip()
+    if not client_event_id or len(client_event_id) > MAX_CLIENT_EVENT_ID_LENGTH:
+        raise ValueError(f"client_event_id must be ≤ {MAX_CLIENT_EVENT_ID_LENGTH} characters")
+    return hashlib.sha256(f"{owner_id}:{client_event_id}".encode()).hexdigest()
+
+
 class AnalyticsService:
     def __init__(
         self,
@@ -74,15 +91,11 @@ class AnalyticsService:
         view_repo: ContentViewEventRepository,
         creator_repo: CreatorAnalyticsSnapshotRepository,
         content_repo: ContentPerformanceMetricsRepository,
-        dedup_store: Any = None,
     ):
         self.event_repo = event_repo
         self.view_repo = view_repo
         self.creator_repo = creator_repo
         self.content_repo = content_repo
-        # Optional async key-value store (redis-compatible `set(..., nx=True,
-        # ex=...)`) used for client_event_id idempotency. Fail-open when absent.
-        self.dedup_store = dedup_store
 
     # Generic event logging (kept for backward compatibility)
 
@@ -94,7 +107,11 @@ class AnalyticsService:
         content_id: UUID | None = None,
         client_event_id: str | None = None,
     ):
-        """Log analytics event."""
+        """Log analytics event.
+
+        Returns the new row, or ``None`` when this user already logged an event
+        with the same ``client_event_id``.
+        """
         event_type = (event_type or "").strip()
         if not event_type:
             raise ValueError("event_type is required")
@@ -105,9 +122,10 @@ class AnalyticsService:
             _check_depth(event_data)
             if len(json.dumps(event_data, default=str)) > MAX_EVENT_DATA_BYTES:
                 raise ValueError(f"event_data exceeds {MAX_EVENT_DATA_BYTES} bytes")
-        if await self._is_duplicate("event", user_id, client_event_id):
-            return None
-        return await self.event_repo.create(user_id, event_type, event_data, content_id)
+        key = client_event_key(user_id, client_event_id)
+        return await self.event_repo.create(
+            user_id, event_type, event_data, content_id, client_event_key=key
+        )
 
     async def get_user_events(self, user_id: UUID, limit: int = 100):
         """Get user events."""
@@ -136,7 +154,9 @@ class AnalyticsService:
         """Record a content view/playback event.
 
         Validates metric bounds and normalizes timestamps before persisting,
-        so impossible/future-dated events cannot distort aggregates.
+        so impossible/future-dated events cannot distort aggregates. Returns
+        the new row, or ``None`` when this viewer already recorded a view with
+        the same ``client_event_id``.
         """
         if watch_duration_seconds < 0 or content_duration_seconds < 0:
             raise ValueError("Durations cannot be negative")
@@ -161,8 +181,7 @@ class AnalyticsService:
                 raise ValueError(f"{label} cannot be in the future")
         if started_at is not None and completed_at is not None and completed_at < started_at:
             raise ValueError("completed_at cannot precede started_at")
-        if await self._is_duplicate("view", viewer_id, client_event_id):
-            return None
+        key = client_event_key(viewer_id, client_event_id)
         return await self.view_repo.create(
             content_id=content_id,
             viewer_id=viewer_id,
@@ -172,6 +191,7 @@ class AnalyticsService:
             playback_quality=playback_quality,
             started_at=started_at,
             completed_at=completed_at,
+            client_event_key=key,
         )
 
     # Creator analytics
@@ -266,27 +286,3 @@ class AnalyticsService:
             revenue_7d=revenue_7d,
             revenue_30d=revenue_30d,
         )
-
-    # Event idempotency
-
-    async def _is_duplicate(self, scope: str, owner_id: UUID, client_event_id: str | None) -> bool:
-        """Best-effort client_event_id dedup. Fail-open: store errors never
-        drop events."""
-        if not client_event_id:
-            return False
-        if self.dedup_store is None:
-            # Explicit, not silent: the caller asked for idempotency we cannot honour.
-            logger.warning(
-                "No dedup store available; client_event_id %s cannot be deduplicated",
-                client_event_id,
-            )
-            return False
-        client_event_id = client_event_id.strip()
-        if not client_event_id or len(client_event_id) > MAX_CLIENT_EVENT_ID_LENGTH:
-            raise ValueError(f"client_event_id must be ≤ {MAX_CLIENT_EVENT_ID_LENGTH} characters")
-        key = f"wf:analytics:dedup:{scope}:{owner_id}:{client_event_id}"
-        try:
-            return not await self.dedup_store.set(key, "1", nx=True, ex=DEDUP_TTL_SECONDS)
-        except Exception:  # noqa: BLE001
-            logger.warning("Analytics dedup store unavailable; proceeding without dedup")
-            return False

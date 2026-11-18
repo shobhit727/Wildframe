@@ -185,6 +185,13 @@ no `payments` table — a purchase is a row in `purchases`.
 `events` · `content_view_events` · `content_performance_metrics` ·
 `creator_analytics_snapshots` · `tracking_consents` · `analytics_dsar_exports`
 
+`events.client_event_key` and `content_view_events.client_event_key` are the
+unique `client_event_id` idempotency keys (#1143). `init_schemas.py` creates
+them on a fresh database but refuses to add a unique column to an existing
+table, so an existing `analytics_db` needs
+[`services/analytics-service/sql/0001_client_event_key.sql`](../services/analytics-service/sql/0001_client_event_key.sql)
+run by hand before that image takes traffic.
+
 ### `notification_db` — notification-service (2)
 
 `notifications` · `notification_preferences`
