@@ -195,6 +195,8 @@ async def test_retry_time_cap_stops_the_stage_before_the_next_attempt():
     registry.register(stage)
     service = _service(repo, registry, max_attempts=5, backoff_base=1.0, backoff_cap=1.0)
     job = await service.start_job(content_id=uuid4(), upload_session_id=uuid4(), storage_key="k")
+    # advance() always holds the lease first; the retry loop fences on it.
+    assert await service._acquire_lease(job) is True
 
     with patch.object(settings, "PIPELINE_MAX_TOTAL_RETRY_TIME_SECONDS", 0.0001):
         with pytest.raises(TotalRetryTimeExceeded, match="total retry time"):
@@ -210,6 +212,7 @@ async def test_retry_time_cap_also_accounts_for_the_backoff_delay():
     registry.register(stage)
     service = _service(repo, registry, max_attempts=5, backoff_base=30.0, backoff_cap=30.0)
     job = await service.start_job(content_id=uuid4(), upload_session_id=uuid4(), storage_key="k")
+    assert await service._acquire_lease(job) is True
 
     with (
         patch.object(settings, "PIPELINE_MAX_TOTAL_RETRY_TIME_SECONDS", 5.0),

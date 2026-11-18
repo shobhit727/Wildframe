@@ -39,6 +39,20 @@ class PipelineJobRepository:
         )
         return result.scalar_one_or_none()
 
+    async def lock_owned(self, job_id: UUID, owner: str) -> PipelineJob | None:
+        """Lock the job only if ``owner`` still holds its lease (lease fence).
+
+        Waits for the row lock (no SKIP LOCKED): a peer's brief claim attempt
+        must not read as a lost lease.
+        """
+        result = await self.session.execute(
+            select(PipelineJob)
+            .where(PipelineJob.id == job_id, PipelineJob.leased_by == owner)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_upload_session(self, upload_session_id: UUID) -> PipelineJob | None:
         result = await self.session.execute(
             select(PipelineJob).where(PipelineJob.upload_session_id == upload_session_id)
