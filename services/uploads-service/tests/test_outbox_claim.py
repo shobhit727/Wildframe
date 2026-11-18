@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.events import Event, EventPublisher
+from app.core.settings import settings
 from app.models import Base, OutboxEvent, OutboxEventStatus
 from app.repositories import UploadChunkRepository
 from app.services import UploadService
@@ -149,6 +150,25 @@ class TestDrainShape:
             ids = (await session.execute(select(OutboxEvent.id))).scalars().all()
 
         assert sorted(e.event_id for e in publisher.published) == sorted(str(i) for i in ids)
+
+    async def test_a_publish_outlasting_the_claim_budget_is_abandoned_and_released(
+        self, sqlite_factory, monkeypatch
+    ):
+        """send_and_wait has no timeout: a hung publish must not outlive the claim."""
+        await _seed(sqlite_factory, 2)
+        hung = GatedPublisher()  # never released
+        monkeypatch.setattr(settings, "OUTBOX_CLAIM_TTL_SECONDS", 0.2)
+        async with sqlite_factory() as session:
+            processed = await asyncio.wait_for(_service(session, hung).drain_outbox(), STEP_TIMEOUT)
+            rows = (await session.execute(select(OutboxEvent))).scalars().all()
+
+        assert processed == 2
+        assert hung.published == [], "the hung publish was abandoned"
+        assert [r.status for r in rows] == [OutboxEventStatus.PENDING] * 2
+        assert [r.claimed_by for r in rows] == [
+            None,
+            None,
+        ], "both rows (the hung one and the one never tried) are handed back"
 
 
 class TestClaimFencing:

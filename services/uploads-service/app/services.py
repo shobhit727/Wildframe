@@ -29,10 +29,12 @@ pure domain logic and unit-testable with stubs.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
 import socket
+import time
 import unicodedata
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -553,24 +555,41 @@ class UploadService:
             for row in rows
         ]
         await self.repo.session.commit()
+        # Publish only while the claim is safely ours. Past half the claim TTL
+        # (margin for clock skew between pods and slow commits) another drain
+        # may re-claim the rows, so each publish is bounded by the time left
+        # (send_and_wait has no timeout of its own) and rows still unpublished
+        # when the budget runs out are handed back.
+        deadline = time.monotonic() + settings.OUTBOX_CLAIM_TTL_SECONDS / 2
+        out_of_time = 0
         for row_id, event in batch:
-            try:
-                await self.publisher.publish(event)
-            except Exception:  # noqa: BLE001 - keep row pending for retry
-                logger.exception(
-                    "outbox publish failed for event %s (topic=%s); will retry",
-                    row_id,
-                    event.topic,
-                )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                out_of_time += 1
                 await self.repo.release_claim(row_id, claim)
             else:
-                if not await self.repo.mark_dispatched(row_id, claim):
-                    logger.warning(
-                        "outbox event %s was re-claimed by another drain before it "
-                        "was marked dispatched; it may be published twice",
+                try:
+                    await asyncio.wait_for(self.publisher.publish(event), remaining)
+                except Exception:  # noqa: BLE001 - keep row pending for retry
+                    logger.exception(
+                        "outbox publish failed for event %s (topic=%s); will retry",
                         row_id,
+                        event.topic,
                     )
+                    await self.repo.release_claim(row_id, claim)
+                else:
+                    if not await self.repo.mark_dispatched(row_id, claim):
+                        logger.warning(
+                            "outbox event %s was re-claimed by another drain before it "
+                            "was marked dispatched; it may be published twice",
+                            row_id,
+                        )
             await self.repo.session.commit()
+        if out_of_time:
+            logger.warning(
+                "outbox drain ran out of claim time; released %d unpublished rows",
+                out_of_time,
+            )
         return len(batch)
 
     async def reap_expired(self) -> int:
