@@ -777,6 +777,19 @@ class TestAlertRoutes:
         )
         assert resp.status_code == 422
 
+    async def test_create_alert_rejects_a_value_wider_than_its_column(self, admin_client):
+        resp = await admin_client.post(
+            "/api/v1/admin/alerts",
+            json={
+                "alert_type": "a" * 51,
+                "severity": "info",
+                "message": "m",
+                "service": "s",
+            },
+            headers=_bearer(_mint()),
+        )
+        assert resp.status_code == 422
+
     async def test_get_alerts_returns_unacknowledged_only(self, admin_client):
         created = await admin_client.post(
             "/api/v1/admin/alerts",
