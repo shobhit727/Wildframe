@@ -1242,6 +1242,8 @@ exercises it unauthenticated, so gating it today breaks that suite.
 
 Owner decision: who may trigger a reindex?
 
+**Resolved in draft PR #1172 (#1138):** admin-only via `get_admin_identity`, honest 501, job registry and status route removed, allowlist now empty.
+
 ### auth-service: three real test gaps found by mutation testing
 
 Diagnosis only; not fixed. Full detail in
