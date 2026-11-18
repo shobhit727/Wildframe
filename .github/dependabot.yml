@@ -32,6 +32,16 @@ updates:
       include: "scope"
     ignore:
       - dependency-name: "setuptools"
+    # The OpenTelemetry packages pin one another exactly (sdk 1.43.0 requires
+    # api==1.43.0 and semantic-conventions==0.64b0); bumping one alone leaves a
+    # set pip cannot resolve (#1153). Move the whole family in one version PR.
+    # Security updates bump only the vulnerable package and cannot be grouped
+    # into a family move; Docker Build Smoke is what catches that case.
+    groups:
+      opentelemetry:
+        applies-to: version-updates
+        patterns:
+          - "opentelemetry-*"
 
   - package-ecosystem: "npm"
     directory: "/"
