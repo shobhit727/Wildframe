@@ -37,6 +37,11 @@ updates:
     # (#1153). Move the whole family in a single PR.
     groups:
       opentelemetry:
+        applies-to: version-updates
+        patterns:
+          - "opentelemetry-*"
+      opentelemetry-security:
+        applies-to: security-updates
         patterns:
           - "opentelemetry-*"
 
@@ -56,6 +61,11 @@ updates:
       include: "scope"
     groups:
       opentelemetry:
+        applies-to: version-updates
+        patterns:
+          - "opentelemetry-*"
+      opentelemetry-security:
+        applies-to: security-updates
         patterns:
           - "opentelemetry-*"
 
@@ -75,6 +85,11 @@ updates:
       include: "scope"
     groups:
       opentelemetry:
+        applies-to: version-updates
+        patterns:
+          - "opentelemetry-*"
+      opentelemetry-security:
+        applies-to: security-updates
         patterns:
           - "opentelemetry-*"
 
@@ -94,6 +109,11 @@ updates:
       include: "scope"
     groups:
       opentelemetry:
+        applies-to: version-updates
+        patterns:
+          - "opentelemetry-*"
+      opentelemetry-security:
+        applies-to: security-updates
         patterns:
           - "opentelemetry-*"
 
