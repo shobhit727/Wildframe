@@ -10946,3 +10946,19 @@ Implemented DB-backed `/ready` endpoints in streaming-service and moderation-ser
 Verification: streaming lifecycle 22 passed; moderation lifecycle 35 passed; probe contract 1 passed; `helm lint` passed with two pre-existing Kafka topic-name warnings; default, staging, and production `helm template` all passed; `ruff`, `black --check`, `yamllint`, and `git diff --check` passed.
 
 **Handoff:** the standing ownership notice reserves `deployments/docker-compose.dev.yml` for `swe-agent`; it remains untouched. Now that every backend exposes `/ready`, update the shared `backend-healthcheck` to call `/ready` (or validate the response body); its current `/health` check accepts 200 even when the JSON body reports a DB outage. Do not close #1003 until this Compose path and the live-stack check are verified.
+
+### [M-20261118T1200Z-orchestrator] 2026-11-18 · agent=lead-orchestrator · status=open
+
+**Unverified findings from the production-readiness audit — NOT yet filed as issues.** Scout reports, read-only; each needs a code check before an issue is opened. Do not treat as confirmed.
+
+- **Helm Redis TLS:** Terraform sets ElastiCache `transit_encryption_enabled = true`; `infrastructure/helm/wildframe/templates/deployment.yaml` builds a plaintext `redis://` URL.
+- **Helm Kafka TLS gate:** `templates/validate-external.yaml:2` checks only `.Release.Namespace`; production values in a renamed namespace may allow `insecureSkipVerify`.
+- **Helm content URL:** `values.yaml` sets `CONTENT_SERVICE_URL=http://content-service:8000` for search/recommendation/analytics; chart Services listen on 80 (same family as #1146).
+- **content-service:** `rate_content` and `episode_count` recompute aggregates from a snapshot — concurrent writes lose updates.
+- **recommendation-service:** generation is DELETE+INSERT with no unique `(user_id, content_id)` — concurrent runs duplicate rows.
+- **billing-service:** webhook inbox `complete()`/`fail()` are unfenced; stale-claim reclaim has no attempts cap.
+- **creators-service:** `CreatorAccountRepository.update` commits inside a `FOR UPDATE SKIP LOCKED` batch, releasing the batch's locks.
+- **notification-service:** `EmailQuotaTracker` is in-process, so the quota is per worker.
+- **auth-service (from PR #1148 verifier):** `reset_login_attempts` can silently lose a reset when a failed attempt races a successful login; fix is an atomic UPDATE with `populate_existing`.
+
+Full context: `tem/swarm/state/audits/concurrency-findings.md` (local, gitignored) and the orchestrator ledger.
