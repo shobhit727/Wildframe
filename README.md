@@ -82,6 +82,14 @@ Prerequisites:
 - Node.js 20+
 - Poetry 2.4.1 (the version CI installs — see `POETRY_VERSION` in `.github/workflows/ci-cd.yml`)
 
+Prepare development certificates and bind-mounted credentials **before**
+starting Compose. The script is idempotent and creates the TLS pair, Kafka
+PEM bundle/password files, and Prometheus metrics token:
+
+```bash
+bash scripts/generate-dev-certs.sh
+```
+
 Start the development stack:
 
 ```bash
@@ -122,6 +130,39 @@ a plain-HTTP mirror of the gateway also exists at `http://localhost:8080` for
 tooling that cannot trust self-signed certs. Re-run
 `bash scripts/generate-dev-certs.sh` after changing networks (delete the
 existing pair first — the script will not overwrite it).
+
+### If the dev stack fails on first start
+
+Three failure modes observed on a real first boot (2026-11-10). All are
+ordering problems, and the order that works is `bash
+scripts/generate-dev-certs.sh` **before** the first `docker compose up`:
+
+- **Kafka restart-loops with bash errors** (`$'\r': command not found`,
+  `umask: 077: octal number out of range`) — run
+  `docker logs deployments-kafka-1 --tail 30` to see them. The commit blob is
+  LF, but a Windows checkout with `core.autocrlf=true` wrote CRLF into the
+  working-tree copy of `deployments/kafka-entrypoint.sh` (and the cert
+  script), and the CRLF file was bind-mounted into the container — bash
+  refuses CRLF scripts on every platform. The repo now pins `*.sh` to LF
+  via `.gitattributes` (`text eol=lf`), which overrides any developer's
+  `core.autocrlf` on the next checkout; if a working-tree script still
+  arrives with CRLF endings, convert it in place with
+  `sed -i 's/\r$//' <path>`.
+- **Prometheus will not start: `error mounting ... metrics_bearer_token
+  ... not a directory`.** If the token file did not exist when the container
+  first started, Docker materialized the bind-mount *source* as a directory,
+  so the real file can never replace it. Fix in order: delete the
+  `infrastructure/prometheus/metrics_bearer_token` directory,
+  `docker stop deployments-prometheus-1`, run the cert script (it writes the
+  token), then `docker compose -f deployments/docker-compose.dev.yml up -d
+  --force-recreate prometheus`.
+- **Grafana/Caddy churn or missing host ports** — same root cause: the certs
+  were absent at first mount. Generate them and recreate the containers.
+
+Be aware that a stack "up and healthy" per `docker compose ps` can still be
+wrong: healthy services have been seen while every real route 500'd. Probe a
+real endpoint, not `/health` (`/openapi.json`, or the frontend landing page
+via `curl -sk https://localhost:3000/`).
 
 For service-specific development, see `docs/DEVELOPMENT.md` and `docs/QUICKSTART.md`.
 
@@ -295,4 +336,4 @@ Do not report vulnerabilities through public GitHub issues or pull requests. See
 
 ## License
 
-Proprietary — Wildframe Platform.# CI trigger
+Proprietary — Wildframe Platform.
