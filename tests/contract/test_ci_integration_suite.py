@@ -10,7 +10,13 @@ trap still guarantees log collection and teardown.
 
 What is pinned here:
 
-* the workflow wires the hook to `scripts/ci-integration-suite.sh`, which runs
+* when the suite runs: on pull requests the compose-smoke job runs the smoke
+  only, on its old 15-minute budget, without the suite's dependencies; on
+  pushes to main/develop and workflow_dispatch it runs smoke + suite on the
+  65/60-minute budget; a separate nightly workflow runs smoke + suite on a
+  schedule, so ci-cd.yml itself is never scheduled. The workflows' `${{ }}`
+  expressions are *evaluated* per event here, not string-matched;
+* the hook is wired to `scripts/ci-integration-suite.sh`, which runs
   `pytest tests/integration`, with nothing that turns a failure into a pass;
 * the hook is off by default, refuses anything that is not a regular file
   directly under `scripts/`, and a failing hook fails the smoke run (no PASS
@@ -28,6 +34,7 @@ Stdlib + PyYAML only, no docker and no network:
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -38,53 +45,126 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO / ".github" / "workflows" / "ci-cd.yml"
+NIGHTLY = REPO / ".github" / "workflows" / "integration-nightly.yml"
 SMOKE = REPO / "scripts" / "compose-smoke.sh"
 RUNNER = REPO / "scripts" / "ci-integration-suite.sh"
 HOOK_VALUE = "scripts/ci-integration-suite.sh"
+SUITE_EVENTS = ("push", "workflow_dispatch")
 
 
-# --- workflow wiring ---------------------------------------------------------
+# --- evaluating the workflows' expressions per event -------------------------
+
+_EXPR = re.compile(r"\$\{\{(.*)\}\}", re.S)
+_ALLOWED_TOKENS = {"and", "or", "==", "!=", "(", ")"}
 
 
-def _jobs() -> dict:
-    return yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+def _eval_expr(expr: str, event: str):
+    """Evaluate the small subset of GitHub expression syntax these workflows
+    use: `github.event_name`, string/int literals, ==, !=, &&, ||. GitHub's
+    && / || return an operand (not a bool), exactly like Python's and / or."""
+    expr = expr.replace("&&", " and ").replace("||", " or ")
+    expr = expr.replace("github.event_name", repr(event))
+    leftover = re.sub(r"'[^']*'|\b\d+\b", " ", expr)
+    leftover = leftover.replace("(", " ( ").replace(")", " ) ")
+    unknown = set(leftover.split()) - _ALLOWED_TOKENS
+    assert not unknown, f"expression uses syntax this test does not model: {unknown}"
+    return eval(expr, {"__builtins__": {}}, {})  # noqa: S307 - vetted tokens only
+
+
+def _value(raw, event: str):
+    """A workflow value as GitHub would see it for `event`: a whole-value
+    `${{ }}` is evaluated, anything else is literal."""
+    if isinstance(raw, str):
+        match = _EXPR.fullmatch(raw.strip())
+        if match:
+            return _eval_expr(match.group(1), event)
+    return raw
+
+
+def _runs(step: dict, event: str) -> bool:
+    condition = step.get("if")
+    if condition is None:
+        return True
+    match = _EXPR.fullmatch(str(condition).strip())
+    return bool(_eval_expr(match.group(1) if match else str(condition), event))
+
+
+def _load(path: Path) -> dict:
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def _triggers(doc: dict) -> dict:
+    # PyYAML (YAML 1.1) reads the bare key `on` as the boolean True.
+    return doc.get("on", doc.get(True)) or {}
+
+
+def _smoke_step(job: dict) -> int:
+    for index, step in enumerate(job.get("steps", [])):
+        if "scripts/compose-smoke.sh" in str(step.get("run", "")):
+            return index
+    raise AssertionError("no step runs scripts/compose-smoke.sh")
 
 
 def _smoke_job() -> tuple[str, dict, int]:
-    """The job and index of the step that runs compose-smoke.sh."""
-    for name, job in _jobs().items():
-        for index, step in enumerate(job.get("steps", [])):
-            if "scripts/compose-smoke.sh" in str(step.get("run", "")):
-                return name, job, index
+    """The ci-cd.yml job and index of the step that runs compose-smoke.sh."""
+    for name, job in _load(WORKFLOW)["jobs"].items():
+        if any("scripts/compose-smoke.sh" in str(s.get("run", "")) for s in job.get("steps", [])):
+            return name, job, _smoke_step(job)
     raise AssertionError("no CI step runs scripts/compose-smoke.sh")
 
 
-def test_ci_runs_the_integration_suite_against_the_composed_stack():
-    """The acceptance bar of #1119: some CI step causes `pytest tests/integration`
-    to run while the composed stack is up."""
+def _installs_before(job: dict, index: int, event: str) -> str:
+    return " ".join(str(s.get("run", "")) for s in job["steps"][:index] if _runs(s, event))
+
+
+# --- ci-cd.yml: which events run the suite -----------------------------------
+
+
+def test_ci_cd_triggers_and_is_never_scheduled():
+    """Scheduling ci-cd.yml would run all of its jobs nightly; the nightly suite
+    has its own workflow instead."""
+    triggers = _triggers(_load(WORKFLOW))
+    assert (
+        "schedule" not in triggers
+    ), "ci-cd.yml must not be scheduled; use integration-nightly.yml"
+    for event in ("pull_request", *SUITE_EVENTS):
+        assert event in triggers, f"ci-cd.yml no longer runs on {event}"
+
+
+def test_pull_requests_run_the_smoke_only_on_the_old_budget():
+    """Owner decision: the suite's ~17-18 min of paced waiting is not spent on
+    every PR. A PR runs the smoke alone, as before #1119."""
     _, job, index = _smoke_job()
     step = job["steps"][index]
-    env = step.get("env") or {}
-    assert env.get("COMPOSE_SMOKE_POST_PASS") == HOOK_VALUE, (
-        "the compose-smoke step does not hand the live stack to the integration "
-        f"suite: set COMPOSE_SMOKE_POST_PASS={HOOK_VALUE} on it"
-    )
+    hook = _value((step.get("env") or {}).get("COMPOSE_SMOKE_POST_PASS", ""), "pull_request")
+    assert not hook, f"pull requests run the integration suite (hook={hook!r})"
+    assert "pytest" not in _installs_before(
+        job, index, "pull_request"
+    ), "pull requests install the suite's dependencies they never use"
+    assert _value(job.get("timeout-minutes"), "pull_request") == 15
+    step_minutes = _value(step.get("timeout-minutes"), "pull_request")
+    assert isinstance(step_minutes, int) and 0 < step_minutes < 15
+
+
+def test_push_and_dispatch_run_the_integration_suite_against_the_composed_stack():
+    """The acceptance bar of #1119: outside PRs, the step that has the stack up
+    hands it to `pytest tests/integration`."""
+    _, job, index = _smoke_job()
+    step = job["steps"][index]
+    for event in SUITE_EVENTS:
+        hook = _value((step.get("env") or {}).get("COMPOSE_SMOKE_POST_PASS", ""), event)
+        assert hook == HOOK_VALUE, f"{event} does not run the integration suite (hook={hook!r})"
+        installs = _installs_before(job, index, event)
+        for package in ("pytest", "httpx"):
+            assert package in installs, f"{event}: {package} is not installed before the suite runs"
+        job_minutes = _value(job.get("timeout-minutes"), event)
+        step_minutes = _value(step.get("timeout-minutes"), event)
+        assert (job_minutes, step_minutes) == (
+            65,
+            60,
+        ), f"{event}: budget {job_minutes}/{step_minutes} does not fit build + wait + suite"
     runner = RUNNER.read_text(encoding="utf-8")
     assert "-m pytest tests/integration" in runner, "the hook does not run tests/integration"
-
-
-def test_integration_step_has_its_own_deadline_inside_the_job_budget():
-    _, job, index = _smoke_job()
-    step_minutes = job["steps"][index].get("timeout-minutes")
-    assert isinstance(step_minutes, int) and step_minutes > 0, (
-        "the step that runs the stack and the suite needs a step-level deadline so the "
-        "if: always() verdict and artifact steps still run when it overruns"
-    )
-    job_minutes = job.get("timeout-minutes")
-    assert isinstance(job_minutes, int) and job_minutes > step_minutes, (
-        f"job budget {job_minutes} leaves no room after the {step_minutes}-minute step "
-        "for the verdict and artifact upload"
-    )
 
 
 def test_no_step_in_the_job_swallows_a_failure():
@@ -96,13 +176,6 @@ def test_no_step_in_the_job_swallows_a_failure():
         assert "|| true" not in str(
             step.get("run", "")
         ), f"step {step.get('name')!r} swallows a failure with || true"
-
-
-def test_suite_dependencies_are_installed_before_the_stack_step():
-    _, job, index = _smoke_job()
-    installs = " ".join(str(s.get("run", "")) for s in job["steps"][:index])
-    for package in ("pytest", "httpx"):
-        assert package in installs, f"{package} is not installed before the suite runs"
 
 
 def test_verdict_step_separates_a_suite_failure_from_a_smoke_failure():
@@ -119,6 +192,66 @@ def test_junit_report_is_uploaded_for_per_test_detail():
     assert uploads, "no artifact upload in the compose-smoke job"
     paths = " ".join(str((s.get("with") or {}).get("path", "")) for s in uploads)
     assert "wildframe-integration-junit.xml" in paths
+
+
+# --- integration-nightly.yml ---------------------------------------------------
+
+
+def _uses(doc: dict) -> set[str]:
+    return {
+        str(step["uses"])
+        for job in doc["jobs"].values()
+        for step in job.get("steps", [])
+        if "uses" in step
+    }
+
+
+def test_nightly_workflow_runs_the_suite_on_a_schedule_only():
+    assert NIGHTLY.is_file(), "no nightly integration workflow"
+    doc = _load(NIGHTLY)
+    triggers = _triggers(doc)
+    assert set(triggers) == {
+        "schedule",
+        "workflow_dispatch",
+    }, f"nightly workflow triggers are {sorted(triggers)}; it must not run on PRs or pushes"
+    crons = [entry["cron"] for entry in triggers["schedule"]]
+    assert len(crons) == 1 and len(crons[0].split()) == 5, crons
+    assert doc.get("permissions") == {"contents": "read"}
+    assert doc.get("concurrency"), "nightly runs need a concurrency group"
+
+    (job,) = doc["jobs"].values()
+    index = _smoke_step(job)
+    step = job["steps"][index]
+    for event in ("schedule", "workflow_dispatch"):
+        hook = _value((step.get("env") or {}).get("COMPOSE_SMOKE_POST_PASS", ""), event)
+        assert hook == HOOK_VALUE, f"nightly {event} run does not run the suite"
+        installs = _installs_before(job, index, event)
+        assert "pytest" in installs and "httpx" in installs
+    job_minutes, step_minutes = job.get("timeout-minutes"), step.get("timeout-minutes")
+    assert isinstance(job_minutes, int) and isinstance(step_minutes, int)
+    assert 0 < step_minutes < job_minutes
+
+    assert "continue-on-error" not in job
+    for s in job["steps"]:
+        assert "continue-on-error" not in s, f"step {s.get('name')!r} hides failures"
+        assert "|| true" not in str(s.get("run", "")), f"step {s.get('name')!r} swallows a failure"
+    paths = " ".join(
+        str((s.get("with") or {}).get("path", ""))
+        for s in job["steps"]
+        if "upload-artifact" in str(s.get("uses", ""))
+    )
+    assert "wildframe-integration-junit.xml" in paths
+
+
+def test_nightly_workflow_reuses_the_action_pins_from_ci_cd():
+    """Supply Chain Guard (#809) requires SHA pins; reusing ci-cd.yml's pins
+    means no new third-party code enters through this workflow."""
+    nightly = _uses(_load(NIGHTLY))
+    assert nightly, "nightly workflow uses no actions?"
+    for ref in nightly:
+        assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", ref), f"{ref} is not SHA-pinned"
+    unknown = nightly - _uses(_load(WORKFLOW))
+    assert not unknown, f"nightly workflow introduces pins not used in ci-cd.yml: {unknown}"
 
 
 # --- the hook inside compose-smoke.sh -----------------------------------------
