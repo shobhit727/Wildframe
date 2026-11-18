@@ -18,7 +18,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
 import asyncio
-from sqlalchemy import and_, select, update
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -532,6 +532,21 @@ class RefundRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def lock_refund_id(self, refund_id: str) -> None:
+        """Serialise processing of one Stripe refund id until this transaction ends.
+
+        Two workers handling the same refund would otherwise both miss it in
+        ``get_by_refund_id`` and both apply it to the invoice: the loser's
+        guarded UPDATE waits on the winner's invoice row lock, then increments
+        ``refunded_amount`` a second time. With a transaction-scoped advisory
+        lock the loser waits for the winner to commit, and its next
+        ``get_by_refund_id`` (a new statement under READ COMMITTED) sees the
+        winner's row.
+        """
+        await self.session.execute(
+            select(func.pg_advisory_xact_lock(func.hashtextextended(refund_id, 0)))
+        )
+
     async def create(
         self,
         refund_id: str,
@@ -544,7 +559,15 @@ class RefundRepository:
         reason: str | None = None,
         status: RefundStatus = RefundStatus.PROCESSED,
     ) -> Refund:
-        """Insert idempotently on ``refund_id``; return existing on duplicate."""
+        """Insert idempotently on ``refund_id``; return existing on duplicate.
+
+        The INSERT runs inside a savepoint so that losing the unique-key race
+        rolls back only this statement. A session-wide ``rollback()`` would
+        also discard the refunds (and ``refunded_amount`` increments) that the
+        same ``charge.refunded`` event already applied in this transaction,
+        while the webhook inbox still marks the event PROCESSED and Stripe
+        never retries it (#1144).
+        """
         existing = await self.get_by_refund_id(refund_id)
         if existing:
             return existing
@@ -558,16 +581,19 @@ class RefundRepository:
             reason=reason,
             status=status,
         )
-        self.session.add(refund)
         try:
-            await self.session.flush()
-            return refund
+            async with self.session.begin_nested():
+                self.session.add(refund)
+                await self.session.flush()
         except IntegrityError:
-            await self.session.rollback()
+            # A concurrent delivery inserted this refund first. The unique
+            # constraint guarantees one row per refund_id; re-read it in this
+            # transaction.
             existing = await self.get_by_refund_id(refund_id)
             if existing:
                 return existing
             raise
+        return refund
 
     async def apply_to_invoice(self, invoice_id: UUID, amount: Decimal) -> bool:
         """Increment ``refunded_amount`` atomically, bounded by ``amount``.

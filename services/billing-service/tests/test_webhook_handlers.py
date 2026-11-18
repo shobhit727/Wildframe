@@ -1113,6 +1113,25 @@ class TestHandleRefund:
             await _handle_refund(_event("charge.refunded", {"id": "ch_1"}), svc)
         svc.process_refund.assert_not_awaited()
 
+    async def test_failure_applying_a_looked_up_refund_fails_the_event(self):
+        # Only the Stripe lookup is tolerated. If a looked-up refund cannot be
+        # applied, the error must reach the dispatcher so the inbox marks the
+        # event FAILED and Stripe retries it, instead of completing the event
+        # with that refund missing (#1144).
+        svc = _service_mock()
+        svc.process_refund = AsyncMock(side_effect=[None, BillingError("db down")])
+        with patch(
+            "app.api.webhook_routes.StripeClient.retrieve_charge",
+            return_value={
+                "id": "ch_1",
+                "currency": "usd",
+                "refunds": {"data": [self._refund_obj("re_1"), self._refund_obj("re_2")]},
+            },
+        ):
+            with pytest.raises(BillingError, match="db down"):
+                await _handle_refund(_event("charge.refunded", {"id": "ch_1"}), svc)
+        assert svc.process_refund.await_count == 2
+
     async def test_lookup_returning_a_non_dict_is_tolerated(self):
         svc = _service_mock()
         with patch(

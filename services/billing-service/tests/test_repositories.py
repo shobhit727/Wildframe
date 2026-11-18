@@ -718,7 +718,9 @@ async def test_refund_create_recovers_from_a_concurrent_unique_violation(db_sess
         with patch.object(db_session, "rollback", new=AsyncMock()) as rollback:
             recovered = await repo.create("re_race", Decimal("2.00"), "USD")
     assert recovered.id == winner.id
-    rollback.assert_awaited_once()
+    # The duplicate is undone by the INSERT's savepoint; a session-wide
+    # rollback would discard the caller's other work in this transaction (#1144).
+    rollback.assert_not_awaited()
 
 
 async def test_refund_create_reraises_when_the_violation_is_unrelated(db_session):

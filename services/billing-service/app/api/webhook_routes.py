@@ -512,6 +512,9 @@ async def _handle_refund(
                     refund_obj, service, charge_fallback=charge_id, charge_obj=obj
                 )
         else:
+            # Only the Stripe lookup is tolerated: a failure while applying a
+            # refund must reach the dispatcher so the inbox marks the event
+            # FAILED and Stripe retries it, as in the embedded-refunds branch.
             try:
                 charge_obj = StripeClient.retrieve_charge(str(charge_id))
                 refunds2 = charge_obj.get("refunds", {})
@@ -520,16 +523,17 @@ async def _handle_refund(
                     rdata = refunds2.get("data", []) or []
                 elif isinstance(refunds2, list):
                     rdata = refunds2
-                if rdata:
-                    for refund_obj in rdata:
-                        await _process_single_refund_obj(
-                            refund_obj, service, charge_fallback=charge_id, charge_obj=charge_obj
-                        )
-                    return
-                logger.warning("charge.refunded %s has no refunds", charge_id)
             except Exception as exc:
                 logger.warning(
                     "charge.refunded %s without refunds data and lookup failed: %s", charge_id, exc
+                )
+                return
+            if not rdata:
+                logger.warning("charge.refunded %s has no refunds", charge_id)
+                return
+            for refund_obj in rdata:
+                await _process_single_refund_obj(
+                    refund_obj, service, charge_fallback=charge_id, charge_obj=charge_obj
                 )
 
 
