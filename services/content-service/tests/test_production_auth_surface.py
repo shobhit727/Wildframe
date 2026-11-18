@@ -42,17 +42,8 @@ WRITE_METHODS = frozenset({"post", "put", "patch", "delete"})
 #: Production write operations known to have no auth gate. This is a record of
 #: outstanding debt, not an endorsement -- shrink it, never extend it.
 #:
-#: `POST /api/v1/reindex` (`app/api/routes/__init__.py:658`) has no dependency
-#: of any kind. It mutates the in-memory `_reindex_jobs` registry and answers
-#: 200 to any caller. Gating it is a production behaviour change that needs an
-#: owner decision (who may trigger a full reindex, and what the gateway should
-#: see), so it is recorded here rather than fixed here. `test_routes.py`
-#: exercises it unauthenticated, so adding auth today would break that suite.
-KNOWN_UNAUTHENTICATED_WRITES = frozenset(
-    {
-        ("POST", "/api/v1/reindex"),
-    }
-)
+#: Empty since #1138 gated `POST /api/v1/reindex` behind `get_admin_identity`.
+KNOWN_UNAUTHENTICATED_WRITES: frozenset[tuple[str, str]] = frozenset()
 
 
 def _write_operations(schema: dict) -> dict[tuple[str, str], dict]:
@@ -105,9 +96,9 @@ class TestNoUnauthenticatedWrites:
         """The general property: nothing state-changing is open.
 
         Asserted as "the open set is a subset of the known-debt set" rather
-        than "the open set is empty", so the existing `/api/v1/reindex` gap
-        does not have to be papered over -- but any *new* unauthenticated
-        write, including a mounted `ads.router`, fails here.
+        than "the open set is empty", so a recorded, deliberate gap need not be
+        papered over -- but any *new* unauthenticated write, including a
+        mounted `ads.router`, fails here.
         """
         open_writes = _unauthenticated_writes(create_app().openapi())
 
@@ -132,10 +123,16 @@ class TestNoUnauthenticatedWrites:
         assert ("POST", "/api/v1/content") in writes
         assert ("DELETE", "/api/v1/genres/{genre_id}") in writes
 
+    def test_reindex_is_gated(self):
+        """#1138: the reindex write was the last recorded open write."""
+        writes = _write_operations(create_app().openapi())
+
+        assert _has_auth_gate(writes[("POST", "/api/v1/reindex")])
+
     def test_the_known_debt_entry_is_still_real(self):
         """Keep the allowlist honest: a closed entry should be removed.
 
-        Without this, someone could gate `/api/v1/reindex` and the stale
+        Without this, someone could gate a listed path and the stale
         allowlist entry would keep masking a path that no longer exists.
         """
         writes = _write_operations(create_app().openapi())

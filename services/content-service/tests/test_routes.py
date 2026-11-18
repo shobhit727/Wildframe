@@ -23,10 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from tests._test_jwks import PRIVATE_PEM
 
 from app.api.routes import (
-    JobStatus,
-    ReindexJob,
     _enforce_auth_version,
-    _reindex_jobs,
     get_admin_identity,
     get_content_service,
     get_current_user,
@@ -746,61 +743,28 @@ class TestEngagementEndpoints:
 
 # ------------------------------------------------------------------- reindex
 class TestReindexEndpoints:
-    @pytest.fixture(autouse=True)
-    def _clean_registry(self):
-        _reindex_jobs.clear()
-        yield
-        _reindex_jobs.clear()
+    """The stub job registry is gone (#1138); see ``test_reindex_auth.py`` for real tokens."""
 
-    async def test_start_reindex_registers_an_accepted_job(self, client):
+    async def test_admin_reindex_is_501_not_a_job(self, client):
         response = await client.post("/api/v1/reindex")
 
-        assert response.status_code == 200
-        job_id = response.json()["job_id"]
-        job = _reindex_jobs[UUID(job_id)]
-        assert job.job_id == UUID(job_id)
-        assert job.status is JobStatus.ACCEPTED
-        assert job.progress == 0
-        assert job.created_at is not None
+        assert response.status_code == 501
+        assert response.json()["detail"] == "Catalog reindex is not implemented"
 
-    async def test_status_of_a_known_job(self, client):
-        job_id = uuid4()
-        _reindex_jobs[job_id] = ReindexJob(job_id=job_id, status=JobStatus.DONE, progress=100)
+    async def test_reindex_requires_the_admin_dependency(self, client):
+        """Removing the override re-exposes get_admin_identity's own 401 path."""
+        application = client._transport.app  # type: ignore[attr-defined]
+        application.dependency_overrides.pop(get_admin_identity)
 
-        response = await client.get(f"/api/v1/reindex/{job_id}")
+        response = await client.post("/api/v1/reindex")
 
-        body = response.json()
-        assert response.status_code == 200
-        assert body["job_id"] == str(job_id)
-        assert body["status"] == "done"
-        assert body["progress"] == 100
-        assert body["started_at"] is None
-        assert body["completed_at"] is None
-        assert body["error"] is None
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Missing or invalid authorization header"
 
-    async def test_status_includes_timestamps_when_present(self, client):
-        job_id = uuid4()
-        started = datetime.now(UTC)
-        _reindex_jobs[job_id] = ReindexJob(
-            job_id=job_id,
-            status=JobStatus.RUNNING,
-            started_at=started,
-            completed_at=started,
-            error="boom",
-        )
-
-        response = await client.get(f"/api/v1/reindex/{job_id}")
-
-        body = response.json()
-        assert body["started_at"] == started.isoformat()
-        assert body["completed_at"] == started.isoformat()
-        assert body["error"] == "boom"
-
-    async def test_unknown_job_returns_404(self, client):
+    async def test_there_is_no_job_status_route(self, client):
         response = await client.get(f"/api/v1/reindex/{uuid4()}")
 
-        assert response.status_code == 404
-        assert response.json()["detail"] == "Job not found"
+        assert response.status_code in (404, 405)
 
 
 # ------------------------------------------------------------- auth helpers
