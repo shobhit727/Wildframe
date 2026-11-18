@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import and_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -24,13 +25,28 @@ class EventRepository:
         event_type: str,
         event_data: dict | None = None,
         content_id: UUID | None = None,
-    ):
-        event = Event(
-            user_id=user_id, event_type=event_type, event_data=event_data, content_id=content_id
+        client_event_key: str | None = None,
+    ) -> Event | None:
+        """Insert one event; ``None`` when ``client_event_key`` is already taken.
+
+        The unique key decides, not a pre-check (#1143): a concurrent insert of
+        the same key waits for the first transaction, then conflicts if it
+        committed or inserts if it rolled back. The row is durable only once the
+        request session commits.
+        """
+        stmt = (
+            pg_insert(Event)
+            .values(
+                user_id=user_id,
+                event_type=event_type,
+                event_data=event_data,
+                content_id=content_id,
+                client_event_key=client_event_key,
+            )
+            .on_conflict_do_nothing(index_elements=[Event.client_event_key])
+            .returning(Event)
         )
-        self.session.add(event)
-        await self.session.flush()
-        return event
+        return (await self.session.scalars(stmt)).one_or_none()
 
     async def get_by_user(self, user_id: UUID, limit: int = 100) -> list[Event]:
         stmt = (
@@ -57,20 +73,29 @@ class ContentViewEventRepository:
         playback_quality: str | None = None,
         started_at: datetime | None = None,
         completed_at: datetime | None = None,
-    ) -> ContentViewEvent:
-        event = ContentViewEvent(
-            content_id=content_id,
-            viewer_id=viewer_id,
-            watch_duration_seconds=watch_duration_seconds,
-            content_duration_seconds=content_duration_seconds,
-            completion_pct=completion_pct,
-            playback_quality=playback_quality,
-            started_at=started_at,
-            completed_at=completed_at,
+        client_event_key: str | None = None,
+    ) -> ContentViewEvent | None:
+        """Insert one view; ``None`` when ``client_event_key`` is already taken.
+
+        Same unique-key semantics as ``EventRepository.create``.
+        """
+        stmt = (
+            pg_insert(ContentViewEvent)
+            .values(
+                content_id=content_id,
+                viewer_id=viewer_id,
+                watch_duration_seconds=watch_duration_seconds,
+                content_duration_seconds=content_duration_seconds,
+                completion_pct=completion_pct,
+                playback_quality=playback_quality,
+                started_at=started_at,
+                completed_at=completed_at,
+                client_event_key=client_event_key,
+            )
+            .on_conflict_do_nothing(index_elements=[ContentViewEvent.client_event_key])
+            .returning(ContentViewEvent)
         )
-        self.session.add(event)
-        await self.session.flush()
-        return event
+        return (await self.session.scalars(stmt)).one_or_none()
 
     async def get_by_content(self, content_id: UUID, limit: int = 100) -> list[ContentViewEvent]:
         stmt = (

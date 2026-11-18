@@ -180,17 +180,17 @@ async def require_content_access(
 
 
 async def get_analytics_service(
-    request: Request,
-    db: AsyncSession = Depends(get_db),  # noqa: B008
+    # scope="function": get_db commits when the endpoint returns and before the
+    # response is sent, so a failed commit is a 500. With the default "request"
+    # scope the commit ran after the response had gone out, and a rolled-back
+    # event was still answered "recorded" (#1143).
+    db: AsyncSession = Depends(get_db, scope="function"),  # noqa: B008
 ) -> AnalyticsService:
-    # The lifespan-managed redis client backs client_event_id idempotency;
-    # when it is absent the service logs and proceeds without dedup.
     return AnalyticsService(
         EventRepository(db),
         ContentViewEventRepository(db),
         CreatorAnalyticsSnapshotRepository(db),
         ContentPerformanceMetricsRepository(db),
-        dedup_store=getattr(request.app.state, "redis_client", None),
     )
 
 
@@ -204,7 +204,7 @@ async def log_event(
     if request.user_id != current_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     try:
-        await service.log_event(
+        event = await service.log_event(
             request.user_id,
             request.event_type,
             request.event_data,
@@ -215,7 +215,7 @@ async def log_event(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
-    return {"status": "logged"}
+    return {"status": "logged" if event is not None else "duplicate"}
 
 
 @router.get("/user-events/{user_id}")
@@ -239,7 +239,7 @@ async def record_view_event(
     if request.viewer_id != current_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     try:
-        await service.record_view_event(
+        view = await service.record_view_event(
             content_id=request.content_id,
             viewer_id=request.viewer_id,
             watch_duration_seconds=request.watch_duration_seconds,
@@ -254,7 +254,7 @@ async def record_view_event(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
-    return {"status": "recorded"}
+    return {"status": "recorded" if view is not None else "duplicate"}
 
 
 @router.get("/creators/{creator_id}")

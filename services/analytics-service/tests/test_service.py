@@ -1,7 +1,8 @@
 """Tests for Analytics Service business logic."""
 
+import hashlib
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -12,19 +13,31 @@ from app.services import (
     MAX_EVENT_DATA_BYTES,
     MAX_DURATION_SECONDS,
     AnalyticsService,
+    client_event_key,
 )
 
 
 class FakeEventRepo:
+    """Models the unique ``client_event_key``: a taken key inserts nothing."""
+
     def __init__(self):
         self.events = []
+        self.keys = []
 
-    async def create(self, user_id, event_type, event_data=None, content_id=None):
+    async def create(
+        self, user_id, event_type, event_data=None, content_id=None, client_event_key=None
+    ):
+        self.keys.append(client_event_key)
+        if client_event_key is not None and any(
+            e.client_event_key == client_event_key for e in self.events
+        ):
+            return None
         e = MagicMock()
         e.user_id = user_id
         e.event_type = event_type
         e.event_data = event_data
         e.content_id = content_id
+        e.client_event_key = client_event_key
         e.timestamp = datetime.now(UTC)
         self.events.append(e)
         return e
@@ -34,10 +47,15 @@ class FakeEventRepo:
 
 
 class FakeViewRepo:
+    """Models the unique ``client_event_key``: a taken key inserts nothing."""
+
     def __init__(self):
         self.events = []
 
     async def create(self, **kwargs):
+        key = kwargs.get("client_event_key")
+        if key is not None and any(e.client_event_key == key for e in self.events):
+            return None
         e = MagicMock(**kwargs)
         self.events.append(e)
         return e
@@ -87,19 +105,6 @@ class FakeContentRepo:
         return m
 
 
-class FakeDedupStore:
-    """In-memory redis-like store supporting set(nx=True, ex=...)."""
-
-    def __init__(self):
-        self.data = {}
-
-    async def set(self, key, value, nx=False, ex=None):
-        if nx and key in self.data:
-            return False
-        self.data[key] = value
-        return True
-
-
 @pytest.fixture
 def fake_repos():
     return {
@@ -111,18 +116,12 @@ def fake_repos():
 
 
 @pytest.fixture
-def dedup_store():
-    return FakeDedupStore()
-
-
-@pytest.fixture
-def service(fake_repos, dedup_store):
+def service(fake_repos):
     return AnalyticsService(
         event_repo=fake_repos["event"],
         view_repo=fake_repos["view"],
         creator_repo=fake_repos["creator"],
         content_repo=fake_repos["content"],
-        dedup_store=dedup_store,
     )
 
 
@@ -486,46 +485,37 @@ class TestContentPerformanceValidation:
 
 class TestEventDeduplication:
     @pytest.mark.asyncio
-    async def test_log_event_dedup(self, service, dedup_store):
+    async def test_log_event_dedup(self, service):
         """Duplicate client_event_id for same user is suppressed."""
         uid = uuid4()
         cid = "client-123"
         await service.log_event(uid, "e1", client_event_id=cid)
-        await service.log_event(uid, "e1", client_event_id=cid)
+        assert await service.log_event(uid, "e1", client_event_id=cid) is None
         # second call suppressed
         assert len(service.event_repo.events) == 1
 
     @pytest.mark.asyncio
-    async def test_dedup_store_down_fails_open(self, service):
-        """[#214] Redis outage must never drop events (fail-open)."""
-        from unittest.mock import AsyncMock
-
-        store = AsyncMock()
-        store.set = AsyncMock(side_effect=Exception("connection refused"))
-        service.dedup_store = store
+    async def test_events_without_client_event_id_are_never_deduplicated(self, service):
+        """No id means no key: the unique column admits every NULL."""
         uid = uuid4()
-        await service.log_event(uid, "e1", client_event_id="cid-1")
-        await service.log_event(uid, "e1", client_event_id="cid-1")
+        await service.log_event(uid, "e1")
+        await service.log_event(uid, "e1", client_event_id="")
         assert len(service.event_repo.events) == 2
+        assert service.event_repo.keys == [None, None]
 
     @pytest.mark.asyncio
-    async def test_dedup_keys_namespaced_with_ttl(self, service):
-        """[#214] Dedup keys carry the wf:analytics namespace and a TTL."""
-        from unittest.mock import AsyncMock
-
-        store = AsyncMock()
-        store.set = AsyncMock(return_value=True)
-        service.dedup_store = store
+    async def test_dedup_key_is_an_owner_scoped_digest(self, service):
+        """[#1143] The key stored in the unique column is sha256(owner:id), not the raw id."""
         uid = uuid4()
-        await service.log_event(uid, "e1", client_event_id="cid-1")
+        await service.log_event(uid, "e1", client_event_id="  cid-1  ")
 
-        key = store.set.call_args.args[0]
-        assert key.startswith("wf:analytics:dedup:")
-        assert str(uid) in key
-        assert store.set.call_args.kwargs["ex"] == 86_400
+        (key,) = service.event_repo.keys
+        assert key == hashlib.sha256(f"{uid}:cid-1".encode()).hexdigest()
+        assert key == client_event_key(uid, "cid-1")
+        assert "cid-1" not in key and str(uid) not in key
 
     @pytest.mark.asyncio
-    async def test_log_event_dedup_different_users(self, service, dedup_store):
+    async def test_log_event_dedup_different_users(self, service):
         """Same client_event_id for different users is allowed."""
         cid = "client-123"
         await service.log_event(uuid4(), "e1", client_event_id=cid)
@@ -533,7 +523,7 @@ class TestEventDeduplication:
         assert len(service.event_repo.events) == 2
 
     @pytest.mark.asyncio
-    async def test_log_event_dedup_different_ids(self, service, dedup_store):
+    async def test_log_event_dedup_different_ids(self, service):
         """Different client_event_ids are always allowed."""
         uid = uuid4()
         await service.log_event(uid, "e1", client_event_id="cid-1")
@@ -541,7 +531,7 @@ class TestEventDeduplication:
         assert len(service.event_repo.events) == 2
 
     @pytest.mark.asyncio
-    async def test_view_event_dedup(self, service, dedup_store):
+    async def test_view_event_dedup(self, service):
         """Duplicate client_event_id for same viewer is suppressed."""
         vid = uuid4()
         cid = "view-456"
@@ -564,20 +554,16 @@ class TestEventDeduplication:
         assert len(service.view_repo.events) == 1
 
     @pytest.mark.asyncio
-    async def test_dedup_fails_open_when_store_unavailable(self, service):
-        """When dedup store raises, events still get recorded."""
-        service.dedup_store = MagicMock()
-        service.dedup_store.set = AsyncMock(side_effect=RuntimeError("redis down"))
-        uid = uuid4()
-        await service.log_event(uid, "e1", client_event_id="cid")
-        await service.log_event(uid, "e1", client_event_id="cid")
-        assert len(service.event_repo.events) == 2
-
-    @pytest.mark.asyncio
     async def test_dedup_rejects_long_client_event_id(self, service):
         uid = uuid4()
         with pytest.raises(ValueError, match="client_event_id must be"):
             await service.log_event(uid, "e1", client_event_id="x" * 201)
+
+    @pytest.mark.asyncio
+    async def test_dedup_rejects_blank_client_event_id(self, service):
+        with pytest.raises(ValueError, match="client_event_id must not be blank"):
+            await service.log_event(uuid4(), "e1", client_event_id="   ")
+        assert service.event_repo.events == []
 
 
 class TestAggregationIsolation:
