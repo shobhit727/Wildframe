@@ -141,6 +141,13 @@ spec:
               name: {{ $.Values.secrets.existingSecret }}
               key: {{ $.Values.secrets.searchCursorSecretKey }}
         {{- end }}
+        {{- with trim (default "" $.Values.secrets.metricsTokenKey) }}
+        - name: METRICS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ $.Values.secrets.existingSecret }}
+              key: {{ . }}
+        {{- end }}
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:

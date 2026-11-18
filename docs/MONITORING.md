@@ -78,6 +78,78 @@ All services emit metrics in Prometheus format:
 GET http://auth-service:8000/metrics
 ```
 
+#### Kubernetes scrape authentication
+
+Every service gates `/metrics` behind a bearer token whenever
+`ENVIRONMENT=production`, which is the chart's default for every service. A
+scrape without `Authorization: Bearer <METRICS_TOKEN>` gets a 401, and so does
+every scrape if the service has no token. The Helm chart injects `METRICS_TOKEN`
+into every service Deployment from the `wildframe-runtime` Secret
+(`secrets.existingSecret`), using the key named by `secrets.metricsTokenKey`
+(default `METRICS_TOKEN`). A production render fails if
+`secrets.metricsTokenKey` is empty.
+
+Operator step: add the key to the runtime Secret in each namespace before
+deploying. The full command, which keeps the other keys, is in
+`docs/DEPLOYMENT_GUIDE.md` ("Runtime secrets"):
+
+```bash
+export WILDFRAME_METRICS_TOKEN="$(openssl rand -hex 32)"
+# include JWT_SECRET_KEY, POSTGRES_PASSWORD and SEARCH_CURSOR_SECRET too:
+# `create secret ... | kubectl apply` replaces the whole Secret.
+kubectl -n wildframe-production create secret generic wildframe-runtime \
+  --from-literal=METRICS_TOKEN="$WILDFRAME_METRICS_TOKEN" ... \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Use `--from-literal` (or a file written with `printf '%s'`), not `--from-file`
+on a file that ends in a newline. The guard compares the header exactly against
+`Bearer <METRICS_TOKEN>`, while Prometheus trims whitespace from its credentials
+file. If the token in the Secret ends with `\n`, every scrape still returns 401.
+
+The cluster Prometheus must present the same token. The chart does not deploy
+Prometheus or a ServiceMonitor, so configure whichever scraper you run.
+
+- Plain Prometheus (pod-annotation discovery): mount the token as a file in
+  the Prometheus pod, then reference it from the scrape job:
+
+  ```yaml
+  - job_name: wildframe-pods
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: { names: [wildframe-production] }
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/wildframe-metrics/METRICS_TOKEN
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+  ```
+
+  `bearer_token_file: <path>` is the older spelling of the same setting, and
+  `infrastructure/prometheus/prometheus.yml` (dev compose) uses it.
+- Prometheus Operator: a `ServiceMonitor`/`PodMonitor` endpoint can read the
+  token from a Secret in the monitor's namespace:
+
+  ```yaml
+  endpoints:
+    - port: http
+      path: /metrics
+      authorization:
+        type: Bearer
+        credentials:
+          name: wildframe-runtime   # or a copy holding only METRICS_TOKEN
+          key: METRICS_TOKEN
+  ```
+
+The chart's NetworkPolicies do not currently admit traffic from a monitoring
+namespace, so the scraper also needs an ingress rule to reach the pods.
+
+Rotation: update the Secret, run `kubectl rollout restart` on every service
+Deployment, and update the Prometheus credential at the same time. Until both
+sides match, the targets report 401.
+
 Example metrics response:
 
 ```

@@ -266,6 +266,7 @@ jobs:
           python -m pytest \
             infrastructure/helm/tests/test_production_external.py \
             infrastructure/helm/tests/test_search_cursor_secret_gate.py \
+            infrastructure/helm/tests/test_metrics_token_secret.py \
             --no-cov -q
 
       - name: Run chart security baseline test (#796)
