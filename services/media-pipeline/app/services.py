@@ -609,6 +609,8 @@ class MediaPipelineService:
         ctx = getattr(job, "context", None)
         if not ctx:
             await self._release_lease(job)
+            # The claim was committed in _acquire_lease, so its release must be too.
+            await self.job_repo.session.commit()
             raise PipelineError(f"pipeline job {job_id} has no context")
         ctx = _rehydrate_context(job, dict(ctx), self._ports)
 
@@ -837,7 +839,9 @@ class MediaPipelineService:
             # no SQL for as long as it runs; an open transaction here is killed
             # by idle_in_transaction_session_timeout, taking the row lock and an
             # uncommitted lease with it (#1141). The committed ``leased_by`` /
-            # ``leased_at`` keeps other workers off the job meanwhile.
+            # ``leased_at`` keeps other workers off the job for
+            # PIPELINE_JOB_LEASE_SECONDS; a longer stage can be taken over, and
+            # the fence below then stops this worker from writing.
             await self.job_repo.session.commit()
 
             start = time.monotonic()

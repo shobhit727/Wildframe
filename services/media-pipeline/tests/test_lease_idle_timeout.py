@@ -228,3 +228,27 @@ async def test_a_worker_whose_lease_was_taken_writes_nothing(engines: dict) -> N
     assert row["status"] == PipelineJobStatus.RUNNING.name
     assert "long_encode_1141_fence" not in row["stage_versions"]
     assert "content.published" not in await _outbox_topics(engines["admin"], job.id)
+
+
+async def test_an_early_exit_releases_the_committed_lease(engines: dict) -> None:
+    """The claim is committed up front, so every early exit must commit its release."""
+    stage = GatedStage("long_encode_1141_no_ctx")
+    factory_a = async_sessionmaker(engines["a"], expire_on_commit=False)
+    async with factory_a() as session_a:
+        worker_a = _service(session_a, stage, "worker-a")
+        job = await worker_a.start_job(
+            content_id=uuid4(), upload_session_id=uuid4(), storage_key="k/clip.mp4"
+        )
+        job_id = job.id
+        async with engines["admin"].begin() as conn:
+            await conn.execute(
+                text("UPDATE pipeline_jobs SET context = '{}'::jsonb WHERE id = :id"),
+                {"id": job_id},
+            )
+        session_a.expire_all()
+        with pytest.raises(PipelineError, match="has no context"):
+            await worker_a.advance(job_id)
+
+    row = await _row(engines["admin"], job_id)
+    assert row["leased_by"] is None and row["leased_at"] is None
+    assert not stage.entered.is_set()
