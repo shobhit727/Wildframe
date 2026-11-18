@@ -57,6 +57,20 @@ class GatedStage(Stage):
         return ctx
 
 
+class FailsOnceThenGatedStage(GatedStage):
+    """Attempt 1 fails fast; attempt 2 parks like a long ffmpeg run."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.calls = 0
+
+    async def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("transient encoder failure")
+        return await super().run(ctx)
+
+
 @pytest_asyncio.fixture
 async def engines(postgres_url: str, db_session: AsyncSession) -> AsyncIterator[dict]:
     """Separate engines (separate backends) for worker A, worker B and admin.
@@ -72,7 +86,9 @@ async def engines(postgres_url: str, db_session: AsyncSession) -> AsyncIterator[
             await engine.dispose()
 
 
-def _service(session: AsyncSession, stage: Stage, worker_id: str) -> MediaPipelineService:
+def _service(
+    session: AsyncSession, stage: Stage, worker_id: str, *, max_attempts: int = 1
+) -> MediaPipelineService:
     registry = StageRegistry()
     registry.register(stage)
     return MediaPipelineService(
@@ -80,7 +96,7 @@ def _service(session: AsyncSession, stage: Stage, worker_id: str) -> MediaPipeli
         log_repo=PipelineStageLogRepository(session),
         registry=registry,
         publisher=InMemoryEventPublisher(),
-        max_attempts=1,
+        max_attempts=max_attempts,
         backoff_base=0.0,
         backoff_cap=0.0,
         worker_id=worker_id,
@@ -167,6 +183,43 @@ async def test_a_second_worker_cannot_claim_a_job_whose_stage_outlasts_the_idle_
     assert "long_encode_1141_claim" in row["stage_versions"]
     assert row["leased_by"] is None and row["leased_at"] is None
     assert (await _outbox_topics(engines["admin"], job.id))[-1] == "content.published"
+
+
+async def test_a_retry_attempt_that_outlasts_the_idle_timeout_keeps_the_lease(
+    engines: dict,
+) -> None:
+    """Attempt 2 must also run with no transaction open (failure log + backoff)."""
+    stage = FailsOnceThenGatedStage("long_encode_1141_retry")
+    factory_a = async_sessionmaker(engines["a"], expire_on_commit=False)
+    factory_b = async_sessionmaker(engines["b"], expire_on_commit=False)
+    async with factory_a() as session_a:
+        worker_a = _service(session_a, stage, "worker-a", max_attempts=2)
+        job = await worker_a.start_job(
+            content_id=uuid4(), upload_session_id=uuid4(), storage_key="k/clip.mp4"
+        )
+        task = asyncio.create_task(worker_a.advance(job.id))
+        try:
+            await asyncio.wait_for(stage.entered.wait(), STEP_TIMEOUT)
+            assert stage.calls == 2, "the gate is reached on the retry attempt"
+            killed = await _fire_idle_in_transaction_timeout(engines["admin"])
+
+            probe = CountingStage("long_encode_1141_retry")
+            async with factory_b() as session_b:
+                worker_b = _service(session_b, probe, "worker-b")
+                with pytest.raises(LeaseAcquisitionFailed):
+                    await worker_b.advance(job.id)
+            assert probe.calls == 0
+            assert killed == 0, "no transaction may stay open during a retry attempt"
+
+            stage.release.set()
+            result = await asyncio.wait_for(task, STEP_TIMEOUT)
+        finally:
+            await _settle(task, stage)
+
+    assert result.status == PipelineJobStatus.COMPLETED
+    row = await _row(engines["admin"], job.id)
+    assert row["status"] == PipelineJobStatus.COMPLETED.name
+    assert row["leased_by"] is None
 
 
 async def test_a_stage_failure_after_the_idle_timeout_still_fails_the_job_and_emits_dlq(
