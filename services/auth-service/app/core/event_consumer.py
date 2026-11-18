@@ -13,6 +13,7 @@ import logging
 import os
 import ssl
 from datetime import UTC, datetime
+from typing import Any
 
 from aiokafka import AIOKafkaConsumer
 
@@ -41,7 +42,7 @@ async def _apply_moderation(session_factory, user_id: str, status: str) -> None:
 
 def _kafka_consumer_options() -> dict:
     security_protocol = os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
-    options = {
+    options: dict[str, Any] = {
         "security_protocol": security_protocol,
         "client_id": os.getenv("KAFKA_CLIENT_ID", "auth-service"),
     }
