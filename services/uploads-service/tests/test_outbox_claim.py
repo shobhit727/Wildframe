@@ -249,16 +249,29 @@ class TestClaimFencing:
 
 @pytest_asyncio.fixture
 async def pg() -> AsyncIterator[dict[str, Any]]:
-    """Separate engines (separate backends) for drain A, drain B and an admin."""
+    """Separate engines (separate backends) for drain A, drain B and an admin.
+
+    Every engine sees only a private schema created for this test and dropped
+    afterwards, so a stale ``outbox_events`` table elsewhere in the shared
+    TEST_DATABASE_URL database (``create_all`` is checkfirst) cannot leak in,
+    and these committed rows never reach the shared schema.
+    """
     url = os.environ.get("TEST_DATABASE_URL")
     if not url:
         pytest.skip("TEST_DATABASE_URL is not set (CI's backend test job sets it)")
     url = make_url(url).set(drivername="postgresql+asyncpg")
-    engines = {role: create_async_engine(url, future=True) for role in ("a", "b", "admin")}
+    schema = f"t1145_{uuid4().hex[:12]}"
+    bootstrap = create_async_engine(url, future=True)
+    async with bootstrap.begin() as conn:
+        await conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+    scoped = {"server_settings": {"search_path": schema}}
+    engines = {
+        role: create_async_engine(url, future=True, connect_args=scoped)
+        for role in ("a", "b", "admin")
+    }
     try:
         async with engines["admin"].begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-            await conn.execute(text("TRUNCATE outbox_events"))
         yield {
             "admin": engines["admin"],
             **{
@@ -267,10 +280,11 @@ async def pg() -> AsyncIterator[dict[str, Any]]:
             },
         }
     finally:
-        async with engines["admin"].begin() as conn:
-            await conn.execute(text("TRUNCATE outbox_events"))
         for engine in engines.values():
             await engine.dispose()
+        async with bootstrap.begin() as conn:
+            await conn.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        await bootstrap.dispose()
 
 
 async def _fire_idle_in_transaction_timeout(admin: AsyncEngine) -> int:
