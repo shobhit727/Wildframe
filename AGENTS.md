@@ -657,9 +657,10 @@ Reach for the logs before theorising. Every row here cost real time to derive.
 | Push says success, commit is missing | branch moved; check content, not exit code | `git show origin/<b>:<path> \| grep -c` |
 | Push rejected, tree is dirty | someone else's uncommitted work — see AGENT_COORDINATION.md 23.1 | `git status --porcelain` |
 | `tests/integration` reports "N skipped", 0 passed, exit 0 | `require_stack` (`tests/integration/conftest.py`) skips the whole session when the gateway is unreachable — a dead stack reads green | `scripts/test-integration.sh` (exits 1 if the gateway is down); still read the pass count |
-| Lost-update/row-lock fix passes its test, race persists | most service suites run on SQLite, which ignores `FOR UPDATE`/`SKIP LOCKED` and serializes writers | assert the compiled PostgreSQL SQL contains `FOR UPDATE`, or test two sessions on real Postgres (`TEST_DATABASE_URL`) |
+| Lost-update/row-lock fix passes its test, race persists | most service suites run on SQLite, which ignores `FOR UPDATE`/`SKIP LOCKED` and serializes writers | assert the compiled PostgreSQL SQL contains `FOR UPDATE`; only billing, content, creators, media-pipeline and streaming tests read `TEST_DATABASE_URL` for real Postgres |
 | Commit fails after a long ffmpeg/S3/Kafka await; locks silently gone | `app/core/database.py` hardcodes `idle_in_transaction_session_timeout=30000`; Postgres kills the backend and drops its locks | commit the claim first, do slow I/O outside the transaction |
 | `cmd \| tail; echo $?` prints 0 for a failing run | `$?` is `tail`'s exit code | redirect to a file, or `echo ${PIPESTATUS[0]}` |
+| Per-process state bug (quota, in-memory counter, background loop) won't reproduce locally | every `services/*/Dockerfile` runs `gunicorn --workers 4`, but dev compose overrides each with one `uvicorn --reload` process (§16) | reason per worker × replica, or run the built image's own CMD |
 
 ## 27. Before you claim something is done
 
