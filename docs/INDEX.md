@@ -42,6 +42,7 @@ canonical source; link to it instead of repeating a number.
 - [`SERVICE_ARCHITECTURE_PATTERN.md`](SERVICE_ARCHITECTURE_PATTERN.md) — service structure.
 - [`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md) — database design.
 - [`API_DOCUMENTATION.md`](API_DOCUMENTATION.md) — API reference.
+- [`adr/`](adr/README.md) — architecture decision records (ADR-0001: AWS EKS compute with a Cloudflare edge, **Proposed**).
 
 ## Operations and deployment
 
