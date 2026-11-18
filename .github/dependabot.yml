@@ -32,6 +32,70 @@ updates:
       include: "scope"
     ignore:
       - dependency-name: "setuptools"
+    # The OpenTelemetry packages are version-locked to one another (api/sdk
+    # 1.x vs instrumentation 0.xbN); bumping one alone makes pip's resolver fail
+    # (#1153). Move the whole family in a single PR.
+    groups:
+      opentelemetry:
+        patterns:
+          - "opentelemetry-*"
+
+  # auth-service requirements.txt feeds its Docker image; keep the
+  # OpenTelemetry family together here too (#1153).
+  - package-ecosystem: "pip"
+    directory: "/services/auth-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "python"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      opentelemetry:
+        patterns:
+          - "opentelemetry-*"
+
+  # user-service requirements.txt feeds its Docker image; keep the
+  # OpenTelemetry family together here too (#1153).
+  - package-ecosystem: "pip"
+    directory: "/services/user-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "python"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      opentelemetry:
+        patterns:
+          - "opentelemetry-*"
+
+  # admin-service requirements.txt feeds its Docker image; keep the
+  # OpenTelemetry family together here too (#1153).
+  - package-ecosystem: "pip"
+    directory: "/services/admin-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "python"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      opentelemetry:
+        patterns:
+          - "opentelemetry-*"
 
   - package-ecosystem: "npm"
     directory: "/"
