@@ -8,7 +8,7 @@ for the event publisher and fake repositories.
 
 from __future__ import annotations
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -91,14 +91,36 @@ class FakeFlagRepo:
         self.events.append(row)
         return row
 
-    async def pending_events(self, limit: int = 100) -> list[FakeOutboxRow]:
-        return [e for e in self.events if e.status == OutboxEventStatus.PENDING][:limit]
+    async def claim_pending_events(
+        self, claimed_by: str, limit: int, claim_ttl: timedelta
+    ) -> list[FakeOutboxRow]:
+        now = datetime.now(UTC)
+        claimed = [
+            e
+            for e in self.events
+            if e.status == OutboxEventStatus.PENDING
+            and (e.claimed_at is None or e.claimed_at < now - claim_ttl)
+        ][:limit]
+        for row in claimed:
+            row.claimed_by, row.claimed_at = claimed_by, now
+        return claimed
 
-    async def mark_dispatched(self, event_id: UUID) -> None:
+    async def mark_dispatched(self, event_id: UUID, claimed_by: str) -> bool:
         for row in self.events:
-            if row.id == event_id:
+            if (
+                row.id == event_id
+                and row.claimed_by == claimed_by
+                and row.status == OutboxEventStatus.PENDING
+            ):
                 row.status = OutboxEventStatus.DISPATCHED
                 row.dispatched_at = datetime.now(UTC)
+                return True
+        return False
+
+    async def release_claim(self, event_id: UUID, claimed_by: str) -> None:
+        for row in self.events:
+            if row.id == event_id and row.claimed_by == claimed_by:
+                row.claimed_by, row.claimed_at = None, None
 
 
 class FakeOutboxRow:
@@ -112,6 +134,8 @@ class FakeOutboxRow:
         self.status = OutboxEventStatus.PENDING
         self.created_at = datetime.now(UTC)
         self.dispatched_at = None
+        self.claimed_by: str | None = None
+        self.claimed_at: datetime | None = None
 
 
 class FakeDecisionRepo:

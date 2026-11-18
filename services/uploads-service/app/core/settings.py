@@ -98,6 +98,10 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     OUTBOX_POLL_INTERVAL_SECONDS: int = 2
     REAPER_INTERVAL_SECONDS: int = 300
     OUTBOX_BATCH_SIZE: int = 100
+    # A drain's claim on an outbox row expires after this long, so a crashed
+    # drain's rows are re-claimed (#1145). Keep it well above the time one
+    # batch takes to publish, or a slow drain's rows are re-published.
+    OUTBOX_CLAIM_TTL_SECONDS: int = 300
     CLEANUP_RETRY_GRACE_SECONDS: int = 900
     STORAGE_BACKEND: str = "stub"
     EVENT_PUBLISHER: str = "memory"

@@ -82,6 +82,10 @@ class Settings(ComplianceSettingsMixin, BaseSettings):
     EVENT_PUBLISHER: str = "memory"
     KAFKA_BOOTSTRAP_SERVERS: str | None = None
     OUTBOX_BATCH_SIZE: int = 100
+    # A drain's claim on an outbox row expires after this long, so a crashed
+    # drain's rows are re-claimed (#1145). Keep it well above the time one
+    # batch takes to publish, or a slow drain's rows are re-published.
+    OUTBOX_CLAIM_TTL_SECONDS: int = 300
     OUTBOX_POLL_INTERVAL_SECONDS: int = 5
     METRICS_TOKEN: str = ""
 

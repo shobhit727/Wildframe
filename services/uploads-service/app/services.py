@@ -30,7 +30,9 @@ pure domain logic and unit-testable with stubs.
 from __future__ import annotations
 
 import logging
+import os
 import re
+import socket
 import unicodedata
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -52,6 +54,12 @@ from app.models import (
 from app.repositories import UploadChunkRepository
 
 logger = logging.getLogger(__name__)
+
+
+def _outbox_claim_token() -> str:
+    """A token unique to one drain run: host and pid for debugging, plus a nonce."""
+    return f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex}"
+
 
 _MIME_RE = re.compile(r"^[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$")
 _FILENAME_MAX_LENGTH = 255
@@ -513,29 +521,57 @@ class UploadService:
         """Publish PENDING outbox rows to the bus; mark them dispatched.
 
         A row whose publish fails stays PENDING and is retried on the next
-        drain (at-least-once; consumers dedupe on the session id). Returns the
-        number of rows processed.
+        drain (at-least-once; consumers dedupe on the session id or the
+        event_id). Returns the number of rows processed.
+
+        No transaction is open while publishing (#1145). The batch is claimed
+        and the claim committed first; each publish then runs outside any
+        transaction, and each row is marked in its own short transaction that
+        only succeeds while this drain still holds the claim. A publish that
+        stalls past ``idle_in_transaction_session_timeout`` therefore has no
+        backend to lose, and the other drain loops skip the claimed rows.
         """
-        rows = await self.repo.pending_events(limit=settings.OUTBOX_BATCH_SIZE)
-        for row in rows:
+        claim = _outbox_claim_token()
+        rows = await self.repo.claim_pending_events(
+            claim,
+            limit=settings.OUTBOX_BATCH_SIZE,
+            claim_ttl=timedelta(seconds=settings.OUTBOX_CLAIM_TTL_SECONDS),
+        )
+        batch = [
+            (
+                row.id,
+                Event(
+                    topic=row.topic,
+                    key=row.event_key,
+                    payload=row.payload,
+                    # A stable id per outbox row: a re-publish after a crash
+                    # between publish and mark carries the same event_id, so
+                    # consumers can dedupe it.
+                    event_id=str(row.id),
+                ),
+            )
+            for row in rows
+        ]
+        await self.repo.session.commit()
+        for row_id, event in batch:
             try:
-                await self.publisher.publish(
-                    Event(
-                        topic=row.topic,
-                        key=row.event_key,
-                        payload=row.payload,
-                    )
-                )
+                await self.publisher.publish(event)
             except Exception:  # noqa: BLE001 - keep row pending for retry
                 logger.exception(
                     "outbox publish failed for event %s (topic=%s); will retry",
-                    row.id,
-                    row.topic,
+                    row_id,
+                    event.topic,
                 )
-                continue
-            await self.repo.mark_dispatched(row.id)
-        await self.repo.session.commit()
-        return len(rows)
+                await self.repo.release_claim(row_id, claim)
+            else:
+                if not await self.repo.mark_dispatched(row_id, claim):
+                    logger.warning(
+                        "outbox event %s was re-claimed by another drain before it "
+                        "was marked dispatched; it may be published twice",
+                        row_id,
+                    )
+            await self.repo.session.commit()
+        return len(batch)
 
     async def reap_expired(self) -> int:
         """Abort stale sessions and retry failed storage cleanups.

@@ -98,10 +98,13 @@ async def test_chunk_operations(async_db: AsyncSession):
 async def test_outbox_event_flow(async_db: AsyncSession):
     repo = UploadChunkRepository(async_db)
     ev = await repo.enqueue_event(topic="test", event_key="key", payload={"a": 1})
-    pending = await repo.pending_events(limit=1)
+    pending = await repo.claim_pending_events("drain", limit=1, claim_ttl=datetime.timedelta(0))
     assert any(p.id == ev.id for p in pending)
-    await repo.mark_dispatched(ev.id)
-    pending_after = await repo.pending_events(limit=1)
+    assert await repo.mark_dispatched(ev.id, "drain") is True
+    # A zero TTL lets any claim be retaken, so only DISPATCHED keeps the row out.
+    pending_after = await repo.claim_pending_events(
+        "drain", limit=1, claim_ttl=datetime.timedelta(0)
+    )
     assert all(p.id != ev.id for p in pending_after)
 
 

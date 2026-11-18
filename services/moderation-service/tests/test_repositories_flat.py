@@ -36,6 +36,8 @@ from app.repositories import (
     ModerationDecisionRepository,
 )
 
+_TTL = timedelta(minutes=5)
+
 
 @pytest.fixture
 async def session():
@@ -366,7 +368,7 @@ class TestOutbox:
         await session.commit()
         assert row.event_key is None
 
-    async def test_pending_events_returns_only_pending_rows_fifo(self, session):
+    async def test_claim_pending_events_returns_only_pending_rows_fifo(self, session):
         repo = ContentFlagRepository(session)
         now = datetime.now(UTC)
         first = await repo.enqueue_event("t", "1", {})
@@ -377,20 +379,22 @@ class TestOutbox:
         await _set_created_at(session, OutboxEvent, done.id, now + timedelta(seconds=2))
         done.status = OutboxEventStatus.DISPATCHED
         await session.commit()
-        assert [r.event_key for r in await repo.pending_events()] == ["1", "2"]
+        claimed = await repo.claim_pending_events("drain", limit=100, claim_ttl=_TTL)
+        assert [r.event_key for r in claimed] == ["1", "2"]
 
-    async def test_pending_events_respects_the_limit(self, session):
+    async def test_claim_pending_events_respects_the_limit(self, session):
         repo = ContentFlagRepository(session)
         for i in range(4):
             await repo.enqueue_event("t", str(i), {})
         await session.commit()
-        assert len(await repo.pending_events(limit=2)) == 2
+        assert len(await repo.claim_pending_events("drain", limit=2, claim_ttl=_TTL)) == 2
 
     async def test_mark_dispatched_stamps_status_and_time(self, session):
         repo = ContentFlagRepository(session)
         row = await repo.enqueue_event("t", "1", {})
         await session.commit()
-        await repo.mark_dispatched(row.id)
+        await repo.claim_pending_events("drain", limit=100, claim_ttl=_TTL)
+        assert await repo.mark_dispatched(row.id, "drain") is True
         await session.commit()
         await session.refresh(row)
         assert row.status == OutboxEventStatus.DISPATCHED
@@ -398,16 +402,17 @@ class TestOutbox:
 
     async def test_mark_dispatched_is_a_noop_for_an_unknown_id(self, session):
         repo = ContentFlagRepository(session)
-        assert await repo.mark_dispatched(uuid4()) is None
+        assert await repo.mark_dispatched(uuid4(), "drain") is False
 
     async def test_dispatched_rows_leave_the_pending_set(self, session):
         repo = ContentFlagRepository(session)
         row = await repo.enqueue_event("t", "1", {})
         await session.commit()
-        assert len(await repo.pending_events()) == 1
-        await repo.mark_dispatched(row.id)
+        # A zero TTL lets any claim be retaken, so only DISPATCHED keeps a row out.
+        assert len(await repo.claim_pending_events("drain", 100, timedelta(0))) == 1
+        await repo.mark_dispatched(row.id, "drain")
         await session.commit()
-        assert await repo.pending_events() == []
+        assert await repo.claim_pending_events("drain", 100, timedelta(0)) == []
 
 
 # ---------------------------------------------------------------------------
