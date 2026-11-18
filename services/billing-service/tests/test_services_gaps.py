@@ -398,8 +398,8 @@ class TestAccessorsAndTransactions:
         locked = MagicMock(status=TrancheStatus.LOCKED)
         released = MagicMock(status=TrancheStatus.RELEASED)
         svc = _service()
-        svc.milestone_repo.get = AsyncMock(return_value=milestone)
-        svc.milestone_repo.get_tranches = AsyncMock(return_value=[locked, released])
+        svc.milestone_repo.get_for_update = AsyncMock(return_value=milestone)
+        svc.milestone_repo.get_tranches_for_update = AsyncMock(return_value=[locked, released])
         result = await svc.kill_milestone(uuid4(), caller_id=uuid4(), caller_is_admin=True)
         assert milestone.status == MilestoneStatus.KILLED
         # An already-released tranche is NOT clawed back.
@@ -410,20 +410,22 @@ class TestAccessorsAndTransactions:
 
     async def test_release_tranche_rejects_a_killed_milestone(self):
         svc = _service()
-        svc.milestone_repo.get = AsyncMock(return_value=MagicMock(status=MilestoneStatus.KILLED))
+        svc.milestone_repo.get_for_update = AsyncMock(
+            return_value=MagicMock(status=MilestoneStatus.KILLED)
+        )
         with pytest.raises(MilestoneKillError):
             await svc.release_tranche(uuid4(), 1, caller_id=uuid4(), caller_is_admin=True)
-        svc.milestone_repo.get_tranches.assert_not_awaited()
+        svc.milestone_repo.get_tranches_for_update.assert_not_awaited()
 
     async def test_release_tranche_rejects_a_non_admin_caller(self):
         svc = _service()
         with pytest.raises(MilestoneAuthorizationError, match="admin privileges required"):
             await svc.release_tranche(uuid4(), 1, caller_id=uuid4(), caller_is_admin=False)
-        svc.milestone_repo.get.assert_not_awaited()
+        svc.milestone_repo.get_for_update.assert_not_awaited()
 
     async def test_release_tranche_reports_a_missing_milestone(self):
         svc = _service()
-        svc.milestone_repo.get = AsyncMock(return_value=None)
+        svc.milestone_repo.get_for_update = AsyncMock(return_value=None)
         mid = uuid4()
         with pytest.raises(Exception, match=f"Milestone {mid} not found"):
             await svc.release_tranche(mid, 1, caller_id=uuid4(), caller_is_admin=True)
@@ -431,8 +433,8 @@ class TestAccessorsAndTransactions:
     async def test_release_tranche_reports_a_missing_tranche_number(self):
         mid = uuid4()
         svc = _service()
-        svc.milestone_repo.get = AsyncMock(return_value=MagicMock())
-        svc.milestone_repo.get_tranches = AsyncMock(
+        svc.milestone_repo.get_for_update = AsyncMock(return_value=MagicMock())
+        svc.milestone_repo.get_tranches_for_update = AsyncMock(
             return_value=[MagicMock(tranche_number=1, status=TrancheStatus.LOCKED)]
         )
         with pytest.raises(Exception, match="Tranche 3 not found"):
@@ -445,8 +447,8 @@ class TestAccessorsAndTransactions:
         )
         milestone = MagicMock(creator_id=creator, created_at=datetime(2026, 1, 1))
         svc = _service()
-        svc.milestone_repo.get = AsyncMock(return_value=milestone)
-        svc.milestone_repo.get_tranches = AsyncMock(return_value=[tranche])
+        svc.milestone_repo.get_for_update = AsyncMock(return_value=milestone)
+        svc.milestone_repo.get_tranches_for_update = AsyncMock(return_value=[tranche])
         svc.payout_repo.accrue = AsyncMock()
         result = await svc.release_tranche(mid, 2, caller_id=uuid4(), caller_is_admin=True)
         assert result.status == TrancheStatus.RELEASED
@@ -463,8 +465,8 @@ class TestAccessorsAndTransactions:
         tranche = MagicMock(tranche_number=1, status=TrancheStatus.RELEASED, amount=Decimal("1.00"))
         milestone = MagicMock(creator_id=uuid4(), created_at=datetime(2026, 1, 1))
         svc = _service()
-        svc.milestone_repo.get = AsyncMock(return_value=milestone)
-        svc.milestone_repo.get_tranches = AsyncMock(return_value=[tranche])
+        svc.milestone_repo.get_for_update = AsyncMock(return_value=milestone)
+        svc.milestone_repo.get_tranches_for_update = AsyncMock(return_value=[tranche])
         svc.payout_repo.accrue = AsyncMock()
         await svc.release_tranche(uuid4(), 1, caller_id=uuid4(), caller_is_admin=True)
         svc.payout_repo.accrue.assert_awaited_once()
@@ -474,8 +476,8 @@ class TestAccessorsAndTransactions:
         # re-released into a payout accrual.
         tranche = MagicMock(tranche_number=1, status=TrancheStatus.REVERTED)
         svc = _service()
-        svc.milestone_repo.get = AsyncMock(return_value=MagicMock())
-        svc.milestone_repo.get_tranches = AsyncMock(return_value=[tranche])
+        svc.milestone_repo.get_for_update = AsyncMock(return_value=MagicMock())
+        svc.milestone_repo.get_tranches_for_update = AsyncMock(return_value=[tranche])
         svc.payout_repo.accrue = AsyncMock()
         with pytest.raises(InvalidStateTransitionError):
             await svc.release_tranche(uuid4(), 1, caller_id=uuid4(), caller_is_admin=True)
@@ -483,7 +485,7 @@ class TestAccessorsAndTransactions:
 
     async def test_kill_milestone_reports_a_missing_milestone(self):
         svc = _service()
-        svc.milestone_repo.get = AsyncMock(return_value=None)
+        svc.milestone_repo.get_for_update = AsyncMock(return_value=None)
         mid = uuid4()
         with pytest.raises(Exception, match=f"Milestone {mid} not found"):
             await svc.kill_milestone(mid, caller_id=uuid4(), caller_is_admin=True)

@@ -703,13 +703,15 @@ class BillingService:
         """
         if caller_id is None or not caller_is_admin:
             raise MilestoneAuthorizationError("admin privileges required")
-        milestone = await self.milestone_repo.get(milestone_id)
+        # Lock the parent row before checking any status (#1142): a concurrent
+        # kill_milestone must either finish first (and be seen here) or wait.
+        milestone = await self.milestone_repo.get_for_update(milestone_id)
         if not milestone:
             raise BillingError(f"Milestone {milestone_id} not found")
         if milestone.status == MilestoneStatus.KILLED:
             raise MilestoneKillError("Cannot release tranches on a killed milestone")
 
-        tranches = await self.milestone_repo.get_tranches(milestone_id)
+        tranches = await self.milestone_repo.get_tranches_for_update(milestone_id)
         tranche = next((t for t in tranches if t.tranche_number == tranche_number), None)
         if not tranche:
             raise BillingError(f"Tranche {tranche_number} not found for milestone {milestone_id}")
@@ -747,13 +749,13 @@ class BillingService:
         """
         if caller_id is None or not caller_is_admin:
             raise MilestoneAuthorizationError("admin privileges required")
-        milestone = await self.milestone_repo.get(milestone_id)
+        milestone = await self.milestone_repo.get_for_update(milestone_id)
         if not milestone:
             raise BillingError(f"Milestone {milestone_id} not found")
 
         milestone.status = MilestoneStatus.KILLED
 
-        tranches = await self.milestone_repo.get_tranches(milestone_id)
+        tranches = await self.milestone_repo.get_tranches_for_update(milestone_id)
         now = naive_utc_now()
         for tranche in tranches:
             if tranche.status == TrancheStatus.LOCKED:
