@@ -102,6 +102,11 @@ kubectl -n wildframe-production create secret generic wildframe-runtime \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
+Use `--from-literal` (or a file written with `printf '%s'`), not `--from-file`
+on a file that ends in a newline. The guard compares the header exactly against
+`Bearer <METRICS_TOKEN>`, while Prometheus trims whitespace from its credentials
+file. If the token in the Secret ends with `\n`, every scrape still returns 401.
+
 The cluster Prometheus must present the same token. The chart does not deploy
 Prometheus or a ServiceMonitor, so configure whichever scraper you run.
 
