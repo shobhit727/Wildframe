@@ -50,11 +50,14 @@ configuration, and nothing here has been applied to any live account.
   founder decided "AWS, multiple regions"; the specific region names are a
   planning judgment, not a founder decision.
 - **Privacy law:** GDPR and India's DPDP Act apply. A CDN is a data processor and
-  must appear on the subprocessor register with a DPA. IP addresses are personal
-  data under both regimes.
-- **Funding:** family-funded; cost discipline (budget alarms, right-sizing,
+  must appear on the subprocessor register with a DPA. The corpus treats IP
+  addresses as personal data under both regimes (to be confirmed by counsel).
+- **Cost:** self-funded; cost discipline (budget alarms, right-sizing,
   managed services over headcount) is an explicit expectation. The corpus
   recommends *buying* the CDN rather than building edge delivery.
+
+These constraints come from a private planning corpus that is not in this
+repository; they are summarised, not quoted.
 
 ### 1.3 Open issues this decision touches
 
@@ -108,19 +111,20 @@ Adopting Cloudflare does not automatically replace what is in
   **UNVERIFIED** (absent from the docs searched), which matters because
   `docs/DRM_SCOPE.md` targets multi-DRM.
 - AWS bills nothing for origin fetches from AWS origins (S3, ALB, including
-  private VPC origins) to CloudFront [S47], whereas traffic from AWS to any
-  other CDN pays AWS regional data-transfer-out rates [S47]. AWS is not listed
-  as a Cloudflare Bandwidth Alliance partner [S63]. (Per-GB S3/EC2 internet
-  egress rates for the three regions are **UNVERIFIED** — the pricing pages
-  render them dynamically.)
+  private VPC origins) to CloudFront [S47]. Traffic from AWS to a non-AWS CDN
+  such as Cloudflare is ordinary internet data transfer out [INFERENCE — the
+  free-origin-fetch statement covers CloudFront only; per-GB S3/EC2 internet
+  egress rates for the three regions are **UNVERIFIED** because the pricing
+  pages render them dynamically]. AWS is not listed as a Cloudflare Bandwidth
+  Alliance partner [S63].
 
 ### Options
 
 | | Option | What changes | Assessment |
 |---|---|---|---|
-| A | **Cloudflare-only edge** — drop CloudFront + WAFv2 | Video served through Cloudflare; S3 (or R2) as origin | Requires **Cloudflare Enterprise** (Stream Delivery) or migrating video to **Stream** (no documented DRM) [S10][S11]. S3→Cloudflare egress billed at AWS internet rates. R2 avoids egress fees [S12] but offers jurisdictions only for `eu`, `us`, `fedramp` — no India [S13] — and does not implement bucket policies, versioning or SSE-KMS [S14]. **Not recommended** unless the owner buys Enterprise. |
-| B | **Split edge (recommended)** — Cloudflare for app/API/admin; keep CloudFront + WAFv2 for video only | Video hostname (e.g. a media subdomain) stays a DNS-only record pointing at CloudFront; Cloudflare proxies the rest | Video keeps free origin fetch [S47], India edge locations [S46], native signed cookies for HLS [S52] and the existing S3 OAC lock-down. Interactive traffic gets Cloudflare WAF, Access and DNS. Cost: two edge vendors, two WAF rule sets, two subprocessor entries. |
-| C | **CloudFront-only edge** — no Cloudflare in the request path | Add the app/API ALB to CloudFront, ideally as a **VPC origin** so the ALB stays in private subnets [S51]; Cloudflare at most as registrar/DNS | Single vendor and IaC provider; AWS-managed origin prefix list exists for CloudFront only [S50]. Flat-rate plans bundle WAF, DDoS protection and Route 53 DNS; VPC origins require the Business tier or above on flat-rate pricing [S48]. Loses Cloudflare Access for admin (an AWS-native substitute is not researched here). **Recommended fallback** if the owner wants one edge vendor. |
+| A | **Cloudflare-only edge** — drop CloudFront + WAFv2 | Video served through Cloudflare; S3 (or R2) as origin | Below Enterprise, the terms require a Cloudflare paid service for video and name "the Developer Platform, Images, and Stream" [S10]. Paths: **Stream** (no documented DRM); **Enterprise** Stream Delivery [S11]; or a **Developer Platform** path such as R2 + Workers — whether that satisfies the terms for self-packaged HLS/DRM is **UNVERIFIED** and needs written confirmation from Cloudflare. S3→Cloudflare egress is internet transfer out (§3, inference). R2 avoids egress fees [S12] but offers jurisdictions only for `eu`, `us`, `fedramp` — no India [S13] — and does not implement bucket policies, versioning or SSE-KMS [S14]. **Not recommended** for launch without that confirmation or an Enterprise quote. |
+| B | **Split edge (recommended)** — Cloudflare for app/API/admin; keep CloudFront + WAFv2 for video only | Video on a dedicated hostname (e.g. a media subdomain) as a DNS-only record pointing at CloudFront; Cloudflare proxies the rest. Today's distribution has no `aliases` and uses the default certificate unless `cloudfront_acm_certificate_arn` is set, so B needs a follow-up Terraform change: an alias plus a validated `us-east-1` ACM certificate | Video keeps free origin fetch [S47], India edge locations [S46], native signed cookies for HLS [S52] and the existing S3 OAC lock-down. Interactive traffic gets Cloudflare WAF, Access and DNS. Cost: two edge vendors, two WAF rule sets, two subprocessor entries. |
+| C | **CloudFront-only edge** — no Cloudflare in the request path | Put the app/API load balancer behind CloudFront, ideally as a **VPC origin** so it stays in private subnets [S51]. Terraform has no ALB today; one would come from the AWS Load Balancer Controller (follow-up, §5.5). Cloudflare at most as registrar/DNS | Single vendor and IaC provider; AWS-managed origin prefix list exists for CloudFront only [S50]. Flat-rate plans bundle WAF, DDoS protection and Route 53 DNS; VPC origins require the Business tier or above on flat-rate pricing [S48]. Loses Cloudflare Access for admin (an AWS-native substitute is not researched here). **Recommended fallback** if the owner wants one edge vendor. |
 | D | **Stacked** — Cloudflare in front of CloudFront | Every request traverses both CDNs | Video still flows through the Cloudflare CDN (same terms as A) and pays both vendors. **Rejected.** |
 
 **Recommendation:** Option **B** for launch. It keeps the video path that
@@ -146,7 +150,7 @@ only together with a Cloudflare Enterprise quote and a DRM path.
 
 ### 4.2 Cloudflare Containers as compute — rejected
 
-- GA since 2026-04-13 [S62], requires the Workers Paid plan and a Worker /
+- GA since 2026-04-13 [S62]; requires the Workers Paid plan and a Worker /
   Durable Object to drive the lifecycle; no built-in autoscaling; disk is
   ephemeral [S62].
 - Placement offers an `APAC` region but jurisdictions only for `eu`, `us`,
@@ -184,11 +188,11 @@ list prices on 2026-11-17:
 |---|---|---|
 | EKS control plane | $0.10 per cluster-hour (standard support); $0.60 (extended support) | [S45] |
 | AWS WAF | $5 per web ACL-month, $1 per rule or managed rule group-month, $0.60 per million requests | [S49] |
-| CloudFront pay-as-you-go, India | First 1 TB free, then $0.109/GB for the next 9 TB; origin-bound transfer $0.160/GB | [S47] |
+| CloudFront pay-as-you-go, India | $0.109/GB for the next 9 TB after the account-wide 1 TB/month free tier; origin-bound transfer $0.160/GB | [S47] |
 | CloudFront pay-as-you-go, US/Europe | $0.085/GB for the next 9 TB | [S47] |
-| CloudFront flat-rate | $0 / $15 / $200 / $1,000 per distribution-month (Free/Pro/Business/Premium); allowances are soft limits | [S48] |
+| CloudFront flat-rate | $0 / $15 / $200 / $1,000 per distribution-month (Free/Pro/Business/Premium); no overage charges, but delivery may be adjusted after sustained usage above the allowance | [S48] |
 | Cloudflare R2 | $0.015/GB-month standard storage; no egress charges | [S12] |
-| Cloudflare Stream | $5 per 1,000 minutes stored; $1 per 1,000 minutes delivered | [S17] |
+| Cloudflare Stream | $5 per month per 1,000 minutes stored; $1 per 1,000 minutes delivered | [S17] |
 | AWS Shield Advanced | From $3,000/month, 1-year commitment | [S53] |
 
 Observations:
@@ -223,10 +227,11 @@ Observations:
   monitored by us.
 - **Cloudflare plan limits** shape the WAF: the Cloudflare Managed Ruleset and
   OWASP Core Ruleset need Pro or higher; rate-limiting rules number 1/2/5/100 on
-  Free/Pro/Business/Enterprise, IP-based only on Free/Pro [S7][S8].
+  Free/Pro/Business/Enterprise (Enterprise depends on contract), IP-based only on Free/Pro [S7][S8].
 - **Admin surface:** Access is deny-by-default and integrates any SAML/OIDC IdP
-  with MFA [S15]; the free tier covers up to 50 users per Cloudflare's SASE
-  reference architecture [S16] (the plans page did not render this limit).
+  with MFA [S15]. Cloudflare's SASE reference architecture says many Cloudflare
+  One capabilities are free for up to 50 users [S16]; the exact Access seat
+  limit on the free plan is **UNVERIFIED** (the plans page did not render it).
 - **Account hygiene (#1109):** enforce member 2FA [S20] before routing
   production traffic through the account.
 - The existing CloudFront WAFv2 rules remain the only WAF for video under
@@ -256,14 +261,17 @@ Observations:
   dynamic and GitHub advises against IP allow-listing [S34]; GitHub's private
   networking for hosted runners is documented for Azure VNETs only and needs
   larger runners [S35]. Viable paths are self-hosted runners inside the VPC
-  (e.g. Actions Runner Controller [S36]) or a controlled tunnel. Kubernetes
+  (e.g. Actions Runner Controller [S36]) or a controlled tunnel; GitHub also
+  documents other private-network patterns (e.g. WireGuard, an OIDC-gated API
+  gateway) that were not evaluated here [UNVERIFIED]. Kubernetes
   access for the deploy role should use EKS access entries (the `aws-auth`
   ConfigMap is deprecated) [S37], with the OIDC trust policy scoped on the
   `sub` claim to the deployment environment [S38]. The choice belongs to #1110.
 - **Ingress controller.** The chart defaults to `className: nginx`, but the
   ingress-nginx project was retired in March 2026 and its README tells new users
   not to deploy it [S40]. The AWS Load Balancer Controller (IngressClass `alb`,
-  `target-type: ip`, ACM via annotation) is the AWS-supported path [S39]. This
+  `target-type: ip`, ACM certificate via the `certificate-arn` annotation) is
+  the AWS-supported path [S39]. This
   is a follow-up chart change, not part of this ADR.
 - **Two control planes** (AWS + Cloudflare) under Option B: two consoles, two
   WAF policies, two sets of credentials. Cloudflare API tokens can be scoped
@@ -286,11 +294,14 @@ region(s) is an owner decision that this ADR depends on but does not make.
 
 ### 6.3 API certificate
 
-`aws_acm_certificate.api` is never validated by Terraform. Under Full (strict)
-the origin needs a valid certificate: either complete ACM DNS validation in
-whichever DNS provider is authoritative (doing this with Cloudflare DNS as the
-authority is **UNVERIFIED** here — not researched) or use a Cloudflare Origin
-CA certificate on the origin [S3][S4].
+`aws_acm_certificate.api` (for `api.<domain>`) is never validated by Terraform
+and nothing attaches it to a load balancer; meanwhile the production ingress
+host is `app.wildframe.com` (`infrastructure/helm/values-production.yaml`).
+Hostnames and certificates must be reconciled first. Under Full (strict) the
+origin then needs a valid certificate for the hostname Cloudflare connects to:
+either a validated ACM certificate attached to the load balancer (validating
+with Cloudflare DNS as the authority is **UNVERIFIED** here — not researched)
+or a Cloudflare Origin CA certificate on the origin [S3][S4].
 
 ### 6.4 EKS version (#1111)
 
@@ -311,6 +322,7 @@ allow-list (1.30–1.32) therefore cannot produce a standard-support cluster.
 
 | Decision | Approver | Status |
 |---|---|---|
+| EKS (vs ECS on Fargate) for compute, and Cloudflare in front of app/API/admin hostnames | Owner (founder) | **Pending** |
 | Video edge option A / B / C | Owner (founder) | **Pending** |
 | Cloudflare plan tier and edge spend ceiling | Owner (founder) | **Pending — NOT PROVIDED** |
 | Launch region(s) and residency routing | Owner (founder), with privacy counsel | **Pending** |
@@ -318,7 +330,7 @@ allow-list (1.30–1.32) therefore cannot produce a standard-support cluster.
 | Origin lock-down and Access design | Security reviewer | **Pending** |
 | CI path to the private EKS API | Platform/infra owner (#1110) | **Pending** |
 
-This ADR moves to **Accepted** only when the first three rows are approved.
+This ADR moves to **Accepted** only when the first four rows are approved.
 
 ## 9. Reconsideration triggers
 
@@ -373,7 +385,7 @@ All retrieved 2026-11-17.
 - [S21] HSTS — <https://developers.cloudflare.com/ssl/edge-certificates/additional-options/http-strict-transport-security/>
 - [S60] Python Workers and Workers limits — <https://developers.cloudflare.com/workers/languages/python/>, <https://developers.cloudflare.com/workers/languages/python/stdlib/>, <https://developers.cloudflare.com/workers/platform/limits/>
 - [S61] TCP sockets and betas — <https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/>, <https://developers.cloudflare.com/workers/platform/betas/>
-- [S62] Containers GA, placement, FAQ — <https://developers.cloudflare.com/changelog/post/2026-04-13-containers-sandbox-ga/>, <https://developers.cloudflare.com/containers/concepts/placement/>, <https://developers.cloudflare.com/containers/faq/>
+- [S62] Containers GA, overview, placement, FAQ — <https://developers.cloudflare.com/changelog/post/2026-04-13-containers-sandbox-ga/>, <https://developers.cloudflare.com/containers/>, <https://developers.cloudflare.com/containers/concepts/placement/>, <https://developers.cloudflare.com/containers/faq/>
 - [S63] Bandwidth Alliance — <https://www.cloudflare.com/bandwidth-alliance/>
 - [S64] Durable Objects data location — <https://developers.cloudflare.com/durable-objects/reference/data-location/>
 - [S22] Create API token — <https://developers.cloudflare.com/fundamentals/api/get-started/create-token/>
@@ -388,7 +400,7 @@ All retrieved 2026-11-17.
 - [S36] Actions Runner Controller — <https://docs.github.com/en/actions/concepts/runners/actions-runner-controller>
 - [S37] EKS access entries; `aws-auth` deprecation — <https://docs.aws.amazon.com/eks/latest/userguide/access-entries.html>, <https://docs.aws.amazon.com/eks/latest/userguide/auth-configmap.html>
 - [S38] GitHub OIDC in AWS — <https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws>
-- [S39] AWS Load Balancer Controller; ALB ingress — <https://docs.aws.amazon.com/eks/latest/userguide/aws-load-balancer-controller.html>, <https://docs.aws.amazon.com/eks/latest/userguide/alb-ingress.html>
+- [S39] AWS Load Balancer Controller; ALB ingress; controller annotations — <https://docs.aws.amazon.com/eks/latest/userguide/aws-load-balancer-controller.html>, <https://docs.aws.amazon.com/eks/latest/userguide/alb-ingress.html>, <https://kubernetes-sigs.github.io/aws-load-balancer-controller/latest/guide/ingress/annotations/>
 - [S40] Ingress NGINX retirement — <https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/>, <https://github.com/kubernetes/ingress-nginx>
 - [S41] External Secrets Operator, AWS access — <https://external-secrets.io/latest/provider/aws-access/>
 - [S42] AWS Secrets and Configuration Provider on EKS — <https://docs.aws.amazon.com/secretsmanager/latest/userguide/ascp-eks-installation.html>

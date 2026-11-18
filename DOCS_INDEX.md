@@ -52,7 +52,7 @@ history and are not release declarations (see `STATUS.md`).
 | [`docs/INTERNAL_AUTHZ.md`](docs/INTERNAL_AUTHZ.md) | Internal service-to-service authorization reference. |
 | [`docs/TIMEOUT_ORDERING.md`](docs/TIMEOUT_ORDERING.md) | Timeout propagation and ordering notes. **Partly aspirational**: it describes a reverse-proxy `proxy_read_timeout` and a `WithTimeout` wrapper that do not exist in the source. |
 | [`docs/adr/README.md`](docs/adr/README.md) | Architecture decision record index and numbering convention. |
-| [`docs/adr/0001-aws-eks-with-cloudflare-edge.md`](docs/adr/0001-aws-eks-with-cloudflare-edge.md) | **Proposed** ADR: keep AWS EKS for compute, put Cloudflare in front of app/API/admin hostnames; the video edge (keep CloudFront+WAFv2 or not) is left to the owner with options A–D. |
+| [`docs/adr/0001-aws-eks-with-cloudflare-edge.md`](docs/adr/0001-aws-eks-with-cloudflare-edge.md) | **Proposed** ADR: keep AWS EKS for compute, put Cloudflare in front of app/API/admin hostnames; the video edge (keep Terraform's CloudFront+WAFv2 or not) is left to the owner — options A–C (D rejected), B (split edge) recommended. |
 
 ---
 
