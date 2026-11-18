@@ -84,6 +84,7 @@ class TestRouterIsUnmounted:
             "/api/v1/moderation/strikes/{creator_id}",
             "/health",
             "/metrics",
+            "/ready",
         }
 
     def test_the_router_declares_its_prefix_and_verbs(self):
