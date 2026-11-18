@@ -1242,7 +1242,7 @@ exercises it unauthenticated, so gating it today breaks that suite.
 
 Owner decision: who may trigger a reindex?
 
-**Resolved in draft PR #1172 (#1138):** admin-only via `get_admin_identity`, honest 501, job registry and status route removed, allowlist now empty.
+**Still open. Proposed answer in draft PR #1172 (#1138):** admin-only via `get_admin_identity` as the fail-closed default, an honest 501 until a real reindex exists, and the job registry and status route removed (no callers). Approve or widen it when you review the PR.
 
 ### auth-service: three real test gaps found by mutation testing
 
