@@ -119,6 +119,14 @@ class OutboxEvent(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    # Drain claim (#1145): the token of the drain that is publishing this row
+    # and when it claimed it. A claim older than OUTBOX_CLAIM_TTL_SECONDS (a
+    # crashed drain) can be re-claimed. Both stay NULL until the first claim.
+    claimed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     __table_args__ = (Index("idx_outbox_status_created", "status", "created_at"),)
 

@@ -10,9 +10,13 @@ domain logic and unit-testable with stubs.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
+import socket
+import time
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.core.events import Event, EventPublisher, get_event_publisher
 from app.core.settings import settings
@@ -33,6 +37,11 @@ from app.repositories import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _outbox_claim_token() -> str:
+    """A token unique to one drain run: host and pid for debugging, plus a nonce."""
+    return f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex}"
 
 
 class ModerationError(Exception):
@@ -304,27 +313,71 @@ class ModerationService:
         """Publish PENDING outbox rows to the bus; mark them dispatched.
 
         A row whose publish fails stays PENDING and is retried on the next
-        drain (at-least-once; consumers dedupe on the event key). Returns the
-        number of rows processed.
+        drain (at-least-once; consumers dedupe on the event key or the
+        event_id). Returns the number of rows processed.
+
+        No transaction is open while publishing (#1145). The batch is claimed
+        and the claim committed first; each publish then runs outside any
+        transaction, and each row is marked in its own short transaction that
+        only succeeds while this drain still holds the claim. A publish that
+        stalls past ``idle_in_transaction_session_timeout`` therefore has no
+        backend to lose, and the other drain loops skip the claimed rows.
         """
-        rows = await self.flag_repo.pending_events(limit=settings.OUTBOX_BATCH_SIZE)
-        for row in rows:
-            try:
-                await self.publisher.publish(
-                    Event(
-                        topic=row.topic,
-                        key=row.event_key or "",
-                        payload=row.payload,
-                    )
-                )
-            except Exception:  # noqa: BLE001 - keep row pending for retry
-                logger.exception(
-                    "outbox publish failed for event %s (topic=%s); will retry",
-                    row.id,
-                    row.topic,
-                )
-                continue
-            await self.flag_repo.mark_dispatched(row.id)
-        # Persist the dispatch state changes before the next drain cycle.
+        claim = _outbox_claim_token()
+        rows = await self.flag_repo.claim_pending_events(
+            claim,
+            limit=settings.OUTBOX_BATCH_SIZE,
+            claim_ttl=timedelta(seconds=settings.OUTBOX_CLAIM_TTL_SECONDS),
+        )
+        batch = [
+            (
+                row.id,
+                Event(
+                    topic=row.topic,
+                    key=row.event_key or "",
+                    payload=row.payload,
+                    # A stable id per outbox row: a re-publish after a crash
+                    # between publish and mark carries the same event_id, so
+                    # consumers can dedupe it.
+                    event_id=str(row.id),
+                ),
+            )
+            for row in rows
+        ]
         await self.flag_repo.session.commit()
-        return len(rows)
+        # Publish only while the claim is safely ours. Past half the claim TTL
+        # (margin for clock skew between pods and slow commits) another drain
+        # may re-claim the rows, so each publish is bounded by the time left
+        # (send_and_wait has no timeout of its own) and rows still unpublished
+        # when the budget runs out are handed back.
+        deadline = time.monotonic() + settings.OUTBOX_CLAIM_TTL_SECONDS / 2
+        out_of_time = 0
+        for row_id, event in batch:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                out_of_time += 1
+                await self.flag_repo.release_claim(row_id, claim)
+            else:
+                try:
+                    await asyncio.wait_for(self.publisher.publish(event), remaining)
+                except Exception:  # noqa: BLE001 - keep row pending for retry
+                    logger.exception(
+                        "outbox publish failed for event %s (topic=%s); will retry",
+                        row_id,
+                        event.topic,
+                    )
+                    await self.flag_repo.release_claim(row_id, claim)
+                else:
+                    if not await self.flag_repo.mark_dispatched(row_id, claim):
+                        logger.warning(
+                            "outbox event %s was re-claimed by another drain before it "
+                            "was marked dispatched; it may be published twice",
+                            row_id,
+                        )
+            await self.flag_repo.session.commit()
+        if out_of_time:
+            logger.warning(
+                "outbox drain ran out of claim time; released %d unpublished rows",
+                out_of_time,
+            )
+        return len(batch)

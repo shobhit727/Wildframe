@@ -272,13 +272,15 @@ class TestDrainOutboxWorker:
                 self.events = []
                 self.session = _Session(self)
 
-            async def pending_events(self, limit=100):
+            async def claim_pending_events(self, claimed_by, limit, claim_ttl):
                 return list(self.events)
 
-            async def mark_dispatched(self, event_id):
+            async def mark_dispatched(self, event_id, claimed_by):
                 for e in self.events:
                     if e.id == event_id:
                         e.marked = True
+                        return True
+                return False
 
         class _Event:
             def __init__(self, key):
@@ -303,12 +305,13 @@ class TestDrainOutboxWorker:
             assert processed == 2
             assert [e.key for e in publisher.sent] == ["a", "b"]
             assert all(e.marked for e in repo.events)
-            # The commit must be reached through the service's session, and the
+            # The commits must be reached through the service's session, and the
             # rows must be re-read as PENDING rather than assumed: a drain that
             # published without marking dispatched would re-publish on every
             # sweep, and a drain that marked before publishing would lose the
-            # event on a broker outage.
-            assert repo.session.commits == 1
+            # event on a broker outage. One commit makes the claim durable
+            # before any publish (#1145), then one commit per marked row.
+            assert repo.session.commits == 1 + len(repo.events)
             assert [e for e in repo.events if not e.marked] == []
         finally:
             set_event_publisher(None)

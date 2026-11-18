@@ -7,7 +7,7 @@ not lose the event — was untested.
 
 Unlike the rest of this module, these tests run against a **real** in-memory
 SQLite database and the **real** ``UploadChunkRepository``, so the
-``pending_events`` / ``mark_dispatched`` / ``list_by_creator`` /
+``claim_pending_events`` / ``mark_dispatched`` / ``list_by_creator`` /
 ``received_indices`` SQL actually executes rather than being mocked.
 
 Covered: ``services.py:487-506``; ``repositories.py:43-49, 61-63``.
@@ -17,12 +17,14 @@ import datetime
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.events import Event, EventPublisher
 from app.core.storage import set_storage
 from app.models import (
     Base,
+    OutboxEvent,
     OutboxEventStatus,
     UploadChunk,
     UploadSession,
@@ -103,6 +105,16 @@ async def seed_outbox(service: UploadService, topic: str = "content.uploaded", *
     return row
 
 
+async def pending_rows(service: UploadService) -> list[OutboxEvent]:
+    """The PENDING outbox rows, oldest first (a read; it claims nothing)."""
+    result = await service.repo.session.execute(
+        select(OutboxEvent)
+        .where(OutboxEvent.status == OutboxEventStatus.PENDING)
+        .order_by(OutboxEvent.created_at.asc(), OutboxEvent.id.asc())
+    )
+    return list(result.scalars().all())
+
+
 # ---------------------------------------------------------------------------
 # drain_outbox (services.py:487-506).
 # ---------------------------------------------------------------------------
@@ -113,7 +125,7 @@ class TestDrainOutbox:
         publisher = FlakyPublisher()
         service = make_service(db, storage, publisher)
         row = await seed_outbox(service)
-        assert await service.repo.pending_events() != [], "the row must be PENDING"
+        assert await pending_rows(service) != [], "the row must be PENDING"
 
         processed = await service.drain_outbox()
 
@@ -121,7 +133,7 @@ class TestDrainOutbox:
         assert [e.topic for e in publisher.published] == ["content.uploaded"]
         assert publisher.published[0].key == row.event_key
         assert publisher.published[0].payload["session_id"] == row.payload["session_id"]
-        assert await service.repo.pending_events() == [], "the row must be marked dispatched"
+        assert await pending_rows(service) == [], "the row must be marked dispatched"
 
     async def test_the_published_payload_carries_only_verified_metadata(self, db, storage):
         publisher = FlakyPublisher()
@@ -145,7 +157,7 @@ class TestDrainOutbox:
 
         assert first == 1, "the row was processed (and failed), not skipped"
         assert publisher.published == []
-        pending = await service.repo.pending_events()
+        pending = await pending_rows(service)
         assert len(pending) == 1, "a failed publish must leave the row PENDING"
         assert pending[0].status == OutboxEventStatus.PENDING
 
@@ -153,7 +165,7 @@ class TestDrainOutbox:
         second = await service.drain_outbox()
         assert second == 1
         assert [e.topic for e in publisher.published] == ["content.uploaded"]
-        assert await service.repo.pending_events() == []
+        assert await pending_rows(service) == []
 
     async def test_a_failed_row_does_not_block_the_others(self, db, storage):
         """One poisonous event must not stall the queue behind it."""
@@ -177,7 +189,7 @@ class TestDrainOutbox:
 
         assert processed == 2, "both rows were attempted"
         assert [e.topic for e in publisher.published] == ["content.uploaded"]
-        remaining = await service.repo.pending_events()
+        remaining = await pending_rows(service)
         assert [e.topic for e in remaining] == ["poison"], "only the failed row stays pending"
 
     async def test_draining_an_empty_outbox_is_a_zero_no_op(self, db, storage):
@@ -204,10 +216,10 @@ class TestDrainOutbox:
         with patch.object(settings, "OUTBOX_BATCH_SIZE", 2):
             assert await service.drain_outbox() == 2
         assert len(publisher.published) == 2
-        assert len(await service.repo.pending_events()) == 3
+        assert len(await pending_rows(service)) == 3
 
         assert await service.drain_outbox() == 3
-        assert await service.repo.pending_events() == []
+        assert await pending_rows(service) == []
 
     async def test_the_abort_event_is_drained_too(self, db, storage):
         publisher = FlakyPublisher()
