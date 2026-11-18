@@ -37,6 +37,12 @@ postgresql://wildframe:$(POSTGRES_PASSWORD)@{{ .Values.infra.postgresHost }}:{{ 
 {{- if empty (trim (default "" .Values.secrets.searchCursorSecretKey)) }}
 {{- fail "production requires secrets.searchCursorSecretKey set to the key name holding the search cursor secret inside secrets.existingSecret" }}
 {{- end }}
+{{- /* Without METRICS_TOKEN every service's /metrics guard rejects all
+       scrapes with 401 in production, so the cluster would silently have no
+       service metrics. */}}
+{{- if empty (trim (default "" .Values.secrets.metricsTokenKey)) }}
+{{- fail "production requires secrets.metricsTokenKey set to the key name holding the /metrics bearer token inside secrets.existingSecret" }}
+{{- end }}
 {{- if empty .Values.secrets.existingSecret }}
 {{- fail "production requires secrets.existingSecret naming the Secret that holds runtime credentials" }}
 {{- end }}

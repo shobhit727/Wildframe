@@ -227,6 +227,7 @@ The deployment contract is a Kubernetes Secret named `wildframe-runtime` contain
 JWT_SECRET_KEY
 POSTGRES_PASSWORD
 SEARCH_CURSOR_SECRET
+METRICS_TOKEN
 ```
 
 The deployment workflow must create/update that secret from GitHub Environment secrets before running Helm.
@@ -240,6 +241,7 @@ Do not commit real credentials to `values.yaml`, `values-staging.yaml`, `values-
 | `JWT_SECRET_KEY` | all services | >= 32 chars, not a known-insecure value |
 | `POSTGRES_PASSWORD` | all services | must match the database deployment |
 | `SEARCH_CURSOR_SECRET` | `search-service` only | >= 32 chars, not a known-insecure value |
+| `METRICS_TOKEN` | all services (`/metrics` guard) | high-entropy random value (e.g. `openssl rand -hex 32`); the cluster Prometheus must send the same value |
 
 `SEARCH_CURSOR_SECRET` signs the search pagination cursor. It is deliberately a
 **separate key** from `JWT_SECRET_KEY`: the two have different lifecycles, and
@@ -257,6 +259,18 @@ service's known-insecure list. It satisfies the length check and is still
 rejected — this is why a placeholder that looks strong enough is not safe to
 copy into a real environment.
 
+`METRICS_TOKEN` is the bearer token every service's `/metrics` endpoint
+requires. The chart sets `ENVIRONMENT=production` on every service unless a
+service overrides it. In that mode, a request without
+`Authorization: Bearer <METRICS_TOKEN>` gets a 401, and so does every request
+when the token is unset. The chart injects it from `secrets.existingSecret`
+under the key named by `secrets.metricsTokenKey` (default `METRICS_TOKEN`). A
+production render fails if `secrets.metricsTokenKey` is empty. As with the
+other keys, a Secret that lacks the key stops every pod from starting. Seed it
+before the first deploy (or before upgrading to a chart that injects it), and
+give the cluster Prometheus the same value: see `docs/MONITORING.md`
+("Kubernetes scrape authentication").
+
 ### Rotating runtime secrets
 
 The chart never rotates secrets. Rotation is an out-of-band cluster operation
@@ -272,6 +286,7 @@ kubectl -n wildframe-production create secret generic wildframe-runtime \
   --from-literal=JWT_SECRET_KEY="$WILDFRAME_JWT_SECRET" \
   --from-literal=POSTGRES_PASSWORD="$WILDFRAME_POSTGRES_PASSWORD" \
   --from-literal=SEARCH_CURSOR_SECRET="$NEW_CURSOR_SECRET" \
+  --from-literal=METRICS_TOKEN="$WILDFRAME_METRICS_TOKEN" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # secretKeyRef values are read at container start, so pods must roll to pick
@@ -294,6 +309,10 @@ What breaks while rotating `SEARCH_CURSOR_SECRET`:
 Rotate `JWT_SECRET_KEY` and `POSTGRES_PASSWORD` the same way, but note that
 rotating `JWT_SECRET_KEY` invalidates existing access tokens and forces a
 re-login across all services.
+
+Rotating `METRICS_TOKEN` requires a rollout restart of every service
+Deployment. Update the Prometheus credential at the same time: until both
+sides agree, scrapes return 401 and the targets show as down.
 
 > Provisioning gap: the deployment workflow currently does not create or update
 > `wildframe-runtime`; it only creates the `ghcr-pull` image-pull secret. Until

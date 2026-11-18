@@ -177,6 +177,12 @@ secrets:
   # jwtSecretKey: token signing and cursor integrity rotate independently, and
   # sharing one key means rotating either silently invalidates the other.
   searchCursorSecretKey: SEARCH_CURSOR_SECRET
+  # Bearer token each service's /metrics guard compares Authorization against
+  # (METRICS_TOKEN). Services run with ENVIRONMENT=production unless overridden,
+  # and in that mode an unset token makes every scrape return 401. The scraper
+  # must present the same value: see docs/MONITORING.md ("Kubernetes scrape
+  # authentication").
+  metricsTokenKey: METRICS_TOKEN
   postgresPasswordKey: POSTGRES_PASSWORD
 migration:
   enabled: true
