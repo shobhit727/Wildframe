@@ -254,7 +254,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum(pg_database_connection_limit{datname=~\"$db\"})",
+          "expr": "max(pg_settings_max_connections)",
           "legendFormat": "limit",
           "range": true,
           "refId": "C"
@@ -326,7 +326,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Connection usage against limit",
-      "description": "Used vs allowed per database. A used line converging on its limit is the failure state, not the spike.",
+      "description": "Used per database against the server-wide max_connections. No database sets its own CONNECTION LIMIT (pg_database_connection_limit is -1 everywhere), so max_connections is the ceiling that actually bites. Total used converging on it is the failure state, not the spike.",
       "datasource": {
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
@@ -388,8 +388,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "pg_database_connection_limit{datname=~\"$db\"}",
-          "legendFormat": "limit {{datname}}",
+          "expr": "max(pg_settings_max_connections)",
+          "legendFormat": "max_connections (server-wide)",
           "range": true,
           "refId": "B"
         }
