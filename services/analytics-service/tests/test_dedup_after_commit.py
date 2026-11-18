@@ -11,8 +11,8 @@ that commit ran after the response had been sent. When it failed:
 These tests drive the real app (real ``get_db``, real routes, real service and
 repositories) against a real PostgreSQL, so the unique-key behaviour and the
 commit ordering are the database's and FastAPI's, not a mock's. Nothing here
-sleeps: the commit failure is injected, and the concurrency test relies on a
-unique index being correct under *every* interleaving rather than on timing.
+sleeps: the commit failure is injected, and the concurrency test holds the
+first commit until Postgres itself reports the second INSERT blocked on it.
 
 A disposable PostgreSQL is required. Point ``TEST_DATABASE_URL`` at one (CI's
 ``backend-test`` job already does); the tables are created in a throwaway
@@ -30,7 +30,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy import event, text
+from sqlalchemy import text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -261,47 +261,55 @@ async def test_dedup_does_not_depend_on_redis(harness: Harness, endpoint: Endpoi
     assert await harness.count(endpoint) == 1
 
 
+async def _blocked_behind(engine: AsyncEngine, pid: int, within: float = 5.0) -> bool:
+    """Whether some backend is (or becomes, within ``within`` s) blocked behind ``pid``.
+
+    A condition wait on Postgres's own lock state, not a timed sleep: it
+    returns as soon as ``pg_blocking_pids`` names ``pid``. The deadline only
+    bounds the case where nothing ever blocks, which is the bug.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + within
+    query = text("SELECT count(*) FROM pg_stat_activity WHERE :pid = ANY(pg_blocking_pids(pid))")
+    async with engine.connect() as conn:
+        while loop.time() < deadline:
+            if (await conn.execute(query, {"pid": pid})).scalar_one():
+                return True
+    return False
+
+
 @ENDPOINTS
 async def test_concurrent_requests_with_one_client_event_id_persist_once(
     harness: Harness, monkeypatch: pytest.MonkeyPatch, endpoint: Endpoint
 ) -> None:
     """Two in-flight deliveries of one event: the unique key admits exactly one.
 
-    A latch holds every commit until both requests have sent their INSERT, so
-    the second INSERT always runs while the first transaction is still open
-    (it waits on that transaction, then conflicts once it commits). Without
-    the latch the two requests could simply run one after the other.
+    The first request to reach its commit holds it until Postgres reports the
+    other request blocked behind that still-open transaction. So the losing
+    INSERT always runs while the winner is uncommitted: it waits on the
+    winner's unique-index entry, then conflicts when the winner commits.
+    Without this latch the two requests could simply run one after the other.
     """
     app.state.redis_client = None
-    inserts_sent = 0
-    both_inserts_sent = asyncio.Event()
-
-    def count_inserts(conn, cursor, statement, parameters, context, executemany) -> None:
-        nonlocal inserts_sent
-        if statement.lstrip().upper().startswith(f"INSERT INTO {endpoint.table.upper()}"):
-            inserts_sent += 1
-            if inserts_sent == 2:
-                both_inserts_sent.set()
-
     real_commit = AsyncSession.commit
+    latch = {"armed": True, "loser_was_blocked": False}
 
     async def latched_commit(self: AsyncSession) -> None:
-        await asyncio.wait_for(both_inserts_sent.wait(), timeout=10)
+        if latch["armed"]:
+            latch["armed"] = False
+            pid = (await self.execute(text("SELECT pg_backend_pid()"))).scalar_one()
+            latch["loser_was_blocked"] = await _blocked_behind(harness.engine, pid)
         await real_commit(self)
 
-    event.listen(harness.engine.sync_engine, "before_cursor_execute", count_inserts)
     monkeypatch.setattr(AsyncSession, "commit", latched_commit)
-    try:
-        responses = await asyncio.gather(
-            harness.post(endpoint, "evt-1"), harness.post(endpoint, "evt-1")
-        )
-    finally:
-        event.remove(harness.engine.sync_engine, "before_cursor_execute", count_inserts)
+    responses = await asyncio.gather(
+        harness.post(endpoint, "evt-1"), harness.post(endpoint, "evt-1")
+    )
 
-    assert inserts_sent == 2
     assert [r.status_code for r in responses] == [200, 200]
     assert sorted(r.json()["status"] for r in responses) == sorted(["duplicate", endpoint.recorded])
     assert await harness.count(endpoint) == 1
+    assert latch["loser_was_blocked"], "the second INSERT never waited on the first transaction"
 
 
 @ENDPOINTS

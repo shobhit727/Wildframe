@@ -559,6 +559,12 @@ class TestEventDeduplication:
         with pytest.raises(ValueError, match="client_event_id must be"):
             await service.log_event(uid, "e1", client_event_id="x" * 201)
 
+    @pytest.mark.asyncio
+    async def test_dedup_rejects_blank_client_event_id(self, service):
+        with pytest.raises(ValueError, match="client_event_id must not be blank"):
+            await service.log_event(uuid4(), "e1", client_event_id="   ")
+        assert service.event_repo.events == []
+
 
 class TestAggregationIsolation:
     """Verify repository queries cannot mix users/creators/content."""

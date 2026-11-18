@@ -75,11 +75,17 @@ def client_event_key(owner_id: UUID, client_event_id: str | None) -> str | None:
     The key is scoped to the owner, so one user's id never suppresses another
     user's event. It is a digest because the client-supplied text is arbitrary
     and only ever compared for equality. ``None`` (no id) is never deduplicated.
+
+    The dedup window is the row's lifetime, not the old key's 24 hours: an id
+    names one event (a UUID, say), and a client that reuses it for a different
+    event gets "duplicate" and nothing is stored.
     """
     if not client_event_id:
         return None
     client_event_id = client_event_id.strip()
-    if not client_event_id or len(client_event_id) > MAX_CLIENT_EVENT_ID_LENGTH:
+    if not client_event_id:
+        raise ValueError("client_event_id must not be blank")
+    if len(client_event_id) > MAX_CLIENT_EVENT_ID_LENGTH:
         raise ValueError(f"client_event_id must be ≤ {MAX_CLIENT_EVENT_ID_LENGTH} characters")
     return hashlib.sha256(f"{owner_id}:{client_event_id}".encode()).hexdigest()
 
