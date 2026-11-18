@@ -29,7 +29,8 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 DASHBOARDS = REPO / "infrastructure" / "grafana" / "provisioning" / "dashboards"
 
-_COMPARISON = re.compile(r"(==|!=|>=|<=|>|<)(?!\s*bool\b)")
+# (?!=) stops `>= bool` backtracking to a bare `>` that the bool lookahead then misses.
+_COMPARISON = re.compile(r"(==|!=|>=|<=|>|<)(?!=)(?!\s*bool\b)")
 _SUM_OPEN = re.compile(r"\bsum\s*(?:(?:by|without)\s*\([^)]*\)\s*)?\(")
 _BY_SERVICE = re.compile(r"\bby\s*\([^)]*\bservice\b[^)]*\)")
 _RUNTIME_METRIC = re.compile(r"\b(?:process_|python_gc_)\w+")
@@ -96,6 +97,9 @@ def test_scanner_reaches_panels_and_explore_links() -> None:
         ("sum by (job) (up < 1)", True),
         ('sum(up{job="wildframe-services"} == bool 0)', False),
         ('count(up{job="wildframe-services"} == 0) or vector(0)', False),
+        ("sum(up >= bool 1)", False),
+        ("sum(up <= bool 0)", False),
+        ("sum(up >= 1)", True),
         ('sum(rate(http_requests_total{status_code=~"5.."}[5m]))', False),
         ('up{job="wildframe-services"} == 0', False),
     ],
