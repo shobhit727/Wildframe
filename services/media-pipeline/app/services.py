@@ -177,6 +177,14 @@ class LeaseAcquisitionFailed(PipelineError):
     """Raised when a worker cannot acquire a lease on the job."""
 
 
+class LeaseLost(PipelineError):
+    """Raised when a worker finds its lease expired-and-taken or cleared.
+
+    The worker abandons the run without writing anything, so it cannot
+    overwrite the state of the worker that now owns the job (#1141).
+    """
+
+
 class IdempotencyConflict(PipelineError):
     """Raised when an idempotency key conflicts with an existing job."""
 
@@ -316,7 +324,12 @@ class MediaPipelineService:
                 )
 
     async def _acquire_lease(self, job: PipelineJob) -> bool:
-        """Lock the job for this transaction before examining its lease."""
+        """Claim the job and commit the claim in its own short transaction.
+
+        The row lock only guards the read-check-write of the lease. The
+        *committed* ``leased_by``/``leased_at`` is what keeps other workers off
+        the job while its stages run outside any transaction (#1141).
+        """
         locked = await self.job_repo.lock(job.id)
         if locked is None:
             return False
@@ -332,17 +345,34 @@ class MediaPipelineService:
         locked.leased_by = self.worker_id
         locked.leased_at = now
         await self.job_repo.save(locked)
+        await self.job_repo.session.commit()
         return True
 
+    async def _fence_lease(self, job: PipelineJob) -> None:
+        """Re-lock the job and prove this worker still owns its lease.
+
+        Must open every transaction that follows slow non-SQL work. The row
+        lock then holds until that transaction commits, so no other worker can
+        claim the job between this check and our writes.
+        """
+        if await self.job_repo.lock_owned(job.id, self.worker_id) is None:
+            raise LeaseLost(
+                f"worker {self.worker_id} lost its lease on job {job.id}; "
+                "abandoning the run without writing"
+            )
+
     async def _release_lease(self, job: PipelineJob) -> None:
-        """Release our lease on the job."""
-        if job.leased_by == self.worker_id:
-            job.leased_by = None
-            job.leased_at = None
-            await self.job_repo.save(job)
+        """Release our lease on the job, only if we still hold it."""
+        if job.leased_by != self.worker_id:
+            return
+        if await self.job_repo.lock_owned(job.id, self.worker_id) is None:
+            return
+        job.leased_by = None
+        job.leased_at = None
+        await self.job_repo.save(job)
 
     async def _heartbeat_lease(self, job: PipelineJob) -> None:
-        """Refresh the lease timestamp."""
+        """Refresh the lease timestamp (callers have already fenced)."""
         if job.leased_by == self.worker_id:
             job.leased_at = datetime.now(UTC)
             await self.job_repo.save(job)
@@ -579,6 +609,8 @@ class MediaPipelineService:
         ctx = getattr(job, "context", None)
         if not ctx:
             await self._release_lease(job)
+            # The claim was committed in _acquire_lease, so its release must be too.
+            await self.job_repo.session.commit()
             raise PipelineError(f"pipeline job {job_id} has no context")
         ctx = _rehydrate_context(job, dict(ctx), self._ports)
 
@@ -638,6 +670,10 @@ class MediaPipelineService:
                     )
                     total_retry_time += stage_retry_time
                     ctx["_total_retry_time_seconds"] = total_retry_time
+                except LeaseLost:
+                    # Another worker owns the job (and its work dir) now: write
+                    # nothing, delete nothing, and let the caller see the loss.
+                    raise
                 except PipelineNonRetryable as exc:
                     # Immediate, non-retryable failure (e.g. virus). Fail the job.
                     await self._record_stage(
@@ -789,18 +825,43 @@ class MediaPipelineService:
 
         while attempt < self.max_attempts:
             attempt += 1
+            # Every transaction that follows slow, non-SQL work (a stage run or
+            # a backoff sleep) starts by re-locking the job and proving we still
+            # own the lease (#1141).
+            await self._fence_lease(job)
             job.retries = attempt  # type: ignore[assignment]
             await self.job_repo.save(job)
 
             # Heartbeat lease before each attempt.
             await self._heartbeat_lease(job)
 
+            # End the transaction BEFORE the stage runs. A stage (ffmpeg) issues
+            # no SQL for as long as it runs; an open transaction here is killed
+            # by idle_in_transaction_session_timeout, taking the row lock and an
+            # uncommitted lease with it (#1141). The committed ``leased_by`` /
+            # ``leased_at`` keeps other workers off the job for
+            # PIPELINE_JOB_LEASE_SECONDS; a longer stage can be taken over, and
+            # the fence below then stops this worker from writing.
+            await self.job_repo.session.commit()
+
             start = time.monotonic()
+            failure: Exception | None = None
             try:
                 async with asyncio.timeout(settings.PIPELINE_STAGE_TIMEOUT_SECONDS):
                     ctx = await stage.run(ctx)
                 self._check_disk_quota(job)
-                duration_ms = int((time.monotonic() - start) * 1000)
+            except Exception as exc:  # noqa: BLE001 — surface via stage log
+                failure = exc
+            duration_ms = int((time.monotonic() - start) * 1000)
+
+            # Record the outcome in a new transaction that opens with the lease
+            # fence, so a worker whose lease expired or was taken never
+            # overwrites the new owner's state.
+            await self._fence_lease(job)
+            if isinstance(failure, PipelineNonRetryable):
+                raise failure
+
+            if failure is None:
                 await self._record_stage(
                     job,
                     stage.name,
@@ -809,43 +870,43 @@ class MediaPipelineService:
                     f"attempt {attempt} ok",
                 )
                 return ctx, stage_retry_time
-            except PipelineNonRetryable:
-                raise
-            except Exception as exc:  # noqa: BLE001 — surface via stage log
-                last_error = exc
-                duration_ms = int((time.monotonic() - start) * 1000)
-                await self._record_stage(
-                    job,
-                    stage.name,
-                    PipelineStageStatus.FAILED,
-                    duration_ms,
-                    f"attempt {attempt} failed: {exc}",
-                )
-                logger.warning(
-                    "stage %s attempt %d/%d failed for job %s: %s",
-                    stage.name,
-                    attempt,
-                    self.max_attempts,
-                    job.id,
-                    exc,
-                )
-                stage_retry_time += time.monotonic() - start
 
-                # Check total retry time cap.
+            last_error = failure
+            await self._record_stage(
+                job,
+                stage.name,
+                PipelineStageStatus.FAILED,
+                duration_ms,
+                f"attempt {attempt} failed: {failure}",
+            )
+            logger.warning(
+                "stage %s attempt %d/%d failed for job %s: %s",
+                stage.name,
+                attempt,
+                self.max_attempts,
+                job.id,
+                failure,
+            )
+            stage_retry_time += time.monotonic() - start
+
+            # Check total retry time cap.
+            if total_retry_time_so_far + stage_retry_time >= max_total_retry:
+                raise TotalRetryTimeExceeded(
+                    f"job {job.id} total retry time would exceed {max_total_retry}s"
+                )
+
+            if attempt < self.max_attempts:
+                delay = min(self.backoff_base * (2 ** (attempt - 1)), self.backoff_cap)
+                stage_retry_time += delay
+                # Check total retry time cap including the backoff delay.
                 if total_retry_time_so_far + stage_retry_time >= max_total_retry:
                     raise TotalRetryTimeExceeded(
                         f"job {job.id} total retry time would exceed {max_total_retry}s"
                     )
-
-                if attempt < self.max_attempts:
-                    delay = min(self.backoff_base * (2 ** (attempt - 1)), self.backoff_cap)
-                    stage_retry_time += delay
-                    # Check total retry time cap including the backoff delay.
-                    if total_retry_time_so_far + stage_retry_time >= max_total_retry:
-                        raise TotalRetryTimeExceeded(
-                            f"job {job.id} total retry time would exceed {max_total_retry}s"
-                        )
-                    await asyncio.sleep(delay)
+                # Persist the failed attempt; the backoff sleep must not run
+                # inside an open transaction either.
+                await self.job_repo.session.commit()
+                await asyncio.sleep(delay)
 
         # Retries exhausted.
         # Record circuit breaker failure.

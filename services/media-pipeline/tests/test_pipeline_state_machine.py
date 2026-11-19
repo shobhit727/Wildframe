@@ -78,6 +78,11 @@ class FakeJobRepo:
         """Mirror PipelineJobRepository.lock: fetch the job for update."""
         return self.jobs.get(job_id)
 
+    async def lock_owned(self, job_id: UUID, owner: str):
+        """Mirror PipelineJobRepository.lock_owned: the job iff ``owner`` leases it."""
+        job = self.jobs.get(job_id)
+        return job if job is not None and job.leased_by == owner else None
+
     async def get_by_upload_session(self, upload_session_id: UUID):
         for job in self.jobs.values():
             if job.upload_session_id == upload_session_id:
