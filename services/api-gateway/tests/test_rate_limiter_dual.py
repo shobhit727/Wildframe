@@ -29,8 +29,21 @@ class FakeRedis:
         self.expires[key] = window
         return True
 
+    async def ttl(self, key):
+        # -1 mirrors Redis: key exists but has no TTL.
+        return self.expires.get(key, -1) if key in self.counts else -2
+
     async def eval(self, script, numkeys, key, *args):
         assert numkeys == 1
+        if "INCR" in script:
+            # Atomic fixed-window increment (#1116): mirrors the Lua
+            # INCR + EXPIRE-on-missing-TTL semantics, including the
+            # TTL-repair branch routed through expire() so observers see it.
+            self.counts[key] = self.counts.get(key, 0) + 1
+            ttl = await self.ttl(key)
+            if ttl < 0:
+                await self.expire(key, int(args[0]))
+            return self.counts[key]
         leases = self.leases.setdefault(key, {})
         if "ZREMRANGEBYSCORE" in script:
             lease_id, now, expiry, limit = args
@@ -471,6 +484,8 @@ class ScriptedRedis:
 
     async def eval(self, script, numkeys, key, *args):
         self.touched.append(key)
+        if "INCR" in script:
+            return self.values.get(key, 1)
         leases = self.leases.setdefault(key, {})
         if "ZREMRANGEBYSCORE" in script:
             lease_id, now, expiry, limit = args
@@ -773,3 +788,45 @@ class TestLeaseTtlIsNamedForWhatItIs:
         from app.core.settings import settings
 
         assert settings.RATE_LIMIT_CONCURRENCY_WINDOW == 5
+
+
+# ----------------------------------------------------------------------
+# #1116 — a TTL-less key (the crash artifact) must not 429 forever
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_preexisting_ttlless_key_is_repaired_not_permanent():
+    """The crash artifact: INCR landed, EXPIRE never did, leaving a counter
+    with no TTL. The old pair left it that way — the identity was 429ed until
+    someone deleted the key. The atomic script must set the TTL the moment it
+    sees TTL < 0, so the window recovers on the next request."""
+    from app.middleware import RateLimiter
+
+    class CrashArtifactRedis(FakeRedis):
+        """FakeRedis whose keys can exist with no TTL, like post-crash Redis."""
+
+        def __init__(self):
+            super().__init__()
+            self.expire_calls = []
+
+        async def ttl(self, key):
+            # -1 = no TTL (the crash artifact); 0+ = healthy window key.
+            return -1 if key not in self.expires else self.expires[key]
+
+        async def expire(self, key, window):
+            self.expire_calls.append((key, window))
+            return await super().expire(key, window)
+
+    redis = CrashArtifactRedis()
+    # Simulate the crash: a counter exists (INCR already ran once) with no TTL.
+    redis.counts["rate_limit:ip:9.9.9.9:search"] = 1
+
+    limiter = RateLimiter(redis)
+    limiter.limits["search"] = 2
+    limiter.burst_limits["search"] = 100
+    limiter.concurrency_limits["search"] = 100
+
+    assert await limiter.check_rate_limit("search", "", ip="9.9.9.9") is True
+    # The repair happened: EXPIRE was issued for the TTL-less key.
+    assert ("rate_limit:ip:9.9.9.9:search", 60) in redis.expire_calls
