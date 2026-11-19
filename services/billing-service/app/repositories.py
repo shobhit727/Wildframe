@@ -398,6 +398,28 @@ class MilestoneRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_for_update(self, milestone_id: UUID) -> Milestone | None:
+        """Load a milestone under a row lock, for state-changing paths (#1142).
+
+        Billing runs READ COMMITTED, so a plain ``get`` followed by a status
+        write lets a concurrent kill and release both pass their state checks.
+        The milestone row is the serialisation point for its tranches: every
+        path that moves a milestone or tranche status takes this lock first,
+        then reads the tranches with ``get_tranches_for_update``.
+
+        ``populate_existing`` is required: a row already in the session's
+        identity map would otherwise be returned stale even though the lock
+        was acquired, and a status check against it proves nothing.
+        """
+        stmt = (
+            select(Milestone)
+            .where(Milestone.id == milestone_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def create(
         self, creator_id: UUID, project_title: str, total_commitment: Decimal
     ) -> Milestone:
@@ -441,6 +463,24 @@ class MilestoneRepository:
             select(MilestoneTranche)
             .where(MilestoneTranche.milestone_id == milestone_id)
             .order_by(MilestoneTranche.tranche_number)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_tranches_for_update(self, milestone_id: UUID) -> list[MilestoneTranche]:
+        """Lock and refresh a milestone's tranches (#1142).
+
+        Call only after ``get_for_update`` holds the parent row: the parent
+        lock is what serialises writers, and always taking it before the
+        tranche rows (in ``tranche_number`` order) keeps the lock order
+        identical on every path, so two admins cannot deadlock.
+        """
+        stmt = (
+            select(MilestoneTranche)
+            .where(MilestoneTranche.milestone_id == milestone_id)
+            .order_by(MilestoneTranche.tranche_number)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

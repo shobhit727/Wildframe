@@ -178,22 +178,22 @@ class TestMilestone:
         return {"caller_id": uuid4(), "caller_is_admin": True}
 
     async def test_release_tranche_missing_milestone(self, service):
-        service.milestone_repo.get.return_value = None
+        service.milestone_repo.get_for_update.return_value = None
 
         with pytest.raises(BillingError, match="not found"):
             await service.release_tranche(uuid4(), 1, **self._as_admin())
 
     async def test_release_tranche_killed_milestone(self, service):
         milestone = MagicMock(status=MilestoneStatus.KILLED)
-        service.milestone_repo.get.return_value = milestone
+        service.milestone_repo.get_for_update.return_value = milestone
 
         with pytest.raises(MilestoneKillError):
             await service.release_tranche(uuid4(), 1, **self._as_admin())
 
     async def test_release_tranche_missing_tranche(self, service):
         milestone = MagicMock(status=MilestoneStatus.PENDING)
-        service.milestone_repo.get.return_value = milestone
-        service.milestone_repo.get_tranches.return_value = [
+        service.milestone_repo.get_for_update.return_value = milestone
+        service.milestone_repo.get_tranches_for_update.return_value = [
             MagicMock(tranche_number=1, status=TrancheStatus.LOCKED)
         ]
 
@@ -202,8 +202,8 @@ class TestMilestone:
 
     async def test_release_tranche_not_locked(self, service):
         milestone = MagicMock(status=MilestoneStatus.PENDING)
-        service.milestone_repo.get.return_value = milestone
-        service.milestone_repo.get_tranches.return_value = [
+        service.milestone_repo.get_for_update.return_value = milestone
+        service.milestone_repo.get_tranches_for_update.return_value = [
             MagicMock(tranche_number=1, status=TrancheStatus.RELEASED)
         ]
 
@@ -220,8 +220,8 @@ class TestMilestone:
             status=TrancheStatus.LOCKED,
             amount=Decimal("100.00"),
         )
-        service.milestone_repo.get.return_value = milestone
-        service.milestone_repo.get_tranches.return_value = [tranche]
+        service.milestone_repo.get_for_update.return_value = milestone
+        service.milestone_repo.get_tranches_for_update.return_value = [tranche]
 
         result = await service.release_tranche(milestone.id, 1, **self._as_admin())
 
@@ -229,7 +229,7 @@ class TestMilestone:
         service.payout_repo.accrue.assert_awaited_once()
 
     async def test_kill_milestone_missing(self, service):
-        service.milestone_repo.get.return_value = None
+        service.milestone_repo.get_for_update.return_value = None
 
         with pytest.raises(BillingError, match="not found"):
             await service.kill_milestone(uuid4(), **self._as_admin())
@@ -238,8 +238,8 @@ class TestMilestone:
         milestone = MagicMock(status=MilestoneStatus.PENDING)
         locked = MagicMock(status=TrancheStatus.LOCKED)
         released = MagicMock(status=TrancheStatus.RELEASED)
-        service.milestone_repo.get.return_value = milestone
-        service.milestone_repo.get_tranches.return_value = [locked, released]
+        service.milestone_repo.get_for_update.return_value = milestone
+        service.milestone_repo.get_tranches_for_update.return_value = [locked, released]
 
         result = await service.kill_milestone(uuid4(), **self._as_admin())
 
@@ -251,12 +251,12 @@ class TestMilestone:
         # The guard is first, so nothing is even read from the repositories.
         with pytest.raises(MilestoneAuthorizationError, match="admin privileges required"):
             await service.release_tranche(uuid4(), 1, caller_id=uuid4(), caller_is_admin=False)
-        service.milestone_repo.get.assert_not_awaited()
+        service.milestone_repo.get_for_update.assert_not_awaited()
 
     async def test_kill_milestone_rejects_a_missing_caller(self, service):
         with pytest.raises(MilestoneAuthorizationError, match="admin privileges required"):
             await service.kill_milestone(uuid4())
-        service.milestone_repo.get.assert_not_awaited()
+        service.milestone_repo.get_for_update.assert_not_awaited()
 
 
 class TestCreatorShare:
