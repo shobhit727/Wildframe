@@ -53,9 +53,33 @@ services ready" was 11s of a 420s budget. Raising `COMPOSE_SMOKE_WAIT_SECONDS` i
 therefore very unlikely to fix anything — read the `PENDING:`/`READY:` line in the log
 first, and note that the table printed *before* it is the previous poll, not the last.
 
+**It says which kind of failure it had, in the log.** The script writes exactly one
+`COMPOSE_SMOKE_RESULT=` marker as it leaves, and a `COMPOSE_SMOKE_STAGE=` marker as it
+enters each stage (`build`, `wait`, `bootstrap`, `probe`, `done`):
+
+| marker | meaning | exit code |
+|---|---|---|
+| `COMPOSE_SMOKE_RESULT=PASS` | every service healthy, every probe answered | 0 |
+| `COMPOSE_SMOKE_RESULT=FAIL` | the stack did not come up, or a route answered wrongly | 1 |
+| `COMPOSE_SMOKE_RESULT=TIMEOUT` | the run ran out of time before the stack could be judged | 2 |
+
+That distinction is the point. The CI job used to report a run that had run out of time
+as "the stack did not come up clean", which sent the next person after a service that
+was merely slow — in run `39422598539` the 16-image build took 14m32s of a 15-minute
+budget, the stack was one service short of ready when the job was killed, and the check
+blamed the stack. A run killed before it can write a marker has no marker at all; the
+job reads that as a timeout too, and reports the last stage it reached.
+
+**The image build is bounded separately.** `compose up -d --build` for 16 images took
+14m32s on the CI runner, so it gets its own budget
+(`COMPOSE_SMOKE_BUILD_TIMEOUT_SECONDS`, default 1200s). A build that overruns is
+reported as a timeout, because that is what it is — not evidence that a service is
+broken.
+
 ```bash
 bash scripts/compose-smoke.sh                       # against deployments/docker-compose.dev.yml
 COMPOSE_SMOKE_WAIT_SECONDS=900 bash scripts/compose-smoke.sh
+COMPOSE_SMOKE_BUILD_TIMEOUT_SECONDS=1800 bash scripts/compose-smoke.sh
 COMPOSE_SMOKE_LOG=/tmp/smoke.log bash scripts/compose-smoke.sh
 ```
 
