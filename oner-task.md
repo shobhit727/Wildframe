@@ -1474,3 +1474,11 @@ carousel's dots at 24×2 and the player's volume input at 96×8.
   still write `text-[#333]` and get a 1.6:1 heading. A lint rule over
   arbitrary hex text colours would close that, and would need a way to
   distinguish a deliberate low-contrast decoration from a mistake.
+
+### Manual deploy steps owed before merging the 2026-11 concurrency/Helm PRs
+
+This repo has no migration tool (#1137), so these schema and Secret steps are not automated. If a PR merges and deploys without its step, the affected routes fail.
+
+- **PR #1169 (#1145, uploads + moderation outbox):** on every populated `uploads_db` and `moderation_db`, first run `python scripts/init_schemas.py --allow-add outbox_events.claimed_by,outbox_events.claimed_at`. Without it, the outbox drain raises `UndefinedColumnError`.
+- **PR #1170 (#1143, analytics dedup):** on every existing `analytics_db`, run `services/analytics-service/sql/0001_client_event_key.sql` with `psql -v ON_ERROR_STOP=1 -f` **before** the new image takes traffic. `init_schemas` refuses this UNIQUE column, even with `--allow-add`. Without it, every query on `events` / `content_view_events` fails. The script can safely be re-run, and the old image keeps working after it, so apply the SQL first and deploy after.
+- **PR #1171 (#1133, Helm metrics token):** add a `METRICS_TOKEN` key to the `wildframe-runtime` Secret in every namespace before `helm upgrade`. Production renders `fail` without it. Store the token without a trailing newline (`--from-literal`), because a trailing newline makes every scrape return 401.
