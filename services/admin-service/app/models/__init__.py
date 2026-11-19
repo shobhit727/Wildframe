@@ -20,6 +20,7 @@ from app.models.admin import (
     AuditLogAppendOnlyError,
     Base,
     ContentModeration,
+    OutboxEvent,
     SystemAlert,
     SystemConfig,
     UserModeration,
@@ -33,4 +34,5 @@ __all__ = [
     "SystemConfig",
     "AdminAuditLog",
     "AuditLogAppendOnlyError",
+    "OutboxEvent",
 ]

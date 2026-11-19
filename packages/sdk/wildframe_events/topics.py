@@ -181,7 +181,7 @@ class Topic:
 
     #: A user account's moderation status changed (suspend/ban/activate).
     #: Producer: admin-service. Consumers: auth-service (enforces at login).
-    #: Idempotency key: ``moderated:{user_id}:{status}:{moderated_at}``
+    #: Partition key: ``moderated:{user_id}``; event_id identifies each change.
     USER_MODERATED = "user.moderated"
 
     # -----------------------------------------------------------------------
@@ -361,7 +361,7 @@ TOPIC_METADATA = {
     Topic.USER_MODERATED: {
         "producer": "admin-service",
         "consumers": ["auth-service"],
-        "idempotency_key_pattern": "moderated:{user_id}:{status}:{moderated_at}",
+        "idempotency_key_pattern": "moderated:{user_id}",
         "retry_strategy": "exponential_backoff(max_attempts=3)",
     },
 }

@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import and_, desc, select
+from sqlalchemy import and_, desc, or_, select
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.secrets import redact_secrets
@@ -8,6 +9,7 @@ from app.models.admin import (
     AdminAuditLog,
     AuditLogAppendOnlyError,
     ContentModeration,
+    OutboxEvent,
     SystemAlert,
     SystemConfig,
     UserModeration,
@@ -333,3 +335,69 @@ class AdminAuditLogRepository:
         )
         result = await self.db.execute(query)
         return list(result.scalars().all())
+
+
+class OutboxRepository:
+    """Events that must survive the gap between a DB commit and the broker."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def enqueue(
+        self, topic: str, event_key: str | None, event_id: str, payload: dict
+    ) -> OutboxEvent:
+        event = OutboxEvent(
+            topic=topic,
+            event_key=event_key,
+            event_id=event_id,
+            payload=payload,
+            status="pending",
+        )
+        self.db.add(event)
+        await self.db.flush()
+        return event
+
+    async def pending(self, limit: int) -> list[OutboxEvent]:
+        # A Kafka key determines a partition. Only release the oldest pending
+        # event for each (topic, key), otherwise a newer event could overtake
+        # an older one when another worker has it locked or a publish fails.
+        earlier = aliased(OutboxEvent)
+        same_partition = and_(
+            earlier.topic == OutboxEvent.topic,
+            or_(
+                earlier.event_key == OutboxEvent.event_key,
+                and_(earlier.event_key.is_(None), OutboxEvent.event_key.is_(None)),
+            ),
+        )
+        precedes = or_(
+            earlier.created_at < OutboxEvent.created_at,
+            and_(
+                earlier.created_at == OutboxEvent.created_at,
+                earlier.id < OutboxEvent.id,
+            ),
+        )
+        has_earlier_pending = (
+            select(earlier.id)
+            .where(
+                earlier.status == "pending",
+                same_partition,
+                precedes,
+            )
+            .exists()
+        )
+        result = await self.db.execute(
+            select(OutboxEvent)
+            .where(
+                OutboxEvent.status == "pending",
+                ~has_earlier_pending,
+            )
+            .order_by(OutboxEvent.created_at, OutboxEvent.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        return list(result.scalars().all())
+
+    async def mark_dispatched(self, event: OutboxEvent) -> None:
+        event.status = "dispatched"
+        event.dispatched_at = datetime.now(UTC)
+        await self.db.flush()

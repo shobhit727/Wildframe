@@ -198,11 +198,11 @@ no `payments` table — a purchase is a row in `purchases`.
 `streaming_db`. They are **different tables in different databases** with
 different columns, not a shared table.
 
-### `admin_db` — admin-service (10)
+### `admin_db` — admin-service (11)
 
 `admin_audit_logs` · `system_configs` · `system_alerts` ·
-`content_moderations` · `user_moderations` · `legal_documents` · `processors` ·
-`transfer_records` · `eu_compliance` · `india_compliance`
+`content_moderations` · `user_moderations` · `outbox_events` ·
+`legal_documents` · `processors` · `transfer_records` · `eu_compliance` · `india_compliance`
 
 ### `creators_db` — creators-service (10)
 
@@ -219,13 +219,13 @@ different columns, not a shared table.
 
 `upload_sessions` · `upload_chunks` · `outbox_events`
 
-`outbox_events` appears in four services' databases (`media_db`, `moderation_db`,
-`uploads_db`, and see below). Each is its own table; the outbox pattern is
+`outbox_events` appears in four services' databases (`admin_db`, `media_db`,
+`moderation_db`, and `uploads_db`). Each is its own table; the outbox pattern is
 deliberately duplicated per service so no service reads another's database.
 
 ### Repeated table names
 
-`outbox_events` (media, moderation, uploads), `payout_ledger` (billing,
+`outbox_events` (admin, media, moderation, uploads), `payout_ledger` (billing,
 creators), `milestones` + `milestone_tranches` (billing, creators),
 `video_manifest` + `streaming_quality_profile` + `transcoding_job(s)`
 (streaming, media). **These are not shared tables.** Each service owns its own

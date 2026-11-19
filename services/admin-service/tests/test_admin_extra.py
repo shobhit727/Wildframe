@@ -14,7 +14,7 @@ from wildframe_events import InMemoryEventPublisher
 
 from app.core import events as events_mod
 from app.core.events import reset_event_publisher
-from app.models.admin import AdminAuditLog, SystemConfig
+from app.models.admin import AdminAuditLog, OutboxEvent, SystemConfig
 from app.services.admin import MAX_LIST_LIMIT, AdminService, _clamp_limit, _moderated_at_iso
 
 
@@ -114,8 +114,8 @@ class TestModerateUserIdempotency:
         rows = (await session.execute(select(UserModeration))).scalars().all()
         assert [(r.user_id, r.status) for r in rows] == [("u-new", "active")]
 
-    async def test_republish_failure_propagates(self, service):
-        svc, _, _ = service
+    async def test_republish_failure_no_longer_loses_the_event(self, service):
+        svc, session, _ = service
         await svc.moderate_user("u-1", "suspended", None, "admin-1", "10.0.0.1")
 
         class Boom:
@@ -123,23 +123,46 @@ class TestModerateUserIdempotency:
                 raise OSError("broker unreachable")
 
         events_mod._publisher = Boom()
-        with pytest.raises(OSError):
-            await svc.moderate_user("u-1", "suspended", None, "admin-1", "10.0.0.1")
+        await svc.moderate_user("u-1", "suspended", None, "admin-1", "10.0.0.1")
 
-    async def test_first_publish_failure_propagates_to_the_caller(self, service):
-        # The row + audit commit happens before publishing, so the write stands
-        # while the caller still sees the failure (documented in the code:
-        # durable delivery requires an outbox).
-        svc, _, _ = service
+        pending = (
+            (await session.execute(select(OutboxEvent).where(OutboxEvent.status == "pending")))
+            .scalars()
+            .all()
+        )
+        assert len(pending) == 1
+
+        recovered = InMemoryEventPublisher()
+        events_mod._publisher = recovered
+        assert await svc.drain_outbox() == 1
+        assert len(recovered.sent) == 1
+        assert recovered.sent[0].key.startswith("moderated:u-1:suspended:")
+
+    async def test_first_publish_failure_survives_broker_outage(self, service):
+        # The moderation row commits with the outbox event, so the caller sees
+        # success while delivery is retried once the broker is reachable.
+        svc, session, _ = service
 
         class Boom:
             async def publish(self, _event):
                 raise OSError("broker unreachable")
 
         events_mod._publisher = Boom()
-        with pytest.raises(OSError):
-            await svc.moderate_user("u-1", "banned", None, "admin-1", "10.0.0.1")
+        await svc.moderate_user("u-1", "banned", None, "admin-1", "10.0.0.1")
         assert (await svc.get_user_moderation_history("u-1"))["status"] == "banned"
+
+        pending = (
+            (await session.execute(select(OutboxEvent).where(OutboxEvent.status == "pending")))
+            .scalars()
+            .all()
+        )
+        assert len(pending) == 1
+        assert pending[0].topic == "user.moderated"
+
+        recovered = InMemoryEventPublisher()
+        events_mod._publisher = recovered
+        assert await svc.drain_outbox() == 1
+        assert recovered.sent[0].key.startswith("moderated:u-1:banned:")
 
 
 class TestUserModerationReads:
