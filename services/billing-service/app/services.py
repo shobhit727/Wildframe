@@ -419,6 +419,10 @@ class BillingService:
         stripe_invoice_id: str | None = None,
     ) -> Refund:
         validate_currency(currency)
+        # Held until this transaction ends, so a concurrent delivery of the same
+        # refund waits here and then sees the committed row below instead of
+        # applying the refund to the invoice a second time.
+        await self.refund_repo.lock_refund_id(refund_id)
         existing = await self.refund_repo.get_by_refund_id(refund_id)
         if existing:
             return existing
