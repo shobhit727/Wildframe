@@ -321,9 +321,7 @@ class TestManifestRoutes:
             auth_user_id, manifest.episode_id, manifest.content_id
         )
 
-    def test_get_manifest_rejects_without_active_session(
-        self, client, fake_service, auth_user_id
-    ):
+    def test_get_manifest_rejects_without_active_session(self, client, fake_service, auth_user_id):
         manifest = make_manifest()
         fake_service.get_manifest = AsyncMock(return_value=manifest)
         fake_service.require_manifest_session.side_effect = HTTPException(

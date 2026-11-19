@@ -164,9 +164,7 @@ class TestInitAndClose:
 
     async def test_init_is_idempotent(self):
         first, second = _FakeEngine(), _FakeEngine()
-        with patch(
-            "app.core.database.create_async_engine", side_effect=[first, second]
-        ) as create:
+        with patch("app.core.database.create_async_engine", side_effect=[first, second]) as create:
             await DatabaseManager.init()
             await DatabaseManager.init()
         assert DatabaseManager.engine is first
