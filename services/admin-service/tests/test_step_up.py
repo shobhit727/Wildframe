@@ -89,14 +89,14 @@ async def test_verify_success():
 
 
 @pytest.mark.asyncio
-async def test_rejects_access_token_type():
+async def test_rejects_access_token_type_as_a_step_up_grant():
     _stepup_jti_seen.clear()
     admin_id = str(uuid.uuid4())
     token = _mint_access(admin_id)
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, token)
-    assert exc.value.status_code == 401
-    assert "Invalid token" in exc.value.detail
+    assert exc.value.status_code == 403
+    assert "Step-up credential" in exc.value.detail
 
 
 @pytest.mark.asyncio
@@ -106,7 +106,8 @@ async def test_rejects_expired():
     token = _mint_step_up(admin_id, exp_offset=-120)
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, token)
-    assert exc.value.status_code == 401
+    assert exc.value.status_code == 403
+    assert "Step-up credential" in exc.value.detail
 
 
 @pytest.mark.asyncio
@@ -116,12 +117,12 @@ async def test_rejects_insufficient_amr():
     token = _mint_step_up(admin_id, amr=[])
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, token)
-    assert exc.value.status_code == 401
+    assert exc.value.status_code == 403
     assert "Insufficient authentication" in exc.value.detail
     token2 = _mint_step_up(admin_id, amr=["mfa"])
     with pytest.raises(HTTPException) as exc2:
         await verify_admin_reauth(admin_id, token2)
-    assert exc2.value.status_code == 401
+    assert exc2.value.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -146,7 +147,7 @@ async def test_jti_replay():
     assert result == admin_id
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, token)
-    assert exc.value.status_code == 401
+    assert exc.value.status_code == 403
     assert "already used" in exc.value.detail.lower()
 
 
@@ -166,7 +167,7 @@ async def test_missing_header():
     admin_id = str(uuid.uuid4())
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, None)
-    assert exc.value.status_code == 401
+    assert exc.value.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -211,7 +212,7 @@ async def test_missing_jti():
     token = jwt.encode(payload, PRIVATE_PEM, algorithm="RS256", headers={"kid": "k1"})
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, token)
-    assert exc.value.status_code == 401
+    assert exc.value.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -232,4 +233,5 @@ async def test_invalid_signature():
     bad = token[:-5] + "XXXXX"
     with pytest.raises(HTTPException) as exc:
         await verify_admin_reauth(admin_id, bad)
-    assert exc.value.status_code == 401
+    assert exc.value.status_code == 403
+    assert "Step-up credential" in exc.value.detail

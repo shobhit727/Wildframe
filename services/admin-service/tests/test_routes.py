@@ -207,6 +207,8 @@ class TestGetCurrentAdminId:
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(_mint()))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     async def test_rejects_malformed_auth_version_response(self, monkeypatch):
         from app.api.routes import admin as admin_routes
@@ -235,6 +237,8 @@ class TestGetCurrentAdminId:
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(_mint()))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     async def test_rejects_token_without_required_sub_claim(self):
         token = jwt.encode(
@@ -253,19 +257,25 @@ class TestGetCurrentAdminId:
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(token))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     @pytest.mark.parametrize("header", [None, "", "Basic abc", "bearer lowercase", "Token x"])
     async def test_rejects_a_missing_or_malformed_header(self, header):
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(header)
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
         assert exc.value.detail == "Missing or invalid Authorization header"
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     async def test_rejects_a_garbage_token(self):
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header("not-a-jwt"))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
         assert exc.value.detail == "Invalid token"
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     async def test_rejects_a_token_signed_with_another_key(self):
         # A token whose signature does not match the published JWKS: mint with
@@ -293,24 +303,28 @@ class TestGetCurrentAdminId:
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(token))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
         assert exc.value.detail == "Invalid token"
 
     async def test_rejects_a_token_from_another_audience(self):
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(_mint(extra={"aud": "some-other-api"})))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
         assert exc.value.detail == "Invalid token"
 
     async def test_rejects_a_token_from_another_issuer(self):
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(_mint(extra={"iss": "rogue-issuer"})))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
 
     @pytest.mark.parametrize("typ", ["refresh", "admin_step_up", "api_key", None])
     async def test_rejects_non_access_token_types(self, typ):
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(_mint(typ=typ)))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
         assert exc.value.detail == "Invalid token"
 
     @pytest.mark.parametrize("role", ["user", "moderator", "billing", "api_key"])
@@ -350,6 +364,7 @@ class TestGetCurrentAdminId:
         with pytest.raises(HTTPException) as exc:
             await get_current_admin_id(_auth_header(_mint(exp_offset=-120)))
         assert exc.value.status_code == 401
+        assert exc.value.headers == {"WWW-Authenticate": "Bearer"}
         assert exc.value.detail == "Invalid token"
 
 
@@ -573,7 +588,10 @@ class TestUserModerationRoutes:
             json={"user_id": "u-1", "status": "suspended"},
             headers=_bearer(_mint()),
         )
-        assert resp.status_code == 401
+        # A refused step-up follows successful authentication, so it is an
+        # authorization failure. It must not be 401: the web client treats a
+        # non-auth-endpoint 401 as an expired session and signs the admin out.
+        assert resp.status_code == 403
         assert "Step-up authentication required" in resp.json()["detail"]
 
     async def test_moderate_user_requires_an_admin_token(self, admin_client):
@@ -582,6 +600,19 @@ class TestUserModerationRoutes:
             json={"user_id": "u-1", "status": "suspended"},
         )
         assert resp.status_code == 401
+        assert resp.headers["www-authenticate"] == "Bearer"
+
+    async def test_invalid_step_up_token_returns_403_without_challenge(self, admin_client):
+        resp = await admin_client.post(
+            "/api/v1/admin/users/moderate",
+            json={"user_id": "u-1", "status": "suspended"},
+            headers={**_bearer(_mint()), "X-Admin-Reauth": "not-a-jwt"},
+        )
+        # The access token authenticated the admin; a failed step-up grant is
+        # an authorization refusal and must not trigger frontend session logout.
+        assert resp.status_code == 403
+        assert "Step-up credential" in resp.json()["detail"]
+        assert "www-authenticate" not in resp.headers
 
     async def test_moderate_user_with_step_up_succeeds(self, admin_client):
         from tests.test_step_up import _mint_step_up
@@ -749,7 +780,7 @@ class TestContentModerationRoutes:
             params={"content_id": "c-1", "status": "active"},
             headers=_bearer(_mint()),
         )
-        assert resp.status_code == 401
+        assert resp.status_code == 403
 
 
 class TestAlertRoutes:

@@ -49,13 +49,21 @@ async def _decode_token(token: str, expected_type: str = "access") -> dict:
             detail="Token verification is unavailable",
         ) from exc
     except JWTError as exc:
-        raise HTTPException(status_code=401, detail="Invalid token") from exc
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
 
 
 async def _enforce_auth_version(authorization: str, payload: dict) -> None:
     token_version = payload.get("av")
     if type(token_version) is not int:
-        raise HTTPException(status_code=401, detail="Invalid token payload")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
             response = await client.get(
@@ -68,29 +76,53 @@ async def _enforce_auth_version(authorization: str, payload: dict) -> None:
             detail="Auth service unavailable",
         ) from exc
     except Exception as exc:
-        raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
     if response.status_code >= 500:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Auth service unavailable",
         )
     if response.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     try:
         current_version = response.json()["auth_version"]
     except (ValueError, KeyError, TypeError) as exc:
-        raise HTTPException(status_code=401, detail="Invalid token payload") from exc
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
     if type(current_version) is not int:
-        raise HTTPException(status_code=401, detail="Invalid token payload")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_version != token_version:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 async def get_current_admin_id(
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
 ) -> str:
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+        raise HTTPException(
+            status_code=401,
+            detail="Missing or invalid Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     token = authorization.replace("Bearer ", "")
     payload = await _decode_token(token)
     await _enforce_auth_version(authorization, payload)
@@ -104,7 +136,11 @@ async def get_current_admin_id(
         raise HTTPException(status_code=403, detail="Admin privileges required")
     subject = payload.get("sub") or payload.get("user_id")
     if not isinstance(subject, str) or not subject:
-        raise HTTPException(status_code=401, detail="Invalid token subject")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token subject",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return subject
 
 
@@ -139,15 +175,27 @@ async def verify_admin_reauth(
 ) -> str:
     if not x_admin_reauth:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Step-up authentication required: X-Admin-Reauth header missing",
         )
-    payload = await _decode_token(x_admin_reauth, expected_type="admin_step_up")
+    try:
+        payload = await _decode_token(x_admin_reauth, expected_type="admin_step_up")
+    except HTTPException as exc:
+        # The primary access token has already authenticated the admin.
+        # A missing, malformed, or expired step-up grant is an authorization
+        # refusal, not an expired application session; keep it out of the
+        # frontend's 401 refresh/logout path.
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Step-up credential is invalid or expired",
+            ) from exc
+        raise
     if authorization:
         access_payload = await _decode_token(authorization.removeprefix("Bearer "))
         if payload.get("av") != access_payload.get("av"):
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=status.HTTP_403_FORBIDDEN,
                 detail="Reauth token has been revoked",
             )
     if payload.get("role") != "admin":
@@ -167,12 +215,12 @@ async def verify_admin_reauth(
     amr = payload.get("amr") or []
     if "pwd" not in amr:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Insufficient authentication strength"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient authentication strength"
         )
     jti = payload.get("jti")
     if not isinstance(jti, str) or not jti:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Reauth token missing jti"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Reauth token missing jti"
         )
     try:
         was_used = await _consume_stepup_jti(jti, payload.get("exp"))
@@ -183,7 +231,7 @@ async def verify_admin_reauth(
         ) from exc
     if was_used:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Reauth token already used"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Reauth token already used"
         )
     return admin_id
 
