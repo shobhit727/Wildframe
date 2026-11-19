@@ -1,14 +1,20 @@
 {{- if .Values.kafka.enabled }}
 {{- range .Values.kafka.topics }}
+{{- /* metadata.name must be a lowercase RFC 1123 subdomain, so `_` (used by
+       e.g. content.metadata_extracted) becomes `-`; the real Kafka topic is
+       spec.topicName (#1128). Dots are valid and are kept on purpose: a CR
+       whose name changes is deleted on `helm upgrade`, and Strimzi's Topic
+       Operator deletes the Kafka topic of a deleted managed KafkaTopic. */}}
 ---
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
-  name: {{ . }}
+  name: {{ . | lower | replace "_" "-" }}
   namespace: {{ $.Values.namespace }}
   labels:
     strimzi.io/cluster: kafka
 spec:
+  topicName: {{ . }}
   partitions: 3
   replicas: 1
 {{- end }}
