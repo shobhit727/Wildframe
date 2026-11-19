@@ -179,7 +179,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum(up{job=\"wildframe-services\"} == 0)",
+          "expr": "count(up{job=\"wildframe-services\"} == 0) or vector(0)",
           "legendFormat": "down",
           "range": true,
           "refId": "A"
@@ -914,8 +914,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum by (service) (rate(process_cpu_seconds_total[5m]))",
-          "legendFormat": "{{service}}",
+          "expr": "sum by (instance) (rate(process_cpu_seconds_total{job=\"wildframe-services\"}[5m]))",
+          "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
@@ -976,8 +976,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum by (service) (process_resident_memory_bytes)",
-          "legendFormat": "{{service}}",
+          "expr": "sum by (instance) (process_resident_memory_bytes{job=\"wildframe-services\"})",
+          "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
@@ -1038,8 +1038,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum by (service) (process_open_fds)",
-          "legendFormat": "{{service}}",
+          "expr": "sum by (instance) (process_open_fds{job=\"wildframe-services\"})",
+          "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
@@ -1113,8 +1113,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum by (service) (rate(python_gc_objects_collected_total[5m]))",
-          "legendFormat": "{{service}}",
+          "expr": "sum by (instance) (rate(python_gc_objects_collected_total{job=\"wildframe-services\"}[5m]))",
+          "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
@@ -1175,8 +1175,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum by (service) (python_gc_objects_uncollectable_total)",
-          "legendFormat": "{{service}}",
+          "expr": "sum by (instance) (python_gc_objects_uncollectable_total{job=\"wildframe-services\"})",
+          "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
         }
@@ -1253,7 +1253,7 @@
       "icon": "external link",
       "urlTip": "Opens Explore with the data-service capacity queries loaded",
       "queryParams": {
-        "left": "{\"datasource\": \"PBFA97CFB590B2093\", \"queries\": [{\"refId\": \"A\", \"expr\": \"pg_database_size_bytes{datname!=\\\"template1\\\"}\", \"legendFormat\": \"{{datname}}\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"B\", \"expr\": \"sum(pg_stat_activity_count)\", \"legendFormat\": \"connections used\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"C\", \"expr\": \"sum(pg_database_connection_limit)\", \"legendFormat\": \"connection limit\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"D\", \"expr\": \"redis_memory_used_bytes\", \"legendFormat\": \"redis used\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"E\", \"expr\": \"redis_connected_clients\", \"legendFormat\": \"redis clients\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"F\", \"expr\": \"rate(redis_acl_access_denied_cmd_total[5m])\", \"legendFormat\": \"redis ACL denied\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}], \"range\": {\"from\": \"now-6h\", \"to\": \"now\"}}"
+        "left": "{\"datasource\": \"PBFA97CFB590B2093\", \"queries\": [{\"refId\": \"A\", \"expr\": \"pg_database_size_bytes{datname!=\\\"template1\\\"}\", \"legendFormat\": \"{{datname}}\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"B\", \"expr\": \"sum(pg_stat_activity_count)\", \"legendFormat\": \"connections used\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"C\", \"expr\": \"max(pg_settings_max_connections)\", \"legendFormat\": \"connection limit\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"D\", \"expr\": \"redis_memory_used_bytes\", \"legendFormat\": \"redis used\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"E\", \"expr\": \"redis_connected_clients\", \"legendFormat\": \"redis clients\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"F\", \"expr\": \"rate(redis_acl_access_denied_cmd_total[5m])\", \"legendFormat\": \"redis ACL denied\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}], \"range\": {\"from\": \"now-6h\", \"to\": \"now\"}}"
       },
       "tags": [
         "explore",
@@ -1268,7 +1268,7 @@
       "icon": "external link",
       "urlTip": "Opens Explore with the saturation canaries loaded",
       "queryParams": {
-        "left": "{\"datasource\": \"PBFA97CFB590B2093\", \"queries\": [{\"refId\": \"A\", \"expr\": \"sum by (service) (python_gc_objects_uncollectable_total)\", \"legendFormat\": \"uncollectable {{service}}\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"B\", \"expr\": \"sum by (service) (process_open_fds)\", \"legendFormat\": \"fds {{service}}\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"C\", \"expr\": \"sum by (service) (rate(process_cpu_seconds_total[5m]))\", \"legendFormat\": \"cpu {{service}}\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"D\", \"expr\": \"sum by (service) (process_resident_memory_bytes)\", \"legendFormat\": \"rss {{service}}\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}], \"range\": {\"from\": \"now-1h\", \"to\": \"now\"}}"
+        "left": "{\"datasource\": \"PBFA97CFB590B2093\", \"queries\": [{\"refId\": \"A\", \"expr\": \"sum by (instance) (python_gc_objects_uncollectable_total{job=\\\"wildframe-services\\\"})\", \"legendFormat\": \"uncollectable {{instance}}\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"B\", \"expr\": \"sum by (instance) (process_open_fds{job=\\\"wildframe-services\\\"})\", \"legendFormat\": \"fds {{instance}}\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"C\", \"expr\": \"sum by (instance) (rate(process_cpu_seconds_total{job=\\\"wildframe-services\\\"}[5m]))\", \"legendFormat\": \"cpu {{instance}}\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}, {\"refId\": \"D\", \"expr\": \"sum by (instance) (process_resident_memory_bytes{job=\\\"wildframe-services\\\"})\", \"legendFormat\": \"rss {{instance}}\", \"range\": true, \"datasource\": {\"type\": \"prometheus\", \"uid\": \"${DS_PROMETHEUS}\"}, \"editorMode\": \"code\", \"instant\": false}], \"range\": {\"from\": \"now-1h\", \"to\": \"now\"}}"
       },
       "tags": [
         "explore",
