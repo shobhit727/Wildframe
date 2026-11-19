@@ -1242,7 +1242,7 @@ exercises it unauthenticated, so gating it today breaks that suite.
 
 Owner decision: who may trigger a reindex?
 
-**Still open. Proposed answer in draft PR #1172 (#1138):** admin-only via `get_admin_identity` as the fail-closed default, an honest 501 until a real reindex exists, and the job registry and status route removed (no callers). Approve or widen it when you review the PR.
+**Answered by existing code; confirm in review.** search-service already has the real reindex, `POST /api/v1/search/reindex`, which is admin-only through `get_admin_identity` and lock-protected. Draft PR #1172 (#1138) aligns this duplicate content-service stub to the same admin-only rule, returns an honest 501 that points to the search endpoint, and removes the job registry and status route (no callers). If a non-admin should be able to trigger a reindex, change both endpoints.
 
 ### auth-service: three real test gaps found by mutation testing
 

@@ -630,12 +630,17 @@ async def list_cast(
     dependencies=[Depends(get_admin_identity)],
 )
 async def start_reindex() -> None:
-    """Catalog reindex is not implemented (#116, #1138).
+    """Catalog reindex is not implemented here (#116, #1138).
 
-    Admin-only, and refuses honestly: no job is created or retained, so the
-    caller is never handed a job id for work that will not happen.
+    The real reindex is search-service ``POST /api/v1/search/reindex``
+    (admin-only, lock-protected). This route is admin-only and refuses
+    honestly: no job is created or retained, so the caller is never handed a
+    job id for work that will not happen.
     """
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Catalog reindex is not implemented",
+        detail=(
+            "Catalog reindex is not implemented here; "
+            "use search-service POST /api/v1/search/reindex"
+        ),
     )

@@ -749,7 +749,10 @@ class TestReindexEndpoints:
         response = await client.post("/api/v1/reindex")
 
         assert response.status_code == 501
-        assert response.json()["detail"] == "Catalog reindex is not implemented"
+        assert response.json()["detail"] == (
+            "Catalog reindex is not implemented here; "
+            "use search-service POST /api/v1/search/reindex"
+        )
 
     async def test_reindex_requires_the_admin_dependency(self, client):
         """Removing the override re-exposes get_admin_identity's own 401 path."""
