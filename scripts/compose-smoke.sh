@@ -255,4 +255,43 @@ probe "auth JWKS" "https://localhost:8001/.well-known/jwks.json" "200"
 probe "content genres" "https://localhost:8003/api/v1/genres" "200"
 probe "content catalog" "https://localhost:8003/api/v1/content?page=1&page_size=1" "200"
 
+# --- Optional post-pass hook (#1119) -----------------------------------------
+# Off unless COMPOSE_SMOKE_POST_PASS is set. CI sets it to
+# scripts/ci-integration-suite.sh so tests/integration runs against this stack
+# while it is still up: the EXIT trap above tears it down, so a later workflow
+# step would find nothing to talk to. The hook runs inside that trap (logs and
+# teardown are still guaranteed) and before the PASS marker, so a failing hook
+# means no PASS marker and a non-zero exit. Only a regular file directly under
+# this script's own scripts/ directory is accepted, named as scripts/<file>, so
+# the variable cannot point the run at an arbitrary path.
+run_post_pass_hook() {
+  local requested="${COMPOSE_SMOKE_POST_PASS:-}"
+  if [[ -z "$requested" ]]; then
+    return 0
+  fi
+  local scripts_dir name hook
+  scripts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+  name="$(basename -- "$requested")"
+  hook="$scripts_dir/$name"
+  if [[ "$requested" != "scripts/$name" || -L "$hook" || ! -f "$hook" ]]; then
+    log "Refusing COMPOSE_SMOKE_POST_PASS=$requested: it must name a regular file directly under scripts/"
+    log "COMPOSE_SMOKE_POST_PASS_RESULT=FAIL"
+    return 1
+  fi
+  log "Running post-pass hook: $requested"
+  local rc=0
+  if bash "$hook" 2>&1 | tee -a "$LOG_FILE"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  if (( rc != 0 )); then
+    log "Post-pass hook $requested exited $rc"
+    log "COMPOSE_SMOKE_POST_PASS_RESULT=FAIL"
+    return "$rc"
+  fi
+  log "COMPOSE_SMOKE_POST_PASS_RESULT=PASS"
+}
+run_post_pass_hook
+
 log "COMPOSE_SMOKE_RESULT=PASS"
