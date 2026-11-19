@@ -1,6 +1,7 @@
 # Trivy ignore file - suppress known acceptable vulnerabilities
 # Format: CVE-ID, expiry (YYYY-MM-DD), owner (@handle), justification
-
-# Common false positives in CI environment
-CVE-2024-23456, 2026-10-26, @shobhit727, Confirmed false positive in CI image; reassess at expiry
-CVE-2024-12345, 2026-10-26, @shobhit727, Development-only dependency; reassess before the next release
+#
+# No active suppressions. The two previous entries (CVE-2024-23456,
+# CVE-2024-12345) expired on 2026-10-26 and were removed on the owner's
+# decision (#1150). Add a new entry only with a real advisory ID, an expiry,
+# an owner and a specific justification; the Supply Chain Guard enforces this.
