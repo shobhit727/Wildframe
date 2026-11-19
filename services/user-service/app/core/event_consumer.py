@@ -15,6 +15,7 @@ blocking the partition forever.
 import logging
 import os
 import ssl
+from typing import Any
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ async def _provision_profile(session_factory, user_id: str) -> None:
 
 def _kafka_consumer_options() -> dict:
     security_protocol = os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
-    options = {
+    options: dict[str, Any] = {
         "security_protocol": security_protocol,
         "client_id": os.getenv("KAFKA_CLIENT_ID", "user-service"),
     }

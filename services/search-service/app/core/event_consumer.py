@@ -13,6 +13,7 @@ idempotent (404-tolerant), so redelivery is harmless.
 import logging
 import os
 import ssl
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ async def _handle(catalog, search_service, event: dict) -> None:
 
 def _kafka_consumer_options() -> dict:
     security_protocol = os.getenv("KAFKA_SECURITY_PROTOCOL", "PLAINTEXT")
-    options = {
+    options: dict[str, Any] = {
         "security_protocol": security_protocol,
         "client_id": os.getenv("KAFKA_CLIENT_ID", "search-service"),
     }
