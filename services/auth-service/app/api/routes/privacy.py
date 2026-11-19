@@ -71,6 +71,42 @@ async def require_admin(
     return user_id
 
 
+async def authorize_consent_subject(
+    user_id: UUID,
+    caller_id: Annotated[UUID, Depends(get_current_user_id)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UUID:
+    """Authorize access to ``user_id``'s consent records and return it.
+
+    ``user_id`` is bound by FastAPI from the path or query string, exactly as the
+    routes declared it before. The caller must be that user, or an admin. Anything
+    else is a 403 (not a 404), so a non-admin cannot tell whether another user has
+    a record at all.
+    """
+    await _assert_consent_access(user_id, caller_id, db)
+    return user_id
+
+
+async def _assert_consent_access(target_user_id: UUID, caller_id: UUID, db: AsyncSession) -> None:
+    """Allow the owner, or an admin acting on behalf of another user."""
+    if target_user_id == caller_id:
+        return
+    from app.repositories import UserRepository
+
+    caller = await UserRepository(db).get_by_id(caller_id)
+    if not caller or role_for_email(caller.email) != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not allowed to access another user's consent records",
+        )
+    # No audit-log writer exists in auth-service yet (SecurityAudit has no callers),
+    # so record the admin override in the structured service log.
+    logger.info(
+        "Admin accessed another user's consent records",
+        extra={"admin_user_id": str(caller_id), "target_user_id": str(target_user_id)},
+    )
+
+
 def _validate_jurisdiction(jurisdiction: str) -> str:
     """Validate jurisdiction against known enum, allow string but warn if unknown."""
     try:
@@ -267,8 +303,10 @@ async def create_consent(
     request: ConsentRecordCreate,
     repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    caller_id: Annotated[UUID, Depends(get_current_user_id)],
 ) -> ConsentRecordResponse:
-    """Record user consent."""
+    """Record user consent (own record, or any user's when called by an admin)."""
+    await _assert_consent_access(request.user_id, caller_id, db)
     jurisdiction = _validate_jurisdiction(request.jurisdiction)
     existing = await repo.get_by_user_type_jurisdiction(
         request.user_id, request.consent_type, jurisdiction
@@ -300,7 +338,7 @@ async def create_consent(
 
 @router.get("/consent", response_model=list[ConsentRecordResponse])
 async def list_user_consent(
-    user_id: UUID,
+    user_id: Annotated[UUID, Depends(authorize_consent_subject)],
     repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],
 ) -> list[ConsentRecordResponse]:
     """Get all consent records for a user."""
@@ -310,7 +348,7 @@ async def list_user_consent(
 
 @router.get("/consent/active", response_model=list[ConsentRecordResponse])
 async def get_active_consent(
-    user_id: UUID,
+    user_id: Annotated[UUID, Depends(authorize_consent_subject)],
     repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],
 ) -> list[ConsentRecordResponse]:
     """Get active (granted, not withdrawn) consent records for a user."""
@@ -322,7 +360,7 @@ async def get_active_consent(
     "/consent/{user_id}/{consent_type}/{jurisdiction}", response_model=ConsentRecordResponse
 )
 async def get_consent(
-    user_id: UUID,
+    user_id: Annotated[UUID, Depends(authorize_consent_subject)],
     consent_type: str,
     jurisdiction: str,
     repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],
@@ -342,7 +380,7 @@ async def get_consent(
     "/consent/{user_id}/{consent_type}/{jurisdiction}", response_model=ConsentRecordResponse
 )
 async def update_consent(
-    user_id: UUID,
+    user_id: Annotated[UUID, Depends(authorize_consent_subject)],
     consent_type: str,
     jurisdiction: str,
     request: ConsentRecordUpdate,
@@ -406,7 +444,7 @@ async def withdraw_consent(
     response_model=ConsentRecordResponse,
 )
 async def grant_consent(
-    user_id: UUID,
+    user_id: Annotated[UUID, Depends(authorize_consent_subject)],
     consent_type: str,
     jurisdiction: str,
     repo: Annotated[ConsentRecordRepository, Depends(get_consent_record_repo)],
