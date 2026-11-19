@@ -9,7 +9,10 @@ so a broken panel looks healthy instead of erroring:
 * ``sum by (service) (process_*/python_gc_*)``: prometheus_client's process and
   GC collectors carry only the scrape labels ``job``/``instance``. Nothing
   (SDK or ``prometheus.yml``) adds ``service``, so every target collapses into
-  one series with an empty legend.
+  one series with an empty legend. They must also be scoped with
+  ``job="wildframe-services"``: the postgres, redis and prometheus jobs are Go
+  binaries whose client_golang process collector exports the same
+  ``process_*`` names, so an unscoped panel draws them as "services".
 * ``pg_database_connection_limit``: no database sets CONNECTION LIMIT, so it is
   -1 for all of them. The real ceiling is ``pg_settings_max_connections``.
 
@@ -34,6 +37,9 @@ _COMPARISON = re.compile(r"(==|!=|>=|<=|>|<)(?!=)(?!\s*bool\b)")
 _SUM_OPEN = re.compile(r"\bsum\s*(?:(?:by|without)\s*\([^)]*\)\s*)?\(")
 _BY_SERVICE = re.compile(r"\bby\s*\([^)]*\bservice\b[^)]*\)")
 _RUNTIME_METRIC = re.compile(r"\b(?:process_|python_gc_)\w+")
+# A runtime metric selector, with its optional {matchers}, captured as group 1.
+_RUNTIME_SELECTOR = re.compile(r"\b(?:process_|python_gc_)\w+(\{[^}]*\})?")
+_SERVICE_JOB = re.compile(r'\bjob\s*=\s*"wildframe-services"')
 
 
 def _walk_exprs(node: object, where: str) -> Iterator[tuple[str, str]]:
@@ -81,6 +87,11 @@ def _runtime_by_service(expr: str) -> bool:
     return bool(_RUNTIME_METRIC.search(expr) and _BY_SERVICE.search(expr))
 
 
+def _runtime_unscoped(expr: str) -> bool:
+    """True if any process_/python_gc_ selector lacks job="wildframe-services"."""
+    return any(not _SERVICE_JOB.search(m.group(1) or "") for m in _RUNTIME_SELECTOR.finditer(expr))
+
+
 EXPRS = _all_exprs()
 
 
@@ -121,6 +132,21 @@ def test_runtime_by_service_detector(expr: str, bad: bool) -> None:
     assert _runtime_by_service(expr) is bad
 
 
+@pytest.mark.parametrize(
+    ("expr", "bad"),
+    [
+        ("sum by (instance) (process_open_fds)", True),
+        ("sum by (instance) (rate(process_cpu_seconds_total[5m]))", True),
+        ('sum by (instance) (process_open_fds{job="postgres"})', True),
+        ('sum by (instance) (process_open_fds{job="wildframe-services"})', False),
+        ('sum by (instance) (rate(python_gc_objects_collected_total{job="wildframe-services"}[5m]))', False),
+        ("sum by (service) (http_active_requests)", False),
+    ],
+)
+def test_runtime_unscoped_detector(expr: str, bad: bool) -> None:
+    assert _runtime_unscoped(expr) is bad
+
+
 def test_no_sum_over_a_filtering_comparison() -> None:
     offenders = [(w, e) for w, e in EXPRS if _filtering_sum(e)]
     assert not offenders, (
@@ -134,6 +160,15 @@ def test_runtime_metrics_not_grouped_by_missing_service_label() -> None:
     assert not offenders, (
         "process_*/python_gc_* carry only job/instance; grouping by service "
         f"collapses every target into one unlabelled series: {offenders}"
+    )
+
+
+def test_runtime_metrics_scoped_to_service_job() -> None:
+    offenders = [(w, e) for w, e in EXPRS if _runtime_unscoped(e)]
+    assert not offenders, (
+        'process_*/python_gc_* must select job="wildframe-services": the postgres, '
+        "redis and prometheus jobs export process_* too and would be drawn as "
+        f"services: {offenders}"
     )
 
 
