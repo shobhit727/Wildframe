@@ -1,0 +1,148 @@
+# Wildframe Prometheus alert rules (issue #1117).
+#
+# Every threshold below is a proposal. The owner has not approved any value or
+# any notification destination, so Alertmanager routes everything to a null
+# receiver (infrastructure/alertmanager/alertmanager.yml).
+#
+# Label notes: the SDK (packages/sdk/wildframe_observability/metrics.py) labels
+# request counters with `status_code` (not `status`), `endpoint` and `service`.
+# All fifteen backends share one scrape job, `wildframe-services`, so per-service
+# aggregation uses the SDK `service` label and per-target "down" uses `instance`.
+#
+# Each alert's runbook_url points at an anchor in docs/OPERATIONS.md; the
+# contract test tests/contract/test_prometheus_alert_rules.py keeps them in sync.
+groups:
+  - name: wildframe-availability
+    rules:
+      - alert: WildframeServiceDown
+        # PROPOSED threshold — owner approval required
+        expr: up{job="wildframe-services"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend service {{ $labels.instance }} is down"
+          description: "Prometheus has failed to scrape {{ $labels.instance }} (job wildframe-services) for more than 1 minute."
+          runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-wildframeservicedown"
+
+      - alert: PostgresExporterDown
+        # PROPOSED threshold — owner approval required
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Postgres exporter {{ $labels.instance }} is down"
+          description: "The postgres-exporter target {{ $labels.instance }} has not been scrapeable for more than 1 minute; database metrics are blind and the database itself may be down."
+          runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-postgresexporterdown"
+
+      - alert: RedisExporterDown
+        # PROPOSED threshold — owner approval required
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis exporter {{ $labels.instance }} is down"
+          description: "The redis-exporter target {{ $labels.instance }} has not been scrapeable for more than 1 minute; cache metrics are blind and Redis itself may be down."
+          runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-redisexporterdown"
+
+      - alert: PrometheusSelfScrapeDown
+        # PROPOSED threshold — owner approval required
+        expr: up{job="prometheus"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus cannot scrape itself"
+          description: "The prometheus self-scrape target {{ $labels.instance }} has been failing for more than 1 minute."
+          runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-prometheusselfscrapedown"
+
+  # `up == 0` cannot fire when a job has no targets at all (bad service
+  # discovery, a broken config reload, a deleted job). absent() covers that.
+  - name: wildframe-scrape-job-absent
+    rules:
+      - alert: WildframeServicesJobAbsent
+        # PROPOSED threshold — owner approval required
+        expr: absent(up{job="wildframe-services"})
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No up series for scrape job wildframe-services"
+          description: "Prometheus has no `up` series for job wildframe-services for 5 minutes. No backend service is being scraped."
+          runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-scrape-job-absent"
+
+      - alert: PostgresJobAbsent
+        # PROPOSED threshold — owner approval required
+        expr: absent(up{job="postgres"})
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No up series for scrape job postgres"
+          description: "Prometheus has no `up` series for job postgres for 5 minutes. Database metrics are not being collected."
+          runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-scrape-job-absent"
+
+      - alert: RedisJobAbsent
+        # PROPOSED threshold — owner approval required
+        expr: absent(up{job="redis"})
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No up series for scrape job redis"
+          description: "Prometheus has no `up` series for job redis for 5 minutes. Cache metrics are not being collected."
+          runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-scrape-job-absent"
+
+      - alert: PrometheusJobAbsent
+        # PROPOSED threshold — owner approval required
+        expr: absent(up{job="prometheus"})
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No up series for scrape job prometheus"
+          description: "Prometheus has no `up` series for its own self-scrape job for 5 minutes."
+          runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-scrape-job-absent"
+
+  - name: wildframe-http
+    rules:
+      - alert: WildframeHighErrorRatio
+        # PROPOSED threshold — owner approval required
+        # 5% of requests answering 5xx over 5m, and only when the service is
+        # taking real traffic (> 0.1 req/s) so one failed probe on an idle
+        # service does not page.
+        expr: |
+          (
+            sum by (service) (rate(http_requests_total{status_code=~"5.."}[5m]))
+            /
+            sum by (service) (rate(http_requests_total[5m]))
+          ) > 0.05
+          and
+          sum by (service) (rate(http_requests_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }}: more than 5% of requests are failing with 5xx"
+          description: "{{ $labels.service }} has returned 5xx for {{ $value | humanizePercentage }} of requests over the last 5 minutes."
+          runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-wildframehigherrorratio"
+
+      - alert: WildframeHighLatencyP95
+        # PROPOSED threshold — owner approval required
+        # p95 over 500ms for 10m, only under real traffic (> 0.1 req/s).
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (service, le) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 0.5
+          and on (service)
+          sum by (service) (rate(http_requests_total[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }}: p95 latency above 500ms"
+          description: "{{ $labels.service }} p95 request latency is {{ $value | humanizeDuration }} over the last 5 minutes."
+          runbook_url: "https://github.com/shobhit727/Wildframe/blob/main/docs/OPERATIONS.md#alert-wildframehighlatencyp95"
