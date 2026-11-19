@@ -8,6 +8,7 @@ import type { ContentFlag } from '@/types/admin';
 const { adminApi } = vi.hoisted(() => ({
   adminApi: {
     listFlags: vi.fn(),
+    requestStepUp: vi.fn(),
     resolveFlag: vi.fn(),
     listUsers: vi.fn(),
     listAlerts: vi.fn(),
@@ -82,15 +83,17 @@ function countText(): string {
   return screen.getByText(/^\d+ flags?$/).textContent ?? '';
 }
 
-/** Confirm the visible dialog's action button. */
-async function confirmDialog(action: string): Promise<void> {
+/** Confirm the visible dialog's action button after step-up authentication. */
+async function confirmDialog(action: string, password = 'admin-pass'): Promise<void> {
   const dialog = await screen.findByRole('dialog');
+  fireEvent.change(within(dialog).getByLabelText('Password'), { target: { value: password } });
   fireEvent.click(within(dialog).getByRole('button', { name: action }));
 }
 
 beforeEach(() => {
   for (const fn of Object.values(adminApi)) fn.mockReset();
   adminApi.listFlags.mockResolvedValue([FLAG]);
+  adminApi.requestStepUp.mockResolvedValue('step-token');
   adminApi.resolveFlag.mockResolvedValue({});
 });
 
@@ -262,7 +265,11 @@ describe('AdminFlagsPage (/admin/flags)', () => {
       await confirmDialog('Resolve');
 
       await waitFor(() =>
-        expect(adminApi.resolveFlag).toHaveBeenCalledWith('content-abcdefghijklmnop', 'active'),
+        expect(adminApi.resolveFlag).toHaveBeenCalledWith(
+          'content-abcdefghijklmnop',
+          'active',
+          'step-token',
+        ),
       );
     });
 
@@ -278,9 +285,13 @@ describe('AdminFlagsPage (/admin/flags)', () => {
       // "removed" is destructive: it deletes the title, not just the flag.
       expect(within(dialog).getByText(/will be set to "removed"/)).toBeInTheDocument();
 
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
+      await confirmDialog('Remove');
       await waitFor(() =>
-        expect(adminApi.resolveFlag).toHaveBeenCalledWith('content-abcdefghijklmnop', 'removed'),
+        expect(adminApi.resolveFlag).toHaveBeenCalledWith(
+          'content-abcdefghijklmnop',
+          'removed',
+          'step-token',
+        ),
       );
     });
 
@@ -293,6 +304,22 @@ describe('AdminFlagsPage (/admin/flags)', () => {
 
       expect(adminApi.resolveFlag).not.toHaveBeenCalled();
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    });
+
+    it('shows the step-up error inline and does not resolve when the password is rejected', async () => {
+      adminApi.requestStepUp.mockRejectedValue({
+        response: { data: { detail: 'Invalid password' } },
+      });
+
+      renderWithQuery(<AdminFlagsPage />);
+      await screen.findByText('content-abcdefgh…');
+
+      fireEvent.click(screen.getByRole('button', { name: /Resolve/ }));
+      await confirmDialog('Resolve', 'wrong-password');
+
+      expect(await screen.findByText('Invalid password')).toBeInTheDocument();
+      expect(adminApi.resolveFlag).not.toHaveBeenCalled();
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
 
     it('keeps the flag listed when resolution fails', async () => {

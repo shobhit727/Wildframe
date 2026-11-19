@@ -6,9 +6,19 @@ import { toast } from 'sonner';
 import * as api from '@/api/admin';
 import type { UserStatus, ContentStatus, AlertSeverity, ConfigType } from '@/types/admin';
 
-function errMessage(e: unknown, fallback: string) {
+export function adminErrorMessage(e: unknown, fallback: string) {
   const anyE = e as { response?: { data?: { detail?: string } }; message?: string };
   return anyE?.response?.data?.detail ?? anyE?.message ?? fallback;
+}
+
+// ---- Step-up authentication ----
+// Exchanges the admin password for a single-use token. Errors surface inline in
+// the confirmation dialog, so no toast here.
+export function useRequestStepUp() {
+  return useMutation({
+    mutationFn: (input: { password: string; mfa_code?: string }) =>
+      api.requestStepUp(input.password, input.mfa_code),
+  });
 }
 
 // ---- Users ----
@@ -23,14 +33,14 @@ export function useUsers(params: { limit?: number; offset?: number; status?: str
 export function useModerateUser() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { user_id: string; status: UserStatus; reason?: string }) =>
-      api.moderateUser(input.user_id, input.status, input.reason),
+    mutationFn: (input: { user_id: string; status: UserStatus; reason?: string; reauthToken?: string }) =>
+      api.moderateUser(input.user_id, input.status, input.reason, input.reauthToken),
     onSuccess: (_, vars) => {
       toast.success(`User ${vars.status}`);
       qc.invalidateQueries({ queryKey: ['admin', 'users'] });
       qc.invalidateQueries({ queryKey: ['admin', 'stats'] });
     },
-    onError: (e) => toast.error(errMessage(e, 'Failed to moderate user')),
+    onError: (e) => toast.error(adminErrorMessage(e, 'Failed to moderate user')),
   });
 }
 
@@ -46,14 +56,14 @@ export function useFlags(params: { limit?: number; offset?: number } = {}) {
 export function useResolveFlag() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { content_id: string; status: ContentStatus }) =>
-      api.resolveFlag(input.content_id, input.status),
+    mutationFn: (input: { content_id: string; status: ContentStatus; reauthToken?: string }) =>
+      api.resolveFlag(input.content_id, input.status, input.reauthToken),
     onSuccess: () => {
       toast.success('Flag updated');
       qc.invalidateQueries({ queryKey: ['admin', 'flags'] });
       qc.invalidateQueries({ queryKey: ['admin', 'stats'] });
     },
-    onError: (e) => toast.error(errMessage(e, 'Failed to resolve flag')),
+    onError: (e) => toast.error(adminErrorMessage(e, 'Failed to resolve flag')),
   });
 }
 
@@ -76,7 +86,7 @@ export function useCreateAlert() {
       qc.invalidateQueries({ queryKey: ['admin', 'alerts'] });
       qc.invalidateQueries({ queryKey: ['admin', 'stats'] });
     },
-    onError: (e) => toast.error(errMessage(e, 'Failed to create alert')),
+    onError: (e) => toast.error(adminErrorMessage(e, 'Failed to create alert')),
   });
 }
 
@@ -89,7 +99,7 @@ export function useAcknowledgeAlert() {
       qc.invalidateQueries({ queryKey: ['admin', 'alerts'] });
       qc.invalidateQueries({ queryKey: ['admin', 'stats'] });
     },
-    onError: (e) => toast.error(errMessage(e, 'Failed to acknowledge')),
+    onError: (e) => toast.error(adminErrorMessage(e, 'Failed to acknowledge')),
   });
 }
 
@@ -111,7 +121,7 @@ export function useSetConfig() {
       toast.success(`Config "${vars.key}" saved`);
       qc.invalidateQueries({ queryKey: ['admin', 'configs'] });
     },
-    onError: (e) => toast.error(errMessage(e, 'Failed to save config')),
+    onError: (e) => toast.error(adminErrorMessage(e, 'Failed to save config')),
   });
 }
 

@@ -22,6 +22,18 @@ export interface ListParams {
 
 import { apiClient } from './client';
 
+// ---- Step-up authentication ----
+// Destructive admin routes require a short-lived, single-use step-up token in
+// `X-Admin-Reauth`; the ordinary access token is rejected by the service.
+export async function requestStepUp(password: string, mfaCode?: string) {
+  const body = mfaCode ? { password, mfa_code: mfaCode } : { password };
+  const { data } = await apiClient.client.post<{ step_up_token: string; expires_in: number }>(
+    '/auth/api/v1/auth/step-up',
+    body,
+  );
+  return data.step_up_token;
+}
+
 // ---- User moderation ----
 export async function listUsers(params: ListParams & { status?: string; search?: string } = {}) {
   // Backend: GET /api/admin/users/moderated?status=&limit=&offset=
@@ -33,12 +45,18 @@ export async function listUsers(params: ListParams & { status?: string; search?:
   return data;
 }
 
-export async function moderateUser(user_id: string, status: UserStatus, reason?: string) {
-  const { data } = await apiClient.client.post('/admin/api/v1/admin/users/moderate', {
-    user_id,
-    status,
-    reason,
-  });
+export async function moderateUser(
+  user_id: string,
+  status: UserStatus,
+  reason?: string,
+  reauthToken?: string,
+) {
+  const config = reauthToken ? { headers: { 'X-Admin-Reauth': reauthToken } } : undefined;
+  const { data } = await apiClient.client.post(
+    '/admin/api/v1/admin/users/moderate',
+    { user_id, status, reason },
+    config,
+  );
   return data;
 }
 
@@ -50,9 +68,10 @@ export async function listFlags(params: ListParams = {}) {
   return data;
 }
 
-export async function resolveFlag(content_id: string, status: ContentStatus) {
+export async function resolveFlag(content_id: string, status: ContentStatus, reauthToken?: string) {
   const { data } = await apiClient.client.post('/admin/api/v1/admin/content/resolve', null, {
     params: { content_id, status },
+    ...(reauthToken ? { headers: { 'X-Admin-Reauth': reauthToken } } : {}),
   });
   return data;
 }

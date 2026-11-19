@@ -8,6 +8,7 @@ import type { AdminUser } from '@/types/admin';
 const { adminApi } = vi.hoisted(() => ({
   adminApi: {
     listUsers: vi.fn(),
+    requestStepUp: vi.fn(),
     moderateUser: vi.fn(),
     listFlags: vi.fn(),
     listAlerts: vi.fn(),
@@ -115,9 +116,19 @@ function countText(): string {
   return screen.getByText(/^\d+ users?$/).textContent ?? '';
 }
 
+/**
+ * Confirm a moderation action. The dialog now requires step-up authentication,
+ * so the confirm button stays disabled until a password is entered.
+ */
+async function confirmWithPassword(dialog: HTMLElement, label: string, password = 'admin-pass') {
+  fireEvent.change(within(dialog).getByLabelText('Password'), { target: { value: password } });
+  fireEvent.click(within(dialog).getByRole('button', { name: label }));
+}
+
 beforeEach(() => {
   for (const fn of Object.values(adminApi)) fn.mockReset();
   adminApi.listUsers.mockResolvedValue([ADA]);
+  adminApi.requestStepUp.mockResolvedValue('step-token');
   adminApi.moderateUser.mockResolvedValue({});
 });
 
@@ -375,13 +386,14 @@ describe('AdminUsersPage (/admin/users)', () => {
       openRowMenu();
       await chooseMenuItem(/Ban/);
       const dialog = await screen.findByRole('dialog', { name: 'Ban user' });
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Ban' }));
+      await confirmWithPassword(dialog, 'Ban');
 
       await waitFor(() =>
         expect(adminApi.moderateUser).toHaveBeenCalledWith(
           'user-1-abcdefghijklmnop',
           'banned',
           undefined,
+          'step-token',
         ),
       );
     });
@@ -397,7 +409,7 @@ describe('AdminUsersPage (/admin/users)', () => {
       openRowMenu();
       await chooseMenuItem(/Ban/);
       const dialog = await screen.findByRole('dialog', { name: 'Ban user' });
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Ban' }));
+      await confirmWithPassword(dialog, 'Ban');
 
       // Re-banning without the original reason would erase the audit trail.
       await waitFor(() =>
@@ -405,6 +417,7 @@ describe('AdminUsersPage (/admin/users)', () => {
           'user-1-abcdefghijklmnop',
           'banned',
           'chargeback fraud',
+          'step-token',
         ),
       );
     });
@@ -416,13 +429,14 @@ describe('AdminUsersPage (/admin/users)', () => {
       openRowMenu();
       await chooseMenuItem(/Suspend/);
       const dialog = await screen.findByRole('dialog', { name: 'Suspend user' });
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Suspend' }));
+      await confirmWithPassword(dialog, 'Suspend');
 
       await waitFor(() =>
         expect(adminApi.moderateUser).toHaveBeenCalledWith(
           'user-1-abcdefghijklmnop',
           'suspended',
           undefined,
+          'step-token',
         ),
       );
     });
@@ -435,13 +449,14 @@ describe('AdminUsersPage (/admin/users)', () => {
       openRowMenu();
       await chooseMenuItem(/Activate/);
       const dialog = await screen.findByRole('dialog', { name: 'Activate user' });
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Activate' }));
+      await confirmWithPassword(dialog, 'Activate');
 
       await waitFor(() =>
         expect(adminApi.moderateUser).toHaveBeenCalledWith(
           'user-1-abcdefghijklmnop',
           'active',
           undefined,
+          'step-token',
         ),
       );
     });
@@ -460,6 +475,37 @@ describe('AdminUsersPage (/admin/users)', () => {
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     });
 
+    it('keeps the confirm action disabled until a password is entered', async () => {
+      renderWithQuery(<AdminUsersPage />);
+      await screen.findByText('First1 Last1');
+
+      openRowMenu();
+      await chooseMenuItem(/Ban/);
+      const dialog = await screen.findByRole('dialog', { name: 'Ban user' });
+
+      expect(within(dialog).getByRole('button', { name: 'Ban' })).toBeDisabled();
+      expect(adminApi.requestStepUp).not.toHaveBeenCalled();
+      expect(adminApi.moderateUser).not.toHaveBeenCalled();
+    });
+
+    it('shows the step-up error inline and does not moderate when the password is rejected', async () => {
+      adminApi.requestStepUp.mockRejectedValue({
+        response: { data: { detail: 'Invalid password' } },
+      });
+
+      renderWithQuery(<AdminUsersPage />);
+      await screen.findByText('First1 Last1');
+
+      openRowMenu();
+      await chooseMenuItem(/Ban/);
+      const dialog = await screen.findByRole('dialog', { name: 'Ban user' });
+      await confirmWithPassword(dialog, 'Ban', 'wrong-password');
+
+      expect(await within(dialog).findByText('Invalid password')).toBeInTheDocument();
+      expect(adminApi.moderateUser).not.toHaveBeenCalled();
+      expect(screen.getByRole('dialog', { name: 'Ban user' })).toBeInTheDocument();
+    });
+
     it('keeps the row visible when moderation fails', async () => {
       adminApi.moderateUser.mockRejectedValue({
         response: { data: { detail: 'user is the last administrator' } },
@@ -471,7 +517,7 @@ describe('AdminUsersPage (/admin/users)', () => {
       openRowMenu();
       await chooseMenuItem(/Ban/);
       const dialog = await screen.findByRole('dialog', { name: 'Ban user' });
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Ban' }));
+      await confirmWithPassword(dialog, 'Ban');
 
       await waitFor(() => expect(adminApi.moderateUser).toHaveBeenCalled());
       // The dialog only closes on success, so the operator still sees the

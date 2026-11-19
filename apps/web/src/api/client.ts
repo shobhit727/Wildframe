@@ -44,6 +44,7 @@ const AUTH_ENDPOINTS = [
   '/auth/api/v1/auth/login',
   '/auth/api/v1/auth/register',
   '/auth/api/v1/auth/mfa/login-verify',
+  '/auth/api/v1/auth/step-up',
   '/auth/api/v1/auth/refresh',
   '/auth/api/v1/auth/logout',
 ];
