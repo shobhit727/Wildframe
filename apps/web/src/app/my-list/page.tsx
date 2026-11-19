@@ -100,7 +100,10 @@ export default function MyListPage() {
               >
                 {tab.label}
                 {tab.count > 0 && (
-                  <span className="ml-2 text-xs text-brand-400">({tab.count})</span>
+                  <>
+                    {' '}
+                    <span className="ml-1 text-xs text-brand-400">({tab.count})</span>
+                  </>
                 )}
               </button>
             ))}

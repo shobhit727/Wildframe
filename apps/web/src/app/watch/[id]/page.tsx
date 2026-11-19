@@ -213,7 +213,10 @@ function WatchContent({ contentId }: { contentId: string }) {
                 <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
                   {content.title}
                   {selectedEpisode && content.type === 'show' && (
-                    <span className="text-xl text-gray-400"> · Ep {selectedEpisode.number}</span>
+                    <>
+                      {' '}
+                      <span className="text-xl text-gray-400">· Ep {selectedEpisode.number}</span>
+                    </>
                   )}
                 </h1>
                 <div className="flex items-center gap-3 text-sm text-gray-400">
