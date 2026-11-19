@@ -765,16 +765,17 @@ class TestIncludeRouterRoutesSurviveInstrumentation:
             "opentelemetry-instrumentation-fastapi",
             "opentelemetry-instrumentation-asgi",
         ):
-            assert deps[package] == "^0.64b0", (
-                f"{package} must stay at ^0.64b0; 0.64b0 is the first release that "
-                "tolerates an _IncludedRouter in scope['route'] (issue #978). "
-                "0.50b0 and 0.55b0 still carry the broken code."
+            assert deps[package] == "^0.66b2", (
+                f"{package} must stay at ^0.66b2. 0.64b0 is the first release that "
+                "tolerates an _IncludedRouter in scope['route'] (issue #978), and "
+                "0.66b2 is the pairing for the GHSA-patched API 1.45.2 (#1163)."
             )
 
-        # The API/SDK floor has to move with the instrumentation: below 1.43.0 the
-        # SDK pins an older semantic-conventions that cannot coexist with 0.64b0.
-        assert deps["opentelemetry-api"] == "^1.43.0"
-        assert deps["opentelemetry-sdk"] == "^1.43.0"
+        # The API/SDK floor has to move with the instrumentation: sdk 1.45.2 pins
+        # semantic-conventions==0.66b2, and API 1.45.2 is the first release that
+        # fixes GHSA-mf5v and GHSA-xcq7 (#1163).
+        assert deps["opentelemetry-api"] == "^1.45.2"
+        assert deps["opentelemetry-sdk"] == "^1.45.2"
 
         # The Jaeger exporter is discontinued at 1.21.0 and is incompatible with
         # SDK 1.43.0, so it must not creep back in.

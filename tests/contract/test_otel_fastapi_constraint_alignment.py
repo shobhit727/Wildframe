@@ -45,8 +45,12 @@ LOCKS = [
 # is the behavioural test for that; this one is the bookkeeping check, and it
 # exists because a version bump with green tests and an unfixed 500 is exactly
 # what #978 was.
-EXPECTED_CONSTRAINT = "^0.64b0"
-EXPECTED_LOCK_VERSION = "0.64b0"
+#
+# The family moved to 1.45.2 / 0.66b2 together in #1163: API 1.45.2 is the first
+# release fixing GHSA-mf5v and GHSA-xcq7, and sdk 1.45.2 requires
+# semantic-conventions==0.66b2, so the instrumentation moves with it.
+EXPECTED_CONSTRAINT = "^0.66b2"
+EXPECTED_LOCK_VERSION = "0.66b2"
 
 
 def _declared_constraint(path: Path) -> str | None:

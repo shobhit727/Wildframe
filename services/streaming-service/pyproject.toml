@@ -23,9 +23,9 @@ wildframe-auth = {path = "../../packages/sdk/wildframe_auth", develop = true}
 aiokafka = "^0.10.0"
 wildframe-compliance = {path = "../../packages/sdk/wildframe_compliance", develop = true}
 protobuf = ">=5.29.6,<6"
-opentelemetry-api = "^1.43.0"
-opentelemetry-sdk = "^1.43.0"
-opentelemetry-exporter-otlp-proto-grpc = "^1.43.0"
+opentelemetry-api = "^1.45.2"
+opentelemetry-sdk = "^1.45.2"
+opentelemetry-exporter-otlp-proto-grpc = "^1.45.2"
 # Declared explicitly rather than left to arrive transitively through
 # wildframe-observability, because this service calls wire_observability() and
 # wire.py imports FastAPIInstrumentor directly. The image does not pip-install
@@ -43,8 +43,9 @@ opentelemetry-exporter-otlp-proto-grpc = "^1.43.0"
 # The 1.43.0 API/SDK floor must move with it: 0.64b0 instrumentations require
 # semantic-conventions==0.64b0 and every SDK below 1.43.0 pins
 # semantic-conventions to an older 0.4x, so a lower floor resolves to a set
-# that cannot install.
-opentelemetry-instrumentation-fastapi = "^0.64b0"
+# that cannot install. The family now sits at 1.45.2 / 0.66b2, the first API
+# release that fixes GHSA-mf5v and GHSA-xcq7 (issue #1163).
+opentelemetry-instrumentation-fastapi = "^0.66b2"
 setuptools = ">=84,<86"
 cryptography = ">=41.0.7,<51.0.0"
 
