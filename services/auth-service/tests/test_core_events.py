@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiokafka.structs import TopicPartition
 from app.core import event_consumer
 from app.core.events import (
     get_event_publisher,
@@ -169,8 +170,19 @@ class TestUserRegisteredEvent:
 
 
 class _FakeMessage:
-    def __init__(self, payload: dict):
-        self.value = json.dumps(payload).encode("utf-8")
+    def __init__(self, payload, *, offset: int = 0, partition: int = 0):
+        raw = payload if isinstance(payload, bytes) else json.dumps(payload).encode("utf-8")
+        self.value = raw
+        self.topic = event_consumer.USER_MODERATED_TOPIC
+        self.partition = partition
+        self.offset = offset
+
+
+_UID = b"5f0c6a52-3b7e-4d6a-9f2e-1c2d3e4f5a6b"
+
+
+def _tp(partition: int = 0) -> TopicPartition:
+    return TopicPartition(event_consumer.USER_MODERATED_TOPIC, partition)
 
 
 class _FakeConsumer:
@@ -185,6 +197,7 @@ class _FakeConsumer:
         self.started = False
         self.stopped = False
         self.commits = 0
+        self.committed: list = []
         self.stop_error: Exception | None = None
         self.start_error: Exception | None = None
         type(self).instances.append(self)
@@ -201,8 +214,9 @@ class _FakeConsumer:
 
         return gen()
 
-    async def commit(self):
+    async def commit(self, offsets=None):
         self.commits += 1
+        self.committed.append(offsets)
 
     async def stop(self):
         if self.stop_error:
@@ -219,17 +233,21 @@ def fake_consumer():
 
 
 @contextlib.contextmanager
-def _seeded(message):
+def _seeded(*messages):
     """Pre-load the fake consumer's queue for the instance built inside the task.
 
     ``run_user_moderation_consumer`` constructs the consumer synchronously, so
-    seeding its ``__init__`` is enough to make the async-for drain the message.
+    seeding its ``__init__`` is enough to make the async-for drain the messages.
+    Dict payloads are wrapped in ``_FakeMessage`` at consecutive offsets.
     """
     original_init = _FakeConsumer.__init__
 
     def init_with_message(self, *topics, **kwargs):
         original_init(self, *topics, **kwargs)
-        self.messages = [message if not isinstance(message, dict) else _FakeMessage(message)]
+        self.messages = [
+            _FakeMessage(message, offset=offset) if isinstance(message, dict) else message
+            for offset, message in enumerate(messages)
+        ]
 
     with patch.object(_FakeConsumer, "__init__", init_with_message):
         yield
@@ -470,7 +488,7 @@ class TestRunUserModerationConsumer:
     async def test_commits_the_offset_even_for_a_malformed_message(
         self, fake_consumer, test_session, uuid_str_binds
     ):
-        # "status" is missing, so the apply raises and the inner except fires.
+        # "status" is missing and "user_id" is not a UUID: never applicable.
         with _seeded({"user_id": "x"}):
             await event_consumer.run_user_moderation_consumer(_make_factory(uuid_str_binds))
 
@@ -481,17 +499,149 @@ class TestRunUserModerationConsumer:
     async def test_invalid_json_does_not_kill_the_loop(
         self, fake_consumer, test_session, uuid_str_binds, caplog
     ):
-        class _BadMessage:
-            value = b"not-json"
-
         with (
-            _seeded(_BadMessage()),
+            _seeded(_FakeMessage(b"not-json", offset=7)),
             caplog.at_level(logging.ERROR, logger="app.core.event_consumer"),
         ):
             await event_consumer.run_user_moderation_consumer(_make_factory(test_session))
 
-        assert "failed to apply user.moderated message" in caplog.text
-        assert fake_consumer.instances[0].stopped is True
+        assert (
+            "skipping malformed user.moderated topic=user.moderated partition=0 offset=7"
+            in caplog.text
+        )
+        consumer = fake_consumer.instances[0]
+        assert consumer.committed == [{_tp(): 8}]
+        assert consumer.stopped is True
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            pytest.param(b"not-json", id="unparseable"),
+            pytest.param(b"\xff\xfe", id="not-utf8"),
+            pytest.param(b"[1, 2]", id="not-an-object"),
+            pytest.param(b'{"payload": "x"}', id="payload-not-an-object"),
+            pytest.param(b'{"payload": {"user_id": "' + _UID + b'"}}', id="missing-status"),
+            pytest.param(b'{"payload": {"status": "banned"}}', id="missing-user-id"),
+            pytest.param(b'{"user_id": "not-a-uuid", "status": "banned"}', id="non-uuid-user-id"),
+        ],
+    )
+    async def test_malformed_message_is_logged_and_skipped_without_applying(
+        self, fake_consumer, raw, caplog
+    ):
+        apply = AsyncMock()
+        with (
+            patch.object(event_consumer, "_apply_moderation", apply),
+            _seeded(_FakeMessage(raw, offset=3)),
+            caplog.at_level(logging.ERROR, logger="app.core.event_consumer"),
+        ):
+            await event_consumer.run_user_moderation_consumer(_make_factory(AsyncMock()))
+
+        apply.assert_not_awaited()
+        assert (
+            "skipping malformed user.moderated topic=user.moderated partition=0 offset=3"
+            in caplog.text
+        )
+        assert fake_consumer.instances[0].committed == [{_tp(): 4}]
+
+    async def test_success_commits_exactly_once_after_the_apply(
+        self, fake_consumer, test_session, uuid_str_binds
+    ):
+        from app.models import User
+        from app.security import PasswordManager
+
+        user = User(
+            email="commit-once@example.com",
+            password_hash=PasswordManager.hash_password("Secret1234!"),
+            is_active=True,
+        )
+        test_session.add(user)
+        await test_session.commit()
+
+        message = _FakeMessage(
+            {"payload": {"user_id": str(user.id), "status": "banned"}}, offset=41
+        )
+        with _seeded(message):
+            await event_consumer.run_user_moderation_consumer(_make_factory(uuid_str_binds))
+
+        await test_session.refresh(user)
+        assert user.is_active is False
+        assert fake_consumer.instances[0].committed == [{_tp(): 42}]
+
+    async def test_failed_apply_is_not_committed_and_stops_the_consumer(
+        self, fake_consumer, monkeypatch, caplog
+    ):
+        # #1115: the old loop committed in ``finally``, so a DB outage during
+        # the apply advanced the offset and the moderation decision was lost.
+        # raising=False keeps the red run on pre-#1115 code failing on the
+        # commit assertion below rather than on this setup line.
+        monkeypatch.setattr(event_consumer, "APPLY_RETRY_BACKOFF_SECONDS", 0, raising=False)
+        apply = AsyncMock(side_effect=ConnectionError("db down"))
+        decision = {"payload": {"user_id": _UID.decode(), "status": "banned"}}
+        later = {"payload": {"user_id": _UID.decode(), "status": "active"}}
+        with (
+            patch.object(event_consumer, "_apply_moderation", apply),
+            _seeded(decision, later),
+            caplog.at_level(logging.ERROR, logger="app.core.event_consumer"),
+        ):
+            await event_consumer.run_user_moderation_consumer(_make_factory(AsyncMock()))
+
+        consumer = fake_consumer.instances[0]
+        # Neither the failed offset nor any later one was committed, so the
+        # failed decision replays on restart instead of being skipped.
+        assert consumer.commits == 0
+        assert apply.await_count == event_consumer.APPLY_MAX_ATTEMPTS
+        assert all(c.args[2] == "banned" for c in apply.await_args_list)
+        assert "stopping without commit topic=user.moderated partition=0 offset=0" in caplog.text
+        assert consumer.stopped is True
+
+    async def test_transient_failure_is_retried_then_committed_once(
+        self, fake_consumer, monkeypatch
+    ):
+        monkeypatch.setattr(event_consumer, "APPLY_RETRY_BACKOFF_SECONDS", 0, raising=False)
+        apply = AsyncMock(side_effect=[ConnectionError("blip"), None])
+        with (
+            patch.object(event_consumer, "_apply_moderation", apply),
+            _seeded({"user_id": _UID.decode(), "status": "suspended"}),
+        ):
+            await event_consumer.run_user_moderation_consumer(_make_factory(AsyncMock()))
+
+        assert apply.await_count == 2
+        assert fake_consumer.instances[0].committed == [{_tp(): 1}]
+
+    async def test_uncommitted_decision_is_applied_idempotently_on_redelivery(
+        self, fake_consumer, test_session, uuid_str_binds, monkeypatch
+    ):
+        from app.models import User
+        from app.security import PasswordManager
+
+        monkeypatch.setattr(event_consumer, "APPLY_RETRY_BACKOFF_SECONDS", 0, raising=False)
+        user = User(
+            email="replay@example.com",
+            password_hash=PasswordManager.hash_password("Secret1234!"),
+            is_active=True,
+        )
+        test_session.add(user)
+        await test_session.commit()
+        decision = {"payload": {"user_id": str(user.id), "status": "suspended"}}
+
+        # First run: the DB is down, nothing is committed.
+        with (
+            patch.object(
+                event_consumer, "_apply_moderation", AsyncMock(side_effect=OSError("db down"))
+            ),
+            _seeded(decision),
+        ):
+            await event_consumer.run_user_moderation_consumer(_make_factory(uuid_str_binds))
+        assert fake_consumer.instances[0].commits == 0
+
+        # Restart: the same offset is redelivered (twice, as at-least-once
+        # allows) and the decision lands with the same end state.
+        with _seeded(decision, decision):
+            await event_consumer.run_user_moderation_consumer(_make_factory(uuid_str_binds))
+
+        await test_session.refresh(user)
+        assert user.is_active is False
+        assert fake_consumer.instances[1].committed == [{_tp(): 1}, {_tp(): 2}]
 
     async def test_broker_failure_is_swallowed_and_stops_the_consumer(self, fake_consumer):
         original_init = _FakeConsumer.__init__
