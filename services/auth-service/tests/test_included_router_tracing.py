@@ -28,7 +28,11 @@ from app.main import create_app
 
 
 @pytest.fixture
-def traced_app() -> Iterator[tuple[FastAPI, InMemorySpanExporter]]:
+def traced_app(monkeypatch) -> Iterator[tuple[FastAPI, InMemorySpanExporter]]:
+    # With JAEGER_ENABLED set, create_app() would instrument the app with its own
+    # provider first and the instrument_app() call below would be a no-op, so no
+    # span would reach this exporter.
+    monkeypatch.delenv("JAEGER_ENABLED", raising=False)
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
