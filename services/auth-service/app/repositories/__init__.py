@@ -13,7 +13,7 @@ from app.models import (
     User,
 )
 from app.security import normalize_email
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -98,16 +98,30 @@ class UserRepository(BaseRepository):
             raise
 
     async def increment_login_attempts(self, user_id: UUID) -> User:
-        """Increment failed login attempts.
+        """Atomically increment failed login attempts (#1122).
+
+        The increment is computed SQL-side (``login_attempts + 1``) in a single
+        ``UPDATE ... RETURNING``, so concurrent failed logins cannot lose
+        increments and weaken lockout. The returned row is the session's
+        identity-mapped ``User``, refreshed with the post-increment count.
 
         Raises: ValueError: if the user no longer exists (caller already
             validated the id; absence indicates a race deletion).
         """
-        user = await self.get_by_id(user_id)
+        stmt = (
+            update(User)
+            .where(User.id == user_id, User.is_active.is_(True))
+            .values(login_attempts=User.login_attempts + 1)
+            .returning(User)
+            # The default "evaluate" sync would recompute ``+ 1`` in Python on a
+            # possibly stale identity-mapped instance; overwrite it with the
+            # authoritative RETURNING row instead.
+            .execution_options(synchronize_session=False, populate_existing=True)
+        )
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
         if user is None:
             raise ValueError(f"user {user_id} not found")
-        user.login_attempts += 1
-        await self.flush()
         return user
 
     async def reset_login_attempts(self, user_id: UUID) -> User:
