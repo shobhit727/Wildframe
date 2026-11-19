@@ -1,69 +1,78 @@
 # 📊 Monitoring & Observability
 
-**Version**: 1.0.0  
-**Last Updated**: May 28, 2026  
-**Stability**: Production-Ready
+**Version**: 1.1.0  
+**Last Updated**: November 17, 2026  
+**Stability**: Partial — metrics, dashboards and dev tracing work; log shipping and alerting do not exist yet (see [Known gaps](#known-gaps))
 
 ## Overview
 
-Wildframe uses a comprehensive observability stack to monitor system health, performance, and user experience. This guide covers metrics collection, logging, tracing, and alerting.
+Wildframe's observability stack runs in the local compose environment (`deployments/docker-compose.dev.yml`). This guide covers what is actually deployed today: metrics, logging, tracing, dashboards and the current state of alerting.
 
-**Time to read**: 20 minutes  
+The Helm chart (`infrastructure/helm/wildframe/`) deploys only the application services. It ships no Prometheus, Grafana, Loki, Jaeger or Alertmanager; pods carry `prometheus.io/scrape` annotations for an externally operated Prometheus (`templates/deployment.yaml`). Note that such scrapes currently fail: the chart defaults each service's `ENVIRONMENT` to `production` but never sets `METRICS_TOKEN`, so the `/metrics` guard returns 401 to every caller (see [Metric Collection](#metric-collection)).
+
+**Time to read**: 15 minutes  
 **Prerequisites**: Understanding of monitoring concepts, Prometheus/Grafana basics
 
 ## Table of Contents
 
 1. [Observability Stack](#observability-stack)
-2. [Metrics](#metrics)
-3. [Logging](#logging)
-4. [Distributed Tracing](#distributed-tracing)
-5. [Dashboards](#dashboards)
-6. [Alerting](#alerting)
-7. [On-Call Procedures](#on-call-procedures)
+2. [Known gaps](#known-gaps)
+3. [Metrics](#metrics)
+4. [Logging](#logging)
+5. [Distributed Tracing](#distributed-tracing)
+6. [Dashboards](#dashboards)
+7. [Alerting](#alerting)
+8. [On-Call Procedures](#on-call-procedures)
 
 ---
 
 ## Observability Stack
 
+What `deployments/docker-compose.dev.yml` runs on current `main`:
+
 ```
-┌─────────────────────┐
-│   Applications      │ (Services emitting metrics, logs, traces)
-└──────────┬──────────┘
-           │
-    ┌──────┴──────┬────────────┬────────────┐
-    │             │            │            │
-┌───▼───┐  ┌─────▼──┐  ┌─────▼──┐  ┌─────▼──┐
-│Promtail│  │ Otel   │  │ Statsd │  │ Spans  │
-│(logs)  │  │Exporter│  │Exporter│  │Exporter│
-└───┬───┘  └────┬───┘  └────┬───┘  └────┬───┘
-    │           │           │           │
-    ▼           ▼           ▼           ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────┐
-│  Loki    │ │Prometheus│ │Prometheus│ │Jaeger│
-│(logs)    │ │(metrics) │ │(metrics) │ │(traces)
-└──────┬───┘ └──────┬───┘ └──────┬───┘ └──┬───┘
-       │           │            │        │
-       └───────┬───┴────────────┴───┬────┘
-               │                    │
-          ┌────▼─────────┐    ┌─────▼────┐
-          │  Grafana      │    │  Jaeger   │
-          │(Dashboards)   │    │  (Traces) │
-          └────┬──────────┘    └─────┬─────┘
-               │                     │
-               └──────────┬──────────┘
-                          │
-                    ┌─────▼──────┐
-                    │AlertManager │
-                    │ (Alerting)  │
-                    └─────┬───────┘
-                          │
-               ┌──────────┴──────────┐
-               │                     │
-          ┌────▼────┐        ┌──────▼──┐
-          │  Email  │        │  Slack  │
-          │Notifications│  │Notifications│
-          └─────────┘        └─────────┘
+┌────────────────────────────────────────────┐
+│ 15 FastAPI services                        │
+│  - /metrics (prometheus_client)            │
+│  - logs to stdout (mostly JSON)            │
+│  - OTLP spans (only where JAEGER_ENABLED)  │
+└──────┬─────────────────┬──────────────┬────┘
+       │ scrape :8000    │ OTLP gRPC    │ stdout only
+       │ (bearer token)  │ jaeger:4317  │ (no shipper)
+       ▼                 ▼              ✕
+┌────────────┐     ┌──────────┐    ┌──────────┐
+│ Prometheus │◄─┐  │  Jaeger  │    │   Loki   │ (running, receives nothing)
+└─────┬──────┘  │  └──────────┘    └────┬─────┘
+      │         │                       │
+      │   postgres-exporter :9187       │
+      │   redis-exporter    :9121       │
+      ▼                                 ▼
+┌──────────────────────────────────────────┐
+│ Grafana (datasources: Prometheus, Loki)  │
+└──────────────────────────────────────────┘
+
+No Alertmanager, no alert rules, no notification channels.
 ```
+
+| Component | Compose service | Host access (dev) |
+|-----------|-----------------|-------------------|
+| Prometheus | `prometheus` | `https://localhost:9090` (via Caddy) |
+| Grafana | `grafana` | `https://localhost:3001` (Grafana serves TLS itself, bound to 127.0.0.1) |
+| Loki | `loki` | `https://localhost:3100` (via Caddy) |
+| Jaeger UI | `jaeger` | `https://localhost:16686` (via Caddy) |
+| Postgres exporter | `postgres-exporter` | `http://localhost:9187` (published on all host interfaces) |
+| Redis exporter | `redis-exporter` | `http://localhost:9121` (published on all host interfaces) |
+
+Host port 3000 is the web app (Caddy), not Grafana. Certificates are self-signed by `scripts/generate-dev-certs.sh`; use `curl -k` or `--cacert`.
+
+## Known gaps
+
+These are tracked and in flight; the doc describes `main` as it is, not as planned:
+
+- **Alerting** — no Prometheus `rule_files`, no Alertmanager, no receivers: [#1117](https://github.com/shobhit727/Wildframe/issues/1117).
+- **Log shipping** — Loki runs and is a Grafana datasource, but no Promtail/Alloy/collector or Docker logging driver sends it anything: [#1118](https://github.com/shobhit727/Wildframe/issues/1118).
+- **Tracing coverage** — only 5 of 15 services set `JAEGER_ENABLED` in compose, and Helm sets it for none: [#1129](https://github.com/shobhit727/Wildframe/issues/1129). No trace context is propagated between services, so each service's spans form separate traces.
+- **Helm metrics scraping** — `METRICS_TOKEN` is not set by the chart, so `/metrics` returns 401 in Kubernetes: [#1133](https://github.com/shobhit727/Wildframe/issues/1133).
 
 ---
 
@@ -71,148 +80,83 @@ Wildframe uses a comprehensive observability stack to monitor system health, per
 
 ### Metric Collection
 
-All services emit metrics in Prometheus format:
+All 15 services expose Prometheus-format metrics on `/metrics`. Prometheus scrapes every 15 seconds (`infrastructure/prometheus/prometheus.yml`) with jobs:
+
+| Job | Targets |
+|-----|---------|
+| `prometheus` | `localhost:9090` |
+| `wildframe-services` | the 15 services on `:8000`, `bearer_token_file: /etc/prometheus/metrics_bearer_token` |
+| `postgres` | `postgres-exporter:9187` |
+| `redis` | `redis-exporter:9121` |
+
+Every service gates `/metrics` with `require_metrics_token`: when `ENVIRONMENT=production` the request must carry `Authorization: Bearer $METRICS_TOKEN`, otherwise it gets a 401; if `METRICS_TOKEN` is empty, every request gets a 401. In other environments the endpoint is open.
 
 ```bash
-# Prometheus scrapes metrics from each service every 15 seconds
-GET http://auth-service:8000/metrics
+# From inside wildframe-network (needs the running dev stack)
+curl -H "Authorization: Bearer $METRICS_TOKEN" http://auth-service:8000/metrics
 ```
 
-Example metrics response:
+### Application metrics
+
+Application metrics come from one shared middleware, `wildframe_observability.metrics.MetricsMiddleware` (`packages/sdk/wildframe_observability/metrics.py`). No service defines its own business metrics.
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `http_requests_total` | Counter | `method`, `endpoint`, `status_code`, `service` | HTTP requests handled |
+| `http_request_duration_seconds` | Histogram | `method`, `endpoint`, `service` | Request latency; buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10 |
+| `http_active_requests` | Gauge | `service` | Requests in flight |
+
+`endpoint` is the route template (e.g. `/api/v1/auth/login`), or `unmatched` for requests that match no route. The prometheus_client default collectors also emit `process_*` and `python_gc_*` metrics; these carry no `service` label, so only the scrape's `instance` label tells services apart.
+
+Database and cache metrics come from the exporters (`pg_*`, `redis_*`), e.g. `pg_stat_activity_count` and `pg_settings_max_connections` (Postgres `max_connections` is 200, set in `infrastructure/database/init-databases.sql`).
+
+Example scrape (abridged, illustrative values):
 
 ```
-# HELP python_gc_objects_collected_total Objects collected during gc
-# TYPE python_gc_objects_collected_total counter
-python_gc_objects_collected_total{generation="0"} 321.0
-
-# HELP fastapi_requests_total Total HTTP requests
-# TYPE fastapi_requests_total counter
-fastapi_requests_total{method="POST",path="/auth/login",status="200"} 1543.0
-fastapi_requests_total{method="POST",path="/auth/login",status="401"} 24.0
-
-# HELP fastapi_request_duration_seconds HTTP request latency in seconds
-# TYPE fastapi_request_duration_seconds histogram
-fastapi_request_duration_seconds_bucket{method="POST",path="/auth/login",le="0.005"} 324.0
-fastapi_request_duration_seconds_bucket{method="POST",path="/auth/login",le="0.01"} 1402.0
-fastapi_request_duration_seconds_bucket{method="POST",path="/auth/login",le="0.05"} 1521.0
-fastapi_request_duration_seconds_bucket{method="POST",path="/auth/login",le="+Inf"} 1543.0
-
-# HELP database_connection_pool_size Connection pool current size
-# TYPE database_connection_pool_size gauge
-database_connection_pool_size{service="auth_db"} 10.0
-
-# HELP database_connection_pool_available Available connections in pool
-# TYPE database_connection_pool_available gauge
-database_connection_pool_available{service="auth_db"} 7.0
+# HELP http_requests_total Total HTTP requests
+# TYPE http_requests_total counter
+http_requests_total{endpoint="/api/v1/auth/login",method="POST",service="auth-service",status_code="200"} 1543.0
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{endpoint="/api/v1/auth/login",le="0.05",method="POST",service="auth-service"} 1521.0
 ```
-
-### Key Metrics by Service
-
-#### Auth Service
-
-| Metric | Type | Labels | Description |
-|--------|------|--------|-------------|
-| `auth_registrations_total` | Counter | endpoint, status | Total user registrations |
-| `auth_login_attempts_total` | Counter | endpoint, status | Total login attempts |
-| `auth_token_generation_seconds` | Histogram | endpoint | Time to generate JWT |
-| `auth_failed_password_resets_total` | Counter | reason | Failed password resets |
-| `auth_rate_limit_hits_total` | Counter | endpoint | Rate limit violations |
-
-#### User Service
-
-| Metric | Type | Labels | Description |
-|--------|------|--------|-------------|
-| `user_profiles_active_total` | Gauge | none | Total active user profiles |
-| `user_devices_registered_total` | Counter | device_type | Registered devices by type |
-| `user_sessions_active_total` | Gauge | none | Active user sessions |
-| `user_watch_history_entries_total` | Counter | content_type | Watch history entries |
-
-#### Content Service
-
-| Metric | Type | Labels | Description |
-|--------|------|--------|-------------|
-| `content_items_total` | Gauge | content_type | Total content items |
-| `content_requests_total` | Counter | content_id, status | Content requests |
-| `content_search_latency_seconds` | Histogram | index | Search query latency |
-| `content_ingestion_duration_seconds` | Histogram | source | Content ingestion time |
-
-#### Streaming Service
-
-| Metric | Type | Labels | Description |
-|--------|------|--------|-------------|
-| `streaming_sessions_active_total` | Gauge | none | Active streaming sessions |
-| `streaming_bandwidth_bytes_total` | Counter | quality, region | Bandwidth consumed |
-| `streaming_segment_duration_seconds` | Histogram | quality | Segment delivery time |
-| `streaming_errors_total` | Counter | error_type | Streaming errors |
 
 ### Accessing Prometheus
 
 ```bash
-# Port forward to Prometheus
-kubectl port-forward svc/prometheus 9090:9090 -n wildframe
-
-# Query metrics via API
-curl 'https://localhost:9090/api/v1/query?query=fastapi_requests_total'
-
-# Example response:
-# {
-#   "data": {
-#     "result": [
-#       {
-#         "metric": {"method": "POST", "path": "/auth/login", "status": "200"},
-#         "value": [1685268000, "1543"]
-#       }
-#     ]
-#   }
-# }
+# Dev compose, via Caddy (needs the running dev stack)
+curl -skG 'https://localhost:9090/api/v1/query' \
+  --data-urlencode 'query=sum by (service) (rate(http_requests_total[5m]))'
 ```
 
 ---
 
 ## Logging
 
-### Log Collection
+### Log format
 
-Services emit structured JSON logs. Promtail collects and sends to Loki:
+Services log to the console (stdout for auth-service and SDK-configured services; stderr for user-service and content-service); auth-service and content-service also write a log file. The format depends on the service:
+
+- **SDK `JSONFormatter`** (`packages/sdk/wildframe_observability/logging.py`), installed by `wire_observability`. One JSON object per line with `timestamp`, `level`, `logger`, `message`, `request_id`, `correlation_id`, `service_name`, plus any `extra={...}` fields and `exception` when an exception is attached. Keys matching `REDACT_FIELDS` (passwords, tokens, secrets, …) are replaced with `***REDACTED***`; values are stripped of control characters and ANSI colour codes.
+- **user-service, content-service** replace it at startup with their own `dictConfig` (`app/core/logging.py`) using `pythonjsonlogger` (fields such as `asctime`, `levelname`, `name`), without `service_name` and without the SDK redaction.
+- **auth-service** replaces it with `app/core/logging.py`: plain text when `ENVIRONMENT=development`, otherwise `CorrelationIdJsonFormatter` (adds `service`, `version`, `environment`).
+
+Example SDK `JSONFormatter` line:
+
+```json
+{"timestamp": "2026-11-17T10:30:00.123456+00:00", "level": "INFO", "logger": "billing.service", "message": "payout accrued", "request_id": "6f1c…", "correlation_id": "6f1c…", "service_name": "billing", "creator_id": "c0ffee…", "amount": 42.0}
+```
+
+Do not log unnecessary personal data such as email addresses (AGENTS.md §14).
+
+### Accessing logs
+
+There is no log shipper, so Loki holds no service logs ([#1118](https://github.com/shobhit727/Wildframe/issues/1118)). Read logs from the containers:
 
 ```bash
-# Service logs (structured JSON)
-{"level": "INFO", "timestamp": "2026-05-28T15:30:00Z", "message": "User login successful", "user_id": "123e4567", "email": "user@example.com"}
-
-# Loki stores and indexes for querying
+docker compose -f deployments/docker-compose.dev.yml logs -f auth-service
 ```
 
-### Accessing Logs
-
-```bash
-# Port forward to Grafana Explore
-kubectl port-forward svc/grafana 3000:3000 -n wildframe
-
-# Then in Grafana UI:
-# 1. Click "Explore"
-# 2. Select "Loki" data source
-# 3. Enter query: {service="auth-service"}
-# 4. Click "Run query"
-```
-
-### Log Query Examples
-
-```loki
-# All logs from auth service
-{service="auth-service"}
-
-# Error level logs
-{service="auth-service"} | level="ERROR"
-
-# Login attempts in last hour
-{service="auth-service"} | message="User login" | last=1h
-
-# Requests slower than 1 second
-{service="auth-service"} | duration_seconds > 1
-
-# Failed database queries
-{service="user-service"} | message=~"database.*error"
-```
+Once a shipper lands, query Loki from Grafana Explore with a parser stage, e.g. `{<stream selector>} | json | level="ERROR"` — the stream labels depend on the shipper's config.
 
 ---
 
@@ -220,198 +164,87 @@ kubectl port-forward svc/grafana 3000:3000 -n wildframe
 
 ### Trace Collection
 
-Services emit trace spans for every request. Jaeger collects and visualizes:
+`wire_observability` (`packages/sdk/wildframe_observability/wire.py`) enables OpenTelemetry tracing only when `JAEGER_ENABLED=true`, exporting OTLP gRPC to `OTEL_EXPORTER_OTLP_ENDPOINT` (`http://jaeger:4317` in compose; Jaeger runs with `COLLECTOR_OTLP_ENABLED=true`).
 
-```bash
-# Service: auth-service, Operation: POST /auth/login
-Trace ID: 4bf92f3577b34da6a3ce929d0e0e4736
-├── Span: api_request (2.3ms)
-│   ├── Span: validate_email (0.1ms)
-│   ├── Span: hash_password (1.2ms)
-│   ├── Span: database_insert (0.8ms)
-│   └── Span: send_email (0.2ms)
-```
+In compose, `JAEGER_ENABLED: 'true'` is set only for **api-gateway, auth-service, user-service, content-service, admin-service**. The other 10 services emit no spans. The Helm chart sets neither `JAEGER_ENABLED` nor `OTEL_EXPORTER_OTLP_ENDPOINT`, so tracing is off in Kubernetes ([#1129](https://github.com/shobhit727/Wildframe/issues/1129)).
+
+Spans come only from FastAPI auto-instrumentation of incoming requests. Outgoing HTTP calls are not instrumented and no trace context is injected, so a request through api-gateway and a backend produces separate traces. auth-service has a `setup_tracing()` helper for Redis/SQLAlchemy in `app/telemetry/__init__.py`, but nothing in `app/` calls it. There are no hand-written business spans.
 
 ### Accessing Jaeger
 
-```bash
-# Port forward to Jaeger UI
-kubectl port-forward svc/jaeger 16686:16686 -n wildframe
-
-# Open https://localhost:16686
-```
+Dev compose: open `https://localhost:16686` (Caddy → `jaeger:16686`).
 
 ### Trace Analysis
 
-1. **Service Topology**: View all services communicating in your request
-2. **Critical Path**: Identify which operations take the most time
-3. **Error Detection**: See where errors occur in the request chain
-4. **Performance Bottlenecks**: Identify slow database queries, API calls, etc.
+1. **Per-service request spans**: Latency and status of each incoming request in the 5 traced services
+2. **Slow endpoints**: Find the slowest requests per service and operation
+3. **Error Detection**: See which requests ended in errors
+
+Cross-service topology, critical path and database spans are not available until context propagation and client/DB instrumentation exist.
 
 ---
 
 ## Dashboards
 
-### Pre-built Dashboards
+### Provisioned Dashboards
 
-#### 1. System Overview
+Grafana provisions three dashboards from `infrastructure/grafana/provisioning/dashboards/`:
 
-```
-Wildframe System Overview
-├── Service Status (up/down)
-├── Request Rate (requests/sec)
-├── Error Rate (errors/sec)
-├── Latency (p50, p95, p99)
-├── CPU Usage by Service
-├── Memory Usage by Service
-└── Database Connections
-```
+| File | Title | Panels |
+|------|-------|--------|
+| `wildframe-overview.json` | Wildframe Overview | Requests per second by service, Error rate (5xx), Request duration p95 by service, Active requests, Top endpoints by request rate |
+| `wildframe-service-health.json` | Wildframe — Service Health | Services up/down, 5xx/4xx rate, p95 latency, Total RPS, Scrape health by target, Error ratio by service, request rate / p95 latency / active requests by service, busiest endpoints, runtime (CPU, resident memory, open FDs, GC) |
+| `wildframe-data-services.json` | Wildframe — Data Services (Postgres, Redis) | Postgres exporter scrape OK, Database size (and over time), Connections in use, Connection usage against limit, Redis memory, clients, ops/s, cache hit ratio, ACL denials |
 
-#### 2. Auth Service Dashboard
+Known panel caveats ([#1134](https://github.com/shobhit727/Wildframe/issues/1134)): the runtime panels aggregate `process_*`/`python_gc_*` `by (service)`, but those series carry no `service` label, so they collapse into one series; "Connections in use" and "Connection usage against limit" use `pg_database_connection_limit`, which is `-1` for every database here (no per-database limit is set), so the limit series is negative and does not show real headroom.
 
-```
-Auth Service Metrics
-├── Registrations (daily)
-├── Login Success Rate
-├── Failed Login Attempts
-├── Token Generation Latency
-├── Password Reset Success Rate
-├── Rate Limit Hits
-└── Database Query Performance
-```
-
-#### 3. User Service Dashboard
-
-```
-User Service Metrics
-├── Active User Profiles
-├── Device Registrations
-├── Session Activity
-├── Watch History Growth
-├── User Preference Changes
-└── Session Error Rate
-```
-
-#### 4. Content Service Dashboard
-
-```
-Content Service Metrics
-├── Total Content Items
-├── Content Search Queries
-├── Search Latency
-├── Content Ingestion Status
-├── Popular Content
-└── Genre Distribution
-```
-
-#### 5. Streaming Service Dashboard
-
-```
-Streaming Service Metrics
-├── Active Streams
-├── Bandwidth Usage
-├── Video Quality Distribution
-├── Playback Errors
-├── Regional Distribution
-└── Device Types
-```
+There are no per-service (auth/user/content/streaming) dashboards.
 
 ### Creating Custom Dashboards
 
-```bash
-# 1. In Grafana UI, click "+" → "New Dashboard"
-# 2. Add panels with queries like:
+In Grafana, **Dashboards → New dashboard**, then add panels with queries like:
 
-# Query: Request rate over time
-rate(fastapi_requests_total[1m])
+```promql
+# Request rate by service
+sum by (service) (rate(http_requests_total[1m]))
 
-# Query: Error rate percentage
-rate(fastapi_requests_total{status=~"5.."}[1m]) / rate(fastapi_requests_total[1m]) * 100
+# 5xx error ratio (%) by service
+sum by (service) (rate(http_requests_total{status_code=~"5.."}[5m]))
+  / sum by (service) (rate(http_requests_total[5m])) * 100
 
-# Query: P95 request latency
-histogram_quantile(0.95, fastapi_request_duration_seconds)
+# P95 request latency by service
+histogram_quantile(0.95, sum by (le, service) (rate(http_request_duration_seconds_bucket[5m])))
 
-# Query: Database connection pool usage
-database_connection_pool_size - database_connection_pool_available
+# Postgres connections used vs server max_connections
+sum(pg_stat_activity_count) / max(pg_settings_max_connections)
 ```
 
 ---
 
 ## Alerting
 
-### Alert Rules
+**No alerting exists on `main`.** `infrastructure/prometheus/prometheus.yml` has no `rule_files` or `alerting` block, there is no Alertmanager service, Grafana provisions no alert rules or contact points, and no email/Slack/PagerDuty receiver is configured. Adding rules and Alertmanager is tracked in [#1117](https://github.com/shobhit727/Wildframe/issues/1117); see [OPERATIONS.md](OPERATIONS.md) once it lands.
 
-Alerts are triggered based on metric thresholds:
+Until then, watch the **Scrape health by target** panel on the Service Health dashboard, or query `count(up{job="wildframe-services"} == 0) or vector(0)` for the number of down targets. (The **Services down** stat panel uses `sum(up{…} == 0)`, which always sums to 0, so it does not show outages: [#1134](https://github.com/shobhit727/Wildframe/issues/1134).)
 
-```yaml
-# prometheus-rules.yaml
-groups:
-- name: wildframe_alerts
-  rules:
-  - alert: HighErrorRate
-    expr: rate(fastapi_requests_total{status=~"5.."}[5m]) > 0.05
-    for: 5m
-    annotations:
-      summary: "High error rate detected (>5%)"
-      description: "Service {{ $labels.service }} has error rate of {{ $value }}"
-  
-  - alert: HighLatency
-    expr: histogram_quantile(0.95, fastapi_request_duration_seconds) > 1
-    for: 10m
-    annotations:
-      summary: "High request latency"
-      description: "P95 latency is {{ $value }}s"
-  
-  - alert: DatabaseConnectionPoolExhausted
-    expr: database_connection_pool_available < 1
-    for: 2m
-    annotations:
-      summary: "Database connection pool exhausted"
-      description: "No available connections for {{ $labels.service }}"
-  
-  - alert: ServiceDown
-    expr: up == 0
-    for: 1m
-    annotations:
-      summary: "Service is down"
-      description: "{{ $labels.service }} has not been responding for 1 minute"
-```
-
-### Notification Channels
-
-Alerts are sent to:
-
-1. **Email** - Critical alerts sent to ops team
-2. **Slack** - All alerts posted to #wildframe-alerts channel
-3. **PagerDuty** - Critical alerts trigger on-call rotation
-4. **Dashboard** - All alerts visible in Grafana UI
-
-### Managing Alerts
-
-```bash
-# View active alerts
-curl 'http://prometheus:9090/api/v1/alerts'
-
-# Silence an alert
-# In Grafana: Click alert → "Manage alerts" → "Silence alert"
-# Specify duration (1 hour, 1 day, permanently)
-
-# Re-enable silenced alert
-# In Grafana: Click "Silence" badge → "Unsilence"
-```
+The playbooks below are written against the conditions an alert would cover (high error ratio, high latency, service down), using the queries above.
 
 ---
 
 ## On-Call Procedures
 
-### Alert Response Playbook
+Kubernetes commands below use the base chart namespace `wildframe` (`values.yaml`). Staging uses `wildframe-staging` and production `wildframe-production` — substitute accordingly. Deployment names equal the service key (e.g. `auth-service`).
 
-#### HighErrorRate Alert
+### Response Playbook
+
+#### High error rate
 
 ```
 1. Identify affected service
-   - Check which service is in the alert
-   - Look at error logs in Loki
+   - "Error ratio by service" panel (Service Health dashboard)
+   - Container logs (Loki has no service logs yet, #1118):
+     docker compose -f deployments/docker-compose.dev.yml logs <service>   # dev
+     kubectl logs deploy/<service> -n wildframe                            # k8s
 
 2. Determine error type
    - Database errors?
@@ -432,17 +265,20 @@ curl 'http://prometheus:9090/api/v1/alerts'
    - Escalate to team lead
 ```
 
-#### HighLatency Alert
+#### High latency
 
 ```
 1. Check database performance
-   - Slow queries: SELECT * FROM pg_stat_statements ORDER BY mean_exec_time DESC LIMIT 10
-   - Connection pool: Check available connections
+   - Connections: "Connections in use" panel count (ignore its negative limit series), or
+     sum(pg_stat_activity_count) / max(pg_settings_max_connections)
+   - Active queries: SELECT pid, now() - query_start AS age, query
+       FROM pg_stat_activity WHERE state = 'active' ORDER BY age DESC;
+     (pg_stat_statements is not enabled in this repo's Postgres)
    - Indexing: Verify indexes on frequently queried columns
 
 2. Check infrastructure
-   - CPU usage: kubectl top pods -n wildframe
-   - Memory usage: kubectl describe node | grep -A 5 "Allocated resources"
+   - CPU usage: kubectl top pods -n wildframe   (requires metrics-server)
+   - Memory requests/limits: kubectl describe node | grep -A 5 "Allocated resources"
    - Network: Check inter-pod communication
 
 3. Quick fixes
@@ -456,7 +292,7 @@ curl 'http://prometheus:9090/api/v1/alerts'
    - Implement caching
 ```
 
-#### ServiceDown Alert
+#### Service down
 
 ```
 1. Check service status
@@ -482,19 +318,20 @@ curl 'http://prometheus:9090/api/v1/alerts'
 
 ## SLOs & SLIs
 
-### Service Level Objectives
+### Service Level Objectives (targets, not yet encoded)
+
+These targets are not implemented as recording rules or alerts anywhere in the repo.
 
 | Metric | Target | SLI |
 |--------|--------|-----|
-| **Availability** | 99.9% | Service uptime (is up == 1) |
-| **Latency** | P95 < 500ms | histogram_quantile(0.95, request_duration_seconds) |
-| **Error Rate** | < 0.1% | rate(requests_total{status=~"5.."}[5m]) |
+| **Availability** | 99.9% | `avg_over_time(up{job="wildframe-services"}[15d])` (Prometheus retention is 15 days, so a 30-day window needs longer retention or remote storage) |
+| **Latency** | P95 < 500ms | `histogram_quantile(0.95, sum by (le, service) (rate(http_request_duration_seconds_bucket[5m])))` |
+| **Error Rate** | < 0.1% | `sum(rate(http_requests_total{status_code=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))` |
 
 ### Error Budget
 
-- Monthly availability target: 99.9% = 43.2 minutes of downtime allowed
-- Current month used: 12.5 minutes (29% of budget)
-- Remaining: 30.7 minutes
+- Monthly availability target: 99.9% = 43.2 minutes of downtime allowed (30-day month); a full month cannot be measured yet with 15-day retention
+- Budget consumption is not tracked yet (no SLO recording rules).
 
 ---
 
