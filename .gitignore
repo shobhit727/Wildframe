@@ -170,6 +170,15 @@ netflix_backend/
 
 # Terraform working dir (provider binaries)
 infrastructure/terraform/.terraform/
+infrastructure/terraform/cloudflare/.terraform/
+# Real variable values and any local state stay out of git. Commit only the
+# *.tfvars.example files and .terraform.lock.hcl. Tokens never go in tfvars:
+# the Cloudflare provider reads CLOUDFLARE_API_TOKEN from the environment.
+infrastructure/terraform/**/*.tfvars
+!infrastructure/terraform/**/*.tfvars.example
+infrastructure/terraform/**/*.tfstate
+infrastructure/terraform/**/*.tfstate.*
+infrastructure/terraform/**/*.tfplan
 
 # Local scratch space for agent tooling (screenshots, test scripts, logs)
 tmp/

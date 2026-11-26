@@ -1,0 +1,31 @@
+# Copy to terraform.tfvars (gitignored) and fill in. IDs are not secrets.
+# The API token is NOT set here: export CLOUDFLARE_API_TOKEN instead.
+
+zone_id               = "<32-hex zone id for wildframe.com>"
+cloudflare_account_id = "<32-hex account id>" # only needed for admin_access
+domain_name           = "wildframe.com"
+cloudflare_plan       = "free" # free | pro | business | enterprise (ADR-0001 §6.1: NOT PROVIDED)
+
+# Leave empty until the AWS load balancer exists. While empty, only the zone
+# TLS/WAF baseline is applied and no traffic is routed.
+origin_hostname = ""
+
+ssl_mode        = "strict"
+min_tls_version = "1.2"
+
+# Stage HSTS only after every hostname in the zone serves valid HTTPS (#1109).
+# Step 1: hsts = { enabled = true, max_age = 300,      include_subdomains = false, preload = false }
+# Step 2: hsts = { enabled = true, max_age = 86400,    include_subdomains = false, preload = false }
+# Step 3: hsts = { enabled = true, max_age = 31536000, include_subdomains = true,  preload = false }
+hsts = { enabled = false, max_age = 0, include_subdomains = false, preload = false }
+
+enable_authenticated_origin_pulls = false
+enable_owasp_ruleset              = false # Pro or higher only
+
+# admin_access = {
+#   enabled               = true
+#   allowed_emails        = ["owner@example.com"]
+#   allowed_email_domains = []
+#   require_mfa           = true
+#   session_duration      = "8h"
+# }

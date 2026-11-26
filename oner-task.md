@@ -1482,3 +1482,16 @@ This repo has no migration tool (#1137), so these schema and Secret steps are no
 - **PR #1169 (#1145, uploads + moderation outbox):** on every populated `uploads_db` and `moderation_db`, first run `python scripts/init_schemas.py --allow-add outbox_events.claimed_by,outbox_events.claimed_at`. Without it, the outbox drain raises `UndefinedColumnError`.
 - **PR #1170 (#1143, analytics dedup):** on every existing `analytics_db`, run `services/analytics-service/sql/0001_client_event_key.sql` with `psql -v ON_ERROR_STOP=1 -f` **before** the new image takes traffic. `init_schemas` refuses this UNIQUE column, even with `--allow-add`. Without it, every query on `events` / `content_view_events` fails. The script can safely be re-run, and the old image keeps working after it, so apply the SQL first and deploy after.
 - **PR #1171 (#1133, Helm metrics token):** add a `METRICS_TOKEN` key to the `wildframe-runtime` Secret in every namespace before `helm upgrade`. Production renders `fail` without it. Store the token without a trailing newline (`--from-literal`), because a trailing newline makes every scrape return 401.
+
+### Cloudflare edge Terraform: steps only the account owner can do (#1109, ADR-0001)
+
+`infrastructure/terraform/cloudflare/` codifies the #1109 baseline. **It has not been applied.** An agent cannot do these steps:
+
+- **Turn on account MFA and enforce it** (dashboard: *Manage Account → Members*). This is not in Terraform on purpose; see the module README.
+- **Choose the Cloudflare plan** (ADR-0001 §6.1, still NOT PROVIDED). The module defaults to `free`, which executes only the Free Managed Ruleset and allows one 10-second rate-limit rule.
+- **Create a zone-scoped API token** with the permissions listed in the README, set an expiry, and export it as `CLOUDFLARE_API_TOKEN`. Never write it to a file.
+- **Run the first `terraform init && terraform validate`.** The authoring environment could not download the provider, so validation against the real provider schema has not run. Commit the `.terraform.lock.hcl` that `init` writes.
+- **Import the existing WAF entry-point rulesets** before the first apply, then read the plan diff. Importing replaces any dashboard-made rules with the ones in `main.tf`.
+- **Check every proxied record serves HTTPS** before applying `ssl = strict`. Full (strict) breaks any proxied origin without a valid certificate.
+- **HSTS stays off** until HTTPS coverage is verified; then stage `max_age` as the README describes. Leave `preload` off until you decide on it.
+- **Origin side, once an AWS load balancer exists:** a Cloudflare-only ingress allow-list from the module outputs, Authenticated Origin Pulls *required* at the ingress with an operator-owned certificate uploaded outside Terraform, and Access JWT validation in the admin path. None of these exist yet.

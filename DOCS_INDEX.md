@@ -53,6 +53,7 @@ history and are not release declarations (see `STATUS.md`).
 | [`docs/TIMEOUT_ORDERING.md`](docs/TIMEOUT_ORDERING.md) | Timeout propagation and ordering notes. **Partly aspirational**: it describes a reverse-proxy `proxy_read_timeout` and a `WithTimeout` wrapper that do not exist in the source. |
 | [`docs/adr/README.md`](docs/adr/README.md) | Architecture decision record index and numbering convention. |
 | [`docs/adr/0001-aws-eks-with-cloudflare-edge.md`](docs/adr/0001-aws-eks-with-cloudflare-edge.md) | **Proposed** ADR: keep AWS EKS for compute, put Cloudflare in front of app/API/admin hostnames; the video edge (keep Terraform's CloudFront+WAFv2 or not) is left to the owner — options A–C (D rejected), B (split edge) recommended. |
+| [`infrastructure/terraform/cloudflare/README.md`](infrastructure/terraform/cloudflare/README.md) | Cloudflare edge Terraform (ADR-0001 option B, #1109): zone TLS baseline, staged HSTS, managed WAF and auth rate limit by plan, proxied app DNS, Access for `/admin`. **Not applied**; owner steps and verification commands. |
 
 ---
 
